@@ -58,9 +58,9 @@ const STATS_LOG_MS = 5000;
 const SCRIPTED_HOLDING = createFingerCurls(1, 1, 1);
 const SCRIPTED_RELAXED = createFingerCurls(0.35, 0.35, 0.3);
 /** Where this player's coat colour is kept in the browser. */
-const COLOR_KEY = 'coop-vr.colour';
+const COLOR_KEY = 'track-barrel.colour';
 /** The window event that opens the game menu (from the flat page's panel). */
-export const OPEN_MENU_EVENT = 'coop-vr:open-menu';
+export const OPEN_MENU_EVENT = 'track-barrel:open-menu';
 
 /** The coat colour picked before, or a random one (kept for next time). */
 function loadCrewColor(): number {

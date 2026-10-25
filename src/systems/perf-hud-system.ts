@@ -307,7 +307,7 @@ function downloadCsv(text: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `coop-vr-perf-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+  link.download = `track-barrel-perf-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

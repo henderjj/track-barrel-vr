@@ -148,11 +148,11 @@ export default {
       return new Response('Forbidden', { status: 403 });
     }
     if (!ROOM_PATH.test(new URL(request.url).pathname)) {
-      return new Response('Co-op VR lobby', { status: 404 });
+      return new Response('Track & Barrel VR lobby', { status: 404 });
     }
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('Expected a WebSocket', { status: 426 });
     }
-    return (await routePartykitRequest(request, env)) ?? new Response('Co-op VR lobby', { status: 404 });
+    return (await routePartykitRequest(request, env)) ?? new Response('Track & Barrel VR lobby', { status: 404 });
   },
 } satisfies ExportedHandler<Env>;

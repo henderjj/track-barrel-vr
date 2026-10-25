@@ -1,8 +1,12 @@
-# Co-op VR game template
+# Track & Barrel VR
 
-A starting point for a two-player co-op VR game that runs in the browser, built with [IWSDK](https://iwsdk.dev) (Immersive Web SDK). It targets 90 Hz on Meta Quest 3 and also runs on PC VR through Meta Horizon Link, from the same URL. It was cut down from Patchwork Airship VR, keeping everything that isn't about airships and replacing the game with a small demo.
+A two-player co-op VR tank game that runs in the browser, built with [IWSDK](https://iwsdk.dev) (Immersive Web SDK). You and a friend crew a WW2-style tank: one drives, the other aims and loads, and neither can see everything, so you talk and work the tank's levers, wheels and shells with your hands. It targets 90 Hz on Meta Quest 3 in the Quest Browser, and PC VR in Chrome or Edge through Meta Horizon Link, from the same URL.
 
-The demo: two players stand on a wooden deck with a table of coloured blocks at the far end and a brass hoop beyond the rail. Throw a block through the hoop for a point; the scoreboard on the far rail counts them. Throw blocks to each other and catch them. That is all, on purpose: it uses every shared system once (hands, grabbing, throwing and catching over the network, a score the host decides, the game menu, the practice crewmate and both browser tests), so a new game has a working example of each to copy.
+- The game: [docs/concept.md](docs/concept.md).
+- How it is being built: [docs/plan.md](docs/plan.md).
+- Every feature and where it stands: [docs/roadmap.md](docs/roadmap.md); what shipped and what headset checks found: [docs/progress.md](docs/progress.md).
+
+The repository started from a co-op VR game template, itself cut down from Patchwork Airship VR. Until the cabin and seats (roadmap F1.1) replace it, the game is still the template's demo: two players on a wooden deck throwing coloured blocks through a brass hoop and to each other. It uses every shared system once (hands, grabbing, throwing and catching over the network, a score the host decides, the game menu, the practice crewmate and both browser tests).
 
 ## What already works
 
@@ -15,16 +19,17 @@ The demo: two players stand on a wooden deck with a table of coloured blocks at 
 - **Performance tools**: a wrist perf HUD, a per-second perf CSV, a 90 Hz request that falls back to the nearest supported rate, and fixed foveation.
 - **Tests and deployment**: unit tests, a geometry test that catches flicker (z-fighting), a one-player emulated-headset test, a two-player network test with simulated lag, and CI that deploys the game to GitHub Pages and the lobby to Cloudflare on every merge to `main`. See [docs/testing.md](docs/testing.md).
 
-## Start a new game from this template
+## Setting up a copy
 
-1. On GitHub, click **Use this template → Create a new repository**.
-2. In the new repository's **Settings → Pages**, set the source to **GitHub Actions**. (Pages on a private repository needs a paid GitHub plan.)
-3. For the lobby, make a free Cloudflare account and a `workers.dev` subdomain, create an API token from the **Edit Cloudflare Workers** template, and add repository Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (and optionally `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` for Cloudflare's TURN relay). Give the Worker your game's name in `lobby/wrangler.jsonc`. CI does the rest: it deploys the Worker, allows your Pages origin (or the comma-separated list in the repository variable `ALLOWED_ORIGINS`), and builds the game against the lobby's URL. Never paste these secrets into a chat.
-4. Optionally add a ruleset on `main` that requires the `check` status, so nothing merges red, and allow auto-merge.
-5. Rename the game: `name` in `package.json`, the title in `index.html`, the browser storage keys that start `coop-vr.` (`grep -rn "coop-vr" src scripts`), and this README.
-6. Write your game's plan, then build it one feature at a time. The repository's Claude skill, [.claude/skills/build-coop-vr-feature/SKILL.md](.claude/skills/build-coop-vr-feature/SKILL.md), holds the house rules for every feature: the order to build it in, the networking model, VR performance and comfort, the tests and the pull request checklist. Claude Code picks it up by itself when working in this repository.
+1. In the repository's **Settings → Pages**, set the source to **GitHub Actions**. (Pages on a private repository needs a paid GitHub plan.)
+2. For the lobby, make a free Cloudflare account and a `workers.dev` subdomain, create an API token from the **Edit Cloudflare Workers** template, and add repository Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (and optionally `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` for Cloudflare's TURN relay). The Worker is called `track-barrel-lobby` (`lobby/wrangler.jsonc`). CI does the rest: it deploys the Worker, allows your Pages origin (or the comma-separated list in the repository variable `ALLOWED_ORIGINS`), and builds the game against the lobby's URL. Never paste these secrets into a chat.
+3. Optionally add a ruleset on `main` that requires the `check` status, so nothing merges red, and allow auto-merge.
 
-The demo is meant to be replaced. Its parts are `src/sim/play-area.ts` (the sizes), `src/sim/score.ts`, `src/scene-assets/deck.scene-asset.ts` (the deck, table, hoop and blocks), `src/systems/game-system.ts`, the GAME and PRACTICE sections of `public/ui/menu.uikitml` and `src/systems/game-menu-system.ts`, the bot's throwing in `src/systems/crew-bot-system.ts`, and the steps in the browser tests that name blocks or the hoop. Its design note, [docs/play-area.md](docs/play-area.md), shows the shape each feature's note should take.
+Features are built one at a time, each in its own pull request. The repository's Claude skill, [.claude/skills/build-coop-vr-feature/SKILL.md](.claude/skills/build-coop-vr-feature/SKILL.md), holds the house rules for every feature: the order to build it in, the networking model, VR performance and comfort, the tests and the pull request checklist. Claude Code picks it up by itself when working in this repository.
+
+The browser keeps this game's settings and coat colour under keys that start `track-barrel.`, so they don't mix with another game served from the same GitHub Pages address (all of an account's Pages sites share one origin).
+
+The template's demo goes in F1.1. Its parts are `src/sim/play-area.ts` (the sizes), `src/sim/score.ts`, `src/scene-assets/deck.scene-asset.ts` (the deck, table, hoop and blocks), `src/systems/game-system.ts`, the GAME and PRACTICE sections of `public/ui/menu.uikitml` and `src/systems/game-menu-system.ts`, the bot's throwing in `src/systems/crew-bot-system.ts`, and the steps in the browser tests that name blocks or the hoop. Its design note, [docs/play-area.md](docs/play-area.md), shows the shape each feature's note should take.
 
 ## Run it
 

@@ -125,7 +125,7 @@ export function parseSettings(search: string): Settings {
 }
 
 /** Where the Settings menu keeps its choices, as a URL query string. */
-export const SAVED_SETTINGS_KEY = 'coop-vr.settings';
+export const SAVED_SETTINGS_KEY = 'track-barrel.settings';
 
 /** The saved settings with the URL's on top, as one query string. */
 export function mergeSettings(saved: string, search: string): string {

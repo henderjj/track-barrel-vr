@@ -33,7 +33,7 @@ function getRoom(code: string) {
 
 const server = createServer((_req, res) => {
   res.writeHead(200, { 'content-type': 'text/plain' });
-  res.end('co-op VR lobby\n');
+  res.end('Track & Barrel VR lobby\n');
 });
 const wss = new WebSocketServer({ server });
 
