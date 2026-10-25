@@ -94,7 +94,7 @@
   }
 </style>
 <Panel id="start-root" class="root">
-  <div class="title">Co-op VR Starter</div>
+  <div class="title">Track &amp; Barrel VR</div>
   <Divider></Divider>
 
   <div id="start-home" class="page">

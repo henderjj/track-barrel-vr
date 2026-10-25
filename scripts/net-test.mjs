@@ -523,7 +523,7 @@ async function lobbyChecks(browser, host, guest) {
     const before = m.selected('row-hz-2');
     m.click('row-hz-0');
     return { label: m.text('row-hz-label'), lit90Before: before, lit72: m.selected('row-hz-0'), hz: window.__settings.hz,
-      stored: localStorage.getItem('coop-vr.settings') };
+      stored: localStorage.getItem('track-barrel.settings') };
   });
   check('The game menu changes the frame rate straight away',
     hz.label === 'Frame rate (Hz)' && hz.lit90Before && hz.lit72 && hz.hz === 72 && hz.stored === 'hz=72',
@@ -534,7 +534,7 @@ async function lobbyChecks(browser, host, guest) {
     m.click('height-up');
     m.click('height-down');
     const result = { shown: m.text('height-value'), height: window.__body.state.choice.height, ownLit: m.selected('height-own'),
-      stored: localStorage.getItem('coop-vr.settings') };
+      stored: localStorage.getItem('track-barrel.settings') };
     m.click('height-own');
     result.backToOwn = window.__body.state.choice.height === 0 && m.selected('height-own');
     m.toggle(false);
@@ -557,7 +557,7 @@ async function lobbyChecks(browser, host, guest) {
   ]);
   await waitFor('the game to reload', async () => (await state(solo.page).catch(() => 'loading')) !== 'loading', 60000);
   const saved = await solo.page.evaluate(() => ({ shadows: window.__settings.shadows, hz: window.__settings.hz, url: location.search,
-    stored: localStorage.getItem('coop-vr.settings'), shown: document.getElementById('setting-shadows').value }));
+    stored: localStorage.getItem('track-barrel.settings'), shown: document.getElementById('setting-shadows').value }));
   check('The start-up settings save a choice and reload the game with it, keeping the game menu\'s',
     saved.shadows === true && saved.shown === '1' && saved.hz === 72 && !saved.url.includes('shadows') && saved.url.includes('name=Di'),
     `shadows ${saved.shadows ? 'on' : 'off'} (menu shows ${saved.shown}), ${saved.hz} Hz, URL ${saved.url}, saved ${saved.stored}`);

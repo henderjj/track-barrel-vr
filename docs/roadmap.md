@@ -23,7 +23,7 @@ Every feature of the game, by phase, with where it stands. The approach behind e
 
 | Phase | Goal | Features | Done |
 | --- | --- | --- | --- |
-| 0 Groundwork | Rename, plan, spikes | 6 | 0 |
+| 0 Groundwork | Rename, plan, spikes | 6 | 1 |
 | 1 Core controls prototype | Prove the tank's controls work in VR co-op | 14 | 0 |
 | 2 Communication aids | Hatches and diegetic signals, compared against voice only | 7 | 0 |
 | 3 Combat and damage | Enemies, ammunition types, damage and repairs | 9 | 0 |
@@ -36,8 +36,8 @@ Every feature of the game, by phase, with where it stands. The approach behind e
 
 | ID | Feature | Status | Depends on | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| F0.1 | Concept, implementation plan and this roadmap in the repository | Building | | | `docs/concept.md`, `docs/plan.md`, `docs/roadmap.md` |
-| F0.2 | Rename the template to Track & Barrel VR | Planned | | | `package.json` name, page title, `coop-vr.` storage keys, README, lobby Worker name |
+| F0.1 | Concept, implementation plan and this roadmap in the repository | Done | | #1 | `docs/concept.md`, `docs/plan.md`, `docs/roadmap.md` |
+| F0.2 | Rename the template to Track & Barrel VR | Building | | #PR | `package.json` name, page title, `coop-vr.` storage keys, README, lobby Worker name |
 | F0.3 | Spike S1: magnified sight render on Quest 3 | Planned | F0.2 | | Second camera into a 512² texture; measure frame time on Quest 3 and over Link |
 | F0.4 | Spike S2: riding the tank | Planned | F0.2 | | World moves round the hull; gunner's space turns with the turret; comfort with and without the vignette |
 | F0.5 | Spike S3: lever feel | Planned | F0.2 | | One hand-following lever with limits, controllers and tracked hands |

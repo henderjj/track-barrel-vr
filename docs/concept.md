@@ -1,6 +1,6 @@
-# Co-op VR Tank Game: Concept Document
+# Track & Barrel VR: concept document
 
-*Working title: TBD · Draft 1 · October 2026*
+*A co-op VR tank game · Draft 1 · October 2026*
 
 ## 1. Pitch
 
