@@ -24,6 +24,10 @@
  *  6. switches to tracked hands (spike S9) and picks up a block with a pinch;
  *  6b. spike S4: Practice → Sit at the breech, then loads a shell with the
  *     right controller (rack, breech, ram, lever) and drops one;
+ *  6c. rides the tank (spike S2) from the game menu's Practice section: the
+ *     driver's seat holds the head in the hull while the ground moves round
+ *     it, the vignette darkens with the motion and turns off from the menu,
+ *     the gunner's seat turns with the turret, and Stop brings the deck back;
  *  7. checks the perf CSV has rows, then re-enters XR with the frame-rate
  *     API removed, as desktop Chrome and Edge over Link may have it, and
  *     checks the game measures the refresh rate instead; IWSDK's controller
@@ -172,11 +176,12 @@ function grabbedNames() {
 
 /**
  * Controller poses are in the XR origin's space; the origin can drift from the
- * world origin (locomotion), so convert world targets into it.
+ * world origin (locomotion) and turn (a seat in the tank), so convert world
+ * targets into it.
  */
 function toOrigin(p) {
-  const o = evalInApp('window.__debug.world.player.position.toArray()');
-  return { x: p[0] - o[0], y: p[1] - o[1], z: p[2] - o[2] };
+  const o = evalInApp(`(() => { const rig = window.__debug.world.player; rig.updateMatrixWorld(); return rig.worldToLocal(rig.position.clone().set(${p[0]}, ${p[1]}, ${p[2]})).toArray(); })()`);
+  return { x: o[0], y: o[1], z: o[2] };
 }
 
 const fmt = (p) => p.map((v) => v.toFixed(3)).join(', ');
@@ -472,6 +477,92 @@ async function menuButtonPress() {
   await sleep(300);
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-left', buttons: [{ index: 4, value: 0 }] });
   await sleep(300);
+}
+
+// Mirrors src/sim/ride.ts.
+const RIDE = { tile: 240, driverEye: [-0.75, -1.95], gunnerEye: [-0.42, -0.4], turret: [0, 0.1] };
+
+/**
+ * 6c. Spike S2, riding the tank: Practice → As driver seats the player's
+ *     head at the driver's eyes wherever they sit in their room; driving
+ *     with the left stick moves the ground round the still hull (the hull
+ *     floor stays where the tank is in the ground's space), and the
+ *     vignette darkens as it speeds up until the menu turns it off. As
+ *     gunner, the right stick traverses the turret and the head goes round
+ *     with it. Stop puts the deck back.
+ */
+async function ridingTheTank() {
+  const state = () => evalInApp('window.__ride.state()');
+  const thumbstick = (device, x, y) =>
+    iwsdk(['xr', 'set-gamepad-state'], { device, axes: [{ index: 0, value: x }, { index: 1, value: y }] });
+  // Seated off the room's middle, looking a little left.
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: 0.3, y: 1.2, z: 0.2 } });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: { x: -0.5, y: 1.2, z: -3 } });
+  await sleep(300);
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-ride-driver'));
+  evalInApp("(window.__ride.set('tank', 'stick'), window.__ride.set('turret', 'still'), true)");
+  const seated = await waitFor('the driver\'s seat', () => {
+    const s = state();
+    return s.active && Math.hypot(s.head[0] - RIDE.driverEye[0], s.head[2] - RIDE.driverEye[1]) < 0.02 && s;
+  }, 5000).catch(() => state());
+  check('Practice → As driver seats the head at the driver\'s eyes, the deck hidden',
+    seated.active && seated.seat === 'driver' && !seated.demoShown && seated.worldShown && Math.hypot(seated.head[0] - RIDE.driverEye[0], seated.head[2] - RIDE.driverEye[1]) < 0.02,
+    `riding ${seated.active} as ${seated.seat}, head at ${fmt(seated.head)}, deck ${seated.demoShown ? 'shown' : 'hidden'}`);
+
+  // Drive forward: the tank moves through the ground, the hull stays put, the vignette darkens.
+  thumbstick('controller-left', 0, -1);
+  const moving = await waitFor('the tank to get going', () => { const s = state(); return s.tank.speed > 1 && s; }, 8000).catch(() => state());
+  const placed = evalInApp(`(() => {
+    const s = window.__ride.state();
+    const w = (v) => v - ${RIDE.tile} * Math.round(v / ${RIDE.tile});
+    const f = [-Math.sin(s.tank.heading), -Math.cos(s.tank.heading)];
+    return {
+      floor: window.__ride.drawnAt(w(s.tank.x), s.tank.y, w(s.tank.z)),
+      ahead: window.__ride.drawnAt(w(s.tank.x) + 10 * f[0], s.tank.y, w(s.tank.z) + 10 * f[1]),
+      alpha: s.vignetteAlpha,
+    };
+  })()`);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-ride-driver.png'], {});
+  check('Driving moves the ground round the hull: the tank\'s spot stays under the hull floor, 10 m ahead stays ahead',
+    moving.tank.odometer > 0.3 && Math.hypot(...placed.floor) < 0.01 && Math.abs(placed.ahead[0]) < 0.05 && Math.abs(placed.ahead[2] + 10) < 0.1,
+    `${moving.tank.speed.toFixed(1)} m/s after ${moving.tank.odometer.toFixed(1)} m, the tank's spot drawn at ${fmt(placed.floor)}, 10 m ahead at ${fmt(placed.ahead)}`);
+  check('The vignette darkens while the tank speeds up', placed.alpha > 0.2, `alpha ${placed.alpha.toFixed(2)}`);
+  await menuButtonPress();
+  const status = evalInApp('window.__gameMenu.text("menu-ride-status")');
+  await rayClick(elementPosition('menu-panel', 'row-ride-vignette-1'));
+  const unshaded = await waitFor('the vignette to go', () => { const s = state(); return !s.vignetteShown && s; }, 3000).catch(() => state());
+  // Still moving fast enough that a vignette left on would show (40% at top speed).
+  check('The menu shows the ride and turns the vignette off',
+    status.startsWith('Riding as driver') && !unshaded.vignette && !unshaded.vignetteShown && unshaded.tank.speed > 5,
+    `"${status}", vignette ${unshaded.vignette ? 'on' : 'off'} (alpha ${unshaded.vignetteAlpha.toFixed(2)}) at ${unshaded.tank.speed.toFixed(1)} m/s`);
+  thumbstick('controller-left', 0, 0);
+
+  // The gunner's seat goes round with the turret.
+  await rayClick(elementPosition('menu-panel', 'menu-ride-gunner'));
+  evalInApp("(window.__ride.set('turret', 'stick'), window.__ride.set('cabin', 'closed'), true)");
+  thumbstick('controller-right', 1, 0);
+  const turned = await waitFor('the turret to turn', () => { const s = state(); return s.turret.angle < -0.5 && s; }, 8000).catch(() => state());
+  thumbstick('controller-right', 0, 0);
+  const a = turned.turret.angle;
+  const eye = [
+    RIDE.turret[0] + RIDE.gunnerEye[0] * Math.cos(a) + RIDE.gunnerEye[1] * Math.sin(a),
+    RIDE.turret[1] - RIDE.gunnerEye[0] * Math.sin(a) + RIDE.gunnerEye[1] * Math.cos(a),
+  ];
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-ride-gunner-closed.png'], {});
+  check('As gunner, the right stick turns the turret right and the head goes round with it, under the closed roof',
+    turned.seat === 'gunner' && turned.roofShown && Math.hypot(turned.head[0] - eye[0], turned.head[2] - eye[1]) < 0.03,
+    `turret at ${((a * 180) / Math.PI).toFixed(0)}°, head at ${fmt(turned.head)} for the seat at ${fmt(eye)}`);
+
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-ride-stop'));
+  await menuButtonPress();
+  const stopped = state();
+  check('Stop ends the ride and brings the deck back',
+    !stopped.active && stopped.demoShown && !stopped.worldShown && stopped.rig[0] === 0 && stopped.rig[2] === 0 && stopped.rig[3] === 0,
+    `riding ${stopped.active}, deck ${stopped.demoShown ? 'shown' : 'hidden'}, rig at ${fmt(stopped.rig)}`);
+  evalInApp("(window.__ride.set('vignette', true), window.__ride.set('cabin', 'open'), window.__ride.set('tank', 'route'), window.__ride.set('turret', 'scan'), true)");
+  iwsdk(['xr', 'set-device-state'], {});
 }
 
 async function main() {
@@ -779,6 +870,9 @@ async function main() {
   await sleep(300);
 
   await loadingDrill();
+
+  // 6c. Spike S2: riding the tank.
+  await ridingTheTank();
 
   // 7. Perf log.
   const rows = evalInApp('window.__perf.recorder.rows.length');

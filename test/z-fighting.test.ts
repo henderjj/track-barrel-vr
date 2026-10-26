@@ -2,6 +2,7 @@ import { type BufferGeometry, Mesh, MeshLambertMaterial, type Object3D, Vector3 
 import { describe, expect, it } from 'vitest';
 import * as avatar from '../src/scene-assets/avatar.scene-asset.js';
 import * as deck from '../src/scene-assets/deck.scene-asset.js';
+import * as ride from '../src/scene-assets/ride.scene-asset.js';
 import * as loading from '../src/scene-assets/loading-drill.scene-asset.js';
 import { BREECH_MOUTH, LEVER_CLOSED, LEVER_PIVOT, RACK_SLOTS, SHELL_LENGTH } from '../src/sim/loading.js';
 import * as sight from '../src/scene-assets/sight.scene-asset.js';
@@ -94,6 +95,25 @@ describe('no faces that flicker through each other (z-fighting)', () => {
       expectNone([avatar.createAvatarTorso(index)], DECK_GAP);
       expectNone([avatar.createAvatarLegs(index)], DECK_GAP);
     }
+  });
+
+  it('in the riding spike\'s hull and turret, open and closed, with the turret turned', () => {
+    const turned = (mesh: Object3D, angle: number) => {
+      mesh.rotation.y = angle;
+      mesh.position.set(0, 0, 0.1);
+      mesh.updateMatrixWorld(true);
+      return mesh;
+    };
+    for (const angle of [0, 0.7, Math.PI / 2]) {
+      expectNone([ride.createRideHull(), turned(ride.createRideTurret(), angle), turned(ride.createRideTurretOpen(), angle)], DECK_GAP);
+      expectNone([ride.createRideHull(), ride.createRideHullRoof(), turned(ride.createRideTurret(), angle), turned(ride.createRideTurretClosed(), angle)], DECK_GAP);
+    }
+  });
+
+  it('on the riding spike\'s ground and trees', () => {
+    expectNone([ride.createRideGround()], WORLD_GAP);
+    // One tree, as each instance draws it.
+    expectNone([ride.createRideTrees()], WORLD_GAP);
   });
 
   it('catches two boxes painted different colours sharing a face', async () => {

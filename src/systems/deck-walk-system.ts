@@ -1,14 +1,4 @@
-import {
-  BackSide,
-  Color,
-  createSystem,
-  CylinderGeometry,
-  InputActions,
-  Mesh,
-  Quaternion,
-  ShaderMaterial,
-  Vector3,
-} from '@iwsdk/core';
+import { createSystem, type CylinderGeometry, InputActions, type Mesh, Quaternion, type ShaderMaterial, Vector3 } from '@iwsdk/core';
 import {
   clampStep,
   SNAP_TURN,
@@ -18,6 +8,8 @@ import {
   WALK_HALF_WIDTH,
   WALK_SPEED,
 } from '../sim/deck-walk.js';
+import { createVignette } from './comfort-vignette.js';
+import { ride } from './ride-system.js';
 
 /** Thumbstick deflection that counts as a snap turn (as IWSDK's). */
 const TURN_THRESHOLD = 0.8;
@@ -55,7 +47,8 @@ export class DeckWalkSystem extends createSystem({}) {
 
   update(delta: number): void {
     const alpha = this.vignette.material.uniforms.uAlpha;
-    if (!this.world.session) {
+    // Riding the tank (spike S2), the seat holds the player and the ride draws its own vignette.
+    if (!this.world.session || ride.active) {
       alpha.value = 0;
       this.vignette.visible = false;
       return;
@@ -103,35 +96,4 @@ export class DeckWalkSystem extends createSystem({}) {
     player.position.x = this.turned[0];
     player.position.z = this.turned[1];
   }
-}
-
-/** A soft dark ring round the edge of view while walking, for comfort (like IWSDK's slide vignette). */
-function createVignette(): Mesh<CylinderGeometry, ShaderMaterial> {
-  const mesh = new Mesh(
-    new CylinderGeometry(0.3, 0.15, 0.3, 16, 1, true),
-    new ShaderMaterial({
-      vertexShader: `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }`,
-      fragmentShader: `
-        uniform vec3 uColor;
-        uniform float uAlpha;
-        varying vec2 vUv;
-        void main() {
-          gl_FragColor = vec4(uColor, uAlpha * vUv.y);
-        }`,
-      uniforms: { uColor: { value: new Color(0x000000) }, uAlpha: { value: 0 } },
-      depthTest: false,
-      side: BackSide,
-      transparent: true,
-    }),
-  );
-  mesh.frustumCulled = false;
-  mesh.renderOrder = 999;
-  mesh.rotateX(Math.PI / 2);
-  mesh.position.z = -0.15;
-  return mesh;
 }
