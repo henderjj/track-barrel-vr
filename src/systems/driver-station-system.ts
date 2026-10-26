@@ -314,7 +314,7 @@ export class DriverStationSystem extends createSystem({}) {
     ctx.fillStyle = '#c9c0a0';
     ctx.font = `bold ${Math.round(FACE_PX_H * 0.09)}px sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillText('GEAR LEVER: back LOW · middle NEUTRAL · forwards HIGH. Centre the tillers to shift.', FACE_PX_W / 2, FACE_PX_H * 0.93);
+    ctx.fillText('GEAR LEVER  back LOW · middle N · forwards HIGH  (tillers centred)', FACE_PX_W / 2, FACE_PX_H * 0.93, FACE_PX_W - 24);
     const texture = new CanvasTexture(canvas);
     texture.colorSpace = SRGBColorSpace;
     const face = new Mesh(new PlaneGeometry(PANEL.width, PANEL.height), new MeshBasicMaterial({ map: texture, toneMapped: false }));
