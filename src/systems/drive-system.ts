@@ -23,6 +23,7 @@ import {
   TANK_STATE_BYTES,
   type TankHeader,
 } from '../net/tank-codec.js';
+import { settings } from '../settings.js';
 import { vignetteLevel } from '../sim/comfort.js';
 import {
   angleDelta,
@@ -175,6 +176,7 @@ export class DriveSystem extends createSystem({}) {
     active = this;
     this.ground = this.world.getSceneEntity('ground')?.object3D ?? null;
     if (this.ground == null) console.warn('[Drive] no ground in the scene');
+    else if (!settings.ground) this.ground.visible = false;
     this.vignette = createVignette();
     this.vignette.visible = false;
     this.camera.add(this.vignette);

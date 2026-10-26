@@ -38,7 +38,9 @@ const LOBBY_PORT = 8787;
 const PREVIEW_PORT = 4173;
 // The IWSDK Vite plugin serves HTTPS with a local development certificate.
 const BASE = `https://localhost:${PREVIEW_PORT}/`;
-const QUIET = 'hud=0';
+// No perf HUD, and no ground: software rendering of the drive's ground
+// halves the frame rate the motion checks sample (docs/testing.md).
+const QUIET = 'hud=0&ground=0';
 
 const results = [];
 function check(name, pass, detail) {
