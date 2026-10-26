@@ -384,12 +384,21 @@
       </div>
     </div>
     <div class="setting">
-      <div class="label">Gunsight (S1)</div>
+      <div class="label">Gunsight</div>
       <div class="choices">
         <Button id="menu-sight-go" class="choice" size="sm" variant="secondary">Go to it</Button>
-        <Button id="menu-sight-aim" class="choice" size="sm" variant="secondary">Aim ahead</Button>
       </div>
     </div>
+    <div class="setting">
+      <div class="label">Lay on</div>
+      <div class="choices">
+        <Button id="menu-sight-lay-ahead" class="choice" size="sm" variant="secondary">Ahead</Button>
+        <Button id="menu-sight-lay-0" class="choice" size="sm" variant="secondary">100 m</Button>
+        <Button id="menu-sight-lay-1" class="choice" size="sm" variant="secondary">250 m</Button>
+        <Button id="menu-sight-lay-2" class="choice" size="sm" variant="secondary">500 m</Button>
+      </div>
+    </div>
+    <div id="menu-sight-status" class="hint">Lean in to the eyepiece to look</div>
     <div class="setting">
       <div class="label">Sight render</div>
       <div class="choices">

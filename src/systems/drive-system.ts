@@ -112,6 +112,11 @@ export function engineRpm(): number {
   return active?.shown.rpm ?? IDLE_RPM;
 }
 
+/** The tank as drawn on this page (the host's simulation, or the guest's copy of it): where the gunsight lays from (F1.9). */
+export function tankState(): Readonly<TankDrive> {
+  return active?.shown ?? createTankDrive();
+}
+
 /** One line on the tank for the menu: who drives, speed, gear, RPM. */
 export function driveStatus(): string {
   const s = active?.shown;

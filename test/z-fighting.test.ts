@@ -12,7 +12,7 @@ import * as sight from '../src/scene-assets/sight.scene-asset.js';
 import { createTerrain } from '../src/scene-assets/terrain.scene-asset.js';
 import { GROUND_Y } from '../src/sim/cabin.js';
 import { TURRET } from '../src/sim/cabin.js';
-import { SIGHT_STAND } from '../src/sim/sight.js';
+import { EYEPIECE } from '../src/sim/gunsight.js';
 import {
   ELEVATION_WHEEL,
   MAX_ELEVATION,
@@ -57,7 +57,8 @@ function expectNone(objects: Object3D[], gap: number, ignore?: (at: Vector3, n: 
 /**
  * The turret turned `yaw`, with its gun elevated `elevation` and the
  * gunner's controls on their mounts, the wheels turned `turn` and the grip
- * twisted to match (F1.8), as TurretSystem draws them.
+ * twisted to match (F1.8), and the gunsight's two halves on the turret and
+ * the gun (F1.9), as TurretSystem and SightSystem draw them.
  */
 function turretWith(yaw: number, elevation: number, turn: number): Object3D {
   const turret = cabin.createTurret();
@@ -67,6 +68,11 @@ function turretWith(yaw: number, elevation: number, turn: number): Object3D {
   gun.position.set(0, TRUNNION.y, TRUNNION.z);
   gun.rotation.x = elevation;
   turret.add(gun);
+  gun.add(sight.createSightHead());
+  const eyepiece = sight.createSightEyepiece();
+  eyepiece.position.set(...EYEPIECE);
+  eyepiece.add(mesh(sight.createSightLensGeometry(), 'Sight Lens'));
+  turret.add(eyepiece);
   const parts = {
     elevation: mechanism.createWheel(ELEVATION_WHEEL),
     crank: mechanism.createWheel(TRAVERSE_CRANK),
@@ -125,19 +131,10 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
-  it("on spike S1's sight, hanging in the turret and aimed", () => {
-    const stand = sight.createSightStand();
-    stand.position.set(SIGHT_STAND.x, 0, SIGHT_STAND.z);
-    const lens = mesh(sight.createSightLensGeometry(), 'Sight Lens');
-    const turret = turretWith(0, 0, 0);
-    for (const [pitch, yaw] of [[0, 0], [0.02, 0.05]]) {
-      const body = sight.createSightBody();
-      body.position.set(0, SIGHT_STAND.lensHeight, 0);
-      body.rotation.set(pitch, yaw, 0, 'YXZ');
-      body.add(lens);
-      stand.add(body);
-      expectNone([stand, turret], CABIN_GAP);
-      stand.remove(body);
+  it('on the gunsight (F1.9): its eyepiece fixed in the turret and its objective on the gun, through the whole elevation', () => {
+    const hull = cabin.createHull();
+    for (let elevation = MIN_ELEVATION; elevation <= MAX_ELEVATION + 1e-9; elevation += (MAX_ELEVATION - MIN_ELEVATION) / 6) {
+      expectNone([hull, turretWith(0, elevation, 0)], CABIN_GAP);
     }
   });
 

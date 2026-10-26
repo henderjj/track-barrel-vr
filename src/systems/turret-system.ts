@@ -48,6 +48,25 @@ export function turretState(): Readonly<TurretState> {
   return active?.shown ?? createTurretState();
 }
 
+/** Whether this page lays the gun: the gunner's page, or this one alone. */
+export function ownsTurret(): boolean {
+  return active?.isOwner() ?? true;
+}
+
+/**
+ * Turn the turret to `yaw` and the gun to `elevation` at once, on the
+ * page that owns the turret (the gunsight's Practice lay, F1.9). The
+ * elevation wheel goes to match unless a hand holds it.
+ */
+export function layGun(yaw: number, elevation: number): void {
+  active?.layAt(yaw, elevation);
+}
+
+/** The gun's entity, inside the turret's: the gunsight's objective rides on it (F1.9). */
+export function gunEntity(): Entity | null {
+  return active?.gunEntity ?? null;
+}
+
 /** Practice → Lay the gun → Gunner: into the gunner's seat, with a sign saying how to lay the gun. */
 export function startGunning(): void {
   seating.ask('gunner');
@@ -135,6 +154,7 @@ export class TurretSystem extends createSystem({}) {
   private override: TurretOverride | null = null;
   private turret: Object3D | null = null;
   private gun: Mesh | null = null;
+  gunEntity: Entity | null = null;
   private buffer = new StateBuffer<TurretState>({
     create: createTurretState,
     copy: copyTurretState,
@@ -204,7 +224,7 @@ export class TurretSystem extends createSystem({}) {
   private build(turret: Entity): void {
     const gun = createGun();
     gun.position.set(0, TRUNNION.y, TRUNNION.z);
-    this.world.createTransformEntity(gun, { parent: turret });
+    this.gunEntity = this.world.createTransformEntity(gun, { parent: turret });
     this.gun = gun;
     const controls = {
       elevation: { mech: this.elevationWheel, part: createWheel(ELEVATION_WHEEL), kind: HoldKind.ElevationWheel },
@@ -236,7 +256,7 @@ export class TurretSystem extends createSystem({}) {
   }
 
   /** The gunner's page owns the turret; alone, this page does whichever seat it sits in. */
-  private isOwner(): boolean {
+  isOwner(): boolean {
     return !netLink.connected || seating.mine === 'gunner';
   }
 
@@ -251,6 +271,16 @@ export class TurretSystem extends createSystem({}) {
     if (!this.elevationWheel.anyHeld) this.elevationWheel.angle = 0;
     copyTurretState(this.sim, this.shown);
     console.info('[Turret] forward');
+  }
+
+  layAt(yaw: number, elevation: number): void {
+    if (!this.isOwner()) return;
+    this.sim.yaw = wrapAngle(yaw);
+    this.sim.rate = 0;
+    if (!this.elevationWheel.anyHeld) this.elevationWheel.angle = wheelForElevation(elevation);
+    this.sim.elevation = elevationForWheel(this.elevationWheel.angle);
+    copyTurretState(this.sim, this.shown);
+    console.info(`[Turret] laid at ${(yaw / DEG).toFixed(2)}°, ${(elevation / DEG).toFixed(2)}°`);
   }
 
   sayHowToLay(): void {
