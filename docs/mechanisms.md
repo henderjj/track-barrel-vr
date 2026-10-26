@@ -85,9 +85,9 @@ this.cleanupFuncs.push(addControl({
 }));
 ```
 
-- **Hands on controls.** Give each handle a `HoldKind` (2–5 driver controls, 6–7 traverse and elevation wheels, 8 periscope: [the reserved numbers](#numbers-kept-for-later-features)). `addControl` registers its grip-locking resolver and tells `holdKindOf` its name, so there is no case to add in `net-system.ts`. The crewmate's hand on it is drawn closed on the handle nearest it on this page; this player's at the place it took hold.
+- **Hands on controls.** Give each handle a `HoldKind` (2–5 driver controls, 6–7 traverse crank and elevation wheel, 12 power traverse grip, 8 periscope: [the reserved numbers](#numbers-kept-for-later-features)). `addControl` registers its grip-locking resolver and tells `holdKindOf` its name, so there is no case to add in `net-system.ts`. The crewmate's hand on it is drawn closed on the handle nearest it on this page; this player's at the place it took hold.
 - **Sharing.** The kit sends nothing itself. Each station sends its controls' values in its own packet (driver controls, PacketType 6, F1.4/F1.5; turret, PacketType 7, F1.8), and on the other page sets the mechanism's angle from the packet while no hand of that page holds it (`mech.angle = …` in the station's system before the kit runs, or in `moved`). Each control belongs to one seat, so in practice only one player holds it; a control both players can hold at once would follow the skill's shared-control pattern (each sends its hands' contribution, the host combines).
-- **Controls only this page has** (the bench, spike S3's tillers) use `HoldKind.LocalControl` (11), which is never sent, and are resolved by which of this player's hands holds which. 12 is free again.
+- **Controls only this page has** (the bench, spike S3's tillers) use `HoldKind.LocalControl` (11), which is never sent, and are resolved by which of this player's hands holds which. 12 is the power traverse grip (F1.8).
 - **Putting a control away**: `letGo(control)` makes every hand let go of it.
 
 ## Sharing and the host
@@ -113,7 +113,7 @@ Because the bench is a one-player test rig: no practice crewmate part and no net
 
 ## Numbers kept for later features
 
-HoldKind 2–5 the driver's controls (F1.5), 6–7 the traverse and elevation wheels (F1.8), 8 the periscope (F1.6), 9 a shell, 10 the breech lever (spike S4), 11 `LocalControl`; 12 is free; 13–15 are used by `test/hand-lock.test.ts`.
+HoldKind 2–5 the driver's controls (F1.5), 6–7 the traverse crank and elevation wheel and 12 the power traverse grip (F1.8), 8 the periscope (F1.6), 9 a shell, 10 the breech lever (spike S4), 11 `LocalControl`; 13–15 are used by `test/hand-lock.test.ts`, so none is free.
 
 ## Headset check
 

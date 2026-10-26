@@ -8,7 +8,8 @@
   LIVE_ITEMS in src/live-settings.ts). The crew section shows only in a crew.
   Practice holds shortcuts straight to a situation worth testing, one per
   feature, so a headset check never has to play its way there (the cabin's:
-  sit in either seat; the drive's: drive, or put the tank back at its start). You → Seat swaps seats (in a crew, once the
+  sit in either seat; the drive's: drive, or put the tank back at its start; the turret's: lay
+  the gun, or turn the turret forward). You → Seat swaps seats (in a crew, once the
   crewmate agrees) and Calibration measures the eyes and reach again.
 -->
 <style>
@@ -346,6 +347,14 @@
         <Button id="menu-drive-reset" class="choice" size="sm" variant="secondary">Back to start</Button>
       </div>
     </div>
+    <div class="setting">
+      <div class="label">Lay the gun</div>
+      <div class="choices">
+        <Button id="menu-turret-go" class="choice" size="sm" variant="secondary">Gunner</Button>
+        <Button id="menu-turret-forward" class="choice" size="sm" variant="secondary">Forward</Button>
+      </div>
+    </div>
+    <div id="menu-turret-status" class="hint">Turret</div>
     <div class="setting">
       <div class="label">Ride the tank</div>
       <div class="choices">
