@@ -13,8 +13,18 @@ export const seating = {
   crew: otherSeat(settings.seat),
   /** The turret's angle from facing forward, rad, positive to the left (0 until the turret turns, F1.8). */
   turretYaw: 0,
-  /** Ask for a seat: taken at once when alone; in a crew the host decides and both players swap. Set by SeatSystem. */
+  /**
+   * Ask for a seat: taken at once when alone or before the crewmate is
+   * aboard; in a crew, asking for the crewmate's seat asks them to swap,
+   * and the host swaps both once both have asked. Set by SeatSystem.
+   */
   ask: (_seat: SeatId): void => undefined,
+  /**
+   * A swap of seats waiting for a word (F1.2): 'asked' while this player's
+   * ask waits for the crewmate's, 'offered' while the crewmate's waits for
+   * this player's, 'none' otherwise.
+   */
+  swap: 'none' as 'none' | 'asked' | 'offered',
   /** How many times SeatSystem has put this player in a seat (so a system can wait for the next). */
   placements: 0,
   /** Put this player back in their seat, facing forward (the menu's Back in my seat). Set by SeatSystem. */

@@ -1,4 +1,5 @@
 import type { SessionState } from './net/net-session.js';
+import type { SeatId } from './sim/cabin.js';
 
 /**
  * How the player chose to play on the start screen
@@ -93,26 +94,52 @@ export function menuCrewLine(state: SessionState, room: string, crewmate: string
   }
 }
 
-/** The game menu's character height steps, m. */
-export const HEIGHT_STEP = 0.05;
-
 /**
- * The character height after one press of the menu's + (`direction` 1) or
- * − (-1): the next 5 cm step above or below, between `min` and `max`. From
- * "your own" (0) it steps from the player's own height `own` (NaN before it
- * is measured, then from `fallback`).
+ * The eye raise after one press of the menu's + (`direction` 1) or −
+ * (-1): one `step` up or down, between -`max` and `max`.
  */
-export function stepHeight(height: number, own: number, direction: 1 | -1, min: number, max: number, fallback: number): number {
-  const from = (height > 0 ? height : Number.isFinite(own) ? own : fallback) / HEIGHT_STEP;
-  const steps = direction > 0 ? Math.floor(from + 1e-6) + 1 : Math.ceil(from - 1e-6) - 1;
-  const stepped = Math.min(max, Math.max(min, steps * HEIGHT_STEP));
-  return Number(stepped.toFixed(2));
+export function stepRaise(raise: number, direction: 1 | -1, step: number, max: number): number {
+  const steps = Math.round(raise / step) + direction;
+  const stepped = Math.min(max, Math.max(-max, steps * step));
+  return Number(stepped.toFixed(2)) || 0;
 }
 
-/** What the menu shows for character height `height` (0 for their own, measured as `own` m or NaN). */
-export function heightShown(height: number, own: number): string {
-  if (height > 0) {
-    return `${height.toFixed(2)} m`;
+/** What the menu shows for eye raise `raise` (m): how far above or below the seat's eye point, in cm. */
+export function raiseShown(raise: number): string {
+  const cm = Math.round(raise * 100);
+  if (cm === 0) {
+    return '0 cm';
   }
-  return Number.isFinite(own) ? `${own.toFixed(2)} m` : '-';
+  return `${cm > 0 ? '+' : '−'}${Math.abs(cm)} cm`;
+}
+
+/** The menu's line about the last calibration: eye height and reach, or that there was none. */
+export function calibrationShown(eye: number, reach: number): string {
+  if (!Number.isFinite(eye)) {
+    return 'Not calibrated yet: eyes measured as you play.';
+  }
+  const reachText = Number.isFinite(reach) ? `, reach ${Math.round(reach * 100)} cm` : '';
+  return `Calibrated: eyes ${eye.toFixed(2)} m above your floor${reachText}.`;
+}
+
+/** "You drive" or "You gun", for seat `seat`. */
+function youIn(seat: SeatId): string {
+  return seat === 'driver' ? 'You drive' : 'You lay and fire the gun';
+}
+
+/**
+ * The crew page's line about the seats: where this player sits, where the
+ * crewmate does once aboard, and any swap waiting for a word.
+ */
+export function seatsLine(mine: SeatId, crew: SeatId, aboard: boolean, swap: 'none' | 'asked' | 'offered'): string {
+  if (!aboard) {
+    return `${youIn(mine)}. If your crewmate picks the same seat, whoever started the crew keeps it.`;
+  }
+  if (swap === 'asked') {
+    return 'Asked your crewmate to swap seats.';
+  }
+  if (swap === 'offered') {
+    return 'Your crewmate asks to swap seats: pick their seat to agree.';
+  }
+  return `${youIn(mine)}; your crewmate is the ${crew === 'driver' ? 'driver' : 'gunner'}.`;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { codeShown, crewScreen, heightShown, menuCrewLine, stepHeight, typeCode } from '../src/game-flow.js';
+import { calibrationShown, codeShown, crewScreen, menuCrewLine, raiseShown, seatsLine, stepRaise, typeCode } from '../src/game-flow.js';
 
 describe('start screen', () => {
   it('types a four-letter crew code', () => {
@@ -45,26 +45,39 @@ describe('game menu', () => {
   });
 });
 
-describe('character height in the game menu', () => {
-  const step = (height: number, own: number, direction: 1 | -1) => stepHeight(height, own, direction, 1.4, 2.0, 1.75);
+describe('eye height in the game menu', () => {
+  const step = (raise: number, direction: 1 | -1) => stepRaise(raise, direction, 0.05, 0.15);
 
-  it('steps 5 cm at a time and stays in range', () => {
-    expect(step(1.75, Number.NaN, 1)).toBe(1.8);
-    expect(step(1.75, Number.NaN, -1)).toBe(1.7);
-    expect(step(2.0, Number.NaN, 1)).toBe(2.0);
-    expect(step(1.4, Number.NaN, -1)).toBe(1.4);
+  it('steps 5 cm at a time either side of the eye point and stays in range', () => {
+    expect(step(0, 1)).toBe(0.05);
+    expect(step(0.05, -1)).toBe(0);
+    expect(step(0, -1)).toBe(-0.05);
+    expect(step(0.15, 1)).toBe(0.15);
+    expect(step(-0.15, -1)).toBe(-0.15);
+    expect(step(0.1, 1)).toBe(0.15);
   });
 
-  it('steps from the player\'s own height to the next step either side', () => {
-    expect(step(0, 1.78, 1)).toBe(1.8);
-    expect(step(0, 1.78, -1)).toBe(1.75);
-    expect(step(0, 1.8, 1)).toBe(1.85);
-    expect(step(0, Number.NaN, 1)).toBe(1.8);
+  it('shows how far above or below the eye point', () => {
+    expect(raiseShown(0)).toBe('0 cm');
+    expect(raiseShown(0.05)).toBe('+5 cm');
+    expect(raiseShown(-0.1)).toBe('−10 cm');
   });
 
-  it('shows the height, or the player\'s own once measured', () => {
-    expect(heightShown(1.85, 1.7)).toBe('1.85 m');
-    expect(heightShown(0, 1.776)).toBe('1.78 m');
-    expect(heightShown(0, Number.NaN)).toBe('-');
+  it('says what the last calibration found', () => {
+    expect(calibrationShown(Number.NaN, Number.NaN)).toBe('Not calibrated yet: eyes measured as you play.');
+    expect(calibrationShown(1.183, Number.NaN)).toBe('Calibrated: eyes 1.18 m above your floor.');
+    expect(calibrationShown(1.183, 0.584)).toBe('Calibrated: eyes 1.18 m above your floor, reach 58 cm.');
+  });
+});
+
+describe('seats on the crew page', () => {
+  it('says where this player sits, and who keeps a seat both pick', () => {
+    expect(seatsLine('driver', 'gunner', false, 'none')).toBe('You drive. If your crewmate picks the same seat, whoever started the crew keeps it.');
+    expect(seatsLine('gunner', 'driver', true, 'none')).toBe('You lay and fire the gun; your crewmate is the driver.');
+  });
+
+  it('says when a swap waits for a word', () => {
+    expect(seatsLine('driver', 'gunner', true, 'asked')).toBe('Asked your crewmate to swap seats.');
+    expect(seatsLine('driver', 'gunner', true, 'offered')).toBe('Your crewmate asks to swap seats: pick their seat to agree.');
   });
 });

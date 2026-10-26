@@ -8,7 +8,7 @@ describe('the lever test rig (spike S3)', () => {
   it('puts the handles in reach from a chair, seated or standing', () => {
     // As test/body-height.test.ts: a seated player's hands reach from about
     // 0.45 m to 1.4 m above their real floor. The rig is placed from the eyes.
-    const raised = rigOffset(targetEyeHeight({ height: 0, seated: true }), 1.2);
+    const raised = rigOffset(targetEyeHeight({ raise: 0, seated: true }), 1.2);
     for (const angle of [TILLER.min, 0, TILLER.max]) {
       const lever = new Lever(TILLER);
       lever.angle = angle;

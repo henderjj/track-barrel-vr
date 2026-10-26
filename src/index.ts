@@ -2,6 +2,7 @@ import { PhysicsSystem, World } from '@iwsdk/core';
 import projectOptions from 'virtual:iwsdk-project';
 import { preferHighPerformanceGpu } from './gpu-preference.js';
 import { BodyHeightSystem } from './systems/body-height-system.js';
+import { CalibrationSystem } from './systems/calibration-system.js';
 import { CrewBotSystem } from './systems/crew-bot-system.js';
 import { CrewStatusSystem } from './systems/crew-status-system.js';
 import { FrameRateSystem } from './systems/frame-rate-system.js';
@@ -36,6 +37,8 @@ World.create(
   world.registerSystem(SeatSystem, { priority: -6 });
   // Before the systems that read its grip state.
   world.registerSystem(GripSystem, { priority: -5 });
+  // After it (it reads both grips); the eye height it takes moves the player from the next frame.
+  world.registerSystem(CalibrationSystem, { priority: -4 });
   world.registerSystem(NetSystem);
   // Spike S2: before anything draws the hands on the moved rig. The seat system stands aside while it rides.
   world.registerSystem(RideSystem);

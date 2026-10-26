@@ -405,7 +405,7 @@ describe('the test bench', () => {
   it('puts every handle in reach from a chair, between knee and chest height', () => {
     // As test/body-height.test.ts: a seated player's hands reach from about
     // 0.45 m to 1.4 m above their real floor. The bench is placed from the eyes.
-    const raised = rigOffset(targetEyeHeight({ height: 0, seated: true }), 1.2);
+    const raised = rigOffset(targetEyeHeight({ raise: 0, seated: true }), 1.2);
     const lever = new Lever(NOTCHED_LEVER);
     const crank = new Wheel(CRANK);
     const wheel = new Wheel(HANDWHEEL);
