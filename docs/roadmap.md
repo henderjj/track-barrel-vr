@@ -50,7 +50,7 @@ Ends when a crew can drive the range, find and hit three static targets, and the
 | ID | Feature | Status | Depends on | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 | F1.1 | Cabin and seats: hull and turret basket model, driver and gunner seats, seat-local avatars, remove the demo and deck walking | Headset check | F0.2 | #8 | [cabin.md](cabin.md): `src/sim/cabin.ts` replaces `play-area.ts`; the host decides seats; Practice → Sit in Driver/Gunner |
-| F1.2 | Seat choice and calibration: pick a seat on the crew page, seated head height and reach, standing mode, head kept inside the seat box | Planned | F1.1 | | Builds on `body-height.ts` |
+| F1.2 | Seat choice and calibration: pick a seat on the crew page, seated head height and reach, standing mode, head kept inside the seat box | Building | F1.1 | #10 | [seat-choice.md](seat-choice.md): seat on the start screen, swaps only when both agree, calibration as VR starts, eye height replaces character height, head stopped under the roof |
 | F1.3 | Mechanism kit: lever, wheel/crank, twist grip, yoke, button; limits, detents, haptics, grip locking | Planned | F0.5, F1.1 | | `src/sim/mechanism.ts` |
 | F1.4 | Tank drive simulation and world movement: skid steer, RPM, gear ranges, ground following, obstacle bumps, host authority | Building | F0.4, F1.1 | | [tank-drive.md](tank-drive.md): `src/sim/tank-drive.ts`, blockout ground and obstacles in `src/sim/terrain.ts`; tank-state (5) and driver-controls (6) packets; thumbstick tillers and a menu gear lever until F1.5; Practice → Drive the tank |
 | F1.5 | Driver station: tillers, gear lever with grinds, hand throttle, gauges, vision slit | Planned | F1.3, F1.4 | | |

@@ -4,7 +4,7 @@ The crew's place in the tank: the hull with the driver's seat, the turret with i
 
 ## What players experience
 
-- On entering VR each player is in their seat: eyes at the seat's eye point, facing the tank's front, wherever they are in their real room. Their real floor goes at the seat's floor, with the body-height setting (standing or seated, character height) on top.
+- On entering VR each player is in their seat: eyes at the seat's eye point, facing the tank's front, wherever they are in their real room. Their real floor goes at the seat's floor, with the body-height offset on top, which since F1.2 puts the calibrated eyes on the eye point ([seat-choice.md](seat-choice.md)).
 - The **driver** sits front left in the hull under an open hatch. The vision slit is 80 cm ahead of their eyes; the space in front of them is kept clear for the tillers and the gear lever (F1.5).
 - The **gunner** sits right of the gun in the turret basket, 80 cm above the hull floor. The breech is on their left at chest height, and spike S1's sight hangs from the turret roof 28 cm ahead of their eyes: leaning in opens it.
 - A player moves their head freely inside their seat. Leaning past the edge of the seat's head box stops the head there, as if it met the wall, the breech or the controls. A head far outside the box (the headset recentred, or the player stood up and walked across the room) puts the player back in the seat.
@@ -38,7 +38,7 @@ The models are lit by the sky's image-based light (`IBLGradient` in the scene), 
 The host decides who sits where; the guest asks.
 
 - When a crew connects, the host keeps their seat (the driver's, unless they changed it) and sends a reliable `seats` event `{ host, guest }`. The guest sits where it says.
-- A guest choosing a seat sends `seat-ask` `{ seat }`. The host gives them it, takes the other one and sends `seats`; with two seats and two players there is no other answer.
+- A guest choosing a seat sends `seat-ask` `{ seat }`. Since F1.2 the host swaps only once both players have asked ([seat-choice.md](seat-choice.md#sharing)), then sends `seats`; with two seats and two players there is no other answer.
 - A host choosing a seat takes it and sends `seats`.
 - Alone, the player sits where they like.
 - Each page draws the crewmate's legs in the crewmate's seat. Poses go over the network in hull space as before; the seated player's feet height is their seat's floor.

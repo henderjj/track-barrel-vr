@@ -1,8 +1,11 @@
 import { createSystem, type UIKitMLAsset, VisibilityState } from '@iwsdk/core';
-import { codeShown, crewScreen, type PlayMode, type StartPage, typeCode } from '../game-flow.js';
+import { codeShown, crewScreen, type PlayMode, seatsLine, type StartPage, typeCode } from '../game-flow.js';
 import { crewControls, onCrewChange } from '../net/crew-controls.js';
 import { makeRoomCode, normaliseRoomCode } from '../net/lobby-protocol.js';
 import { settings } from '../settings.js';
+import { SEAT_IDS } from '../sim/cabin.js';
+import { netLink } from './net-system.js';
+import { seating } from './seating.js';
 import { PanelUi } from './panel-ui.js';
 
 /** Where the start screen stands in VR: ahead of the head and a little below the eyes, m. */
@@ -23,13 +26,17 @@ interface StartScreenDebug {
   click(id: string): boolean;
   text(id: string): string | undefined;
   shown(id: string): boolean;
-  /** Where the screen stands in VR, deck space. */
+  /** Whether button `id` shows as the one in effect (the seat buttons). */
+  selected(id: string): boolean;
+  /** Where the screen stands in VR, hull space. */
   position(): number[];
 }
 
-/** Lets the game menu bring the start screen back. */
+/** Lets the game menu bring the start screen back, and other systems wait while it shows. */
 export const startScreen = {
   show: (): void => undefined,
+  /** The start screen is showing. */
+  open: true,
 };
 
 /**
@@ -41,6 +48,9 @@ export const startScreen = {
  *   practice crewmate (a bot page on a PC, src/systems/crew-bot-system.ts)
  *   into it.
  * - Start a crew: makes a four-letter code to give a friend.
+ * - Your seat, Driver or Gunner (F1.2), kept for next time: alone it is
+ *   taken at once; in a crew the host keeps theirs and the guest takes the
+ *   other, and once the crewmate is aboard picking theirs asks to swap.
  * - Join a crew: a keypad for the friend's code (letters on a keyboard type
  *   it on the flat page). On the flat page, the code can also be joined as
  *   the practice crewmate, which reloads the page as the bot.
@@ -59,6 +69,9 @@ export class StartScreenSystem extends createSystem({}) {
   private typed = '';
   private needsPlace = true;
   private readySince = 0;
+  /** What the seat buttons last showed, so they redraw when the host moves this player or a swap is asked. */
+  private shownSeats = '';
+  private selected = new Map<string, boolean>();
 
   init(): void {
     const asset = this.world.getSceneObject<UIKitMLAsset>('start-panel');
@@ -91,6 +104,15 @@ export class StartScreenSystem extends createSystem({}) {
       this.go('home');
     });
     ui.on('start-crew-play', () => this.close());
+    // Seat choice (F1.2): alone or before the crewmate is aboard it is taken at once; once aboard it asks to swap.
+    for (const seat of SEAT_IDS) {
+      for (const page of ['start', 'crew']) {
+        ui.on(`${page}-seat-${seat}`, () => {
+          seating.ask(seat);
+          this.showSeats();
+        });
+      }
+    }
 
     startScreen.show = () => {
       if (crewControls.room) {
@@ -152,6 +174,7 @@ export class StartScreenSystem extends createSystem({}) {
       click: (id) => ui.click(id),
       text: (id) => ui.text(id),
       shown: (id) => ui.isShown(id),
+      selected: (id) => self.selected.get(id) ?? false,
       position: () => ui.object.position.toArray(),
     };
   }
@@ -161,6 +184,7 @@ export class StartScreenSystem extends createSystem({}) {
     if (ui == null || this.page === null) {
       return;
     }
+    this.showSeats();
     if (this.readySince > 0 && performance.now() - this.readySince > READY_MS) {
       this.close();
       return;
@@ -234,6 +258,7 @@ export class StartScreenSystem extends createSystem({}) {
     if (ui == null) {
       return;
     }
+    startScreen.open = this.page !== null;
     if (this.page === null) {
       ui.setVisible(false);
       return;
@@ -249,6 +274,29 @@ export class StartScreenSystem extends createSystem({}) {
       ui.setText('start-code', codeShown(this.typed));
     }
     this.showCrew();
+    this.shownSeats = '';
+    this.showSeats();
+  }
+
+  /** Light the seat this player sits in, and say on the crew page where both sit. */
+  private showSeats(): void {
+    const ui = this.ui;
+    if (ui == null || this.page === null) {
+      return;
+    }
+    const key = `${seating.mine}:${seating.crew}:${netLink.connected}:${seating.swap}`;
+    if (key === this.shownSeats) {
+      return;
+    }
+    this.shownSeats = key;
+    for (const seat of SEAT_IDS) {
+      for (const page of ['start', 'crew']) {
+        const id = `${page}-seat-${seat}`;
+        this.selected.set(id, seat === seating.mine);
+        ui.asset.getElementById(id)?.setProperties({ variant: seat === seating.mine ? 'primary' : 'secondary' } as never);
+      }
+    }
+    ui.setText('start-crew-seats', seatsLine(seating.mine, seating.crew, netLink.connected, seating.swap));
   }
 
   /** Fill in the crew page, and start the game once the crewmate is aboard. */

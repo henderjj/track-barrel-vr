@@ -3,12 +3,13 @@
   menu button) on the left controller, or M or the Game menu button on the
   flat page. Every setting shows all its choices at once, the one in effect
   highlighted, so one press picks any of them: coat colours as swatches,
-  character height as a 5 cm stepper, everything else as a row of up to four
+  eye height as a 5 cm stepper, everything else as a row of up to four
   buttons (row-<key>-0 to -3, labelled and shown by the menu system from
   LIVE_ITEMS in src/live-settings.ts). The crew section shows only in a crew.
   Practice holds shortcuts straight to a situation worth testing, one per
   feature, so a headset check never has to play its way there (the cabin's:
-  sit in either seat; the drive's: drive, or put the tank back at its start).
+  sit in either seat; the drive's: drive, or put the tank back at its start). You → Seat swaps seats (in a crew, once the
+  crewmate agrees) and Calibration measures the eyes and reach again.
 -->
 <style>
   .root {
@@ -222,20 +223,28 @@
       </div>
     </div>
     <div class="setting">
-      <div class="label">Character height</div>
+      <div class="label">Eye height</div>
       <div class="choices">
         <Button id="height-down" class="stepper" size="sm" variant="secondary">-</Button>
         <div id="height-value" class="amount">-</div>
         <Button id="height-up" class="stepper" size="sm" variant="secondary">+</Button>
-        <Button id="height-own" class="own" size="sm" variant="secondary">Your own</Button>
+        <Button id="height-own" class="own" size="sm" variant="secondary">Eye point</Button>
       </div>
     </div>
     <div class="setting">
       <div class="label">Seat</div>
       <div class="choices">
         <Button id="menu-reseat" class="choice" size="sm" variant="secondary">Back in my seat</Button>
+        <Button id="menu-swap" class="choice" size="sm" variant="secondary">Swap seats</Button>
       </div>
     </div>
+    <div class="setting">
+      <div class="label">Calibration</div>
+      <div class="choices">
+        <Button id="menu-calibrate" class="choice" size="sm" variant="secondary">Calibrate again</Button>
+      </div>
+    </div>
+    <div id="menu-calib-status" class="hint">Not calibrated yet.</div>
   </div>
 
   <div class="section">

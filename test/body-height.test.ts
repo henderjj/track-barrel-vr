@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  clampCharacterHeight,
-  DEFAULT_CHARACTER_HEIGHT,
-  EYES_BELOW_TOP,
+  clampEyeRaise,
   glide,
   GLIDE_SPEED,
-  MAX_OWN_EYE,
+  MAX_EYE_RAISE,
   MAX_RAISE,
   rigOffset,
   SEATED_EYE,
@@ -51,44 +49,43 @@ describe('upright eye height', () => {
 });
 
 describe('rig offset', () => {
-  it('leaves a player standing at their own height alone', () => {
-    const target = targetEyeHeight({ height: 0, seated: false });
-    expect(target).toBeNull();
-    expect(rigOffset(target, 1.72)).toBe(0);
-    expect(rigOffset(target, 1.2)).toBe(0);
+  it('puts the eyes on the seat\'s eye point, seated or standing, whoever is wearing the headset', () => {
+    for (const seated of [true, false]) {
+      const target = targetEyeHeight({ raise: 0, seated });
+      expect(target).toBe(SEATED_EYE);
+      for (const eye of [1.1, 1.25, 1.6, 1.85]) {
+        expect(eye + rigOffset(target, eye)).toBeCloseTo(SEATED_EYE, 6);
+      }
+    }
   });
 
-  it('pulls down a floor set far too low', () => {
-    expect(rigOffset(null, 2.2)).toBeCloseTo(MAX_OWN_EYE - 2.2, 6);
+  it('raises or drops the eyes as chosen, within 15 cm of the eye point', () => {
+    expect(1.2 + rigOffset(targetEyeHeight({ raise: 0.05, seated: true }), 1.2)).toBeCloseTo(SEATED_EYE + 0.05, 6);
+    expect(1.2 + rigOffset(targetEyeHeight({ raise: -0.1, seated: true }), 1.2)).toBeCloseTo(SEATED_EYE - 0.1, 6);
+    expect(targetEyeHeight({ raise: 0.4, seated: true })).toBeCloseTo(SEATED_EYE + MAX_EYE_RAISE, 6);
   });
 
-  it('puts the eyes at a chosen height, whoever is wearing the headset', () => {
-    const target = targetEyeHeight({ height: 1.6, seated: false })!;
-    expect(target).toBeCloseTo(1.6 - EYES_BELOW_TOP, 6);
-    expect(1.75 + rigOffset(target, 1.75)).toBeCloseTo(target, 6);
-    expect(1.3 + rigOffset(target, 1.3)).toBeCloseTo(target, 6);
+  it('keeps a raise on 5 cm steps', () => {
+    expect(clampEyeRaise(0.07)).toBe(0.05);
+    expect(clampEyeRaise(-0.5)).toBe(-0.15);
+    expect(clampEyeRaise(Number.NaN)).toBe(0);
+    expect(Object.is(clampEyeRaise(-0.01), -0)).toBe(false);
   });
 
-  it('raises a seated player to a little under average eye height, unless they chose a height', () => {
-    expect(SEATED_EYE).toBeLessThan(DEFAULT_CHARACTER_HEIGHT - EYES_BELOW_TOP);
-    expect(1.15 + rigOffset(targetEyeHeight({ height: 0, seated: true }), 1.15)).toBeCloseTo(SEATED_EYE, 6);
-    expect(1.15 + rigOffset(targetEyeHeight({ height: 1.9, seated: true }), 1.15)).toBeCloseTo(1.9 - EYES_BELOW_TOP, 6);
-  });
-
-  it('puts a seated player\'s eyes on either seat\'s eye point, from any chair', () => {
+  it('puts the eyes on either seat\'s eye point, from any chair or standing', () => {
     // The seat system puts the play space's floor on the seat's floor (src/systems/seat-system.ts).
     // Check each control the tank adds for reach from these eyes the same way (knee to chest height).
     for (const id of SEAT_IDS) {
       const seat = SEATS[id];
-      for (const chairEye of [1.1, 1.2, 1.3]) {
-        const eye = seat.floorY + chairEye + rigOffset(targetEyeHeight({ height: 0, seated: true }), chairEye);
+      for (const eyeInRoom of [1.1, 1.2, 1.3, 1.65]) {
+        const eye = seat.floorY + eyeInRoom + rigOffset(targetEyeHeight({ raise: 0, seated: true }), eyeInRoom);
         expect(eye).toBeCloseTo(seat.eye[1], 6);
       }
     }
   });
 
   it('keeps the loading drill in reach from a chair when seated (spike S4)', () => {
-    const raised = rigOffset(targetEyeHeight({ height: 0, seated: true }), 1.2);
+    const raised = rigOffset(targetEyeHeight({ raise: 0, seated: true }), 1.2);
     const heights = [...RACK_SLOTS.map((slot) => slot[1]), BREECH_MOUTH[1], LEVER_PIVOT[1] + LEVER_LENGTH, LEVER_PIVOT[1]];
     for (const y of heights) {
       expect(y - raised).toBeGreaterThan(0.45);
@@ -108,11 +105,10 @@ describe('rig offset', () => {
 });
 
 describe('height settings', () => {
-  it('reads a character height and seated play from the URL, keeping heights in range', () => {
-    expect(parseSettings('?height=1.8&seated=1')).toMatchObject({ height: 1.8, seated: true });
-    expect(parseSettings('').height).toBe(0);
-    expect(parseSettings('?height=3').height).toBe(2);
-    expect(parseSettings('?height=0.5').height).toBe(1.4);
-    expect(clampCharacterHeight(0)).toBe(0);
+  it('reads an eye raise and seated or standing play from the URL, seated by default', () => {
+    expect(parseSettings('?raise=0.05&seated=0')).toMatchObject({ raise: 0.05, seated: false });
+    expect(parseSettings('')).toMatchObject({ raise: 0, seated: true });
+    expect(parseSettings('?raise=1').raise).toBe(0.15);
+    expect(parseSettings('?raise=-0.12').raise).toBe(-0.1);
   });
 });
