@@ -7,11 +7,12 @@ import { CrewBotSystem } from './systems/crew-bot-system.js';
 import { CrewStatusSystem } from './systems/crew-status-system.js';
 import { DriveSystem } from './systems/drive-system.js';
 import { DriverStationSystem } from './systems/driver-station-system.js';
+import { FiringSystem } from './systems/firing-system.js';
 import { FrameRateSystem } from './systems/frame-rate-system.js';
 import { GameMenuSystem } from './systems/game-menu-system.js';
 import { GripSystem } from './systems/grip-system.js';
-import { LoadingDrillSystem } from './systems/loading-drill-system.js';
 import { LeverSystem } from './systems/lever-system.js';
+import { LoadingSystem } from './systems/loading-system.js';
 import { MechanismBenchSystem } from './systems/mechanism-bench-system.js';
 import { MechanismSystem } from './systems/mechanism-system.js';
 import { NetSystem } from './systems/net-system.js';
@@ -61,11 +62,14 @@ World.create(
   world.registerSystem(MechanismSystem);
   // The turret (F1.8): after the kit has moved its controls, before OwnHandsSystem draws hands on them. It turns a seated gunner's play space with the turret.
   world.registerSystem(TurretSystem);
+  // Loading and firing (F1.10): after the turret (the gun's elevation, the power grip's trigger), before the throwables and the hands drawn on the lever.
+  world.registerSystem(LoadingSystem);
+  // The shell's flight, after LoadingSystem fires it.
+  world.registerSystem(FiringSystem);
   // After the kit has moved its levers: it reads them into the drive (DriveSystem drives by them next frame) and draws the gauges.
   world.registerSystem(DriverStationSystem);
   world.registerSystem(LeverSystem);
   world.registerSystem(MechanismBenchSystem);
-  world.registerSystem(LoadingDrillSystem);
   // After the systems it drives; their scripted hands are functions of time, so a frame late costs nothing.
   world.registerSystem(CrewBotSystem);
   // After the controls have moved, so hands drawn on them (grip locking) sit on them this frame.

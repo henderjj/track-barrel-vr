@@ -31,7 +31,9 @@ export const HoldKind = {
   TillerRight: 3,
   GearLever: 4,
   HandThrottle: 5,
-  /** The breech lever's handle (LoadingDrillSystem, spike S4). 6–9 are kept for Phase 1's wheels, periscope and shell. */
+  /** A shell in the hand (LoadingSystem, F1.10): drawn in the hand, so the hand isn't locked. */
+  Shell: 9,
+  /** The breech lever's handle (LoadingSystem, F1.10). 8 is kept for Phase 1's periscope. */
   BreechLever: 10,
   /** The gunner's manual traverse crank and elevation handwheel (TurretSystem, F1.8). */
   TraverseCrank: 6,

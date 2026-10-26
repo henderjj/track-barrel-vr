@@ -7,7 +7,7 @@ The turret turns and the gun elevates. The gunner lays the gun with three contro
 - The **gunner** sits right of the breech, facing the gun. In front of them, below chest height:
   - the **elevation handwheel** on the left, under the breech's right edge, for the left hand. Turning it clockwise (as the gunner sees it) raises the gun, 3° a turn, from 10° down to 20° up; it stops with a firm buzz at either end and ticks every eighth of a turn. Either hand or both can turn it by its rim.
   - the **traverse crank** right of it, for the right hand: one turn of its knob traverses the turret 2°, anticlockwise to the left, clockwise to the right, with a tick each quarter turn. It is for the last few degrees.
-  - the **power traverse grip**, lower down on the right beside the seat's front edge: a twist grip standing up from a pedestal. Twist it left (anticlockwise seen from above) and the turret traverses left, right to go right; the further it is twisted, the faster. Let go and it springs back and the turret stops. Its trigger is the gun's trigger once firing comes (F1.10).
+  - the **power traverse grip**, lower down on the right beside the seat's front edge: a twist grip standing up from a pedestal. Twist it left (anticlockwise seen from above) and the turret traverses left, right to go right; the further it is twisted, the faster. Let go and it springs back and the turret stops. Its trigger fires the gun ([loading-firing.md](loading-firing.md), F1.10).
 - **Power traverse runs off the engine**, Tiger-style: at full twist the turret turns 6°/s with the engine at idle and up to 24°/s at top RPM. With the tank parked, the driver's hand throttle (F1.5) raises the idle and so the traverse. The turret speeds up and slows down at no more than 40°/s², so it never lurches.
 - The **basket turns the gunner with it**: their head and hands stay put relative to the seat, the breech and the controls; the hull, the driver and the world turn past. The comfort vignette counts the turret's turn as well as the hull's for the gunner.
 - The **gun** elevates on trunnions in the turret's front plate, so its breech dips beside the gunner as the muzzle rises.
@@ -27,7 +27,7 @@ The turret turns and the gun elevates. The gunner lays the gun with three contro
 | Elevation wheel | turret (0.29, 1.78, −0.56), tilted back 20° | Left hand, 47 cm below the eyes and 36 cm ahead; its rim clears the breech at every elevation |
 | Traverse crank | turret (0.60, 1.74, −0.55), tilted back 20° | Right hand, 51 cm below the eyes and 35 cm ahead |
 | Power grip | turret (0.72, 1.50, −0.42), upright; handle 1.535–1.645 m | Right hand, low beside the seat's front edge, 22 cm ahead |
-| Gun trunnions | the turret's front plate, at the gun's height (2.05 m) | The mantlet stays at the plate as it elevates; the breech reaches 1.2 m back beside the gunner |
+| Gun trunnions | the turret's front plate, at the gun's height (2.05 m) | The mantlet stays at the plate as it elevates; the breech's mouth is 0.45 m behind them and 0.5 m ahead of the gunner's eyes (1.3 m behind them until F1.10 moved it forward for loading) |
 
 Every handle is between knee and chest height, 20 to 65 cm ahead of a seated gunner's eyes, and far enough from the others that a squeeze takes the one meant (`test/turret.test.ts`).
 

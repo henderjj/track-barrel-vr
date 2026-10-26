@@ -21,6 +21,7 @@ import {
   VISION_SLIT,
 } from '../sim/cabin.js';
 import { MANTLET_DEPTH, POWER_GRIP, STATION, TRUNNION } from '../sim/turret.js';
+import { binParts, boardParts, BREECH_HOLE, breechFittings, rackParts } from './loading.scene-asset.js';
 
 /**
  * The tank, seen from inside: the hull with the driver's seat, and the
@@ -240,6 +241,8 @@ function turretParts(): Part[] {
   parts.push({ geometry: rail, color: STEEL_LIGHT, position: [0, floor + 0.55, 0] });
   const gunner = SEATS.gunner;
   parts.push(...seatParts(gunner.cushion, gunner.floorY));
+  // Loading (F1.10): the ready rack on the right wall, the casing bin under the breech and the loading board's backing.
+  parts.push(...rackParts(), ...binParts(), ...boardParts());
   return parts;
 }
 
@@ -263,16 +266,26 @@ function stationParts(): Part[] {
 }
 
 /**
- * The gun, in gun space: its origin on the trunnions (place it at
+ * The gun's cradle, in gun space: its origin on the trunnions (place it at
  * (0, TRUNNION.y, TRUNNION.z) in turret space) and elevated with
- * `rotation.x`. The mantlet, barrel and muzzle brake are outside the
- * turret's front plate; the breech block reaches back beside the gunner.
+ * `rotation.x`. Only the mantlet: the barrel and breech recoil through it
+ * (gunRecoilParts), and the gunsight hangs on it (F1.9).
  */
 function gunParts(): Part[] {
+  const z0 = TRUNNION.z;
+  return [box([0.9, 0.32, MANTLET_DEPTH], [0, 0.01, TURRET.front - MANTLET_DEPTH / 2 + 0.01 - z0], PAINT)];
+}
+
+/**
+ * What recoils when the gun fires (F1.10), gun space with the gun in
+ * battery: the barrel and muzzle brake outside the front plate, and the
+ * breech beside the gunner, with a square mouth at its back that a shell
+ * goes into, the guides its block slides in and the lever's axle.
+ */
+function gunRecoilParts(): Part[] {
   const t = HULL.wall;
   const z0 = TRUNNION.z;
   const parts: Part[] = [];
-  parts.push(box([0.9, 0.32, MANTLET_DEPTH], [0, 0.01, TURRET.front - MANTLET_DEPTH / 2 + 0.01 - z0], PAINT));
   // Thicker at the mantlet end (+Z once turned).
   const barrel = new CylinderGeometry(GUN.barrelRadius * 1.15, GUN.barrelRadius, GUN.barrelLength, 10, 1);
   barrel.rotateX(Math.PI / 2);
@@ -281,13 +294,21 @@ function gunParts(): Part[] {
   const brake = new CylinderGeometry(0.09, 0.09, 0.26, 10, 1);
   brake.rotateX(Math.PI / 2);
   parts.push({ geometry: brake, color: PAINT_DARK, position: [0, 0, muzzle + 0.12] });
-  const breechFront = TURRET.front + t - z0;
-  const breechLength = GUN.breechBack - TURRET.front - t;
-  parts.push(box([2 * GUN.breechHalfWidth, 0.3, breechLength], [0, 0, breechFront + breechLength / 2], STEEL));
-  // The breech's opening at its back, a darker ring standing 5 mm proud.
-  const mouth = new CylinderGeometry(0.075, 0.075, 0.03, 10, 1);
-  mouth.rotateX(Math.PI / 2);
-  parts.push({ geometry: mouth, color: RUBBER, position: [0, 0, GUN.breechBack + 0.01 - z0] });
+  // The breech: four bars round the square mouth, the whole way through.
+  const front = TURRET.front + t - z0;
+  const back = GUN.breechBack - z0;
+  const length = back - front;
+  const mid = (front + back) / 2;
+  const w = GUN.breechHalfWidth;
+  const h = 0.15;
+  const hole = BREECH_HOLE;
+  parts.push(box([2 * w, h - hole, length], [0, (h + hole) / 2, mid], STEEL));
+  parts.push(box([2 * w, h - hole, length], [0, -(h + hole) / 2, mid], STEEL));
+  parts.push(box([w - hole, 2 * hole, length], [-(w + hole) / 2, 0, mid], STEEL));
+  parts.push(box([w - hole, 2 * hole, length], [(w + hole) / 2, 0, mid], STEEL));
+  // The chamber's far end, dark, so the mouth reads as a hole: 3 cm ahead of the breech, clear of a rammed shell's driving band.
+  parts.push(box([2 * hole, 2 * hole, 0.01], [0, 0, front - 0.03], RUBBER));
+  parts.push(...breechFittings(w));
   return parts;
 }
 
@@ -300,10 +321,18 @@ export function createHull(): Mesh {
   return mesh;
 }
 
-/** The gun in one mesh, in gun space: place it on the trunnions, (0, TRUNNION.y, TRUNNION.z) in turret space, and elevate it with rotation.x. */
+/**
+ * The gun, in gun space: place it on the trunnions, (0, TRUNNION.y,
+ * TRUNNION.z) in turret space, and elevate it with rotation.x. The mesh
+ * is the cradle; its child 'Gun Recoil' (the barrel and breech) slides
+ * back along +Z when it fires (LoadingSystem).
+ */
 export function createGun(): Mesh {
   const mesh = new Mesh(mergeParts(gunParts()), material);
   mesh.name = 'Gun';
+  const recoil = new Mesh(mergeParts(gunRecoilParts()), material);
+  recoil.name = 'Gun Recoil';
+  mesh.add(recoil);
   return mesh;
 }
 
