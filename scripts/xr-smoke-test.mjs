@@ -5,16 +5,20 @@
  * Drives the IWSDK managed browser (an emulated Meta Quest 3, through IWER,
  * IWSDK's browser-based XR emulator) with the @iwsdk/cli surface:
  *
- *  0. enters an immersive session, picks Play solo on the start screen with
- *     a controller ray, and works the game menu (Y) with the ray;
+ *  0. enters an immersive session, picks a seat and then Play solo on the
+ *     start screen with a controller ray, and works the game menu (Y) with
+ *     the ray;
+ *  0b. calibrates (F1.2): seated, the head held still puts the eyes on the
+ *     seat's eye point and both hands held out record the reach; standing,
+ *     the eyes land on the same point;
  *  1. checks this player's own hands are drawn and posed by the controller
  *     (flat, fist, point, thumbs-up);
  *  1b. sits in the driver's seat (the cabin, F1.1): the eyes over its eye
  *     point, a lean stopped at the head box's edge, a recentre put back in
  *     the seat, and the game menu's Practice row moving them to the
  *     gunner's seat in the turret basket and back;
- *  1c. picks a character height and seated play and checks the eyes and
- *     hands are raised to it;
+ *  1c. raises the eyes from the menu's eye height, and stops a head that
+ *     stands up out of the seat under the roof;
  *  2. checks the 90 Hz request ran and the platform report (spike S8);
  *  2c. looks through the gunsight (spike S1): it opens as the head leans in,
  *     renders a picture of the range, closes as it leans back;
@@ -230,6 +234,16 @@ async function startScreenAndMenu() {
     return s.visible && s.at[2] < -0.5 ? s : null;
   }, 10000).catch(() => evalInApp('({ page: window.__startScreen.page, visible: window.__startScreen.visible, at: window.__startScreen.position() })'));
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-start-screen.png'], {});
+  // Seat choice (F1.2): Gunner, then back to Driver.
+  const seatPick = () => evalInApp('({ mine: window.__seats.mine, saved: localStorage.getItem("track-barrel.settings") ?? "", driverLit: window.__startScreen.selected("start-seat-driver"), gunnerLit: window.__startScreen.selected("start-seat-gunner") })');
+  await rayClick(elementPosition('start-panel', 'start-seat-gunner'));
+  const gunnerPick = seatPick();
+  await rayClick(elementPosition('start-panel', 'start-seat-driver'));
+  const driverPick = seatPick();
+  check('The start screen picks the seat, lights it and keeps it for next time',
+    gunnerPick.mine === 'gunner' && gunnerPick.gunnerLit && !gunnerPick.driverLit && gunnerPick.saved.includes('seat=gunner') &&
+      driverPick.mine === 'driver' && driverPick.driverLit && !driverPick.saved.includes('seat='),
+    `${JSON.stringify(gunnerPick)} then ${JSON.stringify(driverPick)}`);
   await rayClick(elementPosition('start-panel', 'start-solo'));
   const after = evalInApp('({ page: window.__startScreen.page, mode: window.__startScreen.mode, visible: window.__startScreen.visible })');
   check('The start screen stands in front of the player in VR, and a ray click on Play solo starts the game',
@@ -251,17 +265,18 @@ async function startScreenAndMenu() {
   await rayClick(elementPosition('menu-panel', 'row-hud-0'));
   const on = hud();
   const seatedNow = () => evalInApp('window.__body.state.choice.seated');
-  await rayClick(elementPosition('menu-panel', 'row-seated-1'));
-  const seated = seatedNow();
+  const seatedFirst = seatedNow();
   await rayClick(elementPosition('menu-panel', 'row-seated-0'));
   const standing = !seatedNow();
-  const heightNow = () => evalInApp('window.__body.state.choice.height');
+  await rayClick(elementPosition('menu-panel', 'row-seated-1'));
+  const seated = seatedNow();
+  const raiseNow = () => evalInApp('({ raise: window.__body.state.choice.raise, shown: window.__gameMenu.text("height-value") })');
   await rayClick(elementPosition('menu-panel', 'height-up'));
-  const up1 = heightNow();
+  const up1 = raiseNow();
   await rayClick(elementPosition('menu-panel', 'height-up'));
-  const up2 = heightNow();
+  const up2 = raiseNow();
   await rayClick(elementPosition('menu-panel', 'height-own'));
-  const own = heightNow();
+  const own = raiseNow();
   const swatches = () => evalInApp(`(() => { const a = window.__debug.world.getSceneObject('menu-panel'); const out = []; for (let i = 0; i < 8; i++) { const e = a.getElementById('coat-' + i); const size = e.size.peek(); out.push({ ring: String(e.properties.peek().borderColor) !== 'rgba(0, 0, 0, 0)', round: Math.abs(size[0] - size[1]) < 0.5 }); } return out; })()`);
   await rayClick(elementPosition('menu-panel', 'coat-2'));
   await rayClick(elementPosition('menu-panel', 'coat-5'));
@@ -275,9 +290,9 @@ async function startScreenAndMenu() {
   check('Y opens the game menu in front of the player, its ray turns the perf HUD off and on, and it closes again',
     opened.open && opened.at[2] < -0.5 && opened.exit && !off.on && off.offLit && on.on && !on.offLit && !closed,
     `opened ${opened.open} at ${fmt(opened.at)}, HUD ${off.on ? 'on' : 'off'} then ${on.on ? 'on' : 'off'}, closed ${!closed}`);
-  check('The game menu picks seated or standing play, and steps the character height 5 cm at a time',
-    seated && standing && up1 > 0 && Math.abs(up2 - up1 - 0.05) < 1e-6 && own === 0,
-    `seated ${seated}, standing ${standing}, height ${up1} then ${up2} m, then ${own === 0 ? 'their own' : own}`);
+  check('The game menu picks standing or seated play (seated by default), and steps the eye height 5 cm at a time',
+    seatedFirst && standing && seated && up1.raise === 0.05 && up1.shown === '+5 cm' && up2.raise === 0.1 && own.raise === 0 && own.shown === '0 cm',
+    `seated first ${seatedFirst}, standing ${standing}, seated ${seated}, eyes ${up1.shown} then ${up2.shown}, then ${own.shown}`);
 
   // B on the right controller closes the menu too.
   const bButton = async () => {
@@ -298,8 +313,75 @@ async function startScreenAndMenu() {
 
 const toRig = toOrigin;
 
+/** Calibration's state, and where the head is in hull space. */
+const calState = () => evalInApp('({ step: window.__calibration.step, eye: window.__calibration.eye, reach: window.__calibration.reach, sign: window.__calibration.sign, calibrated: window.__body.state.calibratedEye, bodyReach: window.__body.state.reach, head: window.__seats.head(), seatEye: window.__seats.eye(window.__seats.mine), status: window.__gameMenu.text("menu-calib-status") })');
+
+/**
+ * 0b. Calibration (F1.2): once the start screen and the menu are out of the
+ *     way a sign asks the player to sit back and look ahead. Held still at a
+ *     chair's height, the head's height is taken and the eyes land on the
+ *     driver's eye point; both hands held out with both grips squeezed take
+ *     the reach, and the sign goes. Standing, calibrating again puts the
+ *     eyes on the same point.
+ */
+async function calibrationStep() {
+  iwsdk(['xr', 'set-device-state'], {});
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: 0, y: 1.2, z: 0 } });
+  evalInApp('(window.__seats.reseat(), window.__calibration.start(), true)');
+  const asking = await waitFor('the eyes taken', () => {
+    const c = calState();
+    return c.step === 'reach' && Math.abs(c.head[1] - c.seatEye[1]) < 0.005 ? c : null;
+  }, 8000).catch(() => calState());
+  check('Calibration: a seated head held still is taken as the eye height, and the eyes land on the seat\'s eye point',
+    asking.step === 'reach' && Math.abs(asking.eye - 1.2) < 0.005 && Math.abs(asking.calibrated - 1.2) < 0.005 && Math.abs(asking.head[1] - asking.seatEye[1]) < 0.005 && asking.sign.startsWith('Hold both hands out'),
+    `step ${asking.step}, eyes taken ${asking.eye?.toFixed?.(3)} m, head at ${fmt(asking.head)} for ${fmt(asking.seatEye)}, sign "${asking.sign}"`);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-calibration.png'], {});
+
+  // Both hands 55 cm ahead and 15 cm out to the sides: 57 cm from the eyes, level.
+  iwsdk(['xr', 'set-transform'], { device: 'controller-left', position: { x: -0.15, y: 1.1, z: -0.55 } });
+  iwsdk(['xr', 'set-transform'], { device: 'controller-right', position: { x: 0.15, y: 1.1, z: -0.55 } });
+  await sleep(300);
+  for (const device of ['controller-left', 'controller-right']) {
+    iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value: 1 }] });
+  }
+  const reached = await waitFor('the reach taken', () => {
+    const c = calState();
+    return c.step === 'done' || c.step === 'off' ? c : null;
+  }, 5000).catch(() => calState());
+  for (const device of ['controller-left', 'controller-right']) {
+    iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value: 0 }] });
+  }
+  // Measured from the grip poses, which sit a few centimetres from the controllers' own.
+  const expected = evalInApp(`(() => { const p = window.__debug.world.player; const h = p.head.getWorldPosition(p.position.clone()); const d = (s) => { const g = p.gripSpaces[s].getWorldPosition(p.position.clone()); return Math.hypot(g.x - h.x, g.z - h.z); }; return (d('left') + d('right')) / 2; })()`);
+  const gone = await waitFor('the calibration sign to go', () => {
+    const c = calState();
+    return c.step === 'off' && c.sign === '' ? c : null;
+  }, 6000).catch(() => calState());
+  check('Calibration: both hands held out with both grips squeezed take the reach, and the sign goes',
+    expected > 0.45 && Math.abs(reached.reach - expected) < 0.01 && Math.abs(reached.bodyReach - expected) < 0.01 && gone.step === 'off' && gone.sign === '' && gone.status.includes(`reach ${Math.round(reached.reach * 100)} cm`),
+    `reach ${reached.reach?.toFixed?.(3)} m for ${expected.toFixed(3)}, then ${gone.step}, menu says "${gone.status}"`);
+
+  // Standing mode: calibrated standing, the eyes land on the same point.
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: 0, y: 1.68, z: 0 } });
+  evalInApp('(window.__body.choose({ raise: 0, seated: false }), true)');
+  const standing = await waitFor('the standing eyes taken', () => {
+    const c = calState();
+    return c.step === 'reach' && Math.abs(c.head[1] - c.seatEye[1]) < 0.005 ? c : null;
+  }, 8000).catch(() => calState());
+  check('Calibration: standing, choosing standing play calibrates again and the eyes land on the same eye point',
+    standing.step === 'reach' && Math.abs(standing.eye - 1.68) < 0.005 && Math.abs(standing.head[1] - standing.seatEye[1]) < 0.005 && standing.sign.startsWith('Hold both hands out'),
+    `step ${standing.step}, eyes taken ${standing.eye?.toFixed?.(3)} m, head at ${fmt(standing.head)} for ${fmt(standing.seatEye)}`);
+  // Back to seated play with the headset where the later steps put it, skipping the reach this time.
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp('(window.__body.choose({ raise: 0, seated: true }), true)');
+  await waitFor('the seated eyes again', () => calState().step === 'reach', 8000).catch(() => null);
+  evalInApp('(window.__calibration.skip(), true)');
+  await waitFor('calibration finished', () => calState().step === 'off', 6000).catch(() => null);
+  await sleep(300);
+}
+
 /** Where this player sits: their seat, head and its eye point (hull space), and the play space's height. */
-const seated = () => evalInApp('({ mine: window.__seats.mine, head: window.__seats.head(), eye: window.__seats.eye(window.__seats.mine), rigY: window.__debug.world.player.position.y, fixes: { ...window.__seats.fixes } })');
+const seated = () => evalInApp('({ mine: window.__seats.mine, head: window.__seats.head(), eye: window.__seats.eye(window.__seats.mine), rigY: window.__debug.world.player.position.y, offset: window.__body.state.offset, fixes: { ...window.__seats.fixes } })');
 const flatGap = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 
 /**
@@ -316,9 +398,9 @@ async function seatStep() {
     const s = seated();
     return s.mine === 'driver' && flatGap(s.head, s.eye) < 0.01 ? s : null;
   }, 5000).catch(() => seated());
-  check("Solo, the player sits in the driver's seat with their eyes over its eye point",
-    start.mine === 'driver' && flatGap(start.head, start.eye) < 0.01 && Math.abs(start.rigY) < 1e-6,
-    `${start.mine}, head ${fmt(start.head)}, eye point ${fmt(start.eye)}, floor at ${start.rigY.toFixed(3)} m`);
+  check("Solo, the player sits in the driver's seat with their eyes on its eye point",
+    start.mine === 'driver' && flatGap(start.head, start.eye) < 0.01 && Math.abs(start.head[1] - start.eye[1]) < 0.005 && Math.abs(start.rigY - start.offset) < 1e-6,
+    `${start.mine}, head ${fmt(start.head)}, eye point ${fmt(start.eye)}, floor at ${(start.rigY - start.offset).toFixed(3)} m`);
   const eye = start.eye;
   iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([eye[0] + 0.1, eye[1] - 0.15, eye[2] - 3]) });
   await sleep(500);
@@ -356,8 +438,8 @@ async function seatStep() {
   const lit = evalInApp('window.__gameMenu.selected("row-seat-1")');
   await menuButtonPress();
   check("The game menu's Practice row sits the player in the gunner's seat, on the turret basket's floor",
-    gunner.mine === 'gunner' && flatGap(gunner.head, gunner.eye) < 0.01 && Math.abs(gunner.rigY - 0.8) < 0.01 && lit,
-    `${gunner.mine}, head ${fmt(gunner.head)}, eye point ${fmt(gunner.eye)}, floor at ${gunner.rigY.toFixed(3)} m, Gunner ${lit ? '' : 'not '}highlighted`);
+    gunner.mine === 'gunner' && flatGap(gunner.head, gunner.eye) < 0.01 && Math.abs(gunner.head[1] - gunner.eye[1]) < 0.005 && Math.abs(gunner.rigY - gunner.offset - 0.8) < 0.01 && lit,
+    `${gunner.mine}, head ${fmt(gunner.head)}, eye point ${fmt(gunner.eye)}, floor at ${(gunner.rigY - gunner.offset).toFixed(3)} m, Gunner ${lit ? '' : 'not '}highlighted`);
   const g = gunner.eye;
   iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([g[0] - 1.2, g[1] - 0.5, g[2] - 2.5]) });
   await sleep(500);
@@ -667,6 +749,7 @@ async function main() {
   check('XR session active', iwsdk(['xr', 'status'], {}).result.sessionActive);
   await sleep(500);
   await startScreenAndMenu();
+  await calibrationStep();
   const ownHands = evalInApp('({ shown: window.__ownHands.shown(), right: window.__ownHands.position("right") })');
   check('This player sees their own hands', ownHands.shown.length === 2, `shown: ${ownHands.shown.join(', ') || 'none'}, right at ${fmt(ownHands.right)}`);
   // 1a. Phase 3 posed hands: the fingers follow the controller's trigger,
@@ -708,32 +791,27 @@ async function main() {
 
   await seatStep();
 
-  // 1c. Character height and seated play: a chosen height puts the eyes at
-  //     it, seated play lifts a seated player to standing eye height, and
-  //     back at their own height nothing moves. The rig carries the hands.
-  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: 0, y: 1.6, z: 0 } });
-  await sleep(300);
-  const bodyState = () => evalInApp('({ ...window.__body.state, rigY: window.__debug.world.player.position.y, hand: window.__ownHands.position("right") })');
-  evalInApp('(window.__body.choose({ height: 1.8, seated: false }), true)');
-  const tall = await waitFor('the 1.8 m character', () => { const b = bodyState(); return Math.abs(b.eye - 1.67) < 0.01 && b; }, 5000).catch(() => bodyState());
-  check('A chosen character height puts the eyes at it', Math.abs(tall.eye - 1.67) < 0.01 && Math.abs(tall.rigY - 0.07) < 0.01,
-    `eyes at ${tall.eye?.toFixed(3)} m, rig raised ${tall.rigY?.toFixed(3)} m`);
-  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: 0, y: 1.15, z: 0 } });
-  await sleep(300);
-  evalInApp('(window.__body.choose({ height: 0, seated: true }), true)');
-  // Mirrors SEATED_EYE in src/sim/body-height.ts.
-  const seatedEye = 1.45;
-  const seated = await waitFor('seated play', () => { const b = bodyState(); return Math.abs(b.eye - seatedEye) < 0.01 && b; }, 5000).catch(() => bodyState());
-  check('Seated play lifts a seated player to a little under average eye height, hands too',
-    Math.abs(seated.eye - seatedEye) < 0.01 && Math.abs(seated.rigY - (seatedEye - 1.15)) < 0.01 && seated.hand[1] > tall.hand[1] + 0.2,
-    `eyes at ${seated.eye?.toFixed(3)} m for ${seatedEye.toFixed(3)} m, rig raised ${seated.rigY?.toFixed(3)} m, right hand at ${fmt(seated.hand)}`);
-  evalInApp('(window.__body.choose({ height: 0, seated: false }), true)');
-  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: 0, y: 1.6, z: 0 } });
-  await sleep(300);
-  const own = bodyState();
-  check('At their own height, standing, the player is not moved', own.rigY === 0 && own.offset === 0, `rig at ${own.rigY} m`);
+  // 1c. Eye height (F1.2): the menu's +5 cm raises the eyes above the
+  //     driver's eye point, hands too; standing up out of the chair stops
+  //     the head under the roof.
+  const bodyState = () => evalInApp('({ ...window.__body.state, head: window.__seats.head(), eye: window.__seats.eye("driver"), roof: window.__seats.fixes.roof, hand: window.__ownHands.position("right") })');
+  const level = bodyState();
+  evalInApp('(window.__body.choose({ raise: 0.05, seated: true }), true)');
+  const raised = await waitFor('the eyes 5 cm up', () => { const b = bodyState(); return Math.abs(b.head[1] - (b.eye[1] + 0.05)) < 0.005 && b; }, 5000).catch(() => bodyState());
+  check("The menu's eye height raises the eyes 5 cm above the seat's eye point, hands too",
+    Math.abs(raised.head[1] - (raised.eye[1] + 0.05)) < 0.005 && Math.abs(raised.hand[1] - level.hand[1] - 0.05) < 0.005,
+    `head at ${raised.head[1].toFixed(3)} m for ${(raised.eye[1] + 0.05).toFixed(3)}, right hand ${(raised.hand[1] - level.hand[1]).toFixed(3)} m higher`);
+  evalInApp('(window.__body.choose({ raise: 0, seated: true }), true)');
+  const now1c = iwsdk(['xr', 'get-transform'], { device: 'headset' }).result.position;
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: now1c.x, y: now1c.y + 0.45, z: now1c.z } });
+  // Mirrors the driver's headUp in src/sim/cabin.ts: the hull roof (1.8 m) less 15 cm.
+  const top = 1.8 - 0.15;
+  const stood = await waitFor('the head under the roof', () => { const b = bodyState(); return b.roof > level.roof && Math.abs(b.head[1] - top) < 0.005 && b; }, 5000).catch(() => bodyState());
+  check('Standing up out of the seat stops the head under the roof',
+    stood.roof > level.roof && Math.abs(stood.head[1] - top) < 0.005,
+    `head at ${stood.head[1].toFixed(3)} m, roof stop at ${top.toFixed(3)} m, ${stood.roof - level.roof} stop(s)`);
   iwsdk(['xr', 'set-device-state'], {});
-  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
 
 
   // 2. The frame-rate system ran when the session started.

@@ -15,7 +15,7 @@
  * turret basket, so it turns with the turret.
  */
 
-import { SEATED_EYE } from './body-height.js';
+import { EYES_BELOW_TOP, SEATED_EYE } from './body-height.js';
 
 /** The hull: inner faces of the walls, the roof's underside and the armour's drawn thickness, m. */
 export const HULL = {
@@ -95,12 +95,22 @@ export interface Seat {
    * the walls, the breech or the controls, so the head stops at its edge.
    */
   headBox: readonly [number, number, number, number];
+  /**
+   * How far the eyes may rise above the eye point before the top of the
+   * head meets the roof, m (F1.2). Rising further (standing up from the
+   * chair) stops the head there.
+   */
+  headUp: number;
   /** Middle of the seat cushion's top, in its frame, m. */
   cushion: readonly [number, number, number];
 }
 
 const DRIVER_FLOOR = 0;
 const GUNNER_FLOOR = TURRET.basketFloor;
+/** Room left between the top of the head and the roof when the head stops, m. */
+const HEAD_CLEARANCE = 0.02;
+/** How far the eyes may rise in a seat whose eye point is `eyeY`, under a roof at `roofY`, m. */
+const headUpUnder = (roofY: number, eyeY: number) => roofY - EYES_BELOW_TOP - HEAD_CLEARANCE - eyeY;
 
 /**
  * The driver sits front left in the hull, under a hatch, with the vision
@@ -118,6 +128,8 @@ export const SEATS: Readonly<Record<SeatId, Seat>> = {
     floorY: DRIVER_FLOOR,
     eye: [-0.5, DRIVER_FLOOR + SEATED_EYE, -1.6],
     headBox: [0.35, 0.3, 0.6, 0.35],
+    // Under the hull roof (the hatch above opens in F2.1).
+    headUp: headUpUnder(HULL.roof, DRIVER_FLOOR + SEATED_EYE),
     cushion: [-0.5, DRIVER_FLOOR + CUSHION_HEIGHT, -1.45],
   },
   gunner: {
@@ -127,6 +139,7 @@ export const SEATS: Readonly<Record<SeatId, Seat>> = {
     floorY: GUNNER_FLOOR,
     eye: [0.4, GUNNER_FLOOR + SEATED_EYE, -0.2],
     headBox: [0.22, 0.35, 0.24, 0.45],
+    headUp: headUpUnder(TURRET.roof, GUNNER_FLOOR + SEATED_EYE),
     cushion: [0.4, GUNNER_FLOOR + CUSHION_HEIGHT, -0.08],
   },
 };
@@ -249,6 +262,15 @@ export function headFix(seat: Seat, turretYaw: number, head: readonly number[], 
 }
 const tmpLocal: [number, number, number] = [0, 0, 0];
 
+/**
+ * How far to lower the play space (m, 0 or less) so a head at height
+ * `headY` (hull space) stays under the seat's roof: the eyes stop
+ * `seat.headUp` above the eye point, as if the head met the roof.
+ */
+export function headDrop(seat: Seat, headY: number): number {
+  return Math.min(0, seat.eye[1] + seat.headUp - headY);
+}
+
 /** Where the play space goes to put a player in a seat: its x, z and turn about the vertical (rad). */
 export interface RigPlace {
   x: number;
@@ -304,4 +326,22 @@ export function hipPoint(seat: Seat, out: [number, number, number]): [number, nu
   out[1] = seat.cushion[1] + 0.08;
   out[2] = seat.cushion[2] + 0.04;
   return out;
+}
+
+/** How long a player's ask to swap seats waits for the crewmate's word, s. */
+export const SWAP_WAIT_SECONDS = 30;
+
+/**
+ * In a crew, seats change only when both players want to swap (plan
+ * decision 5): the host keeps when each last asked (s on the host's clock,
+ * -Infinity for never) and swaps the pair once both asks are fresh.
+ */
+export interface SwapAsks {
+  host: number;
+  guest: number;
+}
+
+/** Whether both players have asked to swap seats within `SWAP_WAIT_SECONDS` of `now`. */
+export function swapAgreed(asks: SwapAsks, now: number): boolean {
+  return now - asks.host <= SWAP_WAIT_SECONDS && now - asks.guest <= SWAP_WAIT_SECONDS;
 }

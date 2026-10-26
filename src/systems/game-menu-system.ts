@@ -1,11 +1,11 @@
 import { createSystem, InputComponent, type UIKitMLAsset, VisibilityState } from '@iwsdk/core';
-import { heightShown, menuCrewLine, stepHeight } from '../game-flow.js';
+import { calibrationShown, menuCrewLine, raiseShown, stepRaise } from '../game-flow.js';
 import { changeSetting, LIVE_ITEMS, MAX_OPTIONS, onSettingChange } from '../live-settings.js';
 import { crewControls, onCrewChange } from '../net/crew-controls.js';
 import { CREW_COLORS } from '../scene-assets/avatar.scene-asset.js';
 import { settings } from '../settings.js';
-import { DEFAULT_CHARACTER_HEIGHT, EYES_BELOW_TOP, MAX_CHARACTER_HEIGHT, MIN_CHARACTER_HEIGHT } from '../sim/body-height.js';
-import { parseSeat, SEAT_IDS, SEATS } from '../sim/cabin.js';
+import { EYE_RAISE_STEP, MAX_EYE_RAISE } from '../sim/body-height.js';
+import { otherSeat, parseSeat, SEAT_IDS, SEATS } from '../sim/cabin.js';
 import { body, chooseBody } from './body-height-system.js';
 import { OPEN_MENU_EVENT } from './net-system.js';
 import { PanelUi } from './panel-ui.js';
@@ -73,7 +73,7 @@ const CHOICE_ROWS: readonly ChoiceRow[] = [
       ['1', 'Seated'],
     ],
     current: () => yesNo(body.choice.seated),
-    choose: (value) => chooseBody({ height: body.choice.height, seated: value === '1' }),
+    choose: (value) => chooseBody({ raise: body.choice.raise, seated: value === '1' }),
   },
   // Spike S2's options, shown only while riding (docs/spikes/s2-riding.md).
   {
@@ -141,10 +141,11 @@ const CHOICE_ROWS: readonly ChoiceRow[] = [
   },
 ];
 
-/** The player's own height, m, from their upright eyes in VR (NaN before it is measured). */
-function ownHeight(): number {
-  return body.eye - body.offset + EYES_BELOW_TOP;
-}
+/** What the Swap seats button says: an ask waiting for the crewmate, one waiting for this player, or neither. */
+const SWAP_LABELS: Record<typeof seating.swap, string> = { none: 'Swap seats', asked: 'Asked...', offered: 'Agree to swap' };
+
+/** Whether the game menu is open, for the systems that stand aside while it is. */
+export const gameMenu = { open: false };
 
 interface GameMenuDebug {
   readonly open: boolean;
@@ -167,9 +168,10 @@ interface GameMenuDebug {
  *
  * - Crew (only in a crew): the crew's state, this player's microphone on or
  *   muted, and the crewmate's voice on or muted (for this player only);
- * - You: coat colour as swatches, standing or seated play, character
- *   height in 5 cm steps or the player's own, and back in their seat
- *   (facing forward, with their eyes where the seat puts them);
+ * - You: coat colour as swatches, seated or standing play, eye height in
+ *   5 cm steps either side of the seat's eye point, back in their seat
+ *   (facing forward, with their eyes where the seat puts them), swap seats
+ *   (in a crew, once the crewmate agrees) and calibrate again;
  * - Sound and view: the settings that apply straight away (LIVE_ITEMS,
  *   src/live-settings.ts), kept in this browser;
  * - Riding (only while riding the tank, spike S2): the ride's options;
@@ -181,8 +183,11 @@ export class GameMenuSystem extends createSystem({}) {
   private open = false;
   private statusAt = 0;
   private selected = new Map<string, boolean>();
-  /** The seat the menu last showed, so it redraws when the host moves this player. */
+  /** The seat and swap the menu last showed, so it redraws when the host moves this player or the crewmate asks. */
   private shownSeat = seating.mine;
+  private shownSwap = seating.swap;
+  private shownEye = Number.NaN;
+  private shownReach = Number.NaN;
 
   init(): void {
     const asset = this.world.getSceneObject<UIKitMLAsset>('menu-panel');
@@ -220,14 +225,13 @@ export class GameMenuSystem extends createSystem({}) {
       });
     });
     const step = (direction: 1 | -1) => {
-      const height = stepHeight(body.choice.height, ownHeight(), direction, MIN_CHARACTER_HEIGHT, MAX_CHARACTER_HEIGHT, DEFAULT_CHARACTER_HEIGHT);
-      chooseBody({ height, seated: body.choice.seated });
+      chooseBody({ raise: stepRaise(body.choice.raise, direction, EYE_RAISE_STEP, MAX_EYE_RAISE), seated: body.choice.seated });
       this.render();
     };
     ui.on('height-down', () => step(-1));
     ui.on('height-up', () => step(1));
     ui.on('height-own', () => {
-      chooseBody({ height: 0, seated: body.choice.seated });
+      chooseBody({ raise: 0, seated: body.choice.seated });
       this.render();
     });
     ui.on('menu-start', () => {
@@ -238,6 +242,18 @@ export class GameMenuSystem extends createSystem({}) {
       this.setOpen(false);
       stopRide();
       seating.reseat();
+    });
+    ui.on('menu-swap', () => {
+      // Alone, straight into the other seat; in a crew, an ask (or the answer to theirs).
+      stopRide();
+      seating.ask(otherSeat(seating.mine));
+      this.render();
+    });
+    ui.on('menu-calibrate', () => {
+      this.setOpen(false);
+      stopRide();
+      seating.reseat();
+      body.calibrate();
     });
     ui.on('menu-ride-driver', () => {
       this.setOpen(false);
@@ -321,8 +337,11 @@ export class GameMenuSystem extends createSystem({}) {
   }
 
   update(_delta: number, time: number): void {
-    if (seating.mine !== this.shownSeat) {
+    if (seating.mine !== this.shownSeat || seating.swap !== this.shownSwap || !Object.is(body.calibratedEye, this.shownEye) || !Object.is(body.reach, this.shownReach)) {
       this.shownSeat = seating.mine;
+      this.shownSwap = seating.swap;
+      this.shownEye = body.calibratedEye;
+      this.shownReach = body.reach;
       this.render();
     }
     if (this.open && ride.active && time > this.statusAt) {
@@ -345,6 +364,7 @@ export class GameMenuSystem extends createSystem({}) {
       return;
     }
     this.open = open;
+    gameMenu.open = open;
     if (open) {
       this.render();
       if (this.world.visibilityState.peek() !== VisibilityState.NonImmersive) {
@@ -383,9 +403,11 @@ export class GameMenuSystem extends createSystem({}) {
     for (const button of SIGHT_BUTTONS) {
       ui.setText(button.id, button.label());
     }
-    const own = body.choice.height <= 0;
-    ui.setText('height-value', heightShown(body.choice.height, ownHeight()));
-    this.select('height-own', own);
+    ui.setText('height-value', raiseShown(body.choice.raise));
+    this.select('height-own', body.choice.raise === 0);
+    ui.setText('menu-swap', SWAP_LABELS[seating.swap]);
+    this.select('menu-swap', seating.swap === 'offered');
+    ui.setText('menu-calib-status', calibrationShown(body.calibratedEye, body.reach));
   }
 
   /** Show choice `id` as the one in effect, or not. */

@@ -2,7 +2,8 @@
   The start screen (src/systems/start-screen-system.ts): how to play, chosen
   in VR with a controller ray or on the flat page with the mouse. Three pages,
   shown one at a time: home (the choices), join (type a crew code) and crew
-  (waiting for the crewmate). Panel, Divider, Button, ButtonLabel and
+  (waiting for the crewmate). Home and crew pages both pick the seat
+  (F1.2): the host keeps theirs and the guest takes the other. Panel, Divider, Button, ButtonLabel and
   ButtonLabelSubtext come from the bundled Horizon kit.
 -->
 <style>
@@ -92,6 +93,28 @@
     gap: 10px;
     justify-content: center;
   }
+
+  .seat-row {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .seat-label {
+    width: 90px;
+    font-size: 14px;
+    color: #3a3a3a;
+  }
+
+  .seat-label:dark {
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .seat {
+    flex-grow: 1;
+    flex-basis: 0;
+    justify-content: center;
+  }
 </style>
 <Panel id="start-root" class="root">
   <div class="title">Track &amp; Barrel VR</div>
@@ -123,6 +146,11 @@
         <ButtonLabelSubtext class="choice-subtext">Type your friend's code.</ButtonLabelSubtext>
       </ButtonLabel>
     </Button>
+    <div class="seat-row">
+      <div class="seat-label">Your seat</div>
+      <Button id="start-seat-driver" class="seat" size="sm" variant="secondary">Driver</Button>
+      <Button id="start-seat-gunner" class="seat" size="sm" variant="secondary">Gunner</Button>
+    </div>
     <div id="start-home-hint" class="hint">While you play, Y on the left controller opens the game menu, and X shows the perf HUD.</div>
   </div>
 
@@ -171,6 +199,12 @@
     <div id="start-crew-title" class="code">Crew</div>
     <div id="start-crew-status" class="text">Joining...</div>
     <div id="start-crew-help" class="hint">Tell your crewmate the code.</div>
+    <div class="seat-row">
+      <div class="seat-label">Your seat</div>
+      <Button id="crew-seat-driver" class="seat" size="sm" variant="secondary">Driver</Button>
+      <Button id="crew-seat-gunner" class="seat" size="sm" variant="secondary">Gunner</Button>
+    </div>
+    <div id="start-crew-seats" class="hint">You drive.</div>
     <div class="row">
       <Button id="start-crew-back" variant="tertiary">Leave crew</Button>
       <Button id="start-crew-play" variant="primary">Start playing</Button>
