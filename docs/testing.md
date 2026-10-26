@@ -7,7 +7,7 @@
 | `npm run typecheck` | TypeScript for the game (and `npm run --prefix lobby typecheck` for the lobby) | seconds |
 | `npm test` | Unit tests in `test/` (Vitest): simulation, networking, perf stats, and the geometry check for faces that flicker ([below](#z-fighting)); no browser | seconds |
 | `npm run build` | The production build | 15 s |
-| `npm run test:xr` | `scripts/xr-smoke-test.mjs`: one emulated Quest 3 in the IWSDK dev runtime, driven through the IWSDK CLI (kept loaded in a worker thread with one open browser connection, `scripts/iwsdk-worker.mjs`; `IWSDK_SPAWN=1` starts a process per call as before): start screen and menu, posed hands, walking, body height, frame rate, blocks, the hoop and Restart, tracked hands, PC VR without the frame-rate API | about 2 min |
+| `npm run test:xr` | `scripts/xr-smoke-test.mjs`: one emulated Quest 3 in the IWSDK dev runtime, driven through the IWSDK CLI (kept loaded in a worker thread with one open browser connection, `scripts/iwsdk-worker.mjs`; `IWSDK_SPAWN=1` starts a process per call as before): start screen and menu, posed hands, walking, body height, frame rate, blocks, the hoop and Restart, tracked hands, the loading drill (spike S4), PC VR without the frame-rate API | about 2 min |
 | `npm run test:net` | `scripts/net-test.mjs`: two Playwright browsers against `vite preview` and the local lobby: connection, poses and fingers, voice and muting, throws and catches, the host's score and the guest's Restart, the start screen, menu and start-up settings, presence, reconnects, 150 ms lag, the practice crewmate (run `npm run build` first) | about 3 min, the longest job |
 
 ## How CI runs them

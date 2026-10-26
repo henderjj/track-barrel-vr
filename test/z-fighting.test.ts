@@ -2,6 +2,8 @@ import { type BufferGeometry, Mesh, MeshLambertMaterial, type Object3D, Vector3 
 import { describe, expect, it } from 'vitest';
 import * as avatar from '../src/scene-assets/avatar.scene-asset.js';
 import * as deck from '../src/scene-assets/deck.scene-asset.js';
+import * as loading from '../src/scene-assets/loading-drill.scene-asset.js';
+import { BREECH_MOUTH, LEVER_CLOSED, LEVER_PIVOT, RACK_SLOTS, SHELL_LENGTH } from '../src/sim/loading.js';
 import * as sight from '../src/scene-assets/sight.scene-asset.js';
 import { SIGHT_STAND } from '../src/sim/sight.js';
 import { coplanarOverlaps, describeOverlaps, trianglesOf } from './support/coplanar.js';
@@ -60,6 +62,30 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     expectNone([sight.createSightRange()], WORLD_GAP);
     // The range's plain overlaps the deck's ground.
     expectNone([deck.createPlayArea(), sight.createSightRange()], DECK_GAP, onDeck);
+  });
+
+  it('on the loading station (spike S4), with its shells in the rack and the breech open and closed', () => {
+    for (const closed of [false, true]) {
+      const block = loading.createBreechBlock();
+      block.position.set(loading.BLOCK_X, closed ? loading.BLOCK_CLOSED_Y : loading.BLOCK_OPEN_Y, loading.BLOCK_Z);
+      const lever = loading.createBreechLever();
+      lever.position.set(...LEVER_PIVOT);
+      lever.rotation.x = closed ? LEVER_CLOSED : 0;
+      const racked = RACK_SLOTS.map((slot, i) => {
+        const shell = loading.createShell(i);
+        shell.position.set(...slot);
+        return shell;
+      });
+      // With the breech closed, one shell is rammed home in it instead of in the rack.
+      const rammed = loading.createShell(0);
+      rammed.position.set(BREECH_MOUTH[0], BREECH_MOUTH[1], BREECH_MOUTH[2] - SHELL_LENGTH / 2);
+      const shells = closed ? [rammed, ...racked.slice(1)] : racked;
+      expectNone([loading.createLoadingStation(), block, lever, ...shells], DECK_GAP, onDeck);
+    }
+  });
+
+  it('on a shell', () => {
+    expectNone([loading.createShell(0)], DECK_GAP);
   });
 
   it('on the crew', () => {

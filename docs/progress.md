@@ -9,6 +9,7 @@ The running record of where the game is and what comes next, so anyone (or any C
 - Renamed to Track & Barrel VR (F0.2): package and lobby names, the page and start screen titles, and the browser storage keys, now `track-barrel.settings` and `track-barrel.colour`. Settings saved under the old `coop-vr.` keys are not carried over on purpose: on GitHub Pages every game of the account shares one origin, so those belong to the other games there. The lobby Worker is now `track-barrel-lobby`, a new Worker at a new `workers.dev` address on its first deploy; CI builds the game against whichever address it deploys.
 
 - Spike S1, the magnified gunsight (F0.3): a sight on a post at the deck's far corner looks out at target boards at 100, 250 and 500 m. A second camera renders the view into a 512² texture only while an eye is at the eyepiece, and the lens shows it at infinity at 3× with a reticle and range marks. Practice buttons go to it, aim it at each target and change when it draws, its size and which eyes see it; the perf HUD shows its own cost ([spike note](spikes/s1-sight-render.md)).
+- Spike S4, loading a shell (F0.6, [spikes/s4-loading.md](spikes/s4-loading.md)): a loading station on the deck behind the start spot (ready rack, breech, lever) where a seated player takes a shell, swings it to the breech, rams it and closes the breech, timed and with fumbles counted on a board. Practice → Sit at the breech. Each player's own for now; F1.10 makes loading shared.
 
 ## Next
 
@@ -18,3 +19,4 @@ The running record of where the game is and what comes next, so anyone (or any C
 ## Waiting on a headset check
 
 - Spike S1, the gunsight (F0.3): frame rate with the sight open at each size, and whether the range marks read at 3×. Steps in [s1-sight-render.md](spikes/s1-sight-render.md#headset-check-quest-3-then-pc-over-link).
+- F0.6 Spike S4, loading a shell: the steps at the end of [spikes/s4-loading.md](spikes/s4-loading.md). The pass mark is ten loads in a row without a fumble, each under about 5 s; report the board's numbers.
