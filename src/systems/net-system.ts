@@ -21,7 +21,7 @@ import { copyCurls, createFingerCurls, type FingerCurls, setCurls } from '../sim
 import { settings } from '../settings.js';
 import { crewPresence } from '../net/crew-presence.js';
 import { handCurls, handUse } from './grip-system.js';
-import { HoldKind, LOCAL_HOLD_KINDS, LockedHand } from './hand-lock.js';
+import { controlHoldKinds, HoldKind, LOCAL_HOLD_KINDS, LockedHand } from './hand-lock.js';
 import { perf } from './perf-hud-system.js';
 import { seating } from './seating.js';
 import { describeBrowser, readGpu } from '../perf/platform-report.js';
@@ -106,9 +106,8 @@ export function holdKindOf(use: string | null): number {
     case 'block': return HoldKind.Block;
     // A held shell ('shell') needs no kind yet: the drill is this player's own, so the crewmate doesn't see the shell.
     case 'breech-lever': return HoldKind.BreechLever;
-    case 'tiller-left': return HoldKind.TillerLeft;
-    case 'tiller-right': return HoldKind.TillerRight;
-    default: return HoldKind.None;
+    // The mechanism kit's controls say their own (MechanismSystem).
+    default: return (use && controlHoldKinds.get(use)) || HoldKind.None;
   }
 }
 
@@ -242,7 +241,7 @@ export class NetSystem extends createSystem({}) {
   private leftHand!: PosedHand;
   private rightHand!: PosedHand;
   /** Grip locking for the crewmate's hands, and their curls as drawn. */
-  private crewLocks = { left: new LockedHand('left'), right: new LockedHand('right') };
+  private crewLocks = { left: new LockedHand('left', false), right: new LockedHand('right', false) };
   private crewCurls = { left: createFingerCurls(), right: createFingerCurls() };
   private tmpPos = new Vector3();
   private tmpQuat = new Quaternion();

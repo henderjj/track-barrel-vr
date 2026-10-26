@@ -1,125 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { rigOffset, SEATED_EYE, targetEyeHeight } from '../src/sim/body-height.js';
-import { angleOf, Lever, LEVER_RIG, LeverEvent, OneEuro, TILLER } from '../src/sim/lever.js';
+import { LEVER_RIG, TILLER } from '../src/sim/lever.js';
+import { Lever } from '../src/sim/mechanism.js';
 import { LANE, LANE_HALF_WIDTH, LANE_LENGTH, LaneRun, placeOnLane } from '../src/sim/lever-lane.js';
 
-const DEG = Math.PI / 180;
-/** A hand at lever angle `deg`, `r` from the pivot, as (y, z) in lever space. */
-const handAt = (deg: number, r = 0.39): [number, number] => [r * Math.cos(deg * DEG), -r * Math.sin(deg * DEG)];
-
-describe('the hand-following lever', () => {
-  it('reads the hand angle round the pivot, forwards positive', () => {
-    expect(angleOf(...handAt(0))).toBeCloseTo(0);
-    expect(angleOf(...handAt(20))).toBeCloseTo(20 * DEG);
-    expect(angleOf(...handAt(-15))).toBeCloseTo(-15 * DEG);
-    expect(angleOf(0.01, 0.01)).toBeNaN();
-  });
-
-  it('does not jump when taken hold of off the handle, then follows the hand', () => {
-    const lever = new Lever(TILLER);
-    expect(lever.grab(angleOf(...handAt(5)))).toBe(true);
-    lever.update(1 / 90, angleOf(...handAt(5)));
-    expect(lever.angle).toBeCloseTo(0, 5);
-    // Move the hand 15° forwards over a third of a second.
-    for (let i = 1; i <= 30; i++) lever.update(1 / 90, angleOf(...handAt(5 + i / 2)));
-    for (let i = 0; i < 30; i++) lever.update(1 / 90, angleOf(...handAt(20)));
-    expect(lever.angle / DEG).toBeCloseTo(15, 1);
-    expect(lever.overshoot).toBe(0);
-  });
-
-  it('stops at its limits, says how far past the hand is, and ticks once on reaching one', () => {
-    const lever = new Lever(TILLER);
-    lever.grab(angleOf(...handAt(0)));
-    let limits = 0;
-    for (let i = 0; i <= 90; i++) {
-      if (lever.update(1 / 90, angleOf(...handAt(i * 0.5))) & LeverEvent.Limit) limits++;
-    }
-    for (let i = 0; i < 60; i++) {
-      if (lever.update(1 / 90, angleOf(...handAt(45))) & LeverEvent.Limit) limits++;
-    }
-    expect(lever.angle).toBeCloseTo(TILLER.max);
-    expect(lever.overshoot / DEG).toBeCloseTo(20, 0);
-    expect(limits).toBe(1);
-    // Back off and push again: felt again.
-    for (let i = 0; i < 60; i++) lever.update(1 / 90, angleOf(...handAt(10)));
-    for (let i = 0; i < 60; i++) {
-      if (lever.update(1 / 90, angleOf(...handAt(40))) & LeverEvent.Limit) limits++;
-    }
-    expect(limits).toBe(2);
-    // And the back limit.
-    for (let i = 0; i < 90; i++) lever.update(1 / 90, angleOf(...handAt(-40)));
-    expect(lever.angle).toBeCloseTo(TILLER.min);
-    expect(lever.overshoot).toBeLessThan(0);
-  });
-
-  it('ignores the hand’s sideways position and distance from the pivot', () => {
-    const lever = new Lever(TILLER);
-    lever.grab(angleOf(...handAt(0)));
-    for (let i = 0; i < 90; i++) lever.update(1 / 90, angleOf(...handAt(12, 0.3)));
-    expect(lever.angle / DEG).toBeCloseTo(12, 1);
-  });
-
-  it('ticks passing the middle detent while held', () => {
-    const lever = new Lever(TILLER);
-    lever.grab(angleOf(...handAt(0)));
-    for (let i = 0; i < 45; i++) lever.update(1 / 90, angleOf(...handAt(-10)));
-    let detents = 0;
-    for (let i = 0; i < 90; i++) {
-      if (lever.update(1 / 90, angleOf(...handAt(10))) & LeverEvent.Detent) detents++;
-    }
-    expect(detents).toBe(1);
-  });
-
-  it('holds still for a step where the hand is lost, and springs back when let go', () => {
-    const lever = new Lever(TILLER);
-    lever.grab(angleOf(...handAt(0)));
-    for (let i = 0; i < 90; i++) lever.update(1 / 90, angleOf(...handAt(20)));
-    const held = lever.angle;
-    lever.update(1 / 90, Number.NaN);
-    expect(lever.angle).toBe(held);
-    lever.release();
-    // Most of the way back in a third of a second.
-    for (let i = 0; i < 30; i++) lever.update(1 / 90, Number.NaN);
-    expect(Math.abs(lever.angle)).toBeLessThan(1 * DEG);
-  });
-
-  it('reads as a drive demand with a deadband round rest', () => {
-    const lever = new Lever(TILLER);
-    lever.angle = 1.5 * DEG;
-    expect(lever.demand()).toBe(0);
-    lever.angle = TILLER.max;
-    expect(lever.demand()).toBeCloseTo(1);
-    lever.angle = TILLER.min;
-    expect(lever.demand()).toBeCloseTo(-1);
-    lever.angle = (TILLER.max + TILLER.deadband) / 2;
-    expect(lever.demand()).toBeCloseTo(0.5);
-  });
-
-  it('steadies a tracked hand’s jitter while still but keeps up when it moves', () => {
-    // ±4 mm of jitter on a hand 39 cm from the pivot is about ±0.6°.
-    const jittery = (i: number) => angleOf(...handAt(10 + ((i * 7919) % 13 - 6) * 0.1));
-    const lever = new Lever(TILLER);
-    lever.grab(angleOf(...handAt(10)), true);
-    let lo = Infinity, hi = -Infinity;
-    for (let i = 0; i < 180; i++) {
-      lever.update(1 / 90, jittery(i));
-      if (i > 90) {
-        lo = Math.min(lo, lever.angle);
-        hi = Math.max(hi, lever.angle);
-      }
-    }
-    expect((hi - lo) / DEG).toBeLessThan(0.3);
-    // A deliberate 15° push in 0.2 s is followed to within 2° 0.1 s after it
-    // ends (the lever was taken hold of 10° behind the hand, so it ends at 15°).
-    for (let i = 1; i <= 18; i++) lever.update(1 / 90, angleOf(...handAt(10 + (15 * i) / 18)));
-    for (let i = 0; i < 9; i++) lever.update(1 / 90, angleOf(...handAt(25)));
-    expect(lever.angle / DEG).toBeGreaterThan(13);
-  });
-
+describe('the lever test rig (spike S3)', () => {
   it('puts the handles in reach from a chair, seated or standing', () => {
     // As test/body-height.test.ts: a seated player's hands reach from about
     // 0.45 m to 1.4 m above their real floor. The rig is placed from the eyes.
-    const raised = rigOffset(targetEyeHeight({ height: 0, seated: true }), 1.2);
+    const raised = rigOffset(targetEyeHeight({ raise: 0, seated: true }), 1.2);
     for (const angle of [TILLER.min, 0, TILLER.max]) {
       const lever = new Lever(TILLER);
       lever.angle = angle;
@@ -131,11 +20,6 @@ describe('the hand-following lever', () => {
       expect(LEVER_RIG.ahead - z).toBeGreaterThan(0.2);
       expect(LEVER_RIG.ahead - z).toBeLessThan(0.65);
     }
-  });
-
-  it('one-euro filter passes a still value straight through', () => {
-    const f = new OneEuro(1, 0);
-    for (let i = 0; i < 10; i++) expect(f.filter(0.3, 0.01)).toBeCloseTo(0.3);
   });
 });
 

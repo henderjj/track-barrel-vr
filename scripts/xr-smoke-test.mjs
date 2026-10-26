@@ -26,6 +26,9 @@
  *     controller: it follows the hand, stops at its limit with the hand
  *     kept on it, lets go when the hand is pulled off, springs back, and
  *     both tillers forwards drive the tank up the board's lane;
+ *  5c. opens Practice > Mechanism kit (F1.3) and works its bench: a crank
+ *     round a turn, the notched lever into a notch, the yoke in one hand,
+ *     the twist grip and its trigger, the button and the switch;
  *  6. switches to tracked hands (spike S9) and grips with a pinch, then
  *     works a tiller with a pinch (6a);
  *  6b. spike S4: Practice → Sit at the breech, then loads a shell with the
@@ -620,6 +623,109 @@ async function loadingDrill() {
 }
 
 /** Press Y on the left controller: opens or closes the game menu. */
+async function mechanismBench() {
+  evalInApp('(window.__lever.hide(), true)');
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-bench'));
+  iwsdk(['xr', 'set-device-state'], {});
+  const shown = await waitFor('the mechanism bench', () => evalInApp('window.__bench.shown'), 5000).catch(() => false);
+  const names = evalInApp('window.__bench.names');
+  const state = (key) => evalInApp(`window.__mechanisms.state(${JSON.stringify(names[key])})`);
+  const scene = (key, p) => evalInApp(`window.__mechanisms.toScene(${JSON.stringify(names[key])}, ${JSON.stringify(p)})`);
+  const handle = (key, which = 1) => evalInApp(`window.__mechanisms.handle(${JSON.stringify(names[key])}, ${which})`);
+  check('Practice > Mechanism kit puts the bench in front of the player', shown, `crank knob at ${fmt(handle('crank'))}`);
+  const squeeze = (value, device = 'controller-right') => iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value }] });
+  // Where to put the controller so the middle of its fist, where a handle runs through it, is at `p`.
+  // The fist's offset from the controller is measured with the hand holding nothing (a held hand is
+  // drawn on the handle), and kept while the controller's orientation stays the same.
+  let fistOffset = [0, 0, 0];
+  const measureFist = () => {
+    const fist = evalInApp('window.__ownHands.fist("right")');
+    const grip = evalInApp('window.__debug.world.player.gripSpaces.right.getWorldPosition(window.__debug.world.player.position.clone()).toArray()');
+    fistOffset = [fist[0] - grip[0], fist[1] - grip[1], fist[2] - grip[2]];
+  };
+  const gripFor = (p) => toOrigin([p[0] - fistOffset[0], p[1] - fistOffset[1], p[2] - fistOffset[2]]);
+  const take = async (key, label) => {
+    measureFist();
+    iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(handle(key)), duration: 0.4 });
+    await sleep(600);
+    squeeze(1);
+    return waitFor(label, () => { const s = state(key); return s.heldBy === 'right' && s; }, 4000).catch(() => state(key));
+  };
+  const letGoOf = async (key) => {
+    squeeze(0);
+    await waitFor(`${key} let go`, () => state(key).heldBy === null, 3000).catch(() => false);
+  };
+
+  // The crank: round once, anticlockwise as seen from the front, a point every 45°.
+  const crank = await take('crank', 'the crank taken hold of');
+  const knob = 0.035;
+  for (let k = 1; k <= 9; k++) {
+    const a = (k * Math.PI) / 4;
+    iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('crank', [-0.09 * Math.sin(a), 0.09 * Math.cos(a), knob])), duration: 0.15 });
+    await sleep(200);
+  }
+  const turned = await waitFor('the crank to turn once', () => { const s = state('crank'); return s.turns > 0.9 && s; }, 4000).catch(() => state('crank'));
+  check('A gripped crank follows the hand round a full turn, ticking each quarter', crank.heldBy === 'right' && turned.turns > 0.9 && turned.turns < 1.4 && turned.detents >= 3,
+    `${turned.turns.toFixed(2)} turns, ${turned.detents} ticks`);
+  await letGoOf('crank');
+
+  // The notched lever: pushed 12 cm forwards, past its front notch, and let go, it settles into that notch.
+  await take('lever', 'the lever taken hold of');
+  const leverAt = handle('lever');
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('lever', [0, 0.21, -0.12])), duration: 0.4 });
+  await waitFor('the lever past its front notch', () => state('lever').angle > 26, 4000).catch(() => false);
+  await letGoOf('lever');
+  const settled = await waitFor('the lever to settle', () => { const s = state('lever'); return Math.abs(s.angle - 25) < 0.5 && s; }, 4000).catch(() => state('lever'));
+  check('The notched lever, let go past halfway, settles into the next notch with a tick',
+    Math.abs(settled.angle - 25) < 0.5 && settled.notch === 2 && settled.detents >= 1, `angle ${settled.angle.toFixed(1)}° in notch ${settled.notch + 1}, from ${fmt(leverAt)}`);
+
+  // The yoke in one hand: the hand swings its right handle 10 cm forwards; the yoke follows at 30°/s.
+  await take('yoke', 'the yoke taken hold of');
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('yoke', [0.09, 0, -0.08])), duration: 0.2 });
+  await sleep(300);
+  const early = state('yoke');
+  const swung = await waitFor('the yoke to catch up', () => { const s = state('yoke'); return s.angle > 35 && s; }, 5000).catch(() => state('yoke'));
+  check('One hand turns the yoke, slower than the hand goes, and feels the strain',
+    early.angle < 35 && Math.max(...early.strain) > 2 && swung.angle > 35 && swung.heldBy === 'right', `${early.angle.toFixed(0)}° then ${swung.angle.toFixed(0)}°, strain ${Math.max(...early.strain).toFixed(0)}°`);
+  await letGoOf('yoke');
+
+  // The twist grip: take hold, roll the wrist 30° about the upright, pull the trigger.
+  iwsdk(['xr', 'set-transform'], { device: 'controller-right', orientation: { pitch: 0, yaw: 0, roll: 0 } });
+  await sleep(200);
+  measureFist();
+  const twistAt = gripFor(handle('twist'));
+  await take('twist', 'the twist grip taken hold of');
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: twistAt, orientation: { pitch: 0, yaw: 30, roll: 0 }, duration: 0.4 });
+  const twisted = await waitFor('the grip to twist', () => { const s = state('twist'); return Math.abs(s.angle) > 15 && s; }, 4000).catch(() => state('twist'));
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: 0, value: 1 }] });
+  const fired = await waitFor('the trigger to fire', () => evalInApp('window.__bench.pulls') >= 1, 3000).catch(() => false);
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: 0, value: 0 }] });
+  check('The twist grip twists with the wrist and fires with the trigger', Math.abs(twisted.angle) > 15 && fired,
+    `twist ${twisted.angle.toFixed(1)}°, demand ${twisted.demand.toFixed(2)}, pulls ${evalInApp('window.__bench.pulls')}`);
+  await letGoOf('twist');
+  iwsdk(['xr', 'set-transform'], { device: 'controller-right', orientation: { pitch: 0, yaw: 0, roll: 0 } });
+
+  // The button and the switch, each by a squeeze.
+  await take('button', 'the button pressed');
+  const pressed = state('button');
+  await letGoOf('button');
+  const out = state('button');
+  await take('switch', 'the switch pressed');
+  await letGoOf('switch');
+  const on = state('switch');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: 0, y: 1.6, z: 0 } });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(scene('yoke', [0, -0.25, 0])) });
+  await sleep(400);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-mechanism-bench.png'], {});
+  const lines = evalInApp('window.__bench.lines()');
+  check('A squeeze presses the button while held and turns the switch on until pressed again',
+    pressed.on && pressed.presses >= 1 && !out.on && on.on && on.heldBy === null, `board "${lines.join(' | ')}"`);
+  evalInApp('(window.__bench.hide(), true)');
+  await waitFor('the bench put away', () => !evalInApp('window.__bench.shown'), 3000).catch(() => false);
+  iwsdk(['xr', 'set-device-state'], {});
+}
+
 async function menuButtonPress() {
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-left', buttons: [{ index: 4, value: 1 }] });
   await sleep(300);
@@ -913,6 +1019,14 @@ async function main() {
   check('Letting go of both grips lets go of both tillers', !released.left.heldBy && !released.right.heldBy);
   iwsdk(['xr', 'set-device-state'], {});
 
+  // 5c. The mechanism kit (F1.3): Practice > Mechanism kit puts a bench of
+  //     controls in front of the player. A crank follows the hand round a
+  //     full turn ticking each quarter, the notched lever settles into the
+  //     notch it is let go nearest, one hand turns the yoke (slowly), the
+  //     twist grip twists with the wrist and fires with the trigger, and a
+  //     squeeze presses the button and turns the switch on.
+  await mechanismBench();
+
   // 6. Spike S9: tracked hands, gripping by pinching (the emulator's hands
   //    can pinch but not make a fist; fists are unit-tested).
   iwsdk(['xr', 'set-input-mode'], { mode: 'hand' });
@@ -1041,3 +1155,4 @@ main().catch((error) => {
   }
   process.exitCode = 1;
 });
+

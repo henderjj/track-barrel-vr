@@ -1,19 +1,19 @@
-import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial } from '@iwsdk/core';
+import { BoxGeometry, Mesh, MeshStandardMaterial } from '@iwsdk/core';
 import { beam, mergeParts } from './lowpoly.js';
-import { LEVER_RIG, TILLER } from '../sim/lever.js';
+import { LEVER_RIG } from '../sim/lever.js';
 
 /**
  * Spike S3's lever test rig: a pair of tank tillers in a housing on a post,
  * and a stalk holding up the lane board (its screen is a canvas the
  * LeverSystem draws). Rig space as in src/sim/lever.ts: origin midway between
- * the pivots, -Z ahead. Two meshes besides the screen: the static rig, and
- * one lever drawn twice, each in its own pivot group so it turns about X.
+ * the pivots, -Z ahead. The tillers are the mechanism kit's lever
+ * (`createLever(TILLER)`, mechanism.scene-asset.ts), each in its own pivot
+ * group so it turns about X.
  */
 
 const OLIVE = 0x4b5320;
 const OLIVE_DARK = 0x363c18;
 const STEEL = 0x55595e;
-const RUBBER = 0x1c1c1c;
 const FRAME = 0x2b2e2a;
 
 /** The housing the tillers come up out of, m: it hides their pivots. */
@@ -22,9 +22,6 @@ const HOUSING = { width: 0.5, height: 0.1, depth: 0.18 } as const;
 const POST_HEIGHT = 0.5;
 /** The screen sits this far in front of its frame's face, m. */
 export const SCREEN_GAP = 0.006;
-/** The handle's radius and the rod's, m. */
-export const GRIP_RADIUS = 0.019;
-const ROD_RADIUS = 0.011;
 
 const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
 
@@ -61,19 +58,5 @@ export function createLeverRig(): Mesh {
   ]);
   const mesh = new Mesh(geometry, material);
   mesh.name = 'Lever Rig';
-  return mesh;
-}
-
-/** One tiller standing upright with its pivot at the origin: a steel rod and a rubber handle, the rod ending inside the handle. */
-export function createTiller(): Mesh {
-  const handleStart = TILLER.length - TILLER.gripLength;
-  const geometry = mergeParts([
-    beam([0, -0.03, 0], [0, handleStart + 0.02, 0], ROD_RADIUS, STEEL, 6),
-    { geometry: new CylinderGeometry(GRIP_RADIUS, GRIP_RADIUS, TILLER.gripLength, 8, 1), color: RUBBER, position: [0, handleStart + TILLER.gripLength / 2, 0] },
-    // A knob on top, wider than the handle so their faces don't meet.
-    { geometry: new CylinderGeometry(GRIP_RADIUS + 0.004, GRIP_RADIUS + 0.006, 0.014, 8, 1), color: STEEL, position: [0, TILLER.length + 0.004, 0] },
-  ]);
-  const mesh = new Mesh(geometry, material);
-  mesh.name = 'Tiller';
   return mesh;
 }
