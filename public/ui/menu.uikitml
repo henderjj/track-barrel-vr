@@ -6,9 +6,9 @@
   character height as a 5 cm stepper, everything else as a row of up to four
   buttons (row-<key>-0 to -3, labelled and shown by the menu system from
   LIVE_ITEMS in src/live-settings.ts). The crew section shows only in a crew.
-  Game starts again; Practice holds shortcuts straight to a situation worth
-  testing, one per feature, so a headset check never has to play its way
-  there (the starter has one: blocks back on the table).
+  Practice holds shortcuts straight to a situation worth testing, one per
+  feature, so a headset check never has to play its way there (the cabin's:
+  sit in either seat).
 -->
 <style>
   .root {
@@ -230,6 +230,12 @@
         <Button id="height-own" class="own" size="sm" variant="secondary">Your own</Button>
       </div>
     </div>
+    <div class="setting">
+      <div class="label">Seat</div>
+      <div class="choices">
+        <Button id="menu-reseat" class="choice" size="sm" variant="secondary">Back in my seat</Button>
+      </div>
+    </div>
   </div>
 
   <div class="section">
@@ -297,20 +303,12 @@
     </div>
   </div>
   <div class="section">
-    <div class="section-title">GAME</div>
-    <div class="setting">
-      <div class="label">Start again</div>
-      <div class="choices">
-        <Button id="menu-restart" class="choice" size="sm" variant="secondary">Restart</Button>
-      </div>
-    </div>
-  </div>
-  <div class="section">
     <div class="section-title">PRACTICE</div>
-    <div class="setting">
-      <div class="label">Blocks</div>
-      <div class="choices">
-        <Button id="menu-blocks" class="choice" size="sm" variant="secondary">Back on the table</Button>
+    <div id="row-seat" class="setting">
+      <div id="row-seat-label" class="label">Sit in</div>
+      <div id="row-seat-choices" class="choices">
+        <Button id="row-seat-0" class="choice" size="sm" variant="secondary">Driver</Button>
+        <Button id="row-seat-1" class="choice" size="sm" variant="secondary">Gunner</Button>
       </div>
     </div>
     <div class="setting">

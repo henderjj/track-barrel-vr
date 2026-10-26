@@ -16,8 +16,7 @@ import {
   targetFoot,
   TRUE_HALF_FIELD,
 } from '../src/sim/sight.js';
-import { WALK_HALF_LENGTH, WALK_HALF_WIDTH } from '../src/sim/deck-walk.js';
-import { GROUND_Y } from '../src/sim/play-area.js';
+import { GROUND_Y, SEATS, seatToHull } from '../src/sim/cabin.js';
 
 const DEG = Math.PI / 180;
 const out: [number, number] = [0, 0];
@@ -94,9 +93,15 @@ describe('the gunsight (spike S1)', () => {
     });
   });
 
-  it('stands where a player can walk up to it', () => {
-    expect(Math.abs(SIGHT_STAND.x)).toBeLessThan(WALK_HALF_WIDTH);
-    expect(Math.abs(SIGHT_STAND.z + 0.15)).toBeLessThan(WALK_HALF_LENGTH);
+  it('hangs where a seated gunner can lean into it, and their head stops short of the lens', () => {
+    const gunner = SEATS.gunner;
+    const eye = seatToHull(gunner, 0, gunner.eye, [0, 0, 0]);
+    const lean = Math.hypot(SIGHT_STAND.x - eye[0], SIGHT_STAND.lensHeight - eye[1], SIGHT_STAND.z - eye[2]);
+    expect(lean).toBeGreaterThan(0.2);
+    expect(lean).toBeLessThan(0.35);
+    const nearest = seatToHull(gunner, 0, [gunner.eye[0], gunner.eye[1], gunner.eye[2] - gunner.headBox[2]], [0, 0, 0]);
+    expect(nearest[2] - SIGHT_STAND.z).toBeGreaterThan(0);
+    expect(nearest[2] - SIGHT_STAND.z).toBeLessThan(OPEN_DISTANCE);
     expect(MAGNIFICATION).toBe(3);
   });
 

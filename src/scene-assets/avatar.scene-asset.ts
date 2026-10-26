@@ -5,11 +5,11 @@ import {
   CylinderGeometry,
   IcosahedronGeometry,
   Mesh,
-  MeshLambertMaterial,
+  MeshStandardMaterial,
   TorusGeometry,
 } from '@iwsdk/core';
 import { PosedHand } from './hand.scene-asset.js';
-import { mergeParts, type Part, shade } from './lowpoly.js';
+import { beam, mergeParts, type Part, shade } from './lowpoly.js';
 
 /**
  * Stylised crew avatar: an aviator in a leather flying cap and goggles, a
@@ -19,10 +19,9 @@ import { mergeParts, type Part, shade } from './lowpoly.js';
  *
  * The networked avatar (spike S4) is split into parts that move separately,
  * each one draw call: the head follows the remote headset; the torso hangs
- * below it and turns only with its heading; the legs stand on the deck below
- * the torso and stretch to the head's height; each glove follows a
- * controller's grip pose. The stress-test dummy merges the same parts into
- * one mesh.
+ * below it and turns only with its heading; the legs sit in the crewmate's
+ * seat (src/sim/cabin.ts), thighs along the cushion and shins down to the
+ * floor; each glove follows a controller's grip pose.
  */
 
 export const CREW_COLORS = [0x2f6db3, 0xc0563a, 0x3f8f5a, 0x8a4fb0, 0xd19a2a, 0x2a9a9a, 0x9a3a5a, 0x5a5a5a];
@@ -36,13 +35,6 @@ const SCARF = 0xe8dcc0;
 const TROUSERS = 0x4a3f36;
 const BOOTS = 0x2e2119;
 
-
-/** Standing eye height the dummy is built for, m. */
-const EYE_HEIGHT = 1.62;
-/** Height of the top of the legs at that eye height; the legs mesh is built this long, m. */
-export const LEG_LENGTH = 0.8;
-/** How far the top of the legs is below the eyes, m. */
-export const HIP_BELOW_EYES = EYE_HEIGHT - LEG_LENGTH;
 /** The body's centre line is this far behind the eyes, m. */
 const BODY_BACK = 0.09;
 
@@ -85,21 +77,28 @@ function torsoParts(coat: number): Part[] {
   ];
 }
 
-/** Trousers and boots, standing on the floor at the origin, built for hips at `LEG_LENGTH`. */
-function legParts(): Part[] {
-  const z = BODY_BACK;
+/**
+ * Trousers and boots, seated: the origin at the middle of the hips on the
+ * cushion, facing -Z, thighs along the cushion and shins down to a floor
+ * `hipHeight` below.
+ */
+function seatedLegParts(hipHeight: number): Part[] {
   const parts: Part[] = [];
-  for (const x of [-0.085, 0.085]) {
+  const knee = -0.44;
+  const ankle = -hipHeight + 0.1;
+  for (const x of [-0.1, 0.1]) {
     parts.push(
-      { geometry: new CylinderGeometry(0.075, 0.058, LEG_LENGTH - 0.08, 6), color: TROUSERS, position: [x, 0.08 + (LEG_LENGTH - 0.08) / 2, z] },
-      { geometry: new BoxGeometry(0.09, 0.1, 0.2), color: BOOTS, position: [x, 0.05, z - 0.04] },
+      beam([x, 0, 0.06], [x, -0.01, knee], 0.075, TROUSERS, 6),
+      beam([x, -0.01, knee], [x, ankle, knee + 0.02], 0.058, TROUSERS, 6),
+      { geometry: new IcosahedronGeometry(0.066, 0), color: TROUSERS, position: [x, -0.01, knee] },
+      { geometry: new BoxGeometry(0.09, 0.1, 0.22), color: BOOTS, position: [x, -hipHeight + 0.05, knee - 0.03] },
     );
   }
   return parts;
 }
 
 function partsMesh(parts: Part[], name: string): Mesh {
-  const mesh = new Mesh(mergeParts(parts), new MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+  const mesh = new Mesh(mergeParts(parts), new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
   mesh.name = name;
   return mesh;
 }
@@ -112,8 +111,9 @@ export function createAvatarTorso(index: number): Mesh {
   return partsMesh(torsoParts(CREW_COLORS[index % CREW_COLORS.length]), `Crew ${index + 1} Torso`);
 }
 
-export function createAvatarLegs(index: number): Mesh {
-  return partsMesh(legParts(), `Crew ${index + 1} Legs`);
+/** Seated legs for a crewmate whose hips are `hipHeight` above the floor (the seat's hip point, src/sim/cabin.ts). */
+export function createAvatarLegs(index: number, hipHeight: number): Mesh {
+  return partsMesh(seatedLegParts(hipHeight), `Crew ${index + 1} Legs`);
 }
 
 /** The coat-coloured parts' geometry in crew colour `index`, to recolour a crewmate. */

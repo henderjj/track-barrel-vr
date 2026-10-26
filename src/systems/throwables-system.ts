@@ -20,17 +20,17 @@ import {
   PacketType,
   type PoseSample,
 } from '../net/pose-codec.js';
-import { BLOCK_SIZE } from '../scene-assets/deck.scene-asset.js';
-import { GROUND_Y, TABLE } from '../sim/play-area.js';
 import { ReleaseVelocityTracker } from '../sim/release-velocity.js';
-import { GameSystem } from './game-system.js';
 import { FLAG_LEFT_TRACKED, FLAG_RIGHT_TRACKED, netLink } from './net-system.js';
 import { grip, handUse } from './grip-system.js';
 import { buzz } from './haptics.js';
 
 /**
- * Picking up, throwing and catching loose objects (the demo's blocks),
- * alone or with a crewmate (docs/spikes/s7-throw-catch.md).
+ * Picking up, throwing and catching loose objects, alone or with a
+ * crewmate (docs/spikes/s7-throwing.md). The template's demo threw blocks
+ * with it; the cabin has no loose objects yet, so it isn't registered.
+ * It is kept for shells and casings, if loading needs it (plan 4.6): fill
+ * `looseObjects` and register it after the systems that hold a hand.
  *
  * Grabbing: squeeze the grip within 15 cm of an object. Catching: with the
  * grip squeezed and the hand empty, an object flying past within 20 cm of
@@ -90,8 +90,19 @@ const SHIFT_FAR = 3.5;
 const SHIFT_NEAR = 0.5;
 /** How fast the display delay may change: 0.5 means the object is drawn at 50–150% speed meanwhile. */
 const SHIFT_RATE = 0.5;
-/** An object at rest this far below the deck has fallen off, and goes back on the table, m. */
-const OFF_DECK_Y = GROUND_Y / 2;
+
+/**
+ * The loose objects, set before this system starts: each one's entity (a
+ * dynamic physics body), where it goes back to, and how low it may fall
+ * before it is put back.
+ */
+export const looseObjects = {
+  entities: [] as Entity[],
+  /** Where object `id` rests when put back, written to `out`. */
+  home: (_id: number, out: [number, number, number]): [number, number, number] => out,
+  /** An object at rest below this has fallen out of reach, and goes back, m. */
+  lostBelow: -0.3,
+};
 
 /** A scripted hand for tests without a headset: grip position and squeeze. */
 export interface TestHand {
@@ -206,6 +217,7 @@ export class ThrowablesSystem extends createSystem({}) {
   private incoming: ObjectStatePacket = { id: 0, epoch: 0, flags: 0, timeMs: 0, pose: createPoseSample() };
   private sample = createPoseSample();
   private velocity: [number, number, number] = [0, 0, 0];
+  private home: [number, number, number] = [0, 0, 0];
   private tmpQuat = new Quaternion();
   private headPos = new Vector3();
   private oldSample = createPoseSample();
@@ -218,8 +230,7 @@ export class ThrowablesSystem extends createSystem({}) {
       this.world.registerComponent(Grabbed);
     }
     this.physics = this.world.getSystem(PhysicsSystem);
-    const blocks = this.world.getSystem(GameSystem)?.blocks ?? [];
-    blocks.forEach((entity, id) => {
+    looseObjects.entities.forEach((entity, id) => {
       this.objects.push({
         id,
         entity,
@@ -371,9 +382,9 @@ export class ThrowablesSystem extends createSystem({}) {
 
     for (const o of this.objects) {
       const p = o.entity.object3D!.position;
-      if (!o.remote && !o.heldBy && p.y < OFF_DECK_Y && o.speed < 0.2) {
-        // Fell off the deck and came to rest on the ground: back on the table.
-        this.placeOnTable(o);
+      if (!o.remote && !o.heldBy && p.y < looseObjects.lostBelow && o.speed < 0.2) {
+        // Fell out of reach and came to rest: back where it belongs.
+        this.placeAtHome(o);
       } else if (o.heldBy || (o.remote && o.speed > 0.05)) {
         // A held body (or a moving one the crewmate drives) is moved there
         // outright as well as targeted, so it arrives at rest instead of
@@ -721,27 +732,20 @@ export class ThrowablesSystem extends createSystem({}) {
   }
 
   /**
-   * Put every block this player simulates back on the table, at rest (the
-   * menu's Practice → Back on the table, and a restart). The crewmate's own
-   * blocks are theirs to put back; the host owns everything after a restart.
+   * Put every object this player simulates back where it belongs, at rest.
+   * The crewmate's own objects are theirs to put back.
    */
-  resetBlocks(): void {
+  resetObjects(): void {
     for (const o of this.objects) {
       if (!o.remote && !o.heldBy) {
-        this.placeOnTable(o);
+        this.placeAtHome(o);
       }
     }
   }
 
-  /** Block `id`'s spot on the table: a row along it, a second row behind. */
-  private placeOnTable(o: Throwable): void {
-    const perRow = 4;
-    const col = o.id % perRow;
-    const row = Math.floor(o.id / perRow) % 2;
-    const layer = Math.floor(o.id / (2 * perRow));
-    const x = TABLE.x + (col - (perRow - 1) / 2) * (BLOCK_SIZE + 0.08);
-    const z = TABLE.z + (row - 0.5) * (BLOCK_SIZE + 0.06);
-    this.placeAtRest(o, x, TABLE.height + BLOCK_SIZE / 2 + 0.005 + layer * (BLOCK_SIZE + 0.01), z);
+  private placeAtHome(o: Throwable): void {
+    const [x, y, z] = looseObjects.home(o.id, this.home);
+    this.placeAtRest(o, x, y, z);
   }
 
   private placeAtRest(o: Throwable, x: number, y: number, z: number): void {

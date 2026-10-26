@@ -1,11 +1,12 @@
-import { type BufferGeometry, Mesh, MeshLambertMaterial, type Object3D, Vector3 } from '@iwsdk/core';
+import { type BufferGeometry, Mesh, MeshLambertMaterial, type Object3D, type Vector3 } from '@iwsdk/core';
 import { describe, expect, it } from 'vitest';
 import * as avatar from '../src/scene-assets/avatar.scene-asset.js';
-import * as deck from '../src/scene-assets/deck.scene-asset.js';
+import * as cabin from '../src/scene-assets/cabin.scene-asset.js';
 import * as ride from '../src/scene-assets/ride.scene-asset.js';
 import * as loading from '../src/scene-assets/loading-drill.scene-asset.js';
 import { BREECH_MOUTH, LEVER_CLOSED, LEVER_PIVOT, RACK_SLOTS, SHELL_LENGTH } from '../src/sim/loading.js';
 import * as sight from '../src/scene-assets/sight.scene-asset.js';
+import { TURRET } from '../src/sim/cabin.js';
 import { SIGHT_STAND } from '../src/sim/sight.js';
 import * as leverRig from '../src/scene-assets/lever-rig.scene-asset.js';
 import { coplanarOverlaps, describeOverlaps, trianglesOf } from './support/coplanar.js';
@@ -15,10 +16,10 @@ import { coplanarOverlaps, describeOverlaps, trianglesOf } from './support/copla
  * the same plane and overlapping, flicker through each other in the headset
  * as the head moves (in the game this template came from, a crate's edges,
  * a hatch's edges and a jetty's root all did). Keep faces like that at least this
- * far apart: 3 mm on and around the deck (seen from 0.3 to 3 m), 8 mm out in
+ * far apart: 3 mm in and around the tank (seen from 0.3 to 3 m), 8 mm out in
  * the world (seen from 5 m and further). Docs: docs/testing.md#z-fighting.
  */
-const DECK_GAP = 0.003;
+const CABIN_GAP = 0.003;
 const WORLD_GAP = 0.008;
 
 const material = new MeshLambertMaterial({ vertexColors: true });
@@ -28,8 +29,8 @@ function mesh(geometry: BufferGeometry, name: string): Mesh {
   return m;
 }
 
-/** Faces flat on the deck, facing down into it, can never be seen. */
-const onDeck = (at: Vector3, n: Vector3) => n.y < -0.99 && Math.abs(at.y) < 0.005;
+/** Faces flat on a floor at y = 0, facing down into it, can never be seen. */
+const onFloor = (at: Vector3, n: Vector3) => n.y < -0.99 && Math.abs(at.y) < 0.005;
 
 function expectNone(objects: Object3D[], gap: number, ignore?: (at: Vector3, n: Vector3) => boolean): void {
   const found = coplanarOverlaps(objects.flatMap((o) => trianglesOf(o)), gap, 2e-5, ignore);
@@ -38,35 +39,44 @@ function expectNone(objects: Object3D[], gap: number, ignore?: (at: Vector3, n: 
 
 describe('no faces that flicker through each other (z-fighting)', () => {
   // Add every new model here: static scenery with what stands on it, and
-  // each moving prop in each of the poses it is drawn in.
-  it('on the play area: deck, rails, table, hoop and ground', () => {
-    expectNone([deck.createPlayArea()], DECK_GAP, onDeck);
-  });
-
-  it('in each prop that moves about the deck', () => {
-    const props: Object3D[] = [deck.createBlock(0), deck.createBlock(1)];
-    for (const prop of props) {
-      expectNone([prop], DECK_GAP);
+  // each moving part in each of the poses it is drawn in.
+  it('in the tank: hull, and the turret facing every way it turns', () => {
+    const hull = cabin.createHull();
+    expectNone([hull], CABIN_GAP);
+    for (const yaw of [0, Math.PI / 4, Math.PI / 2, Math.PI, -Math.PI / 3]) {
+      const turret = cabin.createTurret();
+      turret.position.set(0, 0, TURRET.z);
+      turret.rotation.y = yaw;
+      turret.updateMatrixWorld(true);
+      expectNone([hull, turret], CABIN_GAP);
     }
   });
 
-  it("on spike S1's sight, on its stand and aimed, and its range", () => {
+  it('on the ground', () => {
+    expectNone([cabin.createGround(), cabin.createHull()], WORLD_GAP);
+  });
+
+  it("on spike S1's sight, hanging in the turret and aimed, and its range", () => {
     const stand = sight.createSightStand();
+    stand.position.set(SIGHT_STAND.x, 0, SIGHT_STAND.z);
     const lens = mesh(sight.createSightLensGeometry(), 'Sight Lens');
+    const turret = cabin.createTurret();
+    turret.position.set(0, 0, TURRET.z);
     for (const [pitch, yaw] of [[0, 0], [0.02, 0.05]]) {
       const body = sight.createSightBody();
       body.position.set(0, SIGHT_STAND.lensHeight, 0);
       body.rotation.set(pitch, yaw, 0, 'YXZ');
       body.add(lens);
-      body.updateMatrixWorld(true);
-      expectNone([stand, body], DECK_GAP, onDeck);
+      stand.add(body);
+      expectNone([stand, turret], CABIN_GAP);
+      stand.remove(body);
     }
     expectNone([sight.createSightRange()], WORLD_GAP);
-    // The range's plain overlaps the deck's ground.
-    expectNone([deck.createPlayArea(), sight.createSightRange()], DECK_GAP, onDeck);
+    // The range's plain overlaps the tank's ground.
+    expectNone([cabin.createGround(), sight.createSightRange()], WORLD_GAP);
   });
 
-  it('on the loading station (spike S4), with its shells in the rack and the breech open and closed', () => {
+  it('on the loading station (spike S4) and its platform, with its shells in the rack and the breech open and closed', () => {
     for (const closed of [false, true]) {
       const block = loading.createBreechBlock();
       block.position.set(loading.BLOCK_X, closed ? loading.BLOCK_CLOSED_Y : loading.BLOCK_OPEN_Y, loading.BLOCK_Z);
@@ -82,12 +92,12 @@ describe('no faces that flicker through each other (z-fighting)', () => {
       const rammed = loading.createShell(0);
       rammed.position.set(BREECH_MOUTH[0], BREECH_MOUTH[1], BREECH_MOUTH[2] - SHELL_LENGTH / 2);
       const shells = closed ? [rammed, ...racked.slice(1)] : racked;
-      expectNone([loading.createLoadingStation(), block, lever, ...shells], DECK_GAP, onDeck);
+      expectNone([loading.createLoadingStation(), block, lever, ...shells], CABIN_GAP, onFloor);
     }
   });
 
   it('on a shell', () => {
-    expectNone([loading.createShell(0)], DECK_GAP);
+    expectNone([loading.createShell(0)], CABIN_GAP);
   });
 
   it('on the lever test rig, with its tillers upright and at both limits', async () => {
@@ -103,15 +113,15 @@ describe('no faces that flicker through each other (z-fighting)', () => {
         rig.add(tiller);
       }
       rig.updateMatrixWorld(true);
-      expectNone([rig], DECK_GAP);
+      expectNone([rig], CABIN_GAP);
     }
   });
 
   it('on the crew', () => {
     for (const index of [0, 1]) {
-      expectNone([avatar.createAvatarHead(index)], DECK_GAP);
-      expectNone([avatar.createAvatarTorso(index)], DECK_GAP);
-      expectNone([avatar.createAvatarLegs(index)], DECK_GAP);
+      expectNone([avatar.createAvatarHead(index)], CABIN_GAP);
+      expectNone([avatar.createAvatarTorso(index)], CABIN_GAP);
+      expectNone([avatar.createAvatarLegs(index, 0.63)], CABIN_GAP);
     }
   });
 
@@ -123,8 +133,8 @@ describe('no faces that flicker through each other (z-fighting)', () => {
       return mesh;
     };
     for (const angle of [0, 0.7, Math.PI / 2]) {
-      expectNone([ride.createRideHull(), turned(ride.createRideTurret(), angle), turned(ride.createRideTurretOpen(), angle)], DECK_GAP);
-      expectNone([ride.createRideHull(), ride.createRideHullRoof(), turned(ride.createRideTurret(), angle), turned(ride.createRideTurretClosed(), angle)], DECK_GAP);
+      expectNone([ride.createRideHull(), turned(ride.createRideTurret(), angle), turned(ride.createRideTurretOpen(), angle)], CABIN_GAP);
+      expectNone([ride.createRideHull(), ride.createRideHullRoof(), turned(ride.createRideTurret(), angle), turned(ride.createRideTurretClosed(), angle)], CABIN_GAP);
     }
   });
 
@@ -141,11 +151,11 @@ describe('no faces that flicker through each other (z-fighting)', () => {
       { geometry: new BoxGeometry(1, 0.1, 1), color: 0x804020, position: [0, -0.05, 0] },
       { geometry: new BoxGeometry(0.2, 0.1, 0.2), color: 0x202020, position: [0, -0.05, 0] },
     ]), 'flush');
-    expect(coplanarOverlaps(trianglesOf(flush), DECK_GAP).length).toBeGreaterThan(0);
+    expect(coplanarOverlaps(trianglesOf(flush), CABIN_GAP).length).toBeGreaterThan(0);
     const proud = mesh(mergeParts([
       { geometry: new BoxGeometry(1, 0.1, 1), color: 0x804020, position: [0, -0.05, 0] },
       { geometry: new BoxGeometry(0.2, 0.108, 0.2), color: 0x202020, position: [0, -0.05, 0] },
     ]), 'proud');
-    expect(coplanarOverlaps(trianglesOf(proud), DECK_GAP).length).toBe(0);
+    expect(coplanarOverlaps(trianglesOf(proud), CABIN_GAP).length).toBe(0);
   });
 });

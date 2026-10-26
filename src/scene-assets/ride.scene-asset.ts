@@ -7,7 +7,7 @@ import {
   InstancedMesh,
   Matrix4,
   Mesh,
-  MeshLambertMaterial,
+  MeshStandardMaterial,
   PlaneGeometry,
   Quaternion,
   Vector3,
@@ -42,7 +42,7 @@ const ROCK = 0x8a8478;
 const LEAVES = 0x3f6b35;
 const BARK = 0x5a4632;
 
-const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
 
 function box(size: [number, number, number], position: [number, number, number], color: number): Part {
   return { geometry: new BoxGeometry(...size), color, position };

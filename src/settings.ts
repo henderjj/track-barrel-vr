@@ -1,4 +1,5 @@
 import { clampCharacterHeight } from './sim/body-height.js';
+import { parseSeat, type SeatId } from './sim/cabin.js';
 
 /**
  * Runtime settings, read once when the page loads: first the ones saved from
@@ -16,8 +17,6 @@ export interface Settings {
   foveation: number;
   /** WebXR framebuffer scale; 1 is the browser default. */
   framebufferScale: number;
-  /** Loose physics blocks on the table. */
-  blocks: number;
   /** Show the perf HUD from the start. */
   hud: boolean;
   /** Crew room code to join on load (four letters), or '' to stay solo. */
@@ -51,6 +50,8 @@ export interface Settings {
   height: number;
   /** Playing seated: the view is raised to a little under an average standing eye height. */
   seated: boolean;
+  /** The seat a player starts in when playing alone or starting a crew (a guest is given the other one), src/sim/cabin.ts. */
+  seat: SeatId;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -58,7 +59,6 @@ export const DEFAULT_SETTINGS: Settings = {
   shadows: false,
   foveation: 1,
   framebufferScale: 1,
-  blocks: 6,
   hud: true,
   room: '',
   lobby: '',
@@ -74,6 +74,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bot: false,
   height: 0,
   seated: false,
+  seat: 'driver',
 };
 
 function num(params: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
@@ -105,7 +106,6 @@ export function parseSettings(search: string): Settings {
     shadows: bool(params, 'shadows', d.shadows),
     foveation: num(params, 'foveation', d.foveation, 0, 1),
     framebufferScale: num(params, 'fbscale', d.framebufferScale, 0.5, 1.5),
-    blocks: Math.round(num(params, 'blocks', d.blocks, 0, 30)),
     hud: bool(params, 'hud', d.hud),
     room: params.get('room') ?? d.room,
     lobby: params.get('lobby') ?? d.lobby,
@@ -121,6 +121,7 @@ export function parseSettings(search: string): Settings {
     bot: bool(params, 'bot', d.bot),
     height: clampCharacterHeight(num(params, 'height', d.height, 0, 3)),
     seated: bool(params, 'seated', d.seated),
+    seat: parseSeat(params.get('seat'), d.seat),
   };
 }
 

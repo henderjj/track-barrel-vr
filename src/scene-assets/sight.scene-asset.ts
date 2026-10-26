@@ -1,12 +1,13 @@
-import { BoxGeometry, CircleGeometry, CylinderGeometry, Mesh, MeshLambertMaterial, RingGeometry, TorusGeometry } from '@iwsdk/core';
+import { BoxGeometry, CircleGeometry, CylinderGeometry, Mesh, MeshStandardMaterial, RingGeometry, TorusGeometry } from '@iwsdk/core';
 import { beam, mergeParts, type Part } from './lowpoly.js';
-import { GROUND_Y } from '../sim/play-area.js';
+import { GROUND_Y } from '../sim/cabin.js';
 import { LENS_RADIUS, SIGHT_STAND, SIGHT_TARGETS, TARGET_BOARD, targetFoot } from '../sim/sight.js';
 
 /**
- * Spike S1's sight and range (docs/spikes/s1-sight-render.md): a sight on a
- * post at the deck's far corner, and three target boards out at 100, 250
- * and 500 m on a wide grass plain beyond the deck's ground. Stand-ins until
+ * Spike S1's sight and range (docs/spikes/s1-sight-render.md): a sight
+ * hanging from the turret roof at the gunner's eyepiece, and three target
+ * boards out at 100, 250 and 500 m on a grass plain beyond the tank's
+ * ground. Stand-ins until
  * the turret (F1.8), the gunsight (F1.9) and the test range (F1.7) replace
  * them; numbers from src/sim/sight.ts.
  */
@@ -27,18 +28,21 @@ const TUBE_LENGTH = 0.33;
 /** The tube's back end is this far in front of the lens, m, so the lens sits inside the eyecup. */
 const TUBE_BACK = 0.015;
 
-const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
 
 /**
- * The post the sight stands on, in deck space relative to its foot (deck
- * surface at y = 0): a base plate and a post up to just under the tube.
+ * The bracket the sight hangs from, in hull space relative to the point
+ * under its lens on the hull floor (y = 0): a plate 2 cm under the turret
+ * roof and a post down into the top of the tube, behind its band.
  */
 export function createSightStand(): Mesh {
-  const top = SIGHT_STAND.lensHeight - TUBE_RADIUS - 0.03;
+  const bottom = SIGHT_STAND.lensHeight + TUBE_RADIUS - 0.01;
+  const plate = SIGHT_STAND.roof - 0.02;
+  const z = -0.17;
   const mesh = new Mesh(
     mergeParts([
-      { geometry: new BoxGeometry(0.24, 0.02, 0.24), color: STEEL_DARK, position: [0, 0.01, 0] },
-      beam([0, 0.015, 0], [0, top, 0], 0.025, STEEL, 8),
+      { geometry: new BoxGeometry(0.16, 0.02, 0.16), color: STEEL_DARK, position: [0, plate + 0.01, z] },
+      beam([0, bottom, z], [0, plate + 0.005, z], 0.02, STEEL, 8),
     ]),
     material,
   );
@@ -78,8 +82,8 @@ export function createSightLensGeometry(): CircleGeometry {
 }
 
 /**
- * The spike's range, in deck space: a grass plain from just inside the
- * deck's 30 m ground out to 800 m (the same colour, 2 cm lower, so the
+ * The spike's range, in hull space: a grass plain from just inside the
+ * tank's 300 m ground out to 800 m (the same colour, 2 cm lower, so the
  * overlap never flickers), and a target board at each range in
  * SIGHT_TARGETS facing the sight: a canvas face on two posts with a dark
  * tank silhouette standing proud of it, and an orange marker per hundred
@@ -89,7 +93,7 @@ export function createSightLensGeometry(): CircleGeometry {
 export function createSightRange(): Mesh {
   const parts: Part[] = [
     {
-      geometry: new RingGeometry(29, 800, 32, 1),
+      geometry: new RingGeometry(299, 800, 32, 1),
       color: GRASS,
       position: [0, GROUND_Y - 0.02, 0],
       rotation: [-Math.PI / 2, 0, 0],
@@ -121,7 +125,7 @@ function targetParts(i: number, markers: number): Part[] {
     const mx = (m - (markers - 1) / 2) * 0.5;
     local.push({ geometry: new BoxGeometry(0.3, 0.3, 0.12), color: MARKER, position: [mx, bottom + height + 0.15, 0] });
   }
-  // Into deck space: turn about the foot, then move there.
+  // Into hull space: turn about the foot, then move there.
   const c = Math.cos(yaw);
   const s = Math.sin(yaw);
   return local.map((part) => {

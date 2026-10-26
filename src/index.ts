@@ -4,10 +4,8 @@ import { preferHighPerformanceGpu } from './gpu-preference.js';
 import { BodyHeightSystem } from './systems/body-height-system.js';
 import { CrewBotSystem } from './systems/crew-bot-system.js';
 import { CrewStatusSystem } from './systems/crew-status-system.js';
-import { DeckWalkSystem } from './systems/deck-walk-system.js';
 import { FrameRateSystem } from './systems/frame-rate-system.js';
 import { GameMenuSystem } from './systems/game-menu-system.js';
-import { GameSystem } from './systems/game-system.js';
 import { GripSystem } from './systems/grip-system.js';
 import { LoadingDrillSystem } from './systems/loading-drill-system.js';
 import { LeverSystem } from './systems/lever-system.js';
@@ -16,9 +14,9 @@ import { OwnHandsSystem } from './systems/own-hands-system.js';
 import { PerfHudSystem } from './systems/perf-hud-system.js';
 import { PlatformSystem } from './systems/platform-system.js';
 import { RideSystem } from './systems/ride-system.js';
+import { SeatSystem } from './systems/seat-system.js';
 import { SightSystem } from './systems/sight-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
-import { ThrowablesSystem } from './systems/throwables-system.js';
 
 // On a two-GPU PC, start on the graphics card Link uses (src/gpu-preference.ts).
 preferHighPerformanceGpu();
@@ -32,21 +30,20 @@ World.create(
   world.registerSystem(FrameRateSystem);
   // Before anything reads the head or hands: it raises or lowers the player for their character's height.
   world.registerSystem(BodyHeightSystem, { priority: -6 });
+  // Just after it: it puts the player in their seat, on top of the body-height offset.
+  world.registerSystem(SeatSystem, { priority: -6 });
   // Before the systems that read its grip state.
   world.registerSystem(GripSystem, { priority: -5 });
-  // Before the throwables, which take its blocks in init.
-  world.registerSystem(GameSystem);
   world.registerSystem(NetSystem);
-  world.registerSystem(DeckWalkSystem);
-  // Spike S2: after the deck walk, whose thumbsticks it takes over, and before anything draws the hands on the moved rig.
+  // Spike S2: before anything draws the hands on the moved rig. The seat system stands aside while it rides.
   world.registerSystem(RideSystem);
   // After NetSystem, which updates the crew presence it shows.
   world.registerSystem(CrewStatusSystem);
-  // Add your game's systems here. Ones that hold a hand (handUse) go
-  // before the throwables, which skip hands already holding something.
+  // Add the tank's systems here. ThrowablesSystem (loose objects, kept for
+  // shells and casings) goes after any that hold a hand (handUse), since it
+  // skips hands already holding something.
   world.registerSystem(LeverSystem);
   world.registerSystem(LoadingDrillSystem);
-  world.registerSystem(ThrowablesSystem);
   // After the systems it drives; their scripted hands are functions of time, so a frame late costs nothing.
   world.registerSystem(CrewBotSystem);
   // After the controls have moved, so hands drawn on them (grip locking) sit on them this frame.

@@ -13,9 +13,11 @@
  * the breech opens, the shell goes back in the rack, and the next load is
  * timed from that moment.
  *
- * Deck space (src/sim/play-area.ts): deck surface at y = 0, the loader faces
- * -Z, +X to their right. Heights assume seated play, which raises a seated
- * player's eyes to 1.45 m (src/sim/body-height.ts).
+ * Station space: the station's floor at y = 0, the loader faces -Z, +X to
+ * their right. It is hull space (src/sim/cabin.ts) moved sideways to
+ * STATION_SPOT, so the numbers below are the spike's own. Heights assume
+ * seated play, which raises a seated player's eyes to 1.45 m
+ * (src/sim/body-height.ts).
  */
 
 export type Vec3 = [number, number, number];
@@ -23,6 +25,13 @@ export type Vec3 = [number, number, number];
 export type Quat = [number, number, number, number];
 export type Side = 'left' | 'right';
 const SIDES: readonly Side[] = ['left', 'right'];
+
+/**
+ * Where station space's origin is in hull space: beside the tank's left
+ * track, facing the tank's way, on a platform level with the hull floor.
+ * The station stands there until F1.10 moves loading into the turret.
+ */
+export const STATION_SPOT = { x: -3.1, z: 0 } as const;
 
 /** Where the seated loader's eyes go (x, z): the Practice button puts the player's head here, facing -Z. */
 export const LOADER_SEAT = { x: 0, z: 1.45 } as const;

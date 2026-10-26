@@ -4,54 +4,40 @@
  * Engine-free, so it can be unit tested.
  */
 
-/** Gravity, m/s². On a moving vehicle use the vehicle's frame: its own accelerations are small next to this. */
-export const BOT_GRAVITY = 9.81;
-/** How far the bot reaches from its resting hand to meet a block, m. */
-export const CATCH_REACH = 0.7;
-/** How far ahead a flying block's path is followed, s. */
-const LOOKAHEAD_S = 1.2;
-const LOOKAHEAD_STEP_S = 0.02;
+import { type Seat, seatToHull } from './cabin.js';
 
 type Vec3 = [number, number, number];
 
+/** Where a seated crewmate rests its hands, from its eyes in its seat's frame: in front, below the chest, m. */
+export const REST_HAND = { across: 0.18, below: 0.55, ahead: 0.35 } as const;
+
 /**
- * Where to put a hand to meet a flying block at `pos` moving at `vel`: the
- * point of its falling path closest to `rest`, if that is within `reach`.
- * Writes the point to `out` and returns true, or returns false when the
- * block won't pass close enough.
+ * Where the bot rests its `side` hand in `seat`, hull space, written to
+ * `out`: in front of it at the height of the controls, where the driver's
+ * tillers and the gunner's wheels will be (F1.5, F1.8).
  */
-export function interceptPoint(pos: Vec3, vel: Vec3, rest: Vec3, out: Vec3, reach = CATCH_REACH): boolean {
-  let best = Number.POSITIVE_INFINITY;
-  for (let t = 0; t <= LOOKAHEAD_S; t += LOOKAHEAD_STEP_S) {
-    const x = pos[0] + vel[0] * t;
-    const y = pos[1] + vel[1] * t - 0.5 * BOT_GRAVITY * t * t;
-    const z = pos[2] + vel[2] * t;
-    const d = Math.hypot(x - rest[0], y - rest[1], z - rest[2]);
-    if (d < best) {
-      best = d;
-      out[0] = x;
-      out[1] = y;
-      out[2] = z;
-    }
-  }
-  return best <= reach;
+export function restingHand(seat: Seat, turretYaw: number, side: 'left' | 'right', out: Vec3): Vec3 {
+  out[0] = seat.eye[0] + (side === 'left' ? -REST_HAND.across : REST_HAND.across);
+  out[1] = seat.eye[1] - REST_HAND.below;
+  out[2] = seat.eye[2] - REST_HAND.ahead;
+  return seatToHull(seat, turretYaw, out, out);
 }
 
-/** Launch velocity that carries a block from `from` to `to` in `flightS` seconds under gravity. */
-export function throwVelocity(from: Vec3, to: Vec3, flightS: number, out: Vec3): Vec3 {
-  out[0] = (to[0] - from[0]) / flightS;
-  out[1] = (to[1] - from[1]) / flightS + 0.5 * BOT_GRAVITY * flightS;
-  out[2] = (to[2] - from[2]) / flightS;
+/**
+ * How the bot looks about while it sits, at `seconds`: a slow, uneven
+ * glance left and right and a little up and down, so the player can see
+ * it is there and awake. Writes [yaw, pitch] (rad, from facing the seat's
+ * way) to `out`.
+ */
+export function idleLook(seconds: number, out: [number, number]): [number, number] {
+  const tau = Math.PI * 2;
+  out[0] = 0.35 * Math.sin((tau * seconds) / 9) + 0.12 * Math.sin((tau * seconds) / 3.7);
+  out[1] = -0.1 + 0.08 * Math.sin((tau * seconds) / 6.3);
   return out;
 }
 
-/** A gentle flight time for a throw over `distance` metres, s. */
-export function throwFlightTime(distance: number): number {
-  return Math.min(0.8, Math.max(0.4, distance / 4));
-}
-
 /** Move `from` towards `to` by at most `maxStep`, in place; returns the distance left. */
-export function stepTowards(from: Vec3, to: Vec3, maxStep: number): number {
+export function stepTowards(from: Vec3, to: readonly number[], maxStep: number): number {
   const dx = to[0] - from[0];
   const dy = to[1] - from[1];
   const dz = to[2] - from[2];

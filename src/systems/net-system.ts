@@ -14,16 +14,16 @@ import {
   crewCoat,
   createAvatarTorso,
   CREW_COLORS,
-  HIP_BELOW_EYES,
-  LEG_LENGTH,
 } from '../scene-assets/avatar.scene-asset.js';
 import type { PosedHand } from '../scene-assets/hand.scene-asset.js';
+import { hipPoint, SEATS, seatToHull } from '../sim/cabin.js';
 import { copyCurls, createFingerCurls, type FingerCurls, setCurls } from '../sim/hand-pose.js';
 import { settings } from '../settings.js';
 import { crewPresence } from '../net/crew-presence.js';
 import { handCurls, handUse } from './grip-system.js';
 import { HoldKind, LOCAL_HOLD_KINDS, LockedHand } from './hand-lock.js';
 import { perf } from './perf-hud-system.js';
+import { seating } from './seating.js';
 import { describeBrowser, readGpu } from '../perf/platform-report.js';
 import { softwareRendererNote, vrStartMessage, vrSupportNote } from '../vr-messages.js';
 import { onVrStart, prepareVr, startVr, vrStartState } from '../vr-start.js';
@@ -32,9 +32,10 @@ import { onVrStart, prepareVr, startVr, vrStartState } from '../vr-start.js';
  * Two players in one place. Sends this player's head and hands 45 times a
  * second over the unreliable channel, and draws the crewmate from a jitter
  * buffer a little in the past so they move smoothly. Poses are in scene
- * space. If your game has a moving vehicle, keep the vehicle still at the
- * origin and move the world round it instead, so poses stay in the
- * vehicle's space and the deck and crewmate never judder against each other.
+ * space, which is the tank's hull space: the tank stays still at the origin
+ * and the world will move round it (plan decision 4), so the cabin and the
+ * crewmate never judder against each other. The crewmate's legs sit in
+ * their seat (SeatSystem says which); the rest of them follows their pose.
  *
  * The start screen creates or joins a room (through `crewControls`);
  * `?room=ABCD` in the URL joins on load. With no room the game is solo and
@@ -146,7 +147,7 @@ export const netLink = {
   scriptedSqueeze: { left: false, right: false },
   /** A head pose to send instead of the camera's (the practice crewmate), or null. */
   headOverride: null as ((nowMs: number) => PoseSample) | null,
-  /** Where this player's feet are, m above the deck (0 unless your game lifts the player: a ladder, a lift). */
+  /** Where this player's feet are, m above the hull floor (their seat's floor: SeatSystem sets it). */
   feet: 0,
   /** Feet to send instead (the practice crewmate), or null. */
   feetOverride: null as ((nowMs: number) => number) | null,
@@ -247,6 +248,7 @@ export class NetSystem extends createSystem({}) {
   private tmpQuat = new Quaternion();
   private tmpScale = new Vector3();
   private tmpEuler = new Euler(0, 0, 0, 'YXZ');
+  private hip: [number, number, number] = [0, 0, 0];
   private scriptedGrip = new Quaternion();
   private readonly gripPitch = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), SCRIPTED_GRIP_PITCH);
   private readonly yAxis = new Vector3(0, 1, 0);
@@ -561,7 +563,8 @@ export class NetSystem extends createSystem({}) {
     const index = this.remoteColor;
     this.head = createAvatarHead(index);
     this.torso = createAvatarTorso(index);
-    this.legs = createAvatarLegs(index);
+    const seat = SEATS.driver;
+    this.legs = createAvatarLegs(index, hipPoint(seat, this.hip)[1] - seat.floorY);
     this.leftHand = createAvatarHand(index, 'left');
     this.rightHand = createAvatarHand(index, 'right');
     for (const mesh of [this.head, this.torso, this.legs, this.leftHand.mesh, this.rightHand.mesh]) {
@@ -737,13 +740,11 @@ export class NetSystem extends createSystem({}) {
     this.tmpQuat.set(r.head.qx, r.head.qy, r.head.qz, r.head.qw);
     this.tmpEuler.setFromQuaternion(this.tmpQuat, 'YXZ');
     this.torso.rotation.set(0, this.tmpEuler.y, 0);
-    // Legs stand on the deck (or wherever their feet are) under the torso
-    // and stretch or squash to reach it, so a crouching or seated crewmate
-    // never sinks into the floor.
-    const feet = Math.max(0, r.feet);
-    this.legs.position.set(r.head.px, feet, r.head.pz);
-    this.legs.rotation.set(0, this.tmpEuler.y, 0);
-    this.legs.scale.y = Math.min(1.3, Math.max(0.3, (r.head.py - feet - HIP_BELOW_EYES) / LEG_LENGTH));
+    // Legs sit in the crewmate's seat, facing its way.
+    const seat = SEATS[seating.crew];
+    seatToHull(seat, seating.turretYaw, hipPoint(seat, this.hip), this.hip);
+    this.legs.position.set(this.hip[0], this.hip[1], this.hip[2]);
+    this.legs.rotation.set(0, seat.frame === 'turret' ? seating.turretYaw : 0, 0);
     setFromPose(this.leftHand.mesh, r.left);
     setFromPose(this.rightHand.mesh, r.right);
     // Their fingers are posed, and hands locked to what they hold, in lockCrewHands.

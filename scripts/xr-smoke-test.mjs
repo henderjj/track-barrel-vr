@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Headless XR smoke test for the starter.
+ * Headless XR smoke test.
  *
  * Drives the IWSDK managed browser (an emulated Meta Quest 3, through IWER,
  * IWSDK's browser-based XR emulator) with the @iwsdk/cli surface:
@@ -9,30 +9,27 @@
  *     a controller ray, and works the game menu (Y) with the ray;
  *  1. checks this player's own hands are drawn and posed by the controller
  *     (flat, fist, point, thumbs-up);
- *  1b. walks the deck with the thumbstick from off the room's centre and
- *     checks the head stops at the rails, then snap turns about the head;
+ *  1b. sits in the driver's seat (the cabin, F1.1): the eyes over its eye
+ *     point, a lean stopped at the head box's edge, a recentre put back in
+ *     the seat, and the game menu's Practice row moving them to the
+ *     gunner's seat in the turret basket and back;
  *  1c. picks a character height and seated play and checks the eyes and
  *     hands are raised to it;
  *  2. checks the 90 Hz request ran and the platform report (spike S8);
  *  2c. looks through the gunsight (spike S1): it opens as the head leans in,
  *     renders a picture of the range, closes as it leans back;
- *  3. checks the blocks rest on the table;
- *  4. grabs a block with the right controller's squeeze, lifts and drops it,
- *     and pulls one out of a pile without flinging the others;
- *  5. throws a block through the hoop (a scripted hand) and checks the score,
- *     then restarts from the game menu;
  *  5b. opens Practice > Lever test (spike S3) and works a tiller with a
  *     controller: it follows the hand, stops at its limit with the hand
  *     kept on it, lets go when the hand is pulled off, springs back, and
  *     both tillers forwards drive the tank up the board's lane;
- *  6. switches to tracked hands (spike S9) and picks up a block with a pinch,
- *     then works a tiller with a pinch (6a);
+ *  6. switches to tracked hands (spike S9) and grips with a pinch, then
+ *     works a tiller with a pinch (6a);
  *  6b. spike S4: Practice → Sit at the breech, then loads a shell with the
  *     right controller (rack, breech, ram, lever) and drops one;
  *  6c. rides the tank (spike S2) from the game menu's Practice section: the
  *     driver's seat holds the head in the hull while the ground moves round
  *     it, the vignette darkens with the motion and turns off from the menu,
- *     the gunner's seat turns with the turret, and Stop brings the deck back;
+ *     the gunner's seat turns with the turret, and Stop brings the cabin back;
  *  7. checks the perf CSV has rows, then re-enters XR with the frame-rate
  *     API removed, as desktop Chrome and Edge over Link may have it, and
  *     checks the game measures the refresh rate instead; IWSDK's controller
@@ -75,12 +72,6 @@ function ask(request) {
 }
 
 
-// Mirrors src/sim/play-area.ts and src/scene-assets/deck.scene-asset.ts.
-const DECK_HALF_WIDTH = 1.5;
-const DECK_HALF_LENGTH = 2.0;
-const TABLE = { x: 0, z: -1.2, height: 0.8, halfW: 0.5, halfD: 0.25 };
-const HOOP = { x: 0, y: 2.0, z: -2.6 };
-const BLOCK_COUNT = 6;
 const SQUEEZE = 1; // gamepad button index for proximity grab
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -180,9 +171,9 @@ function grabbedNames() {
 }
 
 /**
- * Controller poses are in the XR origin's space; the origin can drift from the
- * world origin (locomotion) and turn (a seat in the tank), so convert world
- * targets into it.
+ * Controller and headset poses are in the XR origin's space; the seat
+ * system (or a spike's seat) moves and turns the origin to put the player in
+ * their seat, so convert world (hull space) targets into it.
  */
 function toOrigin(p) {
   const o = evalInApp(`(() => { const rig = window.__debug.world.player; rig.updateMatrixWorld(); return rig.worldToLocal(rig.position.clone().set(${p[0]}, ${p[1]}, ${p[2]})).toArray(); })()`);
@@ -190,11 +181,6 @@ function toOrigin(p) {
 }
 
 const fmt = (p) => p.map((v) => v.toFixed(3)).join(', ');
-const onTable = (p) =>
-  Math.abs(p[0] - TABLE.x) < TABLE.halfW && Math.abs(p[2] - TABLE.z) < TABLE.halfD && p[1] > TABLE.height && p[1] < TABLE.height + 0.3;
-const aboard = (p) =>
-  Math.abs(p[0]) < DECK_HALF_WIDTH + 0.05 && Math.abs(p[2]) < DECK_HALF_LENGTH + 0.05 && p[1] > -0.02 && p[1] < 2.5;
-
 async function ensureRuntime() {
   console.log('Starting (or attaching to) the headless dev runtime...');
   iwsdk(['dev', 'up', '--headless', '--allow-browser-automation', '--timeout', '120000']);
@@ -301,30 +287,104 @@ async function startScreenAndMenu() {
     await sleep(300);
   };
   await menuButton();
-  const reopened = evalInApp('({ open: window.__gameMenu.open, restart: window.__gameMenu.shown("menu-restart") })');
+  const reopened = evalInApp('({ open: window.__gameMenu.open, seats: window.__gameMenu.shown("row-seat-0") && window.__gameMenu.shown("row-seat-1"), driverLit: window.__gameMenu.selected("row-seat-0") })');
   await bButton();
   const backedOut = evalInApp('window.__gameMenu.open');
-  check('B closes the game menu, which offers Restart',
-    reopened.open && reopened.restart && !backedOut,
+  check("B closes the game menu, whose Practice row shows the driver's seat taken",
+    reopened.open && reopened.seats && reopened.driverLit && !backedOut,
     `reopened ${JSON.stringify(reopened)}, open after B ${backedOut}`);
   iwsdk(['xr', 'set-device-state'], {});
 }
 
-/** Room-space (XR origin) coordinates of world point `p`, allowing for the rig's turn as well as its offset. */
-function toRig(p) {
-  const [x, y, z] = evalInApp(`window.__debug.world.player.worldToLocal(window.__debug.world.player.position.clone().set(${p.join(',')})).toArray()`);
-  return { x, y, z };
+const toRig = toOrigin;
+
+/** Where this player sits: their seat, head and its eye point (hull space), and the play space's height. */
+const seated = () => evalInApp('({ mine: window.__seats.mine, head: window.__seats.head(), eye: window.__seats.eye(window.__seats.mine), rigY: window.__debug.world.player.position.y, fixes: { ...window.__seats.fixes } })');
+const flatGap = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
+
+/**
+ * 1b. The cabin (F1.1): playing solo the player sits in the driver's seat,
+ *     eyes over its eye point; a lean forward stops at the head box's edge
+ *     (the controls and the front plate are beyond); a recentre, a jump of
+ *     over a metre, puts them back in the seat; the game menu's Practice
+ *     row moves them to the gunner's seat in the turret basket, its floor
+ *     80 cm up, and back.
+ */
+async function seatStep() {
+  evalInApp('(window.__seats.reseat(), true)');
+  const start = await waitFor("the driver's seat", () => {
+    const s = seated();
+    return s.mine === 'driver' && flatGap(s.head, s.eye) < 0.01 ? s : null;
+  }, 5000).catch(() => seated());
+  check("Solo, the player sits in the driver's seat with their eyes over its eye point",
+    start.mine === 'driver' && flatGap(start.head, start.eye) < 0.01 && Math.abs(start.rigY) < 1e-6,
+    `${start.mine}, head ${fmt(start.head)}, eye point ${fmt(start.eye)}, floor at ${start.rigY.toFixed(3)} m`);
+  const eye = start.eye;
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([eye[0] + 0.1, eye[1] - 0.15, eye[2] - 3]) });
+  await sleep(500);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-driver-seat.png'], {});
+
+  // Lean 80 cm forward in the room: the head box reaches 60 cm ahead of the eye point (src/sim/cabin.ts).
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([eye[0], eye[1], eye[2] - 0.8]) });
+  const leant = await waitFor('the lean to stop', () => {
+    const s = seated();
+    return s.fixes.push > start.fixes.push ? s : null;
+  }, 5000).catch(() => seated());
+  check('Leaning past the head box stops the head at its edge',
+    leant.fixes.push > start.fixes.push && Math.abs(leant.head[2] - (eye[2] - 0.6)) < 0.01 && Math.abs(leant.head[0] - eye[0]) < 0.01,
+    `head at ${fmt(leant.head)}, edge at z ${(eye[2] - 0.6).toFixed(3)}`);
+
+  // A recentre: the head jumps 1.5 m sideways in the room.
+  const now = iwsdk(['xr', 'get-transform'], { device: 'headset' }).result.position;
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: now.x + 1.5, y: now.y, z: now.z } });
+  const back = await waitFor('back in the seat', () => {
+    const s = seated();
+    return s.fixes.reseat > start.fixes.reseat && flatGap(s.head, s.eye) < 0.01 ? s : null;
+  }, 5000).catch(() => seated());
+  check('A head far outside the seat (a recentre) is put back in the seat',
+    back.fixes.reseat > start.fixes.reseat && flatGap(back.head, back.eye) < 0.01,
+    `head ${fmt(back.head)}, eye point ${fmt(back.eye)}, ${back.fixes.reseat - start.fixes.reseat} reseat(s)`);
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'row-seat-1'));
+  const gunner = await waitFor("the gunner's seat", () => {
+    const s = seated();
+    return s.mine === 'gunner' && flatGap(s.head, s.eye) < 0.01 ? s : null;
+  }, 5000).catch(() => seated());
+  const lit = evalInApp('window.__gameMenu.selected("row-seat-1")');
+  await menuButtonPress();
+  check("The game menu's Practice row sits the player in the gunner's seat, on the turret basket's floor",
+    gunner.mine === 'gunner' && flatGap(gunner.head, gunner.eye) < 0.01 && Math.abs(gunner.rigY - 0.8) < 0.01 && lit,
+    `${gunner.mine}, head ${fmt(gunner.head)}, eye point ${fmt(gunner.eye)}, floor at ${gunner.rigY.toFixed(3)} m, Gunner ${lit ? '' : 'not '}highlighted`);
+  const g = gunner.eye;
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([g[0] - 1.2, g[1] - 0.5, g[2] - 2.5]) });
+  await sleep(500);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-gunner-seat.png'], {});
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([g[0] - 0.6, g[1] - 1.3, g[2] - 2.2]) });
+  await sleep(500);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-gunner-to-driver.png'], {});
+  evalInApp("(window.__seats.ask('driver'), true)");
+  iwsdk(['xr', 'set-device-state'], {});
+  await waitFor("the driver's seat again", () => seated().mine === 'driver', 5000).catch(() => null);
+  await sleep(300);
 }
 
 async function sightStep() {
+  // From the driver's seat, "Go to it" first moves the player to the gunner's.
   evalInApp('(window.__sight.goTo(), true)');
-  await sleep(300);
   const lens = evalInApp('window.__sight.lens()');
-  const head = evalInApp('window.__deckWalk.head()');
-  const behind = (head[0] - lens.at[0]) * lens.facing[0] + (head[2] - lens.at[2]) * lens.facing[2];
+  const behindLens = (head) => (head[0] - lens.at[0]) * lens.facing[0] + (head[2] - lens.at[2]) * lens.facing[2];
+  const there = await waitFor('the eyepiece', () => {
+    const s = seated();
+    return s.mine === 'gunner' && behindLens(s.head) > 0.1 && behindLens(s.head) < 0.2 ? s : null;
+  }, 5000).catch(() => seated());
+  const head = there.head;
+  const behind = behindLens(head);
   const before = evalInApp('window.__sight.state()');
-  check('Practice "Go to it" puts the head just behind the eyepiece, the sight still closed',
-    behind > 0.1 && behind < 0.2 && !before.open, `head ${fmt(head)}, lens ${fmt(lens.at)}, ${(behind * 100).toFixed(0)} cm behind, open ${before.open}`);
+  check('Practice "Go to it" sits the player in the gunner\'s seat with their head just behind the eyepiece, the sight still closed',
+    there.mine === 'gunner' && behind > 0.1 && behind < 0.2 && !before.open, `${there.mine}, head ${fmt(head)}, lens ${fmt(lens.at)}, ${(behind * 100).toFixed(0)} cm behind, open ${before.open}`);
 
   const along = (d) => lens.at.map((v, i) => v + lens.facing[i] * d);
   const lookDown = () => iwsdk(['xr', 'look-at'], { device: 'headset', target: toRig(along(-20)) });
@@ -375,8 +435,9 @@ async function sightStep() {
   check("The game menu's Practice button changes the sight's texture size",
     sized.size === 1024 && sized.label === '1024²', `size ${sized.size}, label ${sized.label}`);
 
-  evalInApp('(window.__debug.world.player.position.set(0, 0, 0), window.__debug.world.player.rotation.set(0, 0, 0), true)');
+  evalInApp("(window.__seats.ask('driver'), true)");
   iwsdk(['xr', 'set-device-state'], {});
+  await waitFor("the driver's seat again", () => seated().mine === 'driver', 5000).catch(() => null);
   await sleep(300);
 }
 
@@ -396,7 +457,7 @@ async function loadingDrill() {
   await rayClick(elementPosition('menu-panel', 'menu-loading'));
   const drill = () => evalInApp('window.__loading.state()');
   const { seat, layout } = evalInApp('({ seat: window.__loading.seat, layout: window.__loading.layout })');
-  const head = evalInApp('window.__deckWalk.head()');
+  const head = evalInApp('window.__seats.head()');
   const fresh = drill();
   check('Practice → Sit at the breech puts the head over the loader\'s seat, every shell in the rack',
     Math.hypot(head[0] - seat.x, head[2] - seat.z) < 0.02 && fresh.shells.every((s) => s.place === 'rack') && fresh.lever === 0,
@@ -422,7 +483,7 @@ async function loadingDrill() {
   const nose0 = held.shells[0].nose;
   const grip0 = gripWorld();
   const noseAt = (n) => [grip0[0] + n[0] - nose0[0], grip0[1] + n[1] - nose0[1], grip0[2] + n[2] - nose0[2]];
-  await gripTo(noseAt([-0.1, 1.15, layout.mouth[2] + 0.05]), 0.5);
+  await gripTo(noseAt([seat.x - 0.1, 1.15, layout.mouth[2] + 0.05]), 0.5);
   await gripTo(noseAt([layout.mouth[0], layout.mouth[1], layout.mouth[2] + 0.03]), 0.4);
   const captured = await waitFor('the shell on the bore', () => drill().breechShell === 0, 4000).catch(() => false);
   iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(layout.mouth) });
@@ -445,7 +506,7 @@ async function loadingDrill() {
   }
   const loaded = await waitFor('the load counted', () => evalInApp('window.__loading.stats.loads') === 1, 4000).catch(() => false);
   const closed = drill();
-  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([-0.2, 1.2, 0.8]) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([seat.x - 0.2, 1.2, 0.8]) });
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-loading-closed.png'], {});
   squeeze(false);
   const stats = evalInApp('({ ...window.__loading.stats })');
@@ -464,14 +525,14 @@ async function loadingDrill() {
   await gripTo([second.centre[0], second.centre[1], second.centre[2] + 0.2], 0.5);
   squeeze(true);
   await waitFor('a second shell in the hand', () => drill().holds.right === 1, 4000).catch(() => false);
-  await gripTo([0.15, 1.25, seat.z - 0.3], 0.4);
+  await gripTo([seat.x + 0.15, 1.25, seat.z - 0.3], 0.4);
   squeeze(false);
   const dropped = await waitFor('the fumble', () => evalInApp('window.__loading.stats.dropped') === 1, 4000).catch(() => false);
   const back = await waitFor('the dropped shell back in the rack', () => drill().shells[1].place === 'rack', 6000).catch(() => false);
   check('A shell let go away from the breech counts as a fumble and goes back in the rack', dropped && back,
     `fumbles ${evalInApp('window.__loading.stats.fumbles')}, shell ${drill().shells[1].place}`);
 
-  evalInApp('(window.__debug.world.player.position.set(0, 0, 0), window.__debug.world.player.rotation.set(0, 0, 0), window.__loading.reset(), true)');
+  evalInApp('(window.__loading.reset(), window.__seats.reseat(), true)');
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
 }
@@ -494,7 +555,7 @@ const RIDE = { tile: 240, driverEye: [-0.75, -1.95], gunnerEye: [-0.42, -0.4], t
  *     floor stays where the tank is in the ground's space), and the
  *     vignette darkens as it speeds up until the menu turns it off. As
  *     gunner, the right stick traverses the turret and the head goes round
- *     with it. Stop puts the deck back.
+ *     with it. Stop puts the cabin back, with the player in their seat.
  */
 async function ridingTheTank() {
   const state = () => evalInApp('window.__ride.state()');
@@ -511,9 +572,9 @@ async function ridingTheTank() {
     const s = state();
     return s.active && Math.hypot(s.head[0] - RIDE.driverEye[0], s.head[2] - RIDE.driverEye[1]) < 0.02 && s;
   }, 5000).catch(() => state());
-  check('Practice → As driver seats the head at the driver\'s eyes, the deck hidden',
+  check('Practice → As driver seats the head at the driver\'s eyes, the cabin hidden',
     seated.active && seated.seat === 'driver' && !seated.demoShown && seated.worldShown && Math.hypot(seated.head[0] - RIDE.driverEye[0], seated.head[2] - RIDE.driverEye[1]) < 0.02,
-    `riding ${seated.active} as ${seated.seat}, head at ${fmt(seated.head)}, deck ${seated.demoShown ? 'shown' : 'hidden'}`);
+    `riding ${seated.active} as ${seated.seat}, head at ${fmt(seated.head)}, cabin ${seated.demoShown ? 'shown' : 'hidden'}`);
 
   // Drive forward: the tank moves through the ground, the hull stays put, the vignette darkens.
   thumbstick('controller-left', 0, -1);
@@ -562,10 +623,15 @@ async function ridingTheTank() {
   await menuButtonPress();
   await rayClick(elementPosition('menu-panel', 'menu-ride-stop'));
   await menuButtonPress();
-  const stopped = state();
-  check('Stop ends the ride and brings the deck back',
-    !stopped.active && stopped.demoShown && !stopped.worldShown && stopped.rig[0] === 0 && stopped.rig[2] === 0 && stopped.rig[3] === 0,
-    `riding ${stopped.active}, deck ${stopped.demoShown ? 'shown' : 'hidden'}, rig at ${fmt(stopped.rig)}`);
+  const backInSeat = () => {
+    const s = state();
+    const seat = evalInApp('({ eye: window.__seats.eye(window.__seats.mine), head: window.__seats.head() })');
+    return { ...s, gap: Math.hypot(seat.head[0] - seat.eye[0], seat.head[2] - seat.eye[2]) };
+  };
+  const stopped = await waitFor('the player back in their seat', () => { const s = backInSeat(); return !s.active && s.gap < 0.02 && s; }, 5000).catch(() => backInSeat());
+  check('Stop ends the ride, brings the cabin back and puts the player back in their seat',
+    !stopped.active && stopped.demoShown && !stopped.worldShown && stopped.gap < 0.02,
+    `riding ${stopped.active}, cabin ${stopped.demoShown ? 'shown' : 'hidden'}, head ${(stopped.gap * 100).toFixed(1)} cm from the seat's eye point`);
   evalInApp("(window.__ride.set('vignette', true), window.__ride.set('cabin', 'open'), window.__ride.set('tank', 'route'), window.__ride.set('turret', 'scan'), true)");
   iwsdk(['xr', 'set-device-state'], {});
 }
@@ -640,33 +706,7 @@ async function main() {
   }
   iwsdk(['xr', 'set-device-state'], {});
 
-  // 1b. Thumbstick walking stops the head at the rails wherever the player
-  //     stands in their room: here 0.8 m behind and 0.5 m left of its middle.
-  const walk = evalInApp('window.__deckWalk.bounds');
-  const walkHead = () => evalInApp('window.__deckWalk.head()');
-  const thumbstick = (device, x, y) =>
-    iwsdk(['xr', 'set-gamepad-state'], { device, axes: [{ index: 0, value: x }, { index: 1, value: y }] });
-  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: -0.5, y: 1.6, z: 0.8 } });
-  iwsdk(['xr', 'look-at'], { device: 'headset', target: { x: -0.5, y: 1.4, z: -3 } });
-  await sleep(300);
-  thumbstick('controller-left', 0, -1);
-  const atBow = await waitFor('walk to the far end', () => { const p = walkHead(); return p[2] < -walk.halfLength + 0.01 && p; }, 8000).catch(() => walkHead());
-  thumbstick('controller-left', 1, 0);
-  const atStarboard = await waitFor('walk to the right rail', () => { const p = walkHead(); return p[0] > walk.halfWidth - 0.01 && p; }, 8000).catch(() => walkHead());
-  await sleep(500);
-  const stopped = walkHead();
-  thumbstick('controller-left', 0, 0);
-  check('Walking takes the head to the far and right rails from off the room centre, and no further',
-    Math.abs(atBow[2] + walk.halfLength) < 0.02 && Math.abs(stopped[0] - walk.halfWidth) < 0.02 && Math.abs(stopped[2] + walk.halfLength) < 0.02,
-    `head at the far end ${fmt(atBow)}, at the right rail ${fmt(atStarboard)}, stopped at ${fmt(stopped)}; bounds ±${walk.halfWidth} × ±${walk.halfLength}`);
-  thumbstick('controller-right', 1, 0);
-  await sleep(300);
-  thumbstick('controller-right', 0, 0);
-  const snapped = { head: walkHead(), yaw: evalInApp('window.__debug.world.player.rotation.y') };
-  check('Snap turning turns about the head', Math.abs(snapped.yaw + Math.PI / 4) < 0.01 && Math.hypot(snapped.head[0] - stopped[0], snapped.head[2] - stopped[2]) < 0.01,
-    `yaw ${((snapped.yaw * 180) / Math.PI).toFixed(0)}°, head moved ${(Math.hypot(snapped.head[0] - stopped[0], snapped.head[2] - stopped[2]) * 100).toFixed(1)} cm`);
-  // Back to the middle of the deck for the checks below, which place hands in room space.
-  evalInApp('(window.__debug.world.player.position.set(0, 0, 0), window.__debug.world.player.rotation.set(0, 0, 0), true)');
+  await seatStep();
 
   // 1c. Character height and seated play: a chosen height puts the eyes at
   //     it, seated play lifts a seated player to standing eye height, and
@@ -724,126 +764,6 @@ async function main() {
   //     rendering stops; "Draw: always" renders from anywhere; the menu's
   //     size button changes the texture.
   await sightStep();
-
-  // 3. Blocks rest on the table.
-  const blocks = [];
-  for (let i = 1; i <= BLOCK_COUNT; i++) {
-    blocks.push(await waitFor(`Block ${i}`, () => findEntity(`Block ${i}`)));
-  }
-  await sleep(2500);
-  const settled = blocks.map((b) => position(b.entityIndex));
-  const allOnTable = settled.every(onTable);
-  check('The blocks rest on the table', allOnTable, allOnTable ? '' : settled.map(fmt).join(' | '));
-  iwsdk(['xr', 'look-at'], { device: 'headset', target: { x: 0, y: 1.2, z: -2 } });
-  await sleep(300);
-  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-play-area.png'], {});
-  iwsdk(['xr', 'set-device-state'], {});
-
-  // 4. Grab a block from the table, lift it, drop it on the open deck.
-  const start = settled[0];
-  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin(start), duration: 0.4 });
-  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 1 }] });
-  const grabbedName = await waitFor('Grabbed tag', () => grabbedNames().find((n) => n.startsWith('Block')), 3000).catch(() => null);
-  check('Squeeze grabs a block', grabbedName !== null, `grabbed: [${grabbedNames().join(', ')}]`);
-  const block = (blocks.find((b) => b.name === grabbedName) ?? blocks[0]).entityIndex;
-  const lift = { x: 0.1, y: 1.2, z: -0.6 };
-  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin([lift.x, lift.y, lift.z]), duration: 0.6 });
-  await sleep(500);
-  const held = position(block);
-  // The grab keeps the block's offset from the grip point, so allow 20 cm.
-  check('Held block follows the controller', Math.hypot(held[0] - lift.x, held[1] - lift.y, held[2] - lift.z) < 0.2, `pos ${fmt(held)}`);
-  iwsdk(['xr', 'look-at'], { device: 'headset', target: { x: 0, y: 0.6, z: -0.6 } });
-  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-holding-block.png'], {});
-  // Lower it over the open deck and let go with the hand still.
-  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin([0.1, 0.5, -0.6]), duration: 0.6 });
-  await sleep(800);
-  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 0 }] });
-  await sleep(300);
-  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: { x: 0.3, y: 1.0, z: 0.2 }, duration: 0.6 });
-  const landed = await waitFor(
-    'block to land',
-    () => {
-      const p = position(block);
-      return p[1] < 0.12 && aboard(p) ? p : null;
-    },
-    5000,
-  ).catch(() => null);
-  check('Released block is no longer grabbed', !grabbedNames().includes(grabbedName));
-  check('Released block lands on the deck', landed !== null, `pos ${fmt(landed ?? position(block))}`);
-
-
-  // 4b. Pull the bottom block out of a pile: the held block must not bat its
-  //     neighbours away (on slow frames it used to fling them at 50+ m/s).
-  evalInApp(`(() => { for (let i = 0; i < ${BLOCK_COUNT}; i++) window.__throw.place(i, (i % 2) * 0.11 - 0.05, 0.06 + Math.floor(i / 2) * 0.105, 0.3); return 1; })()`);
-  await sleep(2500);
-  const bottom = evalInApp('window.__throw.objects()[0].pos');
-  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin(bottom), duration: 0.3 });
-  await sleep(800);
-  evalInApp(`(() => {
-    window.__pile = { fastest: 0, flung: 0 };
-    const tick = () => {
-      for (const b of window.__throw.objects()) {
-        if (!b.heldBy) {
-          window.__pile.fastest = Math.max(window.__pile.fastest, b.speed);
-          if (b.pos[1] > 1.5 || Math.abs(b.pos[0]) > ${DECK_HALF_WIDTH + 0.05}) window.__pile.flung++;
-        }
-      }
-      window.__pile.frame = requestAnimationFrame(tick);
-    };
-    tick();
-    return true;
-  })()`);
-  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 1 }] });
-  // Pulled half a second after the grip, so the blocks above drop while the
-  // emulator's frames are uneven: their speed used to be measured from the
-  // drawn position and read 7-15 m/s for a 1 m/s drop (now Havok's velocity).
-  await sleep(500);
-  const pulledBy = evalInApp('window.__throw.objects()[0].heldBy');
-  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin([0.1, 1.2, -0.6]), duration: 0.6 });
-  await sleep(2000);
-  const pile = evalInApp('(cancelAnimationFrame(window.__pile.frame), window.__pile)');
-  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 0 }] });
-  await sleep(500);
-  check('Pulling a block out of a pile leaves the others in place', pulledBy === 'right' && pile.fastest < 8 && pile.flung === 0,
-    `held by ${pulledBy}, fastest neighbour ${pile.fastest.toFixed(1)} m/s, ${pile.flung} samples off the deck`);
-  evalInApp('(window.__game.resetBlocks(), true)');
-  await sleep(1500);
-
-  // 5. A block thrown through the hoop scores a point (the host decides);
-  //    the game menu's Restart puts the score back to nought and the blocks
-  //    back on the table. The throw is scripted: the emulator's controller
-  //    can't swing an arm reliably at CI frame rates.
-  const scoreBefore = evalInApp('window.__game.score');
-  evalInApp(`(() => {
-    const p = window.__throw.objects()[1].pos;
-    // A 0.15 s swing, let go still moving, then 0.35 s of flight to the hoop's middle.
-    const swing = 0.15, flight = 0.35, total = swing + flight, g = 9.81;
-    const v = [(${HOOP.x} - p[0]) / total, (${HOOP.y} - p[1] + 0.5 * g * flight * flight) / total, (${HOOP.z} - p[2]) / total];
-    let t0 = 0;
-    window.__throw.setTestHand('right', (now) => {
-      if (!t0) t0 = now;
-      const t = (now - t0) / 1000;
-      if (t < 0.3) return { x: p[0], y: p[1], z: p[2], squeeze: t > 0.1 };
-      const s = Math.min(t - 0.3, 0.3);
-      return { x: p[0] + v[0] * s, y: p[1] + v[1] * s, z: p[2] + v[2] * s, squeeze: t - 0.3 < swing };
-    });
-    return true;
-  })()`);
-  const scored = await waitFor('a point', () => evalInApp('window.__game.score') > scoreBefore, 6000).catch(() => false);
-  evalInApp("(window.__throw.setTestHand('right', null), true)");
-  iwsdk(['xr', 'look-at'], { device: 'headset', target: { x: 1, y: 1.2, z: -2 } });
-  await sleep(500);
-  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-scored.png'], {});
-  check('A block thrown through the hoop scores a point', scored, `score ${scoreBefore} → ${evalInApp('window.__game.score')}, block at ${fmt(evalInApp('window.__throw.objects()[1].pos'))}`);
-  iwsdk(['xr', 'set-device-state'], {});
-  await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-restart'));
-  await sleep(1500);
-  const restarted = { score: evalInApp('window.__game.score'), open: evalInApp('window.__gameMenu.open'), blocks: evalInApp('window.__throw.objects().map((o) => o.pos)') };
-  check('Restart in the game menu puts the score to nought and the blocks back on the table',
-    restarted.score === 0 && !restarted.open && restarted.blocks.every(onTable),
-    `score ${restarted.score}, menu ${restarted.open ? 'open' : 'closed'}, ${restarted.blocks.filter(onTable).length}/${BLOCK_COUNT} on the table`);
-  iwsdk(['xr', 'set-device-state'], {});
 
   // 5b. Spike S3, lever feel: Practice > Lever test puts two tillers in
   //     front of the player. A gripped tiller follows the hand, stops at its
@@ -919,6 +839,21 @@ async function main() {
   //    can pinch but not make a fist; fists are unit-tested).
   iwsdk(['xr', 'set-input-mode'], { mode: 'hand' });
   await sleep(500);
+  const pinching = () => evalInApp('({ ...window.__grip.state.right })');
+  const open = pinching();
+  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 1 });
+  const pinched = await waitFor('the pinch to grip', () => {
+    const g = pinching();
+    return g.pressed ? g : null;
+  }, 3000).catch(() => pinching());
+  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 0 });
+  const letGo = await waitFor('the grip to let go', () => {
+    const g = pinching();
+    return !g.pressed ? g : null;
+  }, 3000).catch(() => pinching());
+  check('A tracked hand grips with a pinch and lets go', !open.pressed && pinched.pressed && pinched.hand && !letGo.pressed,
+    `before ${JSON.stringify(open)}, pinched ${JSON.stringify(pinched)}, released ${JSON.stringify(letGo)}`);
+  await sleep(500);
   const handOffset = (side) => {
     const { result } = iwsdk(['xr', 'get-transform'], { device: `hand-${side}` });
     const grip = evalInApp(`window.__debug.world.player.gripSpaces.${side}.getWorldPosition(window.__debug.world.player.position.clone()).toArray()`);
@@ -930,17 +865,6 @@ async function main() {
     iwsdk(['xr', 'animate-to'], { device: `hand-${side}`, position: { x: o.x + offset.x, y: o.y + offset.y, z: o.z + offset.z }, duration });
   };
   const rightOffset = handOffset('right');
-  const tableBlock = evalInApp('window.__throw.objects()[2].pos');
-  handTo('right', tableBlock, 0.5, rightOffset);
-  await sleep(700);
-  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 1 });
-  await sleep(300);
-  handTo('right', [0.1, 1.3, -0.6], 0.6, rightOffset);
-  await sleep(800);
-  const handBlock = evalInApp('window.__throw.objects()[2].pos');
-  check('A pinching hand picks up a block', handBlock[1] > TABLE.height + 0.3, `block at ${fmt(handBlock)}`);
-  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 0 });
-  await sleep(1500);
   // 6a. Spike S3 with tracked hands: a pinch at the handle takes hold of a
   //     tiller and it follows the hand; letting go of the pinch lets go.
   evalInApp('(window.__lever.show(), true)');
@@ -951,12 +875,12 @@ async function main() {
   iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 1 });
   await sleep(300);
   handTo('right', [handHandle[0], handHandle[1], handHandle[2] - 0.12], 0.5, rightOffset);
-  const pinched = await waitFor('the tiller to follow the tracked hand', () => { const t = tillers(); return t.right.angle > 10 && t; }, 5000).catch(() => tillers());
+  const pinchedTiller = await waitFor('the tiller to follow the tracked hand', () => { const t = tillers(); return t.right.angle > 10 && t; }, 5000).catch(() => tillers());
   iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 0 });
   const unpinched = await waitFor('the tracked hand to let go', () => { const t = tillers(); return t.right.heldBy === null && t; }, 3000).catch(() => tillers());
   check('A pinching tracked hand works a tiller and lets go with the pinch',
-    pinched.right.heldBy === 'right' && pinched.right.angle > 10 && unpinched.right.heldBy === null,
-    `held by ${pinched.right.heldBy} at ${pinched.right.angle.toFixed(1)}°, then ${unpinched.right.heldBy ?? 'let go'}`);
+    pinchedTiller.right.heldBy === 'right' && pinchedTiller.right.angle > 10 && unpinched.right.heldBy === null,
+    `held by ${pinchedTiller.right.heldBy} at ${pinchedTiller.right.angle.toFixed(1)}°, then ${unpinched.right.heldBy ?? 'let go'}`);
   evalInApp('(window.__lever.hide(), true)');
   await sleep(300);
   iwsdk(['xr', 'set-input-mode'], { mode: 'controller' });
@@ -1005,8 +929,9 @@ async function main() {
     pcPlatform ? `~${pcPlatform.hz} Hz` : `report ${JSON.stringify(evalInApp('window.__platform.mine'))}`,
   );
   // Hold the left wrist up to see the HUD's platform lines.
-  iwsdk(['xr', 'animate-to'], { device: 'controller-left', position: toOrigin([-0.03, 1.38, -0.3]), duration: 0.3 });
-  iwsdk(['xr', 'look-at'], { device: 'headset', target: { x: -0.03, y: 1.4, z: -0.3 } });
+  const wrist = evalInApp("window.__seats.eye('driver')").map((v, i) => v + [0.07, -0.07, -0.3][i]);
+  iwsdk(['xr', 'animate-to'], { device: 'controller-left', position: toOrigin(wrist), duration: 0.3 });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(wrist) });
   await sleep(800);
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-pcvr-hud.png'], {});
 

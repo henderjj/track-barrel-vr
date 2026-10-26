@@ -10,7 +10,7 @@
  * every motion passes through, and where each seat puts the player's rig.
  *
  * Hull space: hull floor at y = 0, the front towards -Z, +X to the right
- * (as deck space in play-area.ts). Angles in radians; a positive heading or
+ * (as in src/sim/cabin.ts). Angles in radians; a positive heading or
  * turret angle turns left (counter-clockwise seen from above), a positive
  * pitch lifts the nose and a positive roll lifts the right side.
  *

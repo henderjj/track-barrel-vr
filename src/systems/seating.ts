@@ -1,0 +1,29 @@
+import { otherSeat, type SeatId } from '../sim/cabin.js';
+import { settings } from '../settings.js';
+
+/**
+ * Who sits where, for the systems that draw or drive a seat (SeatSystem
+ * owns it; see docs/cabin.md). Kept in a module of its own so NetSystem
+ * and SeatSystem can both read it without importing each other.
+ */
+export const seating = {
+  /** This player's seat. */
+  mine: settings.seat,
+  /** The crewmate's seat, while there is a crewmate. */
+  crew: otherSeat(settings.seat),
+  /** The turret's angle from facing forward, rad, positive to the left (0 until the turret turns, F1.8). */
+  turretYaw: 0,
+  /** Ask for a seat: taken at once when alone; in a crew the host decides and both players swap. Set by SeatSystem. */
+  ask: (_seat: SeatId): void => undefined,
+  /** How many times SeatSystem has put this player in a seat (so a system can wait for the next). */
+  placements: 0,
+  /** Put this player back in their seat, facing forward (the menu's Back in my seat). Set by SeatSystem. */
+  reseat: (): void => undefined,
+  /**
+   * Set while a spike sits the player somewhere else (riding, S2; the
+   * breech, S4): SeatSystem leaves the play space alone until it is
+   * cleared, then puts the player back in their seat. Choosing a seat or
+   * Back in my seat clears it.
+   */
+  away: false,
+};

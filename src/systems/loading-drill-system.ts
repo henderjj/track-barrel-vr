@@ -1,6 +1,7 @@
 import {
   CanvasTexture,
   createSystem,
+  type Entity,
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
@@ -34,11 +35,13 @@ import {
   LOADER_SEAT,
   LoadingDrill,
   type Side,
+  STATION_SPOT,
   type Vec3,
 } from '../sim/loading.js';
 import { grip, handUse } from './grip-system.js';
 import { HoldKind, lockResolvers } from './hand-lock.js';
 import { buzz } from './haptics.js';
+import { seating } from './seating.js';
 
 const SIDES = ['left', 'right'] as const;
 
@@ -46,7 +49,7 @@ const SIDES = ['left', 'right'] as const;
 export const SHELL_USE = 'shell';
 export const LEVER_USE = 'breech-lever';
 
-/** A scripted hand for tests without a headset: grip position and squeeze (held level). */
+/** A scripted hand for tests without a headset: grip position in hull space and squeeze (held level). */
 export interface DrillTestHand {
   x: number;
   y: number;
@@ -54,6 +57,11 @@ export interface DrillTestHand {
   squeeze: boolean;
 }
 type DrillTestHandFn = (nowMs: number) => DrillTestHand | null;
+
+/** A station-space point in hull space, for the test hook. */
+function toHull(p: readonly number[]): number[] {
+  return [p[0] + STATION_SPOT.x, p[1], p[2] + STATION_SPOT.z];
+}
 
 let active: LoadingDrillSystem | null = null;
 
@@ -73,6 +81,10 @@ export function startLoadingDrill(): void {
  * Each player has their own drill: nothing of it is sent to the crewmate,
  * who sees only the hands (F1.10 makes loading shared). Runs before the
  * throwables, which skip a hand that holds a shell or the lever.
+ *
+ * The station stands beside the tank: everything is drawn under one
+ * entity at STATION_SPOT, and the hands are moved into station space
+ * before the drill sees them. The test hook speaks hull space.
  */
 export class LoadingDrillSystem extends createSystem({}) {
   readonly drill = new LoadingDrill();
@@ -91,25 +103,28 @@ export class LoadingDrillSystem extends createSystem({}) {
 
   init(): void {
     active = this;
-    this.world.createTransformEntity(createLoadingStation());
+    const station = this.world.createTransformEntity();
+    station.object3D!.name = 'Loading Drill';
+    station.object3D!.position.set(STATION_SPOT.x, 0, STATION_SPOT.z);
+    this.world.createTransformEntity(createLoadingStation(), station);
     for (let i = 0; i < this.drill.shells.length; i++) {
       const shell = createShell(i);
       this.shells.push(shell);
-      this.world.createTransformEntity(shell);
+      this.world.createTransformEntity(shell, station);
     }
     this.block = createBreechBlock();
     this.block.position.set(BLOCK_X, BLOCK_OPEN_Y, BLOCK_Z);
-    this.world.createTransformEntity(this.block);
+    this.world.createTransformEntity(this.block, station);
     this.lever = createBreechLever();
     this.lever.position.set(...LEVER_PIVOT);
-    this.world.createTransformEntity(this.lever);
-    this.createBoard();
+    this.world.createTransformEntity(this.lever, station);
+    this.createBoard(station);
     this.draw();
 
     // Grip locking: a hand on the lever is drawn closed round its handle, which runs along X.
     lockResolvers.set(HoldKind.BreechLever, (_hand, point, axis) => {
       leverHandle(this.drill.lever, this.handle);
-      point.set(...this.handle);
+      point.set(this.handle[0] + STATION_SPOT.x, this.handle[1], this.handle[2] + STATION_SPOT.z);
       axis.set(1, 0, 0);
     });
     this.cleanupFuncs.push(() => {
@@ -120,10 +135,10 @@ export class LoadingDrillSystem extends createSystem({}) {
     const drill = this.drill;
     (window as unknown as { __loading: unknown }).__loading = {
       state: () => ({
-        shells: drill.shells.map((s, i) => ({ place: s.place, heldBy: s.heldBy, centre: [...s.centre], nose: drill.nose(i, [0, 0, 0]) })),
+        shells: drill.shells.map((s, i) => ({ place: s.place, heldBy: s.heldBy, centre: toHull(s.centre), nose: toHull(drill.nose(i, [0, 0, 0])) })),
         holds: { ...drill.holds },
         lever: drill.lever,
-        leverHandle: leverHandle(drill.lever, [0, 0, 0]),
+        leverHandle: toHull(leverHandle(drill.lever, [0, 0, 0])),
         breechShell: drill.breechShell,
         depth: drill.depth,
         rammed: drill.rammed,
@@ -136,9 +151,9 @@ export class LoadingDrillSystem extends createSystem({}) {
       setTestHand: (side: Side, hand: DrillTestHandFn | null) => {
         this.testHands[side] = hand;
       },
-      /** Where the seated loader's eyes go, and where the breech and the lever are. */
-      seat: LOADER_SEAT,
-      layout: { mouth: BREECH_MOUTH, pivot: LEVER_PIVOT, leverLength: LEVER_LENGTH, handleX: LEVER_HANDLE_X },
+      /** Where the seated loader's eyes go, and where the breech and the lever are, hull space. */
+      seat: { x: LOADER_SEAT.x + STATION_SPOT.x, z: LOADER_SEAT.z + STATION_SPOT.z },
+      layout: { mouth: toHull(BREECH_MOUTH), pivot: toHull(LEVER_PIVOT), leverLength: LEVER_LENGTH, handleX: LEVER_HANDLE_X },
     };
   }
 
@@ -165,13 +180,14 @@ export class LoadingDrillSystem extends createSystem({}) {
   start(): void {
     this.drill.reset();
     if (this.world.session) {
-      // Turn the player to face the gun (-Z) and put their head over the seat.
+      // Turn the player to face the gun (-Z) and put their head over the seat; the seat system waits till they go back to theirs.
+      seating.away = true;
       const player = this.player;
       player.rotation.set(0, 0, 0);
       player.updateMatrixWorld(true);
       const head = this.player.head.position;
-      player.position.x = LOADER_SEAT.x - head.x;
-      player.position.z = LOADER_SEAT.z - head.z;
+      player.position.x = LOADER_SEAT.x + STATION_SPOT.x - head.x;
+      player.position.z = LOADER_SEAT.z + STATION_SPOT.z - head.z;
     }
     console.info('[Loading] drill started');
   }
@@ -185,9 +201,9 @@ export class LoadingDrillSystem extends createSystem({}) {
       hand.pressed = h?.squeeze ?? false;
       hand.busy = false;
       if (h) {
-        hand.pos[0] = h.x;
+        hand.pos[0] = h.x - STATION_SPOT.x;
         hand.pos[1] = h.y;
-        hand.pos[2] = h.z;
+        hand.pos[2] = h.z - STATION_SPOT.z;
         hand.quat[0] = 0;
         hand.quat[1] = 0;
         hand.quat[2] = 0;
@@ -203,9 +219,9 @@ export class LoadingDrillSystem extends createSystem({}) {
       const space = this.player.gripSpaces[side];
       space.getWorldPosition(this.pos);
       space.getWorldQuaternion(this.quat);
-      hand.pos[0] = this.pos.x;
+      hand.pos[0] = this.pos.x - STATION_SPOT.x;
       hand.pos[1] = this.pos.y;
-      hand.pos[2] = this.pos.z;
+      hand.pos[2] = this.pos.z - STATION_SPOT.z;
       hand.quat[0] = this.quat.x;
       hand.quat[1] = this.quat.y;
       hand.quat[2] = this.quat.z;
@@ -282,7 +298,7 @@ export class LoadingDrillSystem extends createSystem({}) {
   }
 
   /** The drill's board on its post ahead of the seat. */
-  private createBoard(): void {
+  private createBoard(station: Entity): void {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 256;
@@ -293,7 +309,7 @@ export class LoadingDrillSystem extends createSystem({}) {
     const mesh = new Mesh(new PlaneGeometry(BOARD.width, BOARD.height), new MeshBasicMaterial({ map: texture }));
     mesh.name = 'Loading Board';
     mesh.position.set(BOARD.x, BOARD.y, BOARD.z);
-    this.world.createTransformEntity(mesh);
+    this.world.createTransformEntity(mesh, station);
   }
 
   private drawBoard(): void {

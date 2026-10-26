@@ -44,6 +44,7 @@ import {
 } from '../sim/ride.js';
 import { createVignette } from './comfort-vignette.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
+import { seating } from './seating.js';
 
 export type CabinView = 'open' | 'closed';
 export type TankMode = 'route' | 'stick' | 'parked';
@@ -70,7 +71,7 @@ export const ride = {
 const CHECK_IN_SECONDS = 600;
 /** How long a sign stays up, s. */
 const SIGN_SECONDS = 6;
-/** How dark the vignette gets at its strongest (as the deck walk's). */
+/** How dark the vignette gets at its strongest. */
 const VIGNETTE_STRENGTH = 0.5;
 /** Longest step the ride takes in one go, s; a slow frame takes several. */
 const MAX_STEP = 1 / 30;
@@ -78,8 +79,12 @@ const MAX_STEP = 1 / 30;
 const FOG_COLOR = 0xd9e0e6;
 const FOG_NEAR = 60;
 const FOG_FAR = 230;
-/** Names of the template's demo objects and spikes S1's and S4's set-ups on the deck, hidden while riding (F1.1 removes them). */
-const DEMO_NAMES = /^(Play Area|Scoreboard|Block \d+|Sight|Sight Stand|Sight Range|Sight Lens|Loading Station|Loading Board|Shell \d+|Breech Block|Breech Lever)$/;
+/**
+ * Names of the cabin (F1.1) and of spikes S1's and S4's set-ups, hidden
+ * while riding: the ride brings its own blockout hull, turret and ground
+ * until F1.4 moves the cabin with the tank.
+ */
+const DEMO_NAMES = /^(Hull|Turret|Ground|Sight|Sight Stand|Sight Range|Sight Lens|Loading Drill|Loading Station|Loading Board|Shell \d+|Breech Block|Breech Lever)$/;
 
 let active: RideSystem | null = null;
 
@@ -88,7 +93,7 @@ export function startRide(seat: Seat): void {
   active?.start(seat);
 }
 
-/** Stop riding: the tank, the ground and the seat go, and the demo comes back. */
+/** Stop riding: the tank, the ground and the seat go, and the cabin comes back with the player in their seat. */
 export function stopRide(): void {
   active?.stop();
 }
@@ -127,7 +132,7 @@ interface RideDebug {
  *
  * Solo only: the route stands in for the crewmate driver and the scan for
  * the crewmate gunner; F1.4 and F1.8 share the tank and turret over the
- * network. Runs after the deck walk, whose thumbsticks it takes over.
+ * network. The seat system stands aside while it rides (`seating.away`).
  */
 export class RideSystem extends createSystem({}) {
   readonly tank = createTankState();
@@ -221,6 +226,8 @@ export class RideSystem extends createSystem({}) {
       ride.vignetteOffSeconds = 0;
       this.checkedIn = false;
       this.hideDemo(true);
+      // The ride holds the play space now; the seat system waits.
+      seating.away = true;
       this.savedFog = this.scene.fog;
       this.scene.fog = this.fog;
       this.built!.world.object3D!.visible = true;
@@ -244,10 +251,8 @@ export class RideSystem extends createSystem({}) {
     Object.assign(this.tank, createTankState());
     this.turretState.angle = 0;
     this.turretState.rate = 0;
-    // Back to the middle of the deck, facing its far end.
-    this.player.position.x = 0;
-    this.player.position.z = 0;
-    this.player.rotation.set(0, 0, 0);
+    // Back in the cabin, in the player's own seat.
+    seating.reseat();
     this.vignette.visible = false;
     this.sign.setVisible(false);
     console.info(`[Ride] stopped after ${Math.round(ride.time)} s`);

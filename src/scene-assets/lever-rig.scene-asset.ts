@@ -1,4 +1,4 @@
-import { BoxGeometry, CylinderGeometry, Mesh, MeshLambertMaterial } from '@iwsdk/core';
+import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial } from '@iwsdk/core';
 import { beam, mergeParts } from './lowpoly.js';
 import { LEVER_RIG, TILLER } from '../sim/lever.js';
 
@@ -26,7 +26,7 @@ export const SCREEN_GAP = 0.006;
 export const GRIP_RADIUS = 0.019;
 const ROD_RADIUS = 0.011;
 
-const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
 
 /** The static part: post, housing with a slot for each tiller, and the board's stalk and frame. */
 export function createLeverRig(): Mesh {

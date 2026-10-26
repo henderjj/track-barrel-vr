@@ -1,5 +1,6 @@
-import { BoxGeometry, ConeGeometry, CylinderGeometry, Mesh, MeshLambertMaterial } from '@iwsdk/core';
+import { BoxGeometry, ConeGeometry, CylinderGeometry, Mesh, MeshStandardMaterial } from '@iwsdk/core';
 import { mergeParts, type Part } from './lowpoly.js';
+import { GROUND_Y } from '../sim/cabin.js';
 import {
   BREECH_MOUTH,
   LEVER_HANDLE_X,
@@ -14,10 +15,11 @@ import {
 /**
  * Spike S4's loading station (docs/spikes/s4-loading.md): a gun's breech on a
  * pedestal with its barrel running forward, a ready rack of four shells, a
- * stool for the loader and a post for the drill's board. Low-poly and
- * vertex-coloured; the static parts are one mesh, and the shells, the
- * sliding breech block and the lever move. Sizes come from
- * src/sim/loading.ts, in deck space.
+ * stool for the loader and a post for the drill's board, on a wooden
+ * platform down to the ground. Low-poly and vertex-coloured; the static
+ * parts are one mesh, and the shells, the sliding breech block and the
+ * lever move. Sizes come from src/sim/loading.ts, in station space (the
+ * system puts it at STATION_SPOT beside the tank).
  */
 
 const STEEL = 0x5d6468;
@@ -31,6 +33,7 @@ const SHELL_BODY = 0x4d5a3a;
 const COPPER = 0xb0643a;
 const PRIMER = 0x3a3024;
 const LEVER_RED = 0x8a2c22;
+const PLATFORM_WOOD = 0x8a6a48;
 
 const [MX, MY, MZ] = BREECH_MOUTH;
 /** The mouth's square opening, half its side, m. */
@@ -136,11 +139,18 @@ function boardPost(): Part[] {
   return [box([0.03, bottom - 0.01, 0.03], [BOARD.x, (bottom - 0.01) / 2, BOARD.z - 0.02], STEEL_DARK)];
 }
 
-const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+/** The platform the station stands on, its top level with the hull floor (y = 0) and its foot sunk into the ground. */
+function platform(): Part {
+  const [x0, x1, z0, z1] = [-0.7, 0.75, 0.5, 1.9];
+  const bottom = GROUND_Y - 0.1;
+  return box([x1 - x0, -bottom, z1 - z0], [(x0 + x1) / 2, bottom / 2, (z0 + z1) / 2], PLATFORM_WOOD);
+}
 
-/** Everything that doesn't move: the breech ring, barrel and pedestal, the rack, the stool and the board's post. */
+const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
+
+/** Everything that doesn't move: the breech ring, barrel and pedestal, the rack, the stool, the board's post and the platform. */
 export function createLoadingStation(): Mesh {
-  const mesh = new Mesh(mergeParts([...breechParts(), ...rackParts(), ...stoolParts(), ...boardPost()]), material);
+  const mesh = new Mesh(mergeParts([...breechParts(), ...rackParts(), ...stoolParts(), ...boardPost(), platform()]), material);
   mesh.name = 'Loading Station';
   return mesh;
 }

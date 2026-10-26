@@ -48,17 +48,49 @@
   "resources": {},
   "nodes": [
     {
-      "id": "play-area",
-      "name": "Play Area",
+      "id": "ground",
+      "name": "Ground",
       "content": {
         "type": "asset",
-        "asset": "play-area"
+        "asset": "ground"
       },
       "transform": {
         "position": [
           0,
           0,
           0
+        ]
+      },
+      "components": {}
+    },
+    {
+      "id": "hull",
+      "name": "Hull",
+      "content": {
+        "type": "asset",
+        "asset": "hull"
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ]
+      },
+      "components": {}
+    },
+    {
+      "id": "turret",
+      "name": "Turret",
+      "content": {
+        "type": "asset",
+        "asset": "turret"
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0.2
         ]
       },
       "components": {}

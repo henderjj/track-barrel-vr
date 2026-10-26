@@ -6,16 +6,17 @@ A two-player co-op VR tank game that runs in the browser, built with [IWSDK](htt
 - How it is being built: [docs/plan.md](docs/plan.md).
 - Every feature and where it stands: [docs/roadmap.md](docs/roadmap.md); what shipped and what headset checks found: [docs/progress.md](docs/progress.md).
 
-The repository started from a co-op VR game template, itself cut down from Patchwork Airship VR. Until the cabin and seats (roadmap F1.1) replace it, the game is still the template's demo: two players on a wooden deck throwing coloured blocks through a brass hoop and to each other. It uses every shared system once (hands, grabbing, throwing and catching over the network, a score the host decides, the game menu, the practice crewmate and both browser tests).
+The repository started from a co-op VR game template, itself cut down from Patchwork Airship VR. The template's demo (blocks thrown through a hoop on a wooden deck) is gone: the two players now sit in the tank's cabin, one in the driver's seat and one in the gunner's (roadmap F1.1, [docs/cabin.md](docs/cabin.md)). The controls come next, feature by feature.
 
 ## What already works
 
 - **Getting into VR and into a crew.** An in-VR start screen (play solo, solo with the practice crewmate, start a crew with a four-letter code, join one), a lobby on a Cloudflare Worker that pairs the two browsers, peer-to-peer WebRTC for game data and voice with a TURN relay fallback, the page's own Enter VR and microphone buttons, and handling for a crewmate stepping away, reconnecting or leaving. See [docs/start-and-menu.md](docs/start-and-menu.md) and [lobby/README.md](lobby/README.md).
 - **Bodies and hands.** Low-poly gloves posed from the controllers' trigger, grip and touch sensors (point, fist, flat, thumbs-up) or from tracked hands, hands that lock onto whatever they grip, simple head-and-body avatars in a coat colour each player picks, standing or seated play, and a character height setting. See [docs/hands.md](docs/hands.md).
-- **Throwing and catching** that work at 150 ms round trip: the holder owns an object, and the thrower keeps simulating it until the catcher grabs it (`src/net/ownership.ts`, `src/systems/throwables-system.ts`).
-- **A game rule the host decides**, the hoop score (`src/systems/game-system.ts`), with a guest's Restart going through the host.
-- **The game menu** in VR: microphone and crewmate mute, coat colour, standing or seated, character height, perf HUD, frame rate, foveation, Restart, a Practice section, back to the start screen, and Exit VR.
-- **The practice crewmate**: a PC page that plays the second player, catching what you throw and throwing it back, so one person can test two-player features.
+- **The cabin and seats**: the hull and turret, each player held in their seat with their head free inside it, the host deciding who sits where, and the crewmate drawn seated (`src/sim/cabin.ts`, `src/systems/seat-system.ts`, [docs/cabin.md](docs/cabin.md)).
+- **Spikes** for the riskiest controls, each behind a Practice button: the magnified gunsight, riding the moving tank and loading a shell (`docs/spikes/`).
+- **Throwing and catching** code, kept for shells and casings but not used: the holder owns an object, and the thrower keeps simulating it until the catcher grabs it (`src/net/ownership.ts`, `src/systems/throwables-system.ts`).
+- **The game menu** in VR: microphone and crewmate mute, coat colour, standing or seated, character height, back in my seat, perf HUD, frame rate, foveation, a Practice section (which seat, and the spikes), back to the start screen, and Exit VR.
+- **The practice crewmate**: a PC page that plays the second player, sitting in the seat you leave free, so one person can test two-player features.
 - **Performance tools**: a wrist perf HUD, a per-second perf CSV, a 90 Hz request that falls back to the nearest supported rate, and fixed foveation.
 - **Tests and deployment**: unit tests, a geometry test that catches flicker (z-fighting), a one-player emulated-headset test, a two-player network test with simulated lag, and CI that deploys the game to GitHub Pages and the lobby to Cloudflare on every merge to `main`. See [docs/testing.md](docs/testing.md).
 
@@ -29,7 +30,7 @@ Features are built one at a time, each in its own pull request. The repository's
 
 The browser keeps this game's settings and coat colour under keys that start `track-barrel.`, so they don't mix with another game served from the same GitHub Pages address (all of an account's Pages sites share one origin).
 
-The template's demo goes in F1.1. Its parts are `src/sim/play-area.ts` (the sizes), `src/sim/score.ts`, `src/scene-assets/deck.scene-asset.ts` (the deck, table, hoop and blocks), `src/systems/game-system.ts`, the GAME and PRACTICE sections of `public/ui/menu.uikitml` and `src/systems/game-menu-system.ts`, the bot's throwing in `src/systems/crew-bot-system.ts`, and the steps in the browser tests that name blocks or the hoop. Its design note, [docs/play-area.md](docs/play-area.md), shows the shape each feature's note should take.
+Each feature has a design note in `docs/`; [docs/cabin.md](docs/cabin.md) shows the shape a note should take.
 
 ## Run it
 
@@ -48,8 +49,8 @@ To play two-player locally, run `npm run lobby` next to `npm run dev`, then open
 
 ## Controls
 
-- **Walking:** walk in your room, or push the left thumbstick to walk the deck the way you face; the right thumbstick snap turns 45° about your head. The thumbstick stops your head a quarter of a metre inside the rails.
-- **Blocks:** squeeze the grip near a block to pick it up and let go to throw it. With the grip already squeezed and the hand empty, a block flying past within 20 cm is caught. Tracked hands grip with a fist or a pinch.
+- **Your seat:** you start in your seat facing forward. Lean and look about freely; your head stops at the edge of the seat's space, and standing up and walking puts you back in the seat. Game menu → You → Back in my seat faces you forward again; Practice → Sit in changes seats.
+- **Gripping:** squeeze the grip; tracked hands grip with a fist or a pinch.
 - **Game menu:** Y on the left controller (or its menu button, where the browser passes it on) opens it in front of you; Y or B closes it. On a PC page, M or the Game menu button. Nothing pauses while it is open.
 - **Perf HUD:** on the left wrist in VR, toggled with X; on a PC page, the box at the bottom right, toggled with H. It shows frame rate against the refresh rate, a frame-time graph, main-thread time, draw calls, triangles, network round trip, both players' browsers and headsets, and what each controller's sensors report. After leaving VR, CSV in the desktop HUD downloads one row per second.
 - **When the crewmate can't play** (headset off, Meta button, headset asleep, network down, tab closed), a sign in front of you says why. A dropped connection reconnects by itself.
@@ -65,7 +66,7 @@ Settings that apply at once are in the game menu. Ones read as the game loads (t
 | `fbscale` | 1 | WebXR framebuffer scale |
 | `shadows` | 0 | `1` adds one shadow-casting light |
 | `hud` | 1 | Show the perf HUD from the start |
-| `blocks` | 6 | Blocks on the table |
+| `seat` | driver | The seat to start in, `driver` or `gunner` (in a crew the host decides) |
 | `seated` | 0 | `1` plays seated (eyes raised to a standing height) |
 | `height` | 0 | Character height in metres; 0 is your own |
 | `room` | | Crew code to join on load, e.g. `room=KXQT` |
@@ -83,7 +84,7 @@ Settings that apply at once are in the game menu. Ones read as the game loads (t
 
 ## Testing alone: the practice crewmate
 
-Choose **Solo with the practice crewmate** on the start screen in the headset. It starts a crew and shows its code and a link: open the link on a PC, or open the game on the PC, choose **Join a crew**, type the code and press **Join as practice crewmate** (`?bot=1` in the address does the same). The PC page then plays the second player, with no microphone. It stands on the deck facing you; throw a block near its hand and it catches it, then throws it back to your chest. Keep the PC page showing: a hidden tab counts as a crewmate who stepped away.
+Choose **Solo with the practice crewmate** on the start screen in the headset. It starts a crew and shows its code and a link: open the link on a PC, or open the game on the PC, choose **Join a crew**, type the code and press **Join as practice crewmate** (`?bot=1` in the address does the same). The PC page then plays the second player, with no microphone. It sits in the seat you leave free, looking about, and moves over when you change seats. Keep the PC page showing: a hidden tab counts as a crewmate who stepped away.
 
 Teach it its half of each new two-player job, so every feature can be tested by one person. The code is `src/systems/crew-bot-system.ts`, with its sums in `src/sim/crew-bot.ts`; `ONLY_BOT=1 npm run test:net` checks it against a scripted player.
 
@@ -97,17 +98,17 @@ On PC VR: make Meta Horizon Link the active OpenXR runtime, connect the Quest wi
 
 ```
 iwsdk.config.json          IWSDK project config (scene, features, physics at 90 Hz)
-public/scenes/             scene composition (the play area, start screen, game menu)
+public/scenes/             scene composition (the hull, turret and ground, start screen, game menu)
 public/ui/                 the start screen and game menu panels (UIKitML)
 src/index.ts               world creation and system registration, in order
 src/settings.ts            URL and saved settings
 src/live-settings.ts       settings the game menu changes while playing
 src/game-flow.ts           the start screen's and game menu's words (solo or crew)
-src/scene-assets/          procedural low-poly models (play area and blocks, avatar, posed hands, merge helpers)
-src/sim/                   engine-free logic, unit-tested: play-area sizes, score, deck walking, body height, release velocity, hand grip, finger poses, bot sums
+src/scene-assets/          procedural low-poly models (hull and turret, the spikes' set-ups, avatar, posed hands, merge helpers)
+src/sim/                   engine-free logic, unit-tested: cabin sizes and seats, body height, the spikes' rules, release velocity, hand grip, finger poses, bot sums
 src/net/                   lobby protocol, WebRTC session and reconnection, packets, clock sync, jitter buffers, object ownership, crew presence
 src/perf/                  frame statistics and CSV, measured refresh rate, platform report
-src/systems/               ECS systems: game, network, deck walking, body height, grip, throws, own hands, crew status sign, start screen, game menu, practice crewmate, frame rate, perf HUD, platform report
+src/systems/               ECS systems: network, seats, body height, grip, the spikes, own hands, crew status sign, start screen, game menu, practice crewmate, frame rate, perf HUD, platform report
 lobby/                     crew lobby: Cloudflare Worker (deployed) and Node server (local)
 test/                      unit and geometry tests (Vitest)
 scripts/xr-smoke-test.mjs  emulated-headset test driven through the IWSDK CLI

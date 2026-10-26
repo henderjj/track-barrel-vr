@@ -1,11 +1,13 @@
 import { AssetType, defineAssets } from '@iwsdk/core';
-import { createPlayArea } from './scene-assets/deck.scene-asset.js';
+import { createGround, createHull, createTurret } from './scene-assets/cabin.scene-asset.js';
 
 const publicAssetUrl = (filePath: string): string =>
   `${import.meta.env.BASE_URL}${filePath.replace(/^\/+/u, '')}`;
 
 export default defineAssets({
-  'play-area': createPlayArea(),
+  hull: createHull(),
+  turret: createTurret(),
+  ground: createGround(),
   'start-panel': {
     url: publicAssetUrl('ui/start.uikitml'),
     type: AssetType.UIKitML,

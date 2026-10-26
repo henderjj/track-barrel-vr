@@ -16,6 +16,8 @@
  * the field rather than shrinking the picture.
  */
 
+import { SIGHT_EYEPIECE, TURRET } from './cabin.js';
+
 /** How much bigger things look through the sight. */
 export const MAGNIFICATION = 3;
 /** Half the true field of view, radians: the sight camera sees ±6°, so the eye sees about ±18°. */
@@ -54,16 +56,21 @@ export const GRAVITY = 9.81;
 export const MAX_MARKED_RANGE = 1000;
 
 /**
- * The sight stand in the spike, in deck space (deck surface y = 0): its
- * post's foot, and the lens's height above the deck, which a seated player
- * (eyes raised to 1.45 m) reaches by leaning a little and a standing one by
- * stooping. Clear of the table, the hoop and the start screen, inside the
- * walking bounds.
+ * Where the spike's sight hangs, in hull space (src/sim/cabin.ts): its lens
+ * is the gunner's eyepiece, with the turret facing forward, 28 cm ahead of
+ * a seated gunner's eyes, a short lean away. `x`, `z` and `lensHeight` place
+ * the lens; it hangs on a bracket from the turret roof at `roof`. It moves
+ * onto the turret, to turn with it, when the gunsight is built (F1.9).
  */
-export const SIGHT_STAND = { x: 1.0, z: -1.45, lensHeight: 1.4 } as const;
+export const SIGHT_STAND = {
+  x: SIGHT_EYEPIECE[0],
+  z: TURRET.z + SIGHT_EYEPIECE[2],
+  lensHeight: SIGHT_EYEPIECE[1],
+  roof: TURRET.roof,
+} as const;
 
 /**
- * Targets for the spike, in deck space: the middle of each board's foot on
+ * Targets for the spike, in hull space: the middle of each board's foot on
  * the ground (y = GROUND_Y) and its range from the sight. Spread across the
  * field so all three show at once with the sight looking straight ahead.
  */
@@ -76,7 +83,7 @@ export const SIGHT_TARGETS = [
 /** A target board: width and height of the face, how high its bottom edge stands off the ground, m. */
 export const TARGET_BOARD = { width: 3.0, height: 2.2, lift: 0.5 } as const;
 
-/** Where target `i` stands (deck space): x and z of its foot. */
+/** Where target `i` stands (hull space): x and z of its foot. */
 export function targetFoot(i: number): [number, number] {
   const t = SIGHT_TARGETS[i];
   return [t.x, SIGHT_STAND.z - t.range];

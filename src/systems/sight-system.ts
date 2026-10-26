@@ -18,8 +18,7 @@ import {
   createSightRange,
   createSightStand,
 } from '../scene-assets/sight.scene-asset.js';
-import { turnAboutHead } from '../sim/deck-walk.js';
-import { GROUND_Y } from '../sim/play-area.js';
+import { GROUND_Y, turnAboutHead } from '../sim/cabin.js';
 import {
   DRAW_MODES,
   type DrawMode,
@@ -40,6 +39,7 @@ import {
   TRUE_HALF_FIELD,
 } from '../sim/sight.js';
 
+import { seating } from './seating.js';
 /** The reticle's texture, texels square: finer than the view so its marks stay crisp at 256² and 512². */
 const RETICLE_SIZE = 1024;
 /** The sight camera's near and far planes, m: nothing closer than the muzzle, and the range's far edge. */
@@ -132,8 +132,9 @@ interface SightDebug {
 
 /**
  * Spike S1: a magnified gunsight rendered by a second camera into a texture
- * (docs/spikes/s1-sight-render.md). A sight stands on a post at the deck's
- * far corner looking out at target boards 100, 250 and 500 m away. Put an
+ * (docs/spikes/s1-sight-render.md). The sight hangs at the gunner's
+ * eyepiece (src/sim/cabin.ts) looking out at target boards 100, 250 and
+ * 500 m away. Put an
  * eye within about 9 cm of its eyepiece and the camera at its objective
  * renders the scene into a 512² texture that the lens shows at 3×, with a
  * reticle and range marks; further away the lens is dark glass and nothing
@@ -168,6 +169,8 @@ export class SightSystem extends createSystem({}) {
   private aimOut: [number, number] = [0, 0];
   private turned: [number, number] = [0, 0];
   private pixels = new Uint8Array(4 * 9);
+  /** "Go to it" is waiting for the seat system to sit the player in the gunner's seat (the placement count it waits to pass), or -1. */
+  private approachAfter = -1;
 
   init(): void {
     active = this;
@@ -230,6 +233,10 @@ export class SightSystem extends createSystem({}) {
   }
 
   update(): void {
+    if (this.approachAfter >= 0 && seating.mine === 'gunner' && seating.placements > this.approachAfter) {
+      this.approachAfter = -1;
+      this.approach();
+    }
     this.gpu?.poll();
     if (this.gpu && !Number.isNaN(this.gpu.ms)) {
       sightStats.gpuMs = Number.isNaN(sightStats.gpuMs) ? this.gpu.ms : sightStats.gpuMs * 0.9 + this.gpu.ms * 0.1;
@@ -304,8 +311,22 @@ export class SightSystem extends createSystem({}) {
     }
   }
 
-  /** Practice: put the player's head just behind the eyepiece, facing along the sight. */
+  /**
+   * Practice: sit the player in the gunner's seat with their head just
+   * behind the eyepiece, facing along the sight. From the driver's seat it
+   * waits for the seat system to move them first (in a crew, the host swaps
+   * both players).
+   */
   goTo(): void {
+    if (seating.mine === 'gunner') {
+      this.approach();
+      return;
+    }
+    this.approachAfter = seating.placements;
+    seating.ask('gunner');
+  }
+
+  private approach(): void {
     const player = this.player;
     player.head.getWorldPosition(this.head);
     player.head.getWorldQuaternion(this.headQuat);
