@@ -1,40 +1,36 @@
 /**
- * Character height and seated play. Engine-free, so it can be unit tested.
+ * Eye height in the seat. Engine-free, so it can be unit tested.
  *
- * The game raises or lowers the player's whole tracked rig (view and hands
- * together) so that their eyes are at their character's eye height when they
- * are upright. How tall they are upright is measured, not asked: the highest
- * their head has been, smoothed so a bob or a tracking glitch doesn't count.
- * Crouching still crouches, and the crewmate sees the character's height
- * because poses are sent in scene space, offset included.
+ * Everyone plays sitting in a seat (F1.2, docs/seat-choice.md), so the game
+ * raises or lowers the player's whole tracked rig (view and hands together)
+ * until their eyes are at the seat's eye point: `SEATED_EYE` above the
+ * seat's floor, plus the small raise or drop the player picked in the menu.
+ * How high their eyes are as they play is measured, not asked:
  *
- * - Your own height, standing (the default): no change, so the deck is where
- *   the player's real floor is. Only a floor set far too low (eyes measured
- *   above `MAX_OWN_EYE`) is pulled down to that.
- * - A chosen height: eyes at that height less `EYES_BELOW_TOP`, whatever the
- *   player's real height or a wrongly set floor.
- * - Seated: the player's seated eyes are raised to `SEATED_EYE`, a little
- *   shorter than the default character, or to the chosen height's. Raising
- *   a seated player to full standing height left low controls too far down
- *   to reach from a chair (found in playtesting).
+ * - Calibrated (src/sim/calibration.ts): the head's height while the player
+ *   sat (or stood) still as they will play, looking ahead.
+ * - Before that, or if they skip it: the highest their head has been,
+ *   smoothed so a bob or a tracking glitch doesn't count.
+ *
+ * Seated or standing, the eyes land on the same eye point (standing mode
+ * lowers a standing player to it), so the controls are where they are for
+ * everyone. Crouching still crouches, and the crewmate sees it because
+ * poses are sent in hull space, offset included.
  */
 
-/** The default character's height, m (the crew avatar is built for it). */
-export const DEFAULT_CHARACTER_HEIGHT = 1.75;
-/** How far the eyes are below the top of the head, m (as on the crew avatar: eyes at 1.62 m). */
+/** How far the eyes are below the top of the head, m (as on the crew avatar). */
 export const EYES_BELOW_TOP = 0.13;
 /**
- * Eye height for seated play at the player's own height, m: a 1.58 m
- * character's. A chair-height upright head (about 1.2 m) is raised about
- * 0.25 m, so controls between knee and chest height stay in reach from the
- * chair (test/body-height.test.ts checks the table).
+ * The seat's eye height above the floor it stands on, m: a 1.58 m
+ * character's standing eyes, a chair-height head (about 1.2 m) raised about
+ * 0.25 m. The seats are built round it (src/sim/cabin.ts), so the controls
+ * between knee and chest height stay in reach (test/body-height.test.ts).
  */
 export const SEATED_EYE = 1.45;
-/** Heights a player may choose, m. */
-export const MIN_CHARACTER_HEIGHT = 1.4;
-export const MAX_CHARACTER_HEIGHT = 2.0;
-/** Highest eye height kept for "your own height": a 2 m tall player's. Above this the floor is set too low. */
-export const MAX_OWN_EYE = 1.9;
+/** Most the player may raise (+) or drop (-) their eyes from the seat's eye point in the menu, m. */
+export const MAX_EYE_RAISE = 0.15;
+/** The menu's step for it, m. */
+export const EYE_RAISE_STEP = 0.05;
 /** Furthest the rig is lowered or raised, m. */
 export const MAX_LOWER = 0.7;
 export const MAX_RAISE = 0.9;
@@ -46,18 +42,19 @@ const SMOOTH_SECONDS = 0.5;
 const MIN_HEAD = 0.6;
 const MAX_HEAD = 2.6;
 
-/** What the player chose: a character height in metres (0 for their own) and whether they sit. */
+/** What the player chose: how far to raise (+) or drop (-) their eyes from the seat's eye point, m, and whether they sit. */
 export interface BodyChoice {
-  height: number;
+  raise: number;
   seated: boolean;
 }
 
-/** A choice's height kept in range; 0 (their own) stays 0. */
-export function clampCharacterHeight(height: number): number {
-  if (!(height > 0)) {
+/** A raise kept in range and on the menu's steps. */
+export function clampEyeRaise(raise: number): number {
+  if (!Number.isFinite(raise)) {
     return 0;
   }
-  return Math.min(MAX_CHARACTER_HEIGHT, Math.max(MIN_CHARACTER_HEIGHT, height));
+  const clamped = Math.min(MAX_EYE_RAISE, Math.max(-MAX_EYE_RAISE, raise));
+  return Number((Math.round(clamped / EYE_RAISE_STEP) * EYE_RAISE_STEP).toFixed(2)) || 0;
 }
 
 /**
@@ -91,25 +88,17 @@ export class UprightEye {
   }
 }
 
-/** The eye height a choice asks for when upright, m, or null for "as measured" (own height, standing). */
-export function targetEyeHeight(choice: BodyChoice): number | null {
-  const height = clampCharacterHeight(choice.height);
-  if (height > 0) {
-    return height - EYES_BELOW_TOP;
-  }
-  if (choice.seated) {
-    return SEATED_EYE;
-  }
-  return null;
+/** The eye height a choice asks for, m above the seat's floor: the seat's eye point, raised or dropped as chosen. */
+export function targetEyeHeight(choice: BodyChoice): number {
+  return SEATED_EYE + clampEyeRaise(choice.raise);
 }
 
-/** How far to raise (+) or lower (-) the rig so eyes at `uprightEye` sit at `target`, m. */
-export function rigOffset(target: number | null, uprightEye: number): number {
-  if (!Number.isFinite(uprightEye)) {
+/** How far to raise (+) or lower (-) the rig so eyes at `eye` (as measured in the play space) sit at `target`, m. */
+export function rigOffset(target: number, eye: number): number {
+  if (!Number.isFinite(eye)) {
     return 0;
   }
-  const offset = target === null ? Math.min(0, MAX_OWN_EYE - uprightEye) : target - uprightEye;
-  return Math.min(MAX_RAISE, Math.max(-MAX_LOWER, offset));
+  return Math.min(MAX_RAISE, Math.max(-MAX_LOWER, target - eye));
 }
 
 /** Move `current` towards `target` by at most `GLIDE_SPEED * dt`. */

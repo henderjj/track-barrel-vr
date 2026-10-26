@@ -14,8 +14,8 @@
  * - voice (spike S5): Chromium's fake microphone (a periodic beep) reaches the
  *   crewmate, muting silences it, and the loopback route starts;
  * - seats (F1.1): the host sits in the driver's seat and the guest in the
- *   gunner's; the guest asking for the other seat swaps both, decided by
- *   the host, and each draws the crewmate's legs in the crewmate's seat, on
+ *   gunner's; asking for the other seat asks the crewmate, and both swap
+ *   once they agree (F1.2), decided by the host, and each draws the crewmate's legs in the crewmate's seat, on
  *   a clean link and at 150 ms RTT;
  * - the crew lifecycle (spike S10): stepping away, going quiet and a broken
  *   connection;
@@ -216,9 +216,9 @@ const HIPS = { driver: [-0.5, 0.63, -1.41], gunner: [0.4, 1.43, 0.16] };
 /**
  * Seats (F1.1): the host decides. The host keeps the seat they had
  * (`hostSeat`: the driver's for a new crew) and the guest gets the other;
- * the guest asks for the host's seat from the game menu and the host swaps
- * both; each draws the crewmate's legs at the crewmate's seat. Then back
- * as they were.
+ * the guest asks for the host's seat from the game menu, the host agrees
+ * and both swap (F1.2); each draws the crewmate's legs at the crewmate's
+ * seat. Then the host asks to swap back and the guest agrees.
  */
 async function seatChecks(host, guest, label, hostSeat = 'driver') {
   const other = { driver: 'gunner', gunner: 'driver' };
@@ -236,12 +236,33 @@ async function seatChecks(host, guest, label, hostSeat = 'driver') {
   const start = await seated(hostSeat, other[hostSeat]);
   check(`The host sits in the ${hostSeat}'s seat and the guest in the other, each sees the other's legs in their seat (${label})`,
     start !== null, JSON.stringify(start ?? await seats()));
+  // A swap needs both players (F1.2): the guest asks, the host's page says so, and nothing moves until the host agrees.
+  const swaps = () => Promise.all([host, guest].map((p) => p.page.evaluate(() => ({ swap: window.__seats.swap, sign: window.__seats.swapSign, button: window.__gameMenu.text('menu-swap'), mine: window.__seats.mine }))));
   await guest.page.evaluate((id) => window.__gameMenu.click(id), ids[hostSeat]);
+  const offered = await waitFor('the host to hear the guest\'s ask', async () => {
+    const [h, g] = await swaps();
+    // The menu redraws on its next frame.
+    return h.swap === 'offered' && g.swap === 'asked' && h.button === 'Agree to swap' ? [h, g] : null;
+  }, 8000).catch(() => null);
+  const unmoved = offered && offered[0].mine === hostSeat && offered[1].mine === other[hostSeat];
+  check(`The guest asking for the host's seat asks the host, who is told how to agree, and nobody moves yet (${label})`,
+    offered !== null && unmoved && offered[0].button === 'Agree to swap' && offered[0].sign.startsWith('Your crewmate asks to swap seats') && offered[1].button === 'Asked...',
+    JSON.stringify(offered ?? await swaps()));
+  await host.page.evaluate(() => window.__gameMenu.click('menu-swap'));
   const swapped = await seated(other[hostSeat], hostSeat);
-  check(`The guest asking for the host's seat swaps both players (${label})`, swapped !== null, JSON.stringify(swapped ?? await seats()));
-  await guest.page.evaluate((id) => window.__gameMenu.click(id), ids[other[hostSeat]]);
+  const cleared = (await swaps()).every((s) => s.swap === 'none');
+  check(`When the host agrees, both players swap (${label})`, swapped !== null && cleared, JSON.stringify(swapped ?? await seats()));
+  // And the other way round: the host asks, the guest agrees from the menu's Swap seats.
+  // The host now sits in the guest's old seat: they ask for their own back.
+  await host.page.evaluate((id) => window.__gameMenu.click(id), ids[hostSeat]);
+  const asked = await waitFor('the guest to hear the host\'s ask', async () => {
+    const [h, g] = await swaps();
+    return h.swap === 'asked' && g.swap === 'offered' ? [h, g] : null;
+  }, 8000).catch(() => null);
+  await guest.page.evaluate(() => window.__gameMenu.click('menu-swap'));
   const back = await seated(hostSeat, other[hostSeat]);
-  check(`And asking for their old seat swaps them back (${label})`, back !== null, JSON.stringify(back ?? await seats()));
+  check(`The host asking to swap back waits for the guest, who agrees, and both swap back (${label})`, asked !== null && back !== null,
+    JSON.stringify(back ?? asked ?? await seats()));
 }
 
 async function lobbyChecks(browser, host, guest) {
@@ -339,16 +360,15 @@ async function lobbyChecks(browser, host, guest) {
     m.click('height-up');
     m.click('height-up');
     m.click('height-down');
-    const result = { shown: m.text('height-value'), height: window.__body.state.choice.height, ownLit: m.selected('height-own'),
+    const result = { shown: m.text('height-value'), raise: window.__body.state.choice.raise, pointLit: m.selected('height-own'),
       stored: localStorage.getItem('track-barrel.settings') };
     m.click('height-own');
-    result.backToOwn = window.__body.state.choice.height === 0 && m.selected('height-own');
+    result.backToPoint = window.__body.state.choice.raise === 0 && m.selected('height-own');
     m.toggle(false);
     return result;
   });
-  // Not in VR, the player's own height isn't measured: steps go from 1.75 m.
-  check('The game menu steps the character height 5 cm at a time, keeps it, and goes back to the player\'s own',
-    height.shown === '1.80 m' && height.height === 1.8 && !height.ownLit && height.stored === 'hz=72&height=1.8' && height.backToOwn,
+  check('The game menu steps the eye height 5 cm at a time, keeps it, and goes back to the seat\'s eye point',
+    height.shown === '+5 cm' && height.raise === 0.05 && !height.pointLit && height.stored === 'hz=72&raise=0.05' && height.backToPoint,
     JSON.stringify(height));
 
   // The start-up settings on the page's panel: turning shadows on saves the

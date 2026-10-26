@@ -11,11 +11,11 @@ The repository started from a co-op VR game template, itself cut down from Patch
 ## What already works
 
 - **Getting into VR and into a crew.** An in-VR start screen (play solo, solo with the practice crewmate, start a crew with a four-letter code, join one), a lobby on a Cloudflare Worker that pairs the two browsers, peer-to-peer WebRTC for game data and voice with a TURN relay fallback, the page's own Enter VR and microphone buttons, and handling for a crewmate stepping away, reconnecting or leaving. See [docs/start-and-menu.md](docs/start-and-menu.md) and [lobby/README.md](lobby/README.md).
-- **Bodies and hands.** Low-poly gloves posed from the controllers' trigger, grip and touch sensors (point, fist, flat, thumbs-up) or from tracked hands, hands that lock onto whatever they grip, simple head-and-body avatars in a coat colour each player picks, standing or seated play, and a character height setting. See [docs/hands.md](docs/hands.md).
+- **Bodies and hands.** Low-poly gloves posed from the controllers' trigger, grip and touch sensors (point, fist, flat, thumbs-up) or from tracked hands, hands that lock onto whatever they grip, simple head-and-body avatars in a coat colour each player picks, seated or standing play with a short calibration that puts the eyes on the seat's eye point (see [docs/seat-choice.md](docs/seat-choice.md)). See [docs/hands.md](docs/hands.md).
 - **The cabin and seats**: the hull and turret, each player held in their seat with their head free inside it, the host deciding who sits where, and the crewmate drawn seated (`src/sim/cabin.ts`, `src/systems/seat-system.ts`, [docs/cabin.md](docs/cabin.md)).
 - **Spikes** for the riskiest controls, each behind a Practice button: the magnified gunsight, riding the moving tank and loading a shell (`docs/spikes/`).
 - **Throwing and catching** code, kept for shells and casings but not used: the holder owns an object, and the thrower keeps simulating it until the catcher grabs it (`src/net/ownership.ts`, `src/systems/throwables-system.ts`).
-- **The game menu** in VR: microphone and crewmate mute, coat colour, standing or seated, character height, back in my seat, perf HUD, frame rate, foveation, a Practice section (which seat, and the spikes), back to the start screen, and Exit VR.
+- **The game menu** in VR: microphone and crewmate mute, coat colour, seated or standing, eye height, back in my seat, swap seats, calibrate again, perf HUD, frame rate, foveation, a Practice section (which seat, and the spikes), back to the start screen, and Exit VR.
 - **The practice crewmate**: a PC page that plays the second player, sitting in the seat you leave free, so one person can test two-player features.
 - **Performance tools**: a wrist perf HUD, a per-second perf CSV, a 90 Hz request that falls back to the nearest supported rate, and fixed foveation.
 - **Tests and deployment**: unit tests, a geometry test that catches flicker (z-fighting), a one-player emulated-headset test, a two-player network test with simulated lag, and CI that deploys the game to GitHub Pages and the lobby to Cloudflare on every merge to `main`. See [docs/testing.md](docs/testing.md).
@@ -66,9 +66,9 @@ Settings that apply at once are in the game menu. Ones read as the game loads (t
 | `fbscale` | 1 | WebXR framebuffer scale |
 | `shadows` | 0 | `1` adds one shadow-casting light |
 | `hud` | 1 | Show the perf HUD from the start |
-| `seat` | driver | The seat to start in, `driver` or `gunner` (in a crew the host decides) |
-| `seated` | 0 | `1` plays seated (eyes raised to a standing height) |
-| `height` | 0 | Character height in metres; 0 is your own |
+| `seat` | driver | The seat to start in, `driver` or `gunner` (in a crew the host keeps theirs); also picked on the start screen |
+| `seated` | 1 | `0` plays standing (calibration then takes a standing head; the eyes still land on the seat's eye point) |
+| `raise` | 0 | Raise (+) or drop (-) the eyes from the seat's eye point, m, in 5 cm steps up to 0.15 |
 | `room` | | Crew code to join on load, e.g. `room=KXQT` |
 | `lobby` | | Lobby URL (`wss://...`); defaults to the build's `VITE_LOBBY_URL`, else the page's own server |
 | `name` | | Your name as the crewmate sees it |

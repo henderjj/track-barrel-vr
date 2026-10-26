@@ -2,6 +2,7 @@ import { Object3D, Vector3 } from '@iwsdk/core';
 import { describe, expect, it } from 'vitest';
 import {
   GUN,
+  headDrop,
   headFix,
   HULL,
   hullToSeat,
@@ -15,8 +16,11 @@ import {
   seatingWith,
   seatToHull,
   SIGHT_EYEPIECE,
+  swapAgreed,
+  SWAP_WAIT_SECONDS,
   TURRET,
 } from '../src/sim/cabin.js';
+import { EYES_BELOW_TOP, MAX_EYE_RAISE } from '../src/sim/body-height.js';
 import { parseSettings } from '../src/settings.js';
 
 const v3 = (): [number, number, number] => [0, 0, 0];
@@ -179,5 +183,40 @@ describe('sharing the seats', () => {
     expect(parseSeat(undefined, 'gunner')).toBe('gunner');
     expect(parseSettings('').seat).toBe('driver');
     expect(parseSettings('?seat=gunner').seat).toBe('gunner');
+  });
+});
+
+describe('the head under the roof (F1.2)', () => {
+  const roofOf = (id: 'driver' | 'gunner') => (id === 'driver' ? HULL.roof : TURRET.roof);
+
+  it('stops the top of the head just under each seat\'s roof', () => {
+    for (const id of SEAT_IDS) {
+      const seat = SEATS[id];
+      const highestEyes = seat.eye[1] + seat.headUp;
+      expect(highestEyes + EYES_BELOW_TOP).toBeLessThan(roofOf(id));
+      expect(highestEyes + EYES_BELOW_TOP).toBeGreaterThan(roofOf(id) - 0.05);
+    }
+  });
+
+  it('leaves room to raise the eyes as far as the menu allows, and to sit up a little more', () => {
+    for (const id of SEAT_IDS) {
+      expect(SEATS[id].headUp).toBeGreaterThan(MAX_EYE_RAISE + 0.04);
+    }
+  });
+
+  it('lowers the play space only when the head rises past the limit', () => {
+    const driver = SEATS.driver;
+    expect(headDrop(driver, driver.eye[1])).toBe(0);
+    expect(headDrop(driver, driver.eye[1] + driver.headUp)).toBe(0);
+    // Standing up out of the chair: 45 cm higher.
+    expect(headDrop(driver, driver.eye[1] + 0.45)).toBeCloseTo(driver.headUp - 0.45, 6);
+  });
+});
+
+describe('swapping seats in a crew (F1.2)', () => {
+  it('swaps only when both players asked within the wait', () => {
+    expect(swapAgreed({ host: 10, guest: -Infinity }, 11)).toBe(false);
+    expect(swapAgreed({ host: 10, guest: 12 }, 12)).toBe(true);
+    expect(swapAgreed({ host: 10, guest: 12 + SWAP_WAIT_SECONDS }, 12 + SWAP_WAIT_SECONDS)).toBe(false);
   });
 });

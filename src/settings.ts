@@ -1,4 +1,4 @@
-import { clampCharacterHeight } from './sim/body-height.js';
+import { clampEyeRaise } from './sim/body-height.js';
 import { parseSeat, type SeatId } from './sim/cabin.js';
 
 /**
@@ -46,9 +46,9 @@ export interface Settings {
    * the second player so one person can test the two-player parts.
    */
   bot: boolean;
-  /** Character height, m: the player's eyes are put at this height less 0.13 m when upright; 0 keeps their own (src/sim/body-height.ts). */
-  height: number;
-  /** Playing seated: the view is raised to a little under an average standing eye height. */
+  /** How far to raise (+) or drop (-) the player's eyes from their seat's eye point, m (src/sim/body-height.ts). */
+  raise: number;
+  /** Playing seated (the default) or standing: either way the eyes land on the seat's eye point; it changes what calibration asks. */
   seated: boolean;
   /** The seat a player starts in when playing alone or starting a crew (a guest is given the other one), src/sim/cabin.ts. */
   seat: SeatId;
@@ -72,8 +72,8 @@ export const DEFAULT_SETTINGS: Settings = {
   pinch: 2,
   label: '',
   bot: false,
-  height: 0,
-  seated: false,
+  raise: 0,
+  seated: true,
   seat: 'driver',
 };
 
@@ -119,7 +119,7 @@ export function parseSettings(search: string): Settings {
     pinch: num(params, 'pinch', d.pinch, 0, 6),
     label: (params.get('label') ?? d.label).slice(0, 40),
     bot: bool(params, 'bot', d.bot),
-    height: clampCharacterHeight(num(params, 'height', d.height, 0, 3)),
+    raise: clampEyeRaise(num(params, 'raise', d.raise, -1, 1)),
     seated: bool(params, 'seated', d.seated),
     seat: parseSeat(params.get('seat'), d.seat),
   };
