@@ -48,7 +48,7 @@ Every height is checked to be within a seated player's reach in `test/body-heigh
 - **Not shared.** Each player has their own drill; the crewmate sees your hands but not your shells or lever. Loading and firing are shared in F1.10 (loaded and fired events, the shell drawn from the gunner's hand packets), so there is no network message, net test or practice-crewmate part here: loading is a one-person job.
 - **One hand per shell.** A real 88 mm round weighs about 15 kg and takes two hands. Here one hand carries it; a second hand can't help yet. Whether that feels too light is a headset question (below).
 - **The drill fires by itself.** There is no gunner, trigger, recoil, casing ejection or sound yet (F1.10 and F1.12). The breech opens itself after a shot, as the 88's semi-automatic breech did.
-- **The station stands on the template's deck** behind the start spot, until the cabin (F1.1) gives it a turret to live in.
+- **The station stands beside the tank.** It stood on the template's deck; since the cabin (F1.1) it stands beside the tank's left track on a platform level with the hull floor (`STATION_SPOT` in `src/sim/loading.ts`; its numbers are in station space, the old deck space), until F1.10 moves loading into the turret.
 
 ## Results in the cloud
 

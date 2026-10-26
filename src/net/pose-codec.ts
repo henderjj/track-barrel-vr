@@ -1,6 +1,6 @@
 /**
  * Compact binary packets for the unreliable data channel. Positions are
- * hull-space millimetres in 16-bit integers (±32 m, far more than the deck
+ * hull-space millimetres in 16-bit integers (±32 m, far more than the cabin
  * needs); rotations use the "smallest three" quaternion encoding (drop the
  * largest component, send the other three as 16-bit values plus its index).
  * Pure TypeScript and allocation free when given reusable buffers.
@@ -44,7 +44,7 @@ export interface AvatarPose {
   rightFingers: FingerCurls;
   /** What each hand holds (grip locking): the left's kind in the low four bits, the right's in the high (see HoldKind). */
   holds: number;
-  /** Where the feet are, m above the deck: 0 on it, higher when climbing. */
+  /** Where the feet are, m above the hull floor: their seat's floor (0 for the driver, the turret basket for the gunner). */
   feet: number;
 }
 
@@ -73,7 +73,7 @@ export const POSE_PACKET_MIN_BYTES = 8 + 3 * 13;
 const FINGERS_END = POSE_PACKET_MIN_BYTES + 6;
 /** ... + what each hand holds, u8. */
 const HOLDS_END = FINGERS_END + 1;
-/** ... + where the feet are, u8 cm above the deck. */
+/** ... + where the feet are, u8 cm above the hull floor. */
 export const POSE_PACKET_BYTES = HOLDS_END + 1;
 
 function clamp16(v: number): number {
@@ -168,7 +168,7 @@ export interface PoseHeader {
  * Decode a pose packet; returns false if it isn't one. Shorter packets
  * from earlier layouts still decode (the pattern to keep when a packet
  * grows): one without finger curls draws fists, one without hold kinds
- * says nothing held, and one without a feet height has its feet on the deck.
+ * says nothing held, and one without a feet height has its feet on the hull floor.
  */
 export function decodePose(view: DataView, header: PoseHeader, out: AvatarPose): boolean {
   if (view.byteLength < POSE_PACKET_MIN_BYTES || view.getUint8(0) !== PacketType.Pose) {

@@ -23,23 +23,23 @@ Every feature of the game, by phase, with where it stands. The approach behind e
 
 | Phase | Goal | Features | Done |
 | --- | --- | --- | --- |
-| 0 Groundwork | Rename, plan, spikes | 6 | 1 |
+| 0 Groundwork | Rename, plan, spikes | 6 | 2 |
 | 1 Core controls prototype | Prove the tank's controls work in VR co-op | 14 | 0 |
 | 2 Communication aids | Hatches and diegetic signals, compared against voice only | 7 | 0 |
 | 3 Combat and damage | Enemies, ammunition types, damage and repairs | 9 | 0 |
 | 4 Training and tutorials | Simplified systems and five training stages | 7 | 0 |
 | 5 Content and replay | Tiers, scenarios, scoring, ghosts, replays | 11 | 0 |
 
-**Current focus:** Phase 0.
+**Current focus:** Phase 1, with Phase 0's spikes waiting on their headset checks.
 
 ## Phase 0: Groundwork
 
 | ID | Feature | Status | Depends on | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 | F0.1 | Concept, implementation plan and this roadmap in the repository | Done | | #1 | `docs/concept.md`, `docs/plan.md`, `docs/roadmap.md` |
-| F0.2 | Rename the template to Track & Barrel VR | Building | | #2 | `package.json` name, page title, `coop-vr.` storage keys, README, lobby Worker name |
+| F0.2 | Rename the template to Track & Barrel VR | Done | | #2 | `package.json` name, page title, `coop-vr.` storage keys, README, lobby Worker name |
 | F0.3 | Spike S1: magnified sight render on Quest 3 | Headset check | F0.2 | #3 | Second camera into a 512² texture shown at infinity through the lens, reticle with range marks; [spike note](spikes/s1-sight-render.md) with the headset check |
-| F0.4 | Spike S2: riding the tank | Building | F0.2 | #7 | [spikes/s2-riding.md](spikes/s2-riding.md): Practice → Ride the tank as driver or gunner; world moves round the hull; gunner's space turns with the turret; open or closed cabin; vignette on or off |
+| F0.4 | Spike S2: riding the tank | Headset check | F0.2 | #7 | [spikes/s2-riding.md](spikes/s2-riding.md): Practice → Ride the tank as driver or gunner; world moves round the hull; gunner's space turns with the turret; open or closed cabin; vignette on or off |
 | F0.5 | Spike S3: lever feel | Planned | F0.2 | | One hand-following lever with limits, controllers and tracked hands |
 | F0.6 | Spike S4: loading a shell | Headset check | F0.2 | #6 | Grab, swing, ram, close, seated; time and fumbles. [spikes/s4-loading.md](spikes/s4-loading.md); Practice → Sit at the breech |
 
@@ -49,7 +49,7 @@ Ends when a crew can drive the range, find and hit three static targets, and the
 
 | ID | Feature | Status | Depends on | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| F1.1 | Cabin and seats: hull and turret basket model, driver and gunner seats, seat-local avatars, remove the demo and deck walking | Planned | F0.2 | | `src/sim/cabin.ts` replaces `play-area.ts` |
+| F1.1 | Cabin and seats: hull and turret basket model, driver and gunner seats, seat-local avatars, remove the demo and deck walking | Building | F0.2 | | [cabin.md](cabin.md): `src/sim/cabin.ts` replaces `play-area.ts`; the host decides seats; Practice → Sit in Driver/Gunner |
 | F1.2 | Seat choice and calibration: pick a seat on the crew page, seated head height and reach, standing mode, head kept inside the seat box | Planned | F1.1 | | Builds on `body-height.ts` |
 | F1.3 | Mechanism kit: lever, wheel/crank, twist grip, yoke, button; limits, detents, haptics, grip locking | Planned | F0.5, F1.1 | | `src/sim/mechanism.ts` |
 | F1.4 | Tank drive simulation and world movement: skid steer, RPM, gear ranges, ground following, obstacle bumps, host authority | Planned | F0.4, F1.1 | | `src/sim/tank-drive.ts`; new tank-state and driver-controls packets |

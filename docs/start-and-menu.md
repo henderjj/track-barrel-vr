@@ -34,11 +34,11 @@ How it should look and work (each rule fixed something a headset playtest found 
 | You | Coat colour | Eight swatches |
 | You | Playing | Standing, Seated (seated lifts your view to 1.45 m eye height) |
 | You | Character height | − and + in 5 cm steps, Your own |
+| You | Seat | Back in my seat: eyes back at the seat's eye point, facing forward |
 | Sound and view | Perf HUD (X) | On, Off |
 | Sound and view | Frame rate (Hz) | 72, 80, 90, 120 |
 | Sound and view | Foveation | Off, Half, Full |
-| Game | Restart | Score to nought, blocks back on the table, for both players |
-| Practice | Back on the table | The blocks back on the table, for both players |
+| Practice | Sit in | Driver, Gunner: in a crew the host decides, so a guest's choice moves both players ([cabin.md](cabin.md)) |
 | Practice | Loading (S4): Sit at the breech | Your head over the loader's seat facing the gun, every shell in the rack, the breech open and the drill's stats cleared (yours only: the drill isn't shared) |
 
 Below them, **Back to start screen** leaves any crew and shows the start screen, and **Exit VR** ends the session.

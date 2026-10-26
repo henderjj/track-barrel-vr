@@ -14,7 +14,7 @@ Explain VR terms in plain language when they first come up: XR (an immersive ses
 One feature is one pull request against `main` (never stacked on another PR branch), built in this order:
 
 1. **Design note** in `docs/<feature>.md`: what the players experience, the numbers (sizes, speeds, timings), how both players share it, what one player can do alone, what the host decides, and what goes over the network. Put any real design choice to the person with a recommendation, and carry on with the recommended one while they decide.
-2. **Engine-free logic** in `src/sim/<feature>.ts`: plain TypeScript with no IWSDK, DOM or renderer imports, so it is unit-tested in `test/<feature>.test.ts` and could move to a server. Shared dimensions go in `src/sim/play-area.ts` (or a sibling) so the model, the systems, the bot and the tests use one set of numbers.
+2. **Engine-free logic** in `src/sim/<feature>.ts`: plain TypeScript with no IWSDK, DOM or renderer imports, so it is unit-tested in `test/<feature>.test.ts` and could move to a server. Shared dimensions go in `src/sim/cabin.ts` (or a sibling) so the model, the systems, the bot and the tests use one set of numbers.
 3. **Model** in `src/scene-assets/<feature>.scene-asset.ts` (low-poly, vertex-coloured, merged with `mergeParts` into as few meshes as possible, deterministic) and registered in `test/z-fighting.test.ts` in the same PR, in every pose it is drawn in.
 4. **System** in `src/systems/<feature>-system.ts`, registered in `src/index.ts` in the right order (comments there say why each system is where it is). Systems that hold a hand set `handUse[side]` while they do and clear it on letting go.
 5. **Network** messages for anything both players must agree on (see below).
@@ -28,13 +28,13 @@ One feature is one pull request against `main` (never stacked on another PR bran
 
 Design for 50 ms round trip and stay playable at 150 ms with 20 ms jitter and 1% loss. Test that with `?netlag=60&netjitter=20&netloss=0.01`; Chrome's DevTools throttling doesn't touch WebRTC.
 
-- **The host is the authority.** The player who started the crew runs the simulation; the guest runs the same code as a replica and only shows what the host sends. Playing solo, the page is the host (`netLink.isHost` is true when not connected). See `src/systems/game-system.ts` for the pattern: the host scores, sends the score as an event, and a guest's Restart asks the host.
+- **The host is the authority.** The player who started the crew runs the simulation; the guest runs the same code as a replica and only shows what the host sends. Playing solo, the page is the host (`netLink.isHost` is true when not connected). See `src/systems/seat-system.ts` for the pattern: the host decides who sits where and sends it as an event, and a guest's choice asks the host.
 - **Two channels.** Things that change every frame (a shared control's angle, a vehicle's pose, the guest's hands on a control) go as small binary packets on the unreliable channel at about 45 Hz: add a `PacketType` in `src/net/pose-codec.ts` with `encode`/`decode` functions packed by hand with `DataView`, and a round-trip unit test. Things that happen once (grabbed, scored, delivered, a setting the host decides) go as reliable events: `netLink.sendEvent({ t: 'name', ... })` and `netLink.events.set('name', handler)`, removed in `cleanupFuncs`.
 - **Keep packets backward compatible.** When a packet grows, decode the old length too, so a page still on the previous build works.
 - **Shared controls** (something both players can hold at once): each client sends its own hands' contribution, the host combines them and broadcasts the result, and each client draws its own hand on the control at once while blending the control towards the host's state.
-- **Loose objects** follow `src/net/ownership.ts` and `ThrowablesSystem`: the holder owns it; a thrower keeps simulating until the catcher grabs it, so catches work at 150 ms.
+- **Loose objects** follow `src/net/ownership.ts` and `ThrowablesSystem` (kept in the tree, not registered, until a feature needs it): the holder owns it; a thrower keeps simulating until the catcher grabs it, so catches work at 150 ms.
 - **Shared clock.** Use `netLink.toLocal()` and the clock sync for anything timed together (a beat both must hear, a countdown), never each page's own clock.
-- **A moving vehicle**: keep the vehicle still at the origin and move the world by its inverse pose, so the deck, the crewmate and loose objects stay smooth relative to each other, and send everything aboard in deck-local coordinates.
+- **A moving vehicle**: keep the vehicle still at the origin and move the world by its inverse pose, so the cabin, the crewmate and loose objects stay smooth relative to each other, and send everything aboard in hull-space coordinates.
 - **Presence.** `crewPresence.paused` is true while the crewmate stepped away, went quiet or is reconnecting. Freeze the host's simulation while it is true; the sign saying why is already drawn.
 - **Hands on controls.** Add a `HoldKind` (`src/systems/hand-lock.ts`, up to 15) per handle, register its resolver in the owning system, and map its `handUse` name in `holdKindOf` (`src/systems/net-system.ts`), so both players see the hand closed on the handle (grip locking).
 
@@ -68,7 +68,7 @@ Bodies, hands and comfort:
 - WebXR grip space has its origin at the fist with −Z along the handle towards the thumb: align a held thing to the model's own fist axis (`FIST_AXIS`), not the controller's.
 - Read grip state from `grip` in `src/systems/grip-system.ts`, not the gamepad, so controllers and tracked hands (fist or pinch) both work.
 - Put every control between knee and chest height and check it is reachable seated (eyes raised to 1.45 m); add it to `test/body-height.test.ts`.
-- Keep the player inside the walkable area by limiting where their head can go, not where the play space's origin is, so a step in the real room can't carry them through a wall or off an edge. In the template this is `DeckWalkSystem`, with its bounds taken from `src/sim/play-area.ts`; change the bounds there when the area changes.
+- Keep the player in their seat by limiting where their head can go, not where the play space's origin is, so a lean or a step in the real room can't carry their head through the armour. This is `SeatSystem`, with each seat's head box in `src/sim/cabin.ts`; change the boxes there when the cabin changes. A feature that seats the player somewhere else sets `seating.away` while it does.
 - Never judge an object's speed from its drawn position over one frame: after a slow frame several physics steps land at once. Read the physics body's velocity, and move held objects to the hand each frame.
 - If players ride a moving vehicle, keep its floor under their feet and limit its lean to a few degrees. Whenever the game halts or pauses the vehicle by itself (the crewmate stepped away, a reconnect, a stop button), put a sign in front of the player saying why, so a sudden stop doesn't read as a bug.
 
@@ -87,7 +87,7 @@ PC VR over Link and Air Link: Chrome or Edge only, Meta Horizon Link as the acti
 Read `docs/testing.md` first. While developing:
 
 1. Always `npm run typecheck` (type errors can stop systems initialising without a console error) and `npm test`.
-2. Then the browser test that covers the change: `npm run test:xr` for one player's hands, controls, physics and flow; `npm run build && npm run test:net` for anything shared, narrowed with `ONLY_THROW=1` (or `=lag`), `ONLY_BOT=1` or `ONLY_LIFECYCLE=1`.
+2. Then the browser test that covers the change: `npm run test:xr` for one player's hands, controls, physics and flow; `npm run build && npm run test:net` for anything shared, narrowed with `ONLY_SEATS=1` (or `=lag`), `ONLY_BOT=1` or `ONLY_LIFECYCLE=1`.
 3. Both browser tests before marking a PR ready.
 
 Habits that kept CI green:
