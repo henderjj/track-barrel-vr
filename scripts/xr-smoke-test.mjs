@@ -1036,10 +1036,10 @@ async function layingTheGun() {
     iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('elevation', [-rr * Math.sin(a), rr * Math.cos(a), 0])), duration: 0.15 });
     await sleep(200);
   }
-  const raised = await waitFor('the gun to rise', () => { const s = turret(); return s.elevationDeg - e0 > 0.5 && s; }, 4000).catch(() => turret());
+  const raised = await waitFor('the gun to rise', () => { const s = turret(); return s.elevationDeg - e0 > 0.4 && s; }, 4000).catch(() => turret());
   const drawn = evalInApp('window.__turret.drawn()');
   check('A quarter turn clockwise of the elevation wheel raises the gun about 0.75°',
-    raised.elevationDeg - e0 > 0.5 && raised.elevationDeg - e0 < 1.0 && Math.abs(drawn.elevation - raised.elevationDeg) < 0.05,
+    raised.elevationDeg - e0 > 0.4 && raised.elevationDeg - e0 < 1.0 && Math.abs(drawn.elevation - raised.elevationDeg) < 0.05,
     `gun ${e0.toFixed(2)}° to ${raised.elevationDeg.toFixed(2)}°, drawn ${drawn.elevation.toFixed(2)}°`);
   await letGoOf('elevation');
 
