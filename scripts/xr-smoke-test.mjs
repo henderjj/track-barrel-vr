@@ -1254,7 +1254,9 @@ async function driverStation() {
   await take('controller-left', 'tillerLeft');
   await take('controller-right', 'tillerRight');
   const held = station();
-  const locked = evalInApp('[window.__ownHands.locked("left"), window.__ownHands.locked("right")]');
+  // The second glove is still closing on its handle a frame or two after the grab.
+  const gloves = () => evalInApp('[window.__ownHands.locked("left"), window.__ownHands.locked("right")]');
+  const locked = await waitFor('both gloves on the tillers', () => { const g = gloves(); return g[0] > 0.9 && g[1] > 0.9 && g; }, 3000, 100).catch(() => gloves());
   check('Squeezing at the tillers takes hold of both, the gloves closed on them',
     held.heldBy.tillerLeft === 'left' && held.heldBy.tillerRight === 'right' && locked[0] > 0.9 && locked[1] > 0.9,
     `held by ${held.heldBy.tillerLeft} and ${held.heldBy.tillerRight}, gloves ${locked.map((v) => v.toFixed(2)).join(' and ')} on`);
