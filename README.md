@@ -6,7 +6,7 @@ A two-player co-op VR tank game that runs in the browser, built with [IWSDK](htt
 - How it is being built: [docs/plan.md](docs/plan.md).
 - Every feature and where it stands: [docs/roadmap.md](docs/roadmap.md); what shipped and what headset checks found: [docs/progress.md](docs/progress.md).
 
-The repository started from a co-op VR game template, itself cut down from Patchwork Airship VR. The template's demo (blocks thrown through a hoop on a wooden deck) is gone: the two players now sit in the tank's cabin, one in the driver's seat and one in the gunner's (roadmap F1.1, [docs/cabin.md](docs/cabin.md)). The tank drives (F1.4, [docs/tank-drive.md](docs/tank-drive.md)): the driver's thumbsticks work its tracks until the driver's station is built. The other controls come next, feature by feature.
+The repository started from a co-op VR game template, itself cut down from Patchwork Airship VR. The template's demo (blocks thrown through a hoop on a wooden deck) is gone: the two players now sit in the tank's cabin, one in the driver's seat and one in the gunner's (roadmap F1.1, [docs/cabin.md](docs/cabin.md)). The tank drives (F1.4, [docs/tank-drive.md](docs/tank-drive.md)): the driver's thumbsticks work its tracks until the driver's station is built. The turret turns and the gun elevates (F1.8, [docs/turret.md](docs/turret.md)): the gunner lays it with a power traverse grip, a crank and an elevation wheel. The other controls come next, feature by feature.
 
 ## What already works
 

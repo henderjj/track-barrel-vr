@@ -82,9 +82,10 @@ const FOG_FAR = 230;
 /**
  * Names of the cabin (F1.1) and of spikes S1's and S4's set-ups, hidden
  * while riding: the ride brings its own blockout hull, turret and ground
- * until F1.4 moves the cabin with the tank.
+ * until F1.4 moves the cabin with the tank. The test range's targets and
+ * roads (F1.7) are part of `Ground`, so they go with it.
  */
-const DEMO_NAMES = /^(Hull|Turret|Driver Station|Ground|Sight|Sight Stand|Sight Range|Sight Lens|Loading Drill|Loading Station|Loading Board|Shell \d+|Breech Block|Breech Lever)$/;
+const DEMO_NAMES = /^(Hull|Turret|Driver Station|Ground|Sight|Sight Stand|Sight Lens|Loading Drill|Loading Station|Loading Board|Shell \d+|Breech Block|Breech Lever)$/;
 
 let active: RideSystem | null = null;
 

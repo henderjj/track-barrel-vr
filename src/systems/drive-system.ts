@@ -33,6 +33,7 @@ import {
   type DriverControls,
   type Gear,
   GEARS,
+  IDLE_RPM,
   keyControls,
   kmh,
   settle,
@@ -98,6 +99,29 @@ export function resetTank(): void {
   active?.reset();
 }
 
+/** Where a guest asks the host to park the tank (Practice shortcuts, F1.7). */
+interface PlaceEvent {
+  t: 'drive-place';
+  x: number;
+  z: number;
+  heading: number;
+}
+
+/**
+ * Park the tank at rest at (x, z) in world space facing `heading` (rad):
+ * Practice shortcuts that put the crew somewhere on the range (F1.7). The
+ * host does it; a guest asks the host, as Back to start does.
+ */
+export function placeTank(x: number, z: number, heading: number): void {
+  if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(heading)) return;
+  if (!netLink.isHost) {
+    const event: PlaceEvent = { t: 'drive-place', x, z, heading };
+    netLink.sendEvent(event);
+    return;
+  }
+  active?.park(x, z, heading);
+}
+
 /** Move the gear lever to a gear's notch (the menu, keys 0, 1 and 2, tests); a hand on it keeps it. */
 export function setGear(gear: Gear): void {
   drive.gear = gear;
@@ -117,6 +141,11 @@ export function shownDriverControls(): DriverControls | null {
 /** The tank as this page draws it (the host's simulation, or the guest's copy of it), for the driver's gauges. */
 export function shownDriverState(): TankDrive | null {
   return active?.shown ?? null;
+}
+
+/** The engine's RPM as drawn on this page (the host's, or the guest's copy of it): the turret's power traverse runs off it (F1.8). */
+export function engineRpm(): number {
+  return active?.shown.rpm ?? IDLE_RPM;
 }
 
 /** One line on the tank for the menu: who drives, speed, gear, RPM. */
@@ -145,7 +174,6 @@ interface DriveDebug {
   /** Where a world-space point is drawn, in hull space. */
   drawnAt(x: number, y: number, z: number): number[];
   readonly vignetteAlpha: number;
-  readonly sightRangeShown: boolean;
   readonly sign: string;
   /** Tank packets sent and received. */
   readonly sent: number;
@@ -175,6 +203,10 @@ interface DriveDebug {
  * lever too. A comfort vignette
  * darkens the edge of view with the tank's motion. Spike S2's ride takes
  * over while it runs.
+ *
+ * Everything the tank drives past — the range's roads, targets, markers and
+ * obstacles (F1.7, src/sim/range.ts) — is part of the ground this moves, so
+ * it all stays where it stands however far the tank goes.
  */
 export class DriveSystem extends createSystem({}) {
   /** The host's simulation. */
@@ -199,8 +231,6 @@ export class DriveSystem extends createSystem({}) {
   private received = 0;
   private wasHost = true;
   private ground: Object3D | null = null;
-  private sightRange: Object3D | null = null;
-  private lookedForSightRange = 0;
   private vignette!: Mesh<CylinderGeometry, ShaderMaterial>;
   private sign!: FloatingSign;
   private signText = '';
@@ -230,6 +260,12 @@ export class DriveSystem extends createSystem({}) {
     netLink.events.set('drive-reset', () => {
       if (netLink.isHost) this.reset();
     });
+    netLink.events.set('drive-place', (data) => {
+      const { x, z, heading } = data as { x?: unknown; z?: unknown; heading?: unknown };
+      if (!netLink.isHost || typeof x !== 'number' || typeof z !== 'number' || typeof heading !== 'number') return;
+      if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(heading)) return;
+      this.park(x, z, heading);
+    });
 
     const typing = (event: KeyboardEvent) => (event.target as Element | null)?.closest?.('input, textarea, select') != null;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -253,6 +289,7 @@ export class DriveSystem extends createSystem({}) {
       () => netLink.handlers.delete(PacketType.TankState),
       () => netLink.handlers.delete(PacketType.DriverControls),
       () => netLink.events.delete('drive-reset'),
+      () => netLink.events.delete('drive-place'),
       () => window.removeEventListener('keydown', onKeyDown),
       () => window.removeEventListener('keyup', onKeyUp),
       () => window.removeEventListener('blur', onBlur),
@@ -269,15 +306,9 @@ export class DriveSystem extends createSystem({}) {
         if (controls?.gear !== undefined) setGear(controls.gear);
       },
       reset: () => self.reset(),
-      place: (x, z, heading) => {
-        if (!netLink.isHost) return;
-        Object.assign(self.sim, createTankDrive(x, z, heading), { gear: self.sim.gear });
-        settle(self.sim);
-        copyTankDrive(self.sim, self.shown);
-      },
+      place: (x, z, heading) => self.park(x, z, heading),
       drawnAt: (x, y, z) => (self.ground ? self.ground.localToWorld(new Vector3(x, y, z)).toArray() : []),
       get vignetteAlpha() { return self.vignette.material.uniforms.uAlpha.value as number; },
-      get sightRangeShown() { return self.sightRange?.visible ?? false; },
       get sign() { return self.sign.visible ? self.signText : ''; },
       get sent() { return self.sent; },
       get received() { return self.received; },
@@ -289,6 +320,14 @@ export class DriveSystem extends createSystem({}) {
   private driver(): 'me' | 'crew' | 'nobody' {
     if (seating.mine === 'driver') return 'me';
     return netLink.connected && seating.crew === 'driver' ? 'crew' : 'nobody';
+  }
+
+  /** Host only: the tank at rest at (x, z) facing `heading`, settled on the ground. */
+  park(x: number, z: number, heading: number): void {
+    if (!netLink.isHost) return;
+    Object.assign(this.sim, createTankDrive(x, z, heading), { gear: this.sim.gear });
+    settle(this.sim);
+    copyTankDrive(this.sim, this.shown);
   }
 
   reset(): void {
@@ -337,7 +376,6 @@ export class DriveSystem extends createSystem({}) {
       return;
     }
     this.placeGround();
-    this.showSightRange();
     this.shade(dt);
     this.signs(delta);
   }
@@ -464,30 +502,15 @@ export class DriveSystem extends createSystem({}) {
     this.matrix.decompose(ground.position, ground.quaternion, ground.scale);
   }
 
-  /**
-   * Spike S1's range stands in hull space, so it rides with the tank: show
-   * it only while the tank is parked at its start, where it stands on the
-   * ground's lane.
-   */
-  private showSightRange(): void {
-    if (this.sightRange == null) {
-      if (this.time < this.lookedForSightRange) return;
-      this.lookedForSightRange = this.time + 1;
-      this.sightRange = this.scene.getObjectByName('Sight Range') ?? null;
-      if (this.sightRange == null) return;
-    }
-    const s = this.shown;
-    const atStart = Math.hypot(s.x, s.z) < 0.5 && Math.abs(angleDelta(0, s.heading)) < 0.01;
-    if (this.sightRange.visible !== atStart) this.sightRange.visible = atStart;
-  }
-
   /** The vignette follows what the eyes see turn, speed up and tilt. */
   private shade(dt: number): void {
     const alpha = this.vignette.material.uniforms.uAlpha;
     let target = 0;
     if (drive.vignette && this.world.session != null) {
       const s = this.shown;
-      target = vignetteLevel(s.yawRate, s.accel, Math.abs(s.pitchRate) + Math.abs(s.rollRate), s.speed) * VIGNETTE_STRENGTH;
+      // The gunner's view turns with the turret too.
+      const turn = s.yawRate + (seating.mine === 'gunner' ? seating.turretRate : 0);
+      target = vignetteLevel(turn, s.accel, Math.abs(s.pitchRate) + Math.abs(s.rollRate), s.speed) * VIGNETTE_STRENGTH;
     }
     alpha.value += (target - alpha.value) * Math.min(1, dt * 6);
     this.vignette.visible = alpha.value > 0.002;

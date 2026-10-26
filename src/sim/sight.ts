@@ -70,24 +70,11 @@ export const SIGHT_STAND = {
 } as const;
 
 /**
- * Targets for the spike, in hull space: the middle of each board's foot on
- * the ground (y = GROUND_Y) and its range from the sight. Spread across the
- * field so all three show at once with the sight looking straight ahead.
+ * The targets the sight looks at are the test range's (F1.7,
+ * src/sim/range.ts): they stand in the world on the range's ground rather
+ * than in hull space, so they stay put as the tank drives. The sight is
+ * laid on them with `layOnMark` below.
  */
-export const SIGHT_TARGETS = [
-  { range: 100, x: SIGHT_STAND.x - 5 },
-  { range: 250, x: SIGHT_STAND.x + 9 },
-  { range: 500, x: SIGHT_STAND.x + 3 },
-] as const;
-
-/** A target board: width and height of the face, how high its bottom edge stands off the ground, m. */
-export const TARGET_BOARD = { width: 3.0, height: 2.2, lift: 0.5 } as const;
-
-/** Where target `i` stands (hull space): x and z of its foot. */
-export function targetFoot(i: number): [number, number] {
-  const t = SIGHT_TARGETS[i];
-  return [t.x, SIGHT_STAND.z - t.range];
-}
 
 /**
  * How far above the line to the target the gun must point to hit it at

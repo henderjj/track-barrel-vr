@@ -170,7 +170,9 @@ describe('tank drive (F1.4)', () => {
 
   describe('ground', () => {
     it('follows the ground within the tilt caps, its tracks on it', () => {
-      const s = createTankDrive(150, 0, Math.PI / 2);
+      // Away from the start field and from both roads' flat corridors (the
+      // range's roads, src/sim/range.ts), where the ground rolls.
+      const s = createTankDrive(150, 150, Math.PI / 2);
       let maxTilt = 0;
       run(s, controls(1, 1, LOW), 60, NONE, (t) => {
         maxTilt = Math.max(maxTilt, Math.abs(t.pitch), Math.abs(t.roll));

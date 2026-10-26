@@ -18,10 +18,12 @@ import { NetSystem } from './systems/net-system.js';
 import { OwnHandsSystem } from './systems/own-hands-system.js';
 import { PerfHudSystem } from './systems/perf-hud-system.js';
 import { PlatformSystem } from './systems/platform-system.js';
+import { RangeSystem } from './systems/range-system.js';
 import { RideSystem } from './systems/ride-system.js';
 import { SeatSystem } from './systems/seat-system.js';
 import { SightSystem } from './systems/sight-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
+import { TurretSystem } from './systems/turret-system.js';
 
 // On a two-GPU PC, start on the graphics card Link uses (src/gpu-preference.ts).
 preferHighPerformanceGpu();
@@ -46,6 +48,8 @@ World.create(
   world.registerSystem(DriveSystem);
   // Spike S2: before anything draws the hands on the moved rig. The seat system stands aside while it rides.
   world.registerSystem(RideSystem);
+  // After both of them: the range's fog is the scene's, and the ride borrows it while it runs.
+  world.registerSystem(RangeSystem);
   // After NetSystem, which updates the crew presence it shows.
   world.registerSystem(CrewStatusSystem);
   // Add the tank's systems here. ThrowablesSystem (loose objects, kept for
@@ -55,6 +59,8 @@ World.create(
   // grips, yokes, buttons), before the systems that read them and before
   // OwnHandsSystem draws hands on them.
   world.registerSystem(MechanismSystem);
+  // The turret (F1.8): after the kit has moved its controls, before OwnHandsSystem draws hands on them. It turns a seated gunner's play space with the turret.
+  world.registerSystem(TurretSystem);
   // After the kit has moved its levers: it reads them into the drive (DriveSystem drives by them next frame) and draws the gauges.
   world.registerSystem(DriverStationSystem);
   world.registerSystem(LeverSystem);

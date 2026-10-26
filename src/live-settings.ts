@@ -35,6 +35,7 @@ export const LIVE_ITEMS: readonly LiveItem[] = [
     ],
     current: (s) => String(s.hz),
   },
+  { key: 'fog', label: 'Range fog', options: [['1', 'On'], ['0', 'Off']], current: (s) => onOff(s.fog) },
   {
     key: 'foveation',
     label: 'Foveation',
