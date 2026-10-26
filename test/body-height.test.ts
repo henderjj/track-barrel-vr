@@ -14,6 +14,7 @@ import {
 } from '../src/sim/body-height.js';
 import { parseSettings } from '../src/settings.js';
 import { TABLE } from '../src/sim/play-area.js';
+import { BREECH_MOUTH, LEVER_LENGTH, LEVER_PIVOT, RACK_SLOTS } from '../src/sim/loading.js';
 
 /** Feed `seconds` of a steady head height at 90 Hz. */
 function hold(eye: UprightEye, headY: number, seconds: number): void {
@@ -80,6 +81,15 @@ describe('rig offset', () => {
     const raised = rigOffset(targetEyeHeight({ height: 0, seated: true }), 1.2);
     expect(TABLE.height - raised).toBeGreaterThan(0.45);
     expect(TABLE.height - raised).toBeLessThan(1.4);
+  });
+
+  it('keeps the loading drill in reach from a chair when seated (spike S4)', () => {
+    const raised = rigOffset(targetEyeHeight({ height: 0, seated: true }), 1.2);
+    const heights = [...RACK_SLOTS.map((slot) => slot[1]), BREECH_MOUTH[1], LEVER_PIVOT[1] + LEVER_LENGTH, LEVER_PIVOT[1]];
+    for (const y of heights) {
+      expect(y - raised).toBeGreaterThan(0.45);
+      expect(y - raised).toBeLessThan(1.4);
+    }
   });
 
   it('never lifts the rig more than its limit', () => {

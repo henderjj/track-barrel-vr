@@ -279,6 +279,12 @@
         <Button id="menu-blocks" class="choice" size="sm" variant="secondary">Back on the table</Button>
       </div>
     </div>
+    <div class="setting">
+      <div class="label">Loading (S4)</div>
+      <div class="choices">
+        <Button id="menu-loading" class="choice" size="sm" variant="secondary">Sit at the breech</Button>
+      </div>
+    </div>
   </div>
   <Divider></Divider>
 

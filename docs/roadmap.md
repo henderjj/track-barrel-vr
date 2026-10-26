@@ -41,7 +41,7 @@ Every feature of the game, by phase, with where it stands. The approach behind e
 | F0.3 | Spike S1: magnified sight render on Quest 3 | Planned | F0.2 | | Second camera into a 512² texture; measure frame time on Quest 3 and over Link |
 | F0.4 | Spike S2: riding the tank | Planned | F0.2 | | World moves round the hull; gunner's space turns with the turret; comfort with and without the vignette |
 | F0.5 | Spike S3: lever feel | Planned | F0.2 | | One hand-following lever with limits, controllers and tracked hands |
-| F0.6 | Spike S4: loading a shell | Planned | F0.2 | | Grab, swing, ram, close, seated; time and fumbles |
+| F0.6 | Spike S4: loading a shell | Headset check | F0.2 | PRNUM | Grab, swing, ram, close, seated; time and fumbles. [spikes/s4-loading.md](spikes/s4-loading.md); Practice → Sit at the breech |
 
 ## Phase 1: Core controls prototype
 

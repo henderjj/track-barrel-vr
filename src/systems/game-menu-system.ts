@@ -9,6 +9,7 @@ import { body, chooseBody } from './body-height-system.js';
 import { OPEN_MENU_EVENT } from './net-system.js';
 import { PanelUi } from './panel-ui.js';
 import { resetBlocks, restartGame } from './game-system.js';
+import { startLoadingDrill } from './loading-drill-system.js';
 import { startScreen } from './start-screen-system.js';
 
 /** Where the menu stands in VR when opened: ahead of the head and a little below the eyes, m. */
@@ -177,6 +178,10 @@ export class GameMenuSystem extends createSystem({}) {
     ui.on('menu-blocks', () => {
       this.setOpen(false);
       resetBlocks();
+    });
+    ui.on('menu-loading', () => {
+      this.setOpen(false);
+      startLoadingDrill();
     });
     ui.on('menu-exit', () => {
       this.setOpen(false);
