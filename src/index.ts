@@ -13,6 +13,7 @@ import { NetSystem } from './systems/net-system.js';
 import { OwnHandsSystem } from './systems/own-hands-system.js';
 import { PerfHudSystem } from './systems/perf-hud-system.js';
 import { PlatformSystem } from './systems/platform-system.js';
+import { SightSystem } from './systems/sight-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
 import { ThrowablesSystem } from './systems/throwables-system.js';
 
@@ -43,6 +44,8 @@ World.create(
   world.registerSystem(CrewBotSystem);
   // After the controls have moved, so hands drawn on them (grip locking) sit on them this frame.
   world.registerSystem(OwnHandsSystem);
+  // Spike S1's gunsight renders its view once everything in it has moved this frame.
+  world.registerSystem(SightSystem);
   // After NetSystem, which may have joined a crew from the page's link.
   world.registerSystem(StartScreenSystem);
   world.registerSystem(GameMenuSystem);

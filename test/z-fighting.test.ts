@@ -2,6 +2,8 @@ import { type BufferGeometry, Mesh, MeshLambertMaterial, type Object3D, Vector3 
 import { describe, expect, it } from 'vitest';
 import * as avatar from '../src/scene-assets/avatar.scene-asset.js';
 import * as deck from '../src/scene-assets/deck.scene-asset.js';
+import * as sight from '../src/scene-assets/sight.scene-asset.js';
+import { SIGHT_STAND } from '../src/sim/sight.js';
 import { coplanarOverlaps, describeOverlaps, trianglesOf } from './support/coplanar.js';
 
 /**
@@ -42,6 +44,22 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     for (const prop of props) {
       expectNone([prop], DECK_GAP);
     }
+  });
+
+  it("on spike S1's sight, on its stand and aimed, and its range", () => {
+    const stand = sight.createSightStand();
+    const lens = mesh(sight.createSightLensGeometry(), 'Sight Lens');
+    for (const [pitch, yaw] of [[0, 0], [0.02, 0.05]]) {
+      const body = sight.createSightBody();
+      body.position.set(0, SIGHT_STAND.lensHeight, 0);
+      body.rotation.set(pitch, yaw, 0, 'YXZ');
+      body.add(lens);
+      body.updateMatrixWorld(true);
+      expectNone([stand, body], DECK_GAP, onDeck);
+    }
+    expectNone([sight.createSightRange()], WORLD_GAP);
+    // The range's plain overlaps the deck's ground.
+    expectNone([deck.createPlayArea(), sight.createSightRange()], DECK_GAP, onDeck);
   });
 
   it('on the crew', () => {
