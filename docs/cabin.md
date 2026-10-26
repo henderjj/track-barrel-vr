@@ -29,7 +29,7 @@ Hull space: hull floor at y = 0, front towards −Z, +X to the right. The tank s
 | Gunner's head box | 22 cm left, 35 cm right, 24 cm forward, 45 cm back | The breech on the left; forward stops 4 cm short of the sight's lens |
 | Sight eyepiece | (0.32, 2.25, −0.48), turret | A 28 cm lean from the eye point; the sight opens within 9 cm |
 | Reseat distance | 30 cm past the head box | Further than any lean, nearer than a step |
-| Ground | 0.6 m under the hull floor, 300 m across | The tracks reach it |
+| Ground | 0.6 m under the hull floor; the drive's rolling ground since F1.4 ([tank-drive.md](tank-drive.md)) | The tracks reach it |
 
 The models are lit by the sky's image-based light (`IBLGradient` in the scene), which only lights `MeshStandardMaterial`: every model uses it, rough and not metallic. There are no lights in the scene.
 

@@ -38,14 +38,16 @@ const WAVES: readonly (readonly [amplitude: number, kx: number, kz: number])[] =
 ];
 
 /** The start field: flat within this radius of the start, rolling fully this much further out, m. */
-export const FLAT_RADIUS = 25;
+export const FLAT_RADIUS = 40;
 const FLAT_BLEND = 35;
 /**
  * The lane: a flat strip along z through the start (x ≡ 0 each tile), this
- * half-width, rolling fully this much further out, m. It gives a straight,
+ * half-width, rolling fully this much further out, m. Only cells with every
+ * corner flat are flat, so the start field is flat out to about 18 m and
+ * the lane 16 m either side of its middle. It gives a straight,
  * clear run to drive on, and the S1 sight's targets stand on it.
  */
-export const LANE_HALF = 12;
+export const LANE_HALF = 17;
 const LANE_BLEND = 28;
 
 const smooth = (t: number) => {

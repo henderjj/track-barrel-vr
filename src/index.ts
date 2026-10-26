@@ -4,6 +4,7 @@ import { preferHighPerformanceGpu } from './gpu-preference.js';
 import { BodyHeightSystem } from './systems/body-height-system.js';
 import { CrewBotSystem } from './systems/crew-bot-system.js';
 import { CrewStatusSystem } from './systems/crew-status-system.js';
+import { DriveSystem } from './systems/drive-system.js';
 import { FrameRateSystem } from './systems/frame-rate-system.js';
 import { GameMenuSystem } from './systems/game-menu-system.js';
 import { GripSystem } from './systems/grip-system.js';
@@ -35,6 +36,8 @@ World.create(
   // Before the systems that read its grip state.
   world.registerSystem(GripSystem, { priority: -5 });
   world.registerSystem(NetSystem);
+  // After NetSystem, which says who is host: the host drives the tank, a guest draws the host's. It moves the ground, not the cabin.
+  world.registerSystem(DriveSystem);
   // Spike S2: before anything draws the hands on the moved rig. The seat system stands aside while it rides.
   world.registerSystem(RideSystem);
   // After NetSystem, which updates the crew presence it shows.

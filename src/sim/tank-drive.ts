@@ -224,7 +224,7 @@ export function stepDrive(s: TankDrive, c: DriverControls, dt: number, obstacles
   let yawRate = approach(s.yawRate, yawTarget, MAX_YAW_ACCEL * dt);
 
   // Obstacles: no part of the outline may close on one faster than it could stop in the gap at BUMP_DECEL.
-  const slow = obstacleFactor(s, speed, yawRate, obstacles);
+  const slow = obstacleFactor(s, speed, yawRate, dt, obstacles);
   const wasTouching = s.touching;
   s.touching = slow.touching;
   if (s.touching && !wasTouching && slow.closing > BUMP_SPEED) s.bumps++;
@@ -302,11 +302,11 @@ const slowed = { factor: 1, touching: false, closing: 0 };
 
 /**
  * How much to scale the tank's speed and turn rate this step so that no
- * point of its outline closes on an obstacle faster than sqrt(2 · BUMP_DECEL
- * · gap): the tank slows into a soft stop as it reaches one, and can always
+ * point of its outline closes on an obstacle faster than it could stop in
+ * the gap braking at BUMP_DECEL (about sqrt(2 · BUMP_DECEL · gap)): the tank slows into a soft stop as it reaches one, and can always
  * back or turn away. Also whether it touches one, and the fastest closing speed.
  */
-function obstacleFactor(s: TankDrive, speed: number, yawRate: number, obstacles: readonly Obstacle[]): typeof slowed {
+function obstacleFactor(s: TankDrive, speed: number, yawRate: number, dt: number, obstacles: readonly Obstacle[]): typeof slowed {
   slowed.factor = 1;
   slowed.touching = false;
   slowed.closing = 0;
@@ -336,7 +336,9 @@ function obstacleFactor(s: TankDrive, speed: number, yawRate: number, obstacles:
         slowed.closing = Math.max(slowed.closing, closing);
       }
       if (closing <= 0) continue;
-      const allowed = Math.sqrt(2 * BUMP_DECEL * Math.max(d, 0));
+      // The fastest it could close and still stop in the gap, braking from the next step on.
+      const brake = BUMP_DECEL * dt;
+      const allowed = Math.sqrt(brake * brake + 2 * BUMP_DECEL * Math.max(d, 0)) - brake;
       if (closing > allowed) slowed.factor = Math.min(slowed.factor, allowed / closing);
     }
   }

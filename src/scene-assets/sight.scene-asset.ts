@@ -1,4 +1,4 @@
-import { BoxGeometry, CircleGeometry, CylinderGeometry, Mesh, MeshStandardMaterial, RingGeometry, TorusGeometry } from '@iwsdk/core';
+import { BoxGeometry, CircleGeometry, CylinderGeometry, Mesh, MeshStandardMaterial, TorusGeometry } from '@iwsdk/core';
 import { beam, mergeParts, type Part } from './lowpoly.js';
 import { GROUND_Y } from '../sim/cabin.js';
 import { LENS_RADIUS, SIGHT_STAND, SIGHT_TARGETS, TARGET_BOARD, targetFoot } from '../sim/sight.js';
@@ -6,8 +6,7 @@ import { LENS_RADIUS, SIGHT_STAND, SIGHT_TARGETS, TARGET_BOARD, targetFoot } fro
 /**
  * Spike S1's sight and range (docs/spikes/s1-sight-render.md): a sight
  * hanging from the turret roof at the gunner's eyepiece, and three target
- * boards out at 100, 250 and 500 m on a grass plain beyond the tank's
- * ground. Stand-ins until
+ * boards out at 100, 250 and 500 m on the drive's ground. Stand-ins until
  * the turret (F1.8), the gunsight (F1.9) and the test range (F1.7) replace
  * them; numbers from src/sim/sight.ts.
  */
@@ -17,7 +16,6 @@ const STEEL_DARK = 0x2f3430;
 const RUBBER = 0x1c1c1c;
 const GLASS = 0x1a2630;
 const WOOD_DARK = 0x6e4a2b;
-const GRASS = 0x6f9a4a;
 const CANVAS = 0xd8d0b8;
 const SILHOUETTE = 0x2a2a2a;
 const MARKER = 0xe07020;
@@ -82,23 +80,16 @@ export function createSightLensGeometry(): CircleGeometry {
 }
 
 /**
- * The spike's range, in hull space: a grass plain from just inside the
- * tank's 300 m ground out to 800 m (the same colour, 2 cm lower, so the
- * overlap never flickers), and a target board at each range in
- * SIGHT_TARGETS facing the sight: a canvas face on two posts with a dark
- * tank silhouette standing proud of it, and an orange marker per hundred
- * metres in its range's first digit (one, two, five) on top, so each can be
- * told apart through the sight.
+ * The spike's range, in hull space: a target board at each range in
+ * SIGHT_TARGETS facing the sight, standing on the drive's ground (its lane
+ * is flat there, src/sim/terrain.ts): a canvas face on two posts with a
+ * dark tank silhouette standing proud of it, and an orange marker per
+ * hundred metres in its range's first digit (one, two, five) on top, so
+ * each can be told apart through the sight. It stays with the tank, so the
+ * drive system shows it only while the tank is parked at its start.
  */
 export function createSightRange(): Mesh {
-  const parts: Part[] = [
-    {
-      geometry: new RingGeometry(299, 800, 32, 1),
-      color: GRASS,
-      position: [0, GROUND_Y - 0.02, 0],
-      rotation: [-Math.PI / 2, 0, 0],
-    },
-  ];
+  const parts: Part[] = [];
   SIGHT_TARGETS.forEach((target, i) => parts.push(...targetParts(i, Math.round(target.range / 100))));
   const mesh = new Mesh(mergeParts(parts), material);
   mesh.name = 'Sight Range';
