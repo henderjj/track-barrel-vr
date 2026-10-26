@@ -1,6 +1,6 @@
 /**
  * Compact binary packets for the unreliable data channel. Positions are
- * play-area millimetres in 16-bit integers (±32 m, far more than the deck
+ * hull-space millimetres in 16-bit integers (±32 m, far more than the deck
  * needs); rotations use the "smallest three" quaternion encoding (drop the
  * largest component, send the other three as 16-bit values plus its index).
  * Pure TypeScript and allocation free when given reusable buffers.

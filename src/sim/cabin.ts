@@ -107,7 +107,8 @@ const GUNNER_FLOOR = TURRET.basketFloor;
  * slit 80 cm ahead of their eyes and room in front for the tillers and the
  * gear lever (F1.5). The gunner sits in the turret basket right of the gun,
  * with the breech on their left at chest height and the gunsight's eyepiece
- * 28 cm ahead of their eyes, a short lean away (F1.9, F1.10).
+ * 28 cm ahead of their eyes, a short lean away (F1.9, F1.10); their head
+ * stops 4 cm short of it.
  */
 export const SEATS: Readonly<Record<SeatId, Seat>> = {
   driver: {
@@ -125,7 +126,7 @@ export const SEATS: Readonly<Record<SeatId, Seat>> = {
     frame: 'turret',
     floorY: GUNNER_FLOOR,
     eye: [0.4, GUNNER_FLOOR + SEATED_EYE, -0.2],
-    headBox: [0.22, 0.35, 0.4, 0.45],
+    headBox: [0.22, 0.35, 0.24, 0.45],
     cushion: [0.4, GUNNER_FLOOR + CUSHION_HEIGHT, -0.08],
   },
 };
@@ -274,6 +275,28 @@ export function placeInSeat(seat: Seat, turretYaw: number, headX: number, headZ:
   return out;
 }
 const tmpEye: [number, number, number] = [0, 0, 0];
+
+/**
+ * Where the play-space origin goes when the player turns by `angle` (rad,
+ * positive turns left) about their head, so the head stays put. `out` gets
+ * [x, z].
+ */
+export function turnAboutHead(
+  originX: number,
+  originZ: number,
+  headX: number,
+  headZ: number,
+  angle: number,
+  out: [number, number],
+): [number, number] {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const ox = originX - headX;
+  const oz = originZ - headZ;
+  out[0] = headX + ox * c + oz * s;
+  out[1] = headZ - ox * s + oz * c;
+  return out;
+}
 
 /** Where a seated crewmate's hips are: on the cushion, a little back from its middle, in the seat's frame, m. */
 export function hipPoint(seat: Seat, out: [number, number, number]): [number, number, number] {

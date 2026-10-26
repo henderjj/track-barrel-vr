@@ -15,6 +15,8 @@ export const seating = {
   turretYaw: 0,
   /** Ask for a seat: taken at once when alone; in a crew the host decides and both players swap. Set by SeatSystem. */
   ask: (_seat: SeatId): void => undefined,
+  /** How many times SeatSystem has put this player in a seat (so a system can wait for the next). */
+  placements: 0,
   /** Put this player back in their seat, facing forward (the menu's Back in my seat). Set by SeatSystem. */
   reseat: (): void => undefined,
 };

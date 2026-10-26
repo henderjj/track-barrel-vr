@@ -140,6 +140,7 @@ export class SeatSystem extends createSystem({}) {
       player.rotation.set(0, this.place.yaw, 0);
       player.position.x = this.place.x;
       player.position.z = this.place.z;
+      seating.placements++;
       console.info(`[Seat] in the ${seat.label.toLowerCase()}'s seat`);
     }
   }

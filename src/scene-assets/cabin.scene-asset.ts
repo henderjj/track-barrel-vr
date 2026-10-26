@@ -15,7 +15,6 @@ import {
   GUN,
   HULL,
   SEATS,
-  SIGHT_EYEPIECE,
   TURRET,
   VISION_SLIT,
 } from '../sim/cabin.js';
@@ -47,7 +46,7 @@ const LEATHER = 0x5a3d26;
 const RUBBER = 0x1e1e1e;
 const TRACK = 0x34322e;
 const WHEEL = 0x5f5b3e;
-const GRASS = 0x6f8a4a;
+const GRASS = 0x6f9a4a;
 
 type Vec3 = readonly [number, number, number];
 
@@ -236,13 +235,7 @@ function turretParts(): Part[] {
   mouth.rotateX(Math.PI / 2);
   parts.push({ geometry: mouth, color: RUBBER, position: [0, GUN.y, GUN.breechBack + 0.01] });
 
-  // The gunsight (a blockout until F1.9): a tube from the front wall to a rubber eyecup ahead of the gunner's eyes.
-  const [sx, sy, sz] = SIGHT_EYEPIECE;
-  const sightLength = sz - 0.04 - breechFront;
-  parts.push(box([0.1, 0.1, sightLength], [sx, sy, breechFront + sightLength / 2], STEEL_LIGHT));
-  const cup = new CylinderGeometry(0.04, 0.045, 0.05, 10, 1);
-  cup.rotateX(Math.PI / 2);
-  parts.push({ geometry: cup, color: RUBBER, position: [sx, sy, sz - 0.03] });
+  // The gunsight hangs from the roof at SIGHT_EYEPIECE (spike S1's, src/systems/sight-system.ts, until F1.9).
 
   // The basket: its floor, and posts up to the ring with a rail round them at hand height.
   const floor = TURRET.basketFloor;
