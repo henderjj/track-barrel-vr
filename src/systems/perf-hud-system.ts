@@ -18,6 +18,7 @@ import { budgetHz, frameRateInfo } from './frame-rate-system.js';
 import { hapticsSummary } from './haptics.js';
 import { poseName } from '../sim/hand-pose.js';
 import { fingerInputs, grip, handCurls, handGrips, Touch } from './grip-system.js';
+import { sightSummary } from './sight-system.js';
 
 /** Shared recorder: the network layer writes `rttMs`, tests read `csv()`. */
 export const perf = new PerfRecorder();
@@ -265,6 +266,10 @@ export class PerfHudSystem extends createSystem({}) {
       this.drawFingers('L', 'left', graphTop + graphH + 212);
       this.drawFingers('R', 'right', graphTop + graphH + 236);
     }
+    // Spike S1: the gunsight's own cost while it renders.
+    this.ctx.font = '17px monospace';
+    this.ctx.fillStyle = '#cbd5e1';
+    this.ctx.fillText(sightSummary(performance.now()), 10, graphTop + graphH + 262);
     this.texture.needsUpdate = true;
   }
 
@@ -288,7 +293,8 @@ export class PerfHudSystem extends createSystem({}) {
     this.overlayText.textContent =
       `${s.fps.toFixed(1)} fps  frame ${s.frameAvg.toFixed(1)}/${s.frameP95.toFixed(1)} ms\n` +
       `cpu ${s.cpuAvg.toFixed(2)} ms  calls ${s.drawCalls}  tris ${(s.triangles / 1000).toFixed(0)}k\n` +
-      `rtt ${Number.isNaN(s.rttMs) ? '-' : s.rttMs.toFixed(0) + ' ms'}  [H] hide  `;
+      `rtt ${Number.isNaN(s.rttMs) ? '-' : s.rttMs.toFixed(0) + ' ms'}\n` +
+      `${sightSummary(performance.now())}  [H] hide  `;
   }
 }
 
