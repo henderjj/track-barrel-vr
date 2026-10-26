@@ -351,13 +351,14 @@ async function calibrationStep() {
   for (const device of ['controller-left', 'controller-right']) {
     iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value: 0 }] });
   }
-  const expected = Math.hypot(0.15, 0.55);
+  // Measured from the grip poses, which sit a few centimetres from the controllers' own.
+  const expected = evalInApp(`(() => { const p = window.__debug.world.player; const h = p.head.getWorldPosition(p.position.clone()); const d = (s) => { const g = p.gripSpaces[s].getWorldPosition(p.position.clone()); return Math.hypot(g.x - h.x, g.z - h.z); }; return (d('left') + d('right')) / 2; })()`);
   const gone = await waitFor('the calibration sign to go', () => {
     const c = calState();
     return c.step === 'off' && c.sign === '' ? c : null;
   }, 6000).catch(() => calState());
   check('Calibration: both hands held out with both grips squeezed take the reach, and the sign goes',
-    Math.abs(reached.reach - expected) < 0.02 && Math.abs(reached.bodyReach - expected) < 0.02 && gone.step === 'off' && gone.sign === '' && gone.status.includes(`reach ${Math.round(reached.reach * 100)} cm`),
+    expected > 0.45 && Math.abs(reached.reach - expected) < 0.01 && Math.abs(reached.bodyReach - expected) < 0.01 && gone.step === 'off' && gone.sign === '' && gone.status.includes(`reach ${Math.round(reached.reach * 100)} cm`),
     `reach ${reached.reach?.toFixed?.(3)} m for ${expected.toFixed(3)}, then ${gone.step}, menu says "${gone.status}"`);
 
   // Standing mode: calibrated standing, the eyes land on the same point.

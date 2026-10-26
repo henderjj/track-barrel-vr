@@ -159,7 +159,7 @@ export class CalibrationSystem extends createSystem({}) {
             'A: skip',
           ]
         : step === 'reach'
-          ? ['Hold both hands out in front', 'as far as is comfortable, and squeeze both grips', 'A: skip']
+          ? ['Hold both hands out in front', 'as far as is comfortable', 'then squeeze both grips (A: skip)']
           : [
               'Calibrated',
               Number.isFinite(this.cal.reach) ? `Reach ${Math.round(this.cal.reach * 100)} cm` : 'Reach not measured',

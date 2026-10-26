@@ -187,6 +187,7 @@ export class GameMenuSystem extends createSystem({}) {
   private shownSeat = seating.mine;
   private shownSwap = seating.swap;
   private shownEye = Number.NaN;
+  private shownReach = Number.NaN;
 
   init(): void {
     const asset = this.world.getSceneObject<UIKitMLAsset>('menu-panel');
@@ -336,10 +337,11 @@ export class GameMenuSystem extends createSystem({}) {
   }
 
   update(_delta: number, time: number): void {
-    if (seating.mine !== this.shownSeat || seating.swap !== this.shownSwap || !Object.is(body.calibratedEye, this.shownEye)) {
+    if (seating.mine !== this.shownSeat || seating.swap !== this.shownSwap || !Object.is(body.calibratedEye, this.shownEye) || !Object.is(body.reach, this.shownReach)) {
       this.shownSeat = seating.mine;
       this.shownSwap = seating.swap;
       this.shownEye = body.calibratedEye;
+      this.shownReach = body.reach;
       this.render();
     }
     if (this.open && ride.active && time > this.statusAt) {
