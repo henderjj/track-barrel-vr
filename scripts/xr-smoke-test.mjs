@@ -41,10 +41,13 @@
  *     it and the ground moves round the hull, one stick turns it, letting go
  *     stops it, the gear lever grinds and shifts, the boulder stops it, and
  *     Back to start parks it;
- *  6e. lays the gun (F1.8): Practice → Lay the gun, the power grip
+ *  6e. works the driver's station (F1.5): both tillers drive the tank and
+ *     the gauges read it, letting go stops it, the gear lever grinds with a
+ *     tiller pushed and then shifts, and the hand throttle raises the idle;
+ *  6f. lays the gun (F1.8): Practice → Lay the gun, the power grip
  *     traverses the turret with the gunner turning with it, the crank turns
  *     it 2°, the elevation wheel raises the gun, and Forward puts it back;
- *  6f. looks over the test range (F1.7): the targets stand at 100, 250 and
+ *  6g. looks over the test range (F1.7): the targets stand at 100, 250 and
  *     500 m with markers up the road, the fog is on and turns off from the
  *     menu, and Practice → Up the range parks the tank 200 m up the road
  *     facing the far target;
@@ -947,7 +950,7 @@ async function drivingTheTank() {
 }
 
 /**
- * 6f. The test range (F1.7): the three targets stand out at 100, 250 and
+ * 6g. The test range (F1.7): the three targets stand out at 100, 250 and
  *     500 m with a marker every 100 m up the road, the fog is on with the
  *     range's numbers and turns off and on from the menu's settings, and
  *     Practice → Test range → Up the range parks the tank 200 m up the road
@@ -1017,7 +1020,7 @@ async function theTestRange() {
 }
 
 /**
- * 6e. The turret (F1.8): Practice → Lay the gun → Gunner puts the player in
+ * 6f. The turret (F1.8): Practice → Lay the gun → Gunner puts the player in
  *     the gunner's seat with a sign; the power grip twisted left traverses
  *     the turret left and the gunner's play space turns with it (the head
  *     stays put in the turret), the vignette darkening; let go, it stops;
@@ -1131,6 +1134,129 @@ async function layingTheGun() {
   // Back in the driver's seat for what follows.
   evalInApp("(window.__seats.ask('driver'), true)");
   await sleep(500);
+  iwsdk(['xr', 'set-device-state'], {});
+}
+
+/**
+ * 6e. The driver's station (F1.5): in the driver's seat, both hands take
+ *     the tillers and push them forwards: the tank drives on them (not the
+ *     sticks), the gloves closed on the handles and the gauges reading
+ *     speed and RPM; let go, they spring back and the tank stops. One hand
+ *     pushes a tiller while the other moves the gear lever from low to
+ *     high: the gears grind; let go of the tiller and high goes in. The
+ *     hand throttle pushed forwards raises the idle and stays where it is
+ *     left.
+ */
+async function driverStation() {
+  const station = () => evalInApp('window.__driverStation.state()');
+  const gauges = () => evalInApp('window.__driverStation.gauges()');
+  const tank = () => evalInApp('window.__drive.state()');
+  const handle = (id, deg) => evalInApp(`window.__driverStation.handle(${JSON.stringify(id)}${deg === undefined ? '' : `, ${deg}`})`);
+  const squeeze = (device, value) => iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value }] });
+  const handTo = (device, p, duration = 0.4) => iwsdk(['xr', 'animate-to'], { device, position: toOrigin(p), duration });
+  const take = async (device, id) => {
+    handTo(device, handle(id));
+    await sleep(600);
+    squeeze(device, 1);
+    await sleep(300);
+  };
+
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+  evalInApp('(window.__drive.set(null), window.__drive.reset(), true)');
+  const usable = await waitFor('the driver\'s seat', () => { const s = station(); return s.usable && s; }, 5000).catch(() => station());
+  check('In the driver\'s seat the station\'s controls can be used', usable.usable, JSON.stringify(usable.angles));
+
+  // Both tillers forwards.
+  await take('controller-left', 'tillerLeft');
+  await take('controller-right', 'tillerRight');
+  const held = station();
+  const locked = evalInApp('[window.__ownHands.locked("left"), window.__ownHands.locked("right")]');
+  check('Squeezing at the tillers takes hold of both, the gloves closed on them',
+    held.heldBy.tillerLeft === 'left' && held.heldBy.tillerRight === 'right' && locked[0] > 0.9 && locked[1] > 0.9,
+    `held by ${held.heldBy.tillerLeft} and ${held.heldBy.tillerRight}, gloves ${locked.map((v) => v.toFixed(2)).join(' and ')} on`);
+  handTo('controller-right', handle('tillerRight', 25));
+  handTo('controller-left', handle('tillerLeft', 25));
+  const pushed = await waitFor('both tillers forwards', () => { const s = station(); return s.left > 0.8 && s.right > 0.8 && s; }, 5000).catch(() => station());
+  // The CLI moves one controller after the other: start the run once both are forwards.
+  evalInApp('(window.__drive.reset(), true)');
+  const driving = await waitFor('the tank to drive on the tillers', () => { const t = tank(); return t.speed > 1.5 && t; }, 10000).catch(() => tank());
+  const readings = gauges();
+  check('Both tillers pushed forwards drive the tank straight ahead',
+    pushed.tillersHeld && driving.speed > 1.5 && Math.abs(driving.yawRate) < 0.02,
+    `tillers ${pushed.left.toFixed(2)} and ${pushed.right.toFixed(2)} (${pushed.angles.tillerLeft.toFixed(1)}° and ${pushed.angles.tillerRight.toFixed(1)}°), ${driving.speed.toFixed(1)} m/s`);
+  check('The gauges read the tank: speed and RPM up, coolant, oil and fuel in range',
+    Math.abs(readings.speed - driving.speed * 3.6) < 2 && readings.rpm > 1500 && readings.coolant > 40 && readings.oil > 2 && readings.fuel > 0.9,
+    `${readings.speed.toFixed(1)} km/h, ${readings.rpm.toFixed(0)} rpm, ${readings.coolant.toFixed(0)} °C, ${readings.oil.toFixed(1)} bar, fuel ${readings.fuel.toFixed(2)}`);
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([-0.35, 1.55, -1.45]) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([-0.45, 0.95, -2.2]) });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-driver-station.png'], {});
+  squeeze('controller-left', 0);
+  squeeze('controller-right', 0);
+  const stopped = await waitFor('the tank to stop', () => {
+    const s = station();
+    const t = tank();
+    return !s.tillersHeld && Math.abs(s.angles.tillerLeft) < 1 && Math.abs(s.angles.tillerRight) < 1 && Math.abs(t.speed) < 0.01 && { s, t };
+  }, 10000).catch(() => ({ s: station(), t: tank() }));
+  check('Let go, the tillers spring back upright and the tank stops',
+    !stopped.s.tillersHeld && Math.abs(stopped.s.angles.tillerLeft) < 1 && Math.abs(stopped.t.speed) < 0.01,
+    `tillers at ${stopped.s.angles.tillerLeft.toFixed(1)}° and ${stopped.s.angles.tillerRight.toFixed(1)}°, ${stopped.t.speed.toFixed(2)} m/s`);
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+
+  // A tiller pushed while the other hand shifts from low to high: the gears grind.
+  const before = station();
+  await take('controller-right', 'tillerRight');
+  handTo('controller-right', handle('tillerRight', 20));
+  await take('controller-left', 'gear');
+  const onLever = station();
+  handTo('controller-left', handle('gear', 0), 0.3);
+  await sleep(400);
+  handTo('controller-left', handle('gear', 24), 0.3);
+  // Read in one go: the station counts a grind on the frame the tank starts grinding.
+  const both = () => evalInApp('({ s: window.__driverStation.state(), t: window.__drive.state(), sign: window.__drive.sign })');
+  const grinding = await waitFor('the gears to grind', () => {
+    const b = both();
+    return b.t.grinding && b.s.gear === 2 && b.s.grinds > before.grinds && b;
+  }, 6000).catch(() => both());
+  check('Moving the gear lever from low to high with a tiller pushed grinds the gears',
+    onLever.heldBy.gear === 'left' && grinding.t.grinding && grinding.t.gear === 0 && grinding.s.grinds > before.grinds && grinding.sign.startsWith('Gears grinding'),
+    `lever held by ${onLever.heldBy.gear} at ${grinding.s.angles.gear.toFixed(1)}° (gear ${grinding.s.gear}), box in gear ${grinding.t.gear}, ${grinding.s.grinds - before.grinds} grind(s), sign "${grinding.sign}"`);
+  squeeze('controller-right', 0);
+  const shifted = await waitFor('high gear to go in', () => { const t = tank(); return t.gear === 2 && !t.grinding && t; }, 6000).catch(() => tank());
+  check('Let go of the tiller, high gear goes in', shifted.gear === 2 && !shifted.grinding && station().shifts > before.shifts,
+    `gear ${shifted.gear}, ${station().shifts - before.shifts} shift(s)`);
+  // Back to low, let go near its notch: it drops in.
+  handTo('controller-left', handle('gear', 0), 0.3);
+  await sleep(400);
+  handTo('controller-left', handle('gear', -19), 0.3);
+  await sleep(500);
+  squeeze('controller-left', 0);
+  const low = await waitFor('low gear', () => { const s = station(); const t = tank(); return t.gear === 1 && Math.abs(s.angles.gear + 24) < 1 && { s, t }; }, 6000)
+    .catch(() => ({ s: station(), t: tank() }));
+  check('The gear lever let go near low drops into its notch and low goes in', low.t.gear === 1 && Math.abs(low.s.angles.gear + 24) < 1,
+    `lever at ${low.s.angles.gear.toFixed(1)}°, gear ${low.t.gear}`);
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+
+  // The hand throttle: forwards raises the idle, and it stays where it is left.
+  await take('controller-left', 'throttle');
+  handTo('controller-left', handle('throttle', 40));
+  await sleep(600);
+  squeeze('controller-left', 0);
+  const revving = await waitFor('the idle to rise', () => { const t = tank(); return t.rpm > 1400 && t; }, 6000).catch(() => tank());
+  await sleep(500);
+  const left = station();
+  check('The hand throttle pushed forwards raises the idle and stays there when let go',
+    left.throttle > 0.95 && left.angles.throttle > 38 && revving.rpm > 1400 && Math.abs(revving.speed) < 0.01,
+    `throttle ${left.throttle.toFixed(2)} at ${left.angles.throttle.toFixed(1)}°, ${revving.rpm.toFixed(0)} rpm at ${revving.speed.toFixed(2)} m/s`);
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+  await take('controller-left', 'throttle');
+  handTo('controller-left', handle('throttle', 0));
+  await sleep(600);
+  squeeze('controller-left', 0);
   iwsdk(['xr', 'set-device-state'], {});
 }
 
@@ -1396,10 +1522,12 @@ async function main() {
   // 6d. The tank drive (F1.4).
   await drivingTheTank();
 
-  // 6e. The turret (F1.8).
+  // 6e. The driver's station (F1.5).
+  await driverStation();
+  // 6f. The turret (F1.8).
   await layingTheGun();
 
-  // 6f. The test range (F1.7).
+  // 6g. The test range (F1.7).
   await theTestRange();
 
   // 7. Perf log.

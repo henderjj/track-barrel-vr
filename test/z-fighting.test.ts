@@ -104,6 +104,37 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
+  it("on the driver's station (F1.5): its levers at both ends and in their notches, and its needles on the panel", async () => {
+    const { Group } = await import('@iwsdk/core');
+    const station = await import('../src/sim/driver-station.js');
+    const { createNeedle } = await import('../src/scene-assets/driver-station.scene-asset.js');
+    const hull = cabin.createHull();
+    for (const pose of ['min', 'rest', 'max'] as const) {
+      const root = new Group();
+      for (const id of station.DRIVER_CONTROL_IDS) {
+        const { spec, pivot } = station.DRIVER_CONTROLS[id];
+        const lever = mechanism.createLever(spec);
+        lever.position.set(pivot[0], pivot[1], pivot[2]);
+        lever.rotation.x = -spec[pose];
+        root.add(lever);
+      }
+      const panel = new Group();
+      panel.position.set(...station.PANEL.centre);
+      panel.rotation.x = -station.PANEL.tilt;
+      const at: [number, number] = [0, 0];
+      station.DIALS.forEach((dial, i) => {
+        const needle = createNeedle();
+        station.dialCentre(i, at);
+        needle.position.set(at[0], at[1], 0);
+        needle.rotation.z = -station.needleAngle(dial, pose === 'min' ? dial.min : pose === 'max' ? dial.max : (dial.min + dial.max) / 2);
+        panel.add(needle);
+      });
+      root.add(panel);
+      root.updateMatrixWorld(true);
+      expectNone([hull, root], CABIN_GAP);
+    }
+  });
+
   /** The test range's ground (F1.4, F1.7) where the scene puts it, under the hull parked at the start. */
   const ground = () => {
     const terrain = createTerrain();

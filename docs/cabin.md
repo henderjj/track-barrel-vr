@@ -5,7 +5,7 @@ The crew's place in the tank: the hull with the driver's seat, the turret with i
 ## What players experience
 
 - On entering VR each player is in their seat: eyes at the seat's eye point, facing the tank's front, wherever they are in their real room. Their real floor goes at the seat's floor, with the body-height offset on top, which since F1.2 puts the calibrated eyes on the eye point ([seat-choice.md](seat-choice.md)).
-- The **driver** sits front left in the hull under an open hatch. The vision slit is 80 cm ahead of their eyes; the space in front of them is kept clear for the tillers and the gear lever (F1.5).
+- The **driver** sits front left in the hull under an open hatch. The vision slit is 80 cm ahead of their eyes; in front of them are the tillers, the gear lever, the hand throttle and the gauges ([driver-station.md](driver-station.md), F1.5).
 - The **gunner** sits right of the gun in the turret basket, 80 cm above the hull floor. The breech is on their left at chest height, and spike S1's sight hangs from the turret roof 28 cm ahead of their eyes: leaning in opens it.
 - A player moves their head freely inside their seat. Leaning past the edge of the seat's head box stops the head there, as if it met the wall, the breech or the controls. A head far outside the box (the headset recentred, or the player stood up and walked across the room) puts the player back in the seat.
 - The crewmate is drawn sitting in their seat: head and hands from their poses, legs bent on their seat's cushion.
