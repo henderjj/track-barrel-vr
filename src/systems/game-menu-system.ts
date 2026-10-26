@@ -16,6 +16,7 @@ import { seating } from './seating.js';
 import { SIGHT_BUTTONS } from './sight-system.js';
 import { startLoadingDrill } from './loading-drill-system.js';
 import { hideLeverTest, showLeverTest } from './lever-system.js';
+import { hideMechanismBench, showMechanismBench } from './mechanism-bench-system.js';
 import { startScreen } from './start-screen-system.js';
 
 /** Where the menu stands in VR when opened: ahead of the head and a little below the eyes, m. */
@@ -322,6 +323,14 @@ export class GameMenuSystem extends createSystem({}) {
     ui.on('menu-levers-away', () => {
       this.setOpen(false);
       hideLeverTest();
+    });
+    ui.on('menu-bench', () => {
+      this.setOpen(false);
+      showMechanismBench();
+    });
+    ui.on('menu-bench-away', () => {
+      this.setOpen(false);
+      hideMechanismBench();
     });
     ui.on('menu-exit', () => {
       this.setOpen(false);

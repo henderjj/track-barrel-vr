@@ -11,6 +11,8 @@ import { GameMenuSystem } from './systems/game-menu-system.js';
 import { GripSystem } from './systems/grip-system.js';
 import { LoadingDrillSystem } from './systems/loading-drill-system.js';
 import { LeverSystem } from './systems/lever-system.js';
+import { MechanismBenchSystem } from './systems/mechanism-bench-system.js';
+import { MechanismSystem } from './systems/mechanism-system.js';
 import { NetSystem } from './systems/net-system.js';
 import { OwnHandsSystem } from './systems/own-hands-system.js';
 import { PerfHudSystem } from './systems/perf-hud-system.js';
@@ -48,7 +50,12 @@ World.create(
   // Add the tank's systems here. ThrowablesSystem (loose objects, kept for
   // shells and casings) goes after any that hold a hand (handUse), since it
   // skips hands already holding something.
+  // The mechanism kit moves every control built from it (levers, wheels,
+  // grips, yokes, buttons), before the systems that read them and before
+  // OwnHandsSystem draws hands on them.
+  world.registerSystem(MechanismSystem);
   world.registerSystem(LeverSystem);
+  world.registerSystem(MechanismBenchSystem);
   world.registerSystem(LoadingDrillSystem);
   // After the systems it drives; their scripted hands are functions of time, so a frame late costs nothing.
   world.registerSystem(CrewBotSystem);
