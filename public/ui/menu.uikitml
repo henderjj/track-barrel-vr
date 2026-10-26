@@ -268,6 +268,40 @@
       </div>
     </div>
   </div>
+  <div id="menu-ride" class="section" style="display: none">
+    <div class="section-title">RIDING (SPIKE S2)</div>
+    <div id="menu-ride-status" class="hint">Riding</div>
+    <div id="row-ride-vignette" class="setting">
+      <div id="row-ride-vignette-label" class="label">Vignette</div>
+      <div class="choices">
+        <Button id="row-ride-vignette-0" class="choice" size="sm" variant="secondary">On</Button>
+        <Button id="row-ride-vignette-1" class="choice" size="sm" variant="secondary">Off</Button>
+      </div>
+    </div>
+    <div id="row-ride-cabin" class="setting">
+      <div id="row-ride-cabin-label" class="label">Cabin</div>
+      <div class="choices">
+        <Button id="row-ride-cabin-0" class="choice" size="sm" variant="secondary">Open top</Button>
+        <Button id="row-ride-cabin-1" class="choice" size="sm" variant="secondary">Closed</Button>
+      </div>
+    </div>
+    <div id="row-ride-tank" class="setting">
+      <div id="row-ride-tank-label" class="label">Driven by</div>
+      <div class="choices">
+        <Button id="row-ride-tank-0" class="choice" size="sm" variant="secondary">Crewmate</Button>
+        <Button id="row-ride-tank-1" class="choice" size="sm" variant="secondary">Left stick</Button>
+        <Button id="row-ride-tank-2" class="choice" size="sm" variant="secondary">Parked</Button>
+      </div>
+    </div>
+    <div id="row-ride-turret" class="setting">
+      <div id="row-ride-turret-label" class="label">Turret</div>
+      <div class="choices">
+        <Button id="row-ride-turret-0" class="choice" size="sm" variant="secondary">Crewmate</Button>
+        <Button id="row-ride-turret-1" class="choice" size="sm" variant="secondary">Right stick</Button>
+        <Button id="row-ride-turret-2" class="choice" size="sm" variant="secondary">Still</Button>
+      </div>
+    </div>
+  </div>
   <div class="section">
     <div class="section-title">PRACTICE</div>
     <div id="row-seat" class="setting">
@@ -275,6 +309,14 @@
       <div id="row-seat-choices" class="choices">
         <Button id="row-seat-0" class="choice" size="sm" variant="secondary">Driver</Button>
         <Button id="row-seat-1" class="choice" size="sm" variant="secondary">Gunner</Button>
+      </div>
+    </div>
+    <div class="setting">
+      <div class="label">Ride the tank</div>
+      <div class="choices">
+        <Button id="menu-ride-driver" class="choice" size="sm" variant="secondary">As driver</Button>
+        <Button id="menu-ride-gunner" class="choice" size="sm" variant="secondary">As gunner</Button>
+        <Button id="menu-ride-stop" class="choice" size="sm" variant="secondary" style="display: none">Stop</Button>
       </div>
     </div>
     <div class="setting">
@@ -290,6 +332,12 @@
         <Button id="menu-sight-draw" class="choice" size="sm" variant="secondary">Draw: near</Button>
         <Button id="menu-sight-size" class="choice" size="sm" variant="secondary">512²</Button>
         <Button id="menu-sight-eye" class="choice" size="sm" variant="secondary">Both eyes</Button>
+      </div>
+    </div>
+    <div class="setting">
+      <div class="label">Loading (S4)</div>
+      <div class="choices">
+        <Button id="menu-loading" class="choice" size="sm" variant="secondary">Sit at the breech</Button>
       </div>
     </div>
   </div>

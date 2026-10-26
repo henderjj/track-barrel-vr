@@ -58,10 +58,12 @@ export class SeatSystem extends createSystem({}) {
   private place: RigPlace = { x: 0, z: 0, yaw: 0 };
   private fixes = { push: 0, reseat: 0 };
   private lastFix: HeadFix = 'inside';
+  private wasAway = false;
 
   init(): void {
     seating.ask = (seat) => this.ask(seat);
     seating.reseat = () => {
+      seating.away = false;
       this.needsPlace = true;
     };
     netLink.events.set('seats', (e) => {
@@ -97,6 +99,14 @@ export class SeatSystem extends createSystem({}) {
     const player = this.player;
     const seat = SEATS[seating.mine];
     netLink.feet = seat.floorY;
+    if (seating.away !== this.wasAway) {
+      // Back from a spike's seat: sit down here afresh.
+      this.wasAway = seating.away;
+      this.needsPlace = true;
+    }
+    if (seating.away) {
+      return;
+    }
     if (!this.world.session) {
       if (this.inVr) {
         // Back on the flat page: the play space goes back where it started.
@@ -147,6 +157,8 @@ export class SeatSystem extends createSystem({}) {
 
   /** Ask for `seat`: alone, take it; as the host, take it and give the guest the other; as a guest, ask the host. */
   private ask(seat: SeatId): void {
+    seating.away = false;
+    this.needsPlace = true;
     if (!netLink.connected) {
       this.sit(seat, seating.crew === seat ? seating.mine : seating.crew);
       return;

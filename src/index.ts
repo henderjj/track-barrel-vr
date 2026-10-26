@@ -7,10 +7,12 @@ import { CrewStatusSystem } from './systems/crew-status-system.js';
 import { FrameRateSystem } from './systems/frame-rate-system.js';
 import { GameMenuSystem } from './systems/game-menu-system.js';
 import { GripSystem } from './systems/grip-system.js';
+import { LoadingDrillSystem } from './systems/loading-drill-system.js';
 import { NetSystem } from './systems/net-system.js';
 import { OwnHandsSystem } from './systems/own-hands-system.js';
 import { PerfHudSystem } from './systems/perf-hud-system.js';
 import { PlatformSystem } from './systems/platform-system.js';
+import { RideSystem } from './systems/ride-system.js';
 import { SeatSystem } from './systems/seat-system.js';
 import { SightSystem } from './systems/sight-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
@@ -32,11 +34,14 @@ World.create(
   // Before the systems that read its grip state.
   world.registerSystem(GripSystem, { priority: -5 });
   world.registerSystem(NetSystem);
+  // Spike S2: before anything draws the hands on the moved rig. The seat system stands aside while it rides.
+  world.registerSystem(RideSystem);
   // After NetSystem, which updates the crew presence it shows.
   world.registerSystem(CrewStatusSystem);
   // Add the tank's systems here. ThrowablesSystem (loose objects, kept for
   // shells and casings) goes after any that hold a hand (handUse), since it
   // skips hands already holding something.
+  world.registerSystem(LoadingDrillSystem);
   // After the systems it drives; their scripted hands are functions of time, so a frame late costs nothing.
   world.registerSystem(CrewBotSystem);
   // After the controls have moved, so hands drawn on them (grip locking) sit on them this frame.

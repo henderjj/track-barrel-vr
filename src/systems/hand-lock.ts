@@ -26,6 +26,8 @@ export const HoldKind = {
   None: 0,
   /** A block (ThrowablesSystem): drawn in the hand, so the hand isn't locked. */
   Block: 1,
+  /** The breech lever's handle (LoadingDrillSystem, spike S4). 2–9 are kept for Phase 1's driver controls, wheels, periscope and shell. */
+  BreechLever: 10,
 } as const;
 
 /**

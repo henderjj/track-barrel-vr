@@ -39,6 +39,7 @@ How it should look and work (each rule fixed something a headset playtest found 
 | Sound and view | Foveation | Off, Half, Full |
 | Game | Restart | Score to nought, blocks back on the table, for both players |
 | Practice | Back on the table | The blocks back on the table, for both players |
+| Practice | Loading (S4): Sit at the breech | Your head over the loader's seat facing the gun, every shell in the rack, the breech open and the drill's stats cleared (yours only: the drill isn't shared) |
 
 Below them, **Back to start screen** leaves any crew and shows the start screen, and **Exit VR** ends the session.
 

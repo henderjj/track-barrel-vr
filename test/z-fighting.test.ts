@@ -1,7 +1,10 @@
-import { type BufferGeometry, Mesh, MeshLambertMaterial, type Object3D } from '@iwsdk/core';
+import { type BufferGeometry, Mesh, MeshLambertMaterial, type Object3D, type Vector3 } from '@iwsdk/core';
 import { describe, expect, it } from 'vitest';
 import * as avatar from '../src/scene-assets/avatar.scene-asset.js';
 import * as cabin from '../src/scene-assets/cabin.scene-asset.js';
+import * as ride from '../src/scene-assets/ride.scene-asset.js';
+import * as loading from '../src/scene-assets/loading-drill.scene-asset.js';
+import { BREECH_MOUTH, LEVER_CLOSED, LEVER_PIVOT, RACK_SLOTS, SHELL_LENGTH } from '../src/sim/loading.js';
 import * as sight from '../src/scene-assets/sight.scene-asset.js';
 import { TURRET } from '../src/sim/cabin.js';
 import { SIGHT_STAND } from '../src/sim/sight.js';
@@ -25,8 +28,11 @@ function mesh(geometry: BufferGeometry, name: string): Mesh {
   return m;
 }
 
-function expectNone(objects: Object3D[], gap: number): void {
-  const found = coplanarOverlaps(objects.flatMap((o) => trianglesOf(o)), gap, 2e-5);
+/** Faces flat on a floor at y = 0, facing down into it, can never be seen. */
+const onFloor = (at: Vector3, n: Vector3) => n.y < -0.99 && Math.abs(at.y) < 0.005;
+
+function expectNone(objects: Object3D[], gap: number, ignore?: (at: Vector3, n: Vector3) => boolean): void {
+  const found = coplanarOverlaps(objects.flatMap((o) => trianglesOf(o)), gap, 2e-5, ignore);
   expect(found.length, `faces sharing a plane:\n${describeOverlaps(found)}`).toBe(0);
 }
 
@@ -69,12 +75,55 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     expectNone([cabin.createGround(), sight.createSightRange()], WORLD_GAP);
   });
 
+  it('on the loading station (spike S4) and its platform, with its shells in the rack and the breech open and closed', () => {
+    for (const closed of [false, true]) {
+      const block = loading.createBreechBlock();
+      block.position.set(loading.BLOCK_X, closed ? loading.BLOCK_CLOSED_Y : loading.BLOCK_OPEN_Y, loading.BLOCK_Z);
+      const lever = loading.createBreechLever();
+      lever.position.set(...LEVER_PIVOT);
+      lever.rotation.x = closed ? LEVER_CLOSED : 0;
+      const racked = RACK_SLOTS.map((slot, i) => {
+        const shell = loading.createShell(i);
+        shell.position.set(...slot);
+        return shell;
+      });
+      // With the breech closed, one shell is rammed home in it instead of in the rack.
+      const rammed = loading.createShell(0);
+      rammed.position.set(BREECH_MOUTH[0], BREECH_MOUTH[1], BREECH_MOUTH[2] - SHELL_LENGTH / 2);
+      const shells = closed ? [rammed, ...racked.slice(1)] : racked;
+      expectNone([loading.createLoadingStation(), block, lever, ...shells], CABIN_GAP, onFloor);
+    }
+  });
+
+  it('on a shell', () => {
+    expectNone([loading.createShell(0)], CABIN_GAP);
+  });
+
   it('on the crew', () => {
     for (const index of [0, 1]) {
       expectNone([avatar.createAvatarHead(index)], CABIN_GAP);
       expectNone([avatar.createAvatarTorso(index)], CABIN_GAP);
       expectNone([avatar.createAvatarLegs(index, 0.63)], CABIN_GAP);
     }
+  });
+
+  it('in the riding spike\'s hull and turret, open and closed, with the turret turned', () => {
+    const turned = (mesh: Object3D, angle: number) => {
+      mesh.rotation.y = angle;
+      mesh.position.set(0, 0, 0.1);
+      mesh.updateMatrixWorld(true);
+      return mesh;
+    };
+    for (const angle of [0, 0.7, Math.PI / 2]) {
+      expectNone([ride.createRideHull(), turned(ride.createRideTurret(), angle), turned(ride.createRideTurretOpen(), angle)], CABIN_GAP);
+      expectNone([ride.createRideHull(), ride.createRideHullRoof(), turned(ride.createRideTurret(), angle), turned(ride.createRideTurretClosed(), angle)], CABIN_GAP);
+    }
+  });
+
+  it('on the riding spike\'s ground and trees', () => {
+    expectNone([ride.createRideGround()], WORLD_GAP);
+    // One tree, as each instance draws it.
+    expectNone([ride.createRideTrees()], WORLD_GAP);
   });
 
   it('catches two boxes painted different colours sharing a face', async () => {

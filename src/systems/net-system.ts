@@ -104,6 +104,8 @@ export const FLAG_RIGHT_TRACKED = 2;
 export function holdKindOf(use: string | null): number {
   switch (use) {
     case 'block': return HoldKind.Block;
+    // A held shell ('shell') needs no kind yet: the drill is this player's own, so the crewmate doesn't see the shell.
+    case 'breech-lever': return HoldKind.BreechLever;
     default: return HoldKind.None;
   }
 }

@@ -19,4 +19,11 @@ export const seating = {
   placements: 0,
   /** Put this player back in their seat, facing forward (the menu's Back in my seat). Set by SeatSystem. */
   reseat: (): void => undefined,
+  /**
+   * Set while a spike sits the player somewhere else (riding, S2; the
+   * breech, S4): SeatSystem leaves the play space alone until it is
+   * cleared, then puts the player back in their seat. Choosing a seat or
+   * Back in my seat clears it.
+   */
+  away: false,
 };
