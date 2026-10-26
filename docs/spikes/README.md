@@ -13,10 +13,11 @@ These notes are the early experiments (spikes) from the game this template came 
 
 References in them to the ship, the gondola, the crank, the rope or fuel bricks are to the airship's code, which isn't in this template.
 
-## Track & Barrel spikes
+## Track & Barrel VR spikes
 
-The spikes in the [plan](../plan.md#5-risks-and-spikes) for this game, numbered S1 to S4 there.
+This game's own spikes (plan §5), each with a headset check at the end.
 
-| Note | What it settles |
+| Note | Question |
 | --- | --- |
+| [s1-sight-render.md](s1-sight-render.md) | A magnified gunsight from a second camera: its cost on Quest 3 and over Link, and whether the range marks read at 3× |
 | [s3-lever-feel.md](s3-lever-feel.md) | A hand-following lever with limits, springing back, with controllers and tracked hands, tried on a lane |

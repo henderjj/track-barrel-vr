@@ -14,6 +14,8 @@
  *  1c. picks a character height and seated play and checks the eyes and
  *     hands are raised to it;
  *  2. checks the 90 Hz request ran and the platform report (spike S8);
+ *  2c. looks through the gunsight (spike S1): it opens as the head leans in,
+ *     renders a picture of the range, closes as it leans back;
  *  3. checks the blocks rest on the table;
  *  4. grabs a block with the right controller's squeeze, lifts and drops it,
  *     and pulls one out of a pile without flinging the others;
@@ -301,6 +303,76 @@ async function startScreenAndMenu() {
   iwsdk(['xr', 'set-device-state'], {});
 }
 
+/** Room-space (XR origin) coordinates of world point `p`, allowing for the rig's turn as well as its offset. */
+function toRig(p) {
+  const [x, y, z] = evalInApp(`window.__debug.world.player.worldToLocal(window.__debug.world.player.position.clone().set(${p.join(',')})).toArray()`);
+  return { x, y, z };
+}
+
+async function sightStep() {
+  evalInApp('(window.__sight.goTo(), true)');
+  await sleep(300);
+  const lens = evalInApp('window.__sight.lens()');
+  const head = evalInApp('window.__deckWalk.head()');
+  const behind = (head[0] - lens.at[0]) * lens.facing[0] + (head[2] - lens.at[2]) * lens.facing[2];
+  const before = evalInApp('window.__sight.state()');
+  check('Practice "Go to it" puts the head just behind the eyepiece, the sight still closed',
+    behind > 0.1 && behind < 0.2 && !before.open, `head ${fmt(head)}, lens ${fmt(lens.at)}, ${(behind * 100).toFixed(0)} cm behind, open ${before.open}`);
+
+  const along = (d) => lens.at.map((v, i) => v + lens.facing[i] * d);
+  const lookDown = () => iwsdk(['xr', 'look-at'], { device: 'headset', target: toRig(along(-20)) });
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(along(0.06)) });
+  lookDown();
+  const open = await waitFor('the sight to open and render', () => {
+    const s = evalInApp('window.__sight.state()');
+    return s.open && s.renders > before.renders + 5 ? s : null;
+  }, 10000).catch(() => evalInApp('window.__sight.state()'));
+  const spread = evalInApp('window.__sight.pictureSpread()');
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-sight.png'], {});
+  check('Leaning in to the eyepiece opens the sight, which renders a picture of the range',
+    open.open && open.renders > before.renders && spread > 20,
+    `open ${open.open}, ${open.renders - before.renders} frames rendered, ${open.size}², ${open.calls} calls, cpu ${open.cpuMs?.toFixed(2)} ms, picture spread ${spread}`);
+
+  evalInApp("(window.__sight.setAim('500'), true)");
+  await sleep(300);
+  const aimed = evalInApp('window.__sight.lens()');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(aimed.at.map((v, i) => v + aimed.facing[i] * 0.06)) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toRig(aimed.at.map((v, i) => v - aimed.facing[i] * 20)) });
+  await sleep(1000);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-sight-500m.png'], {});
+  evalInApp("(window.__sight.setAim('ahead'), true)");
+
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(along(0.3)) });
+  lookDown();
+  const shut = await waitFor('the sight to close', () => {
+    const s = evalInApp('window.__sight.state()');
+    return !s.open ? s : null;
+  }, 5000).catch(() => evalInApp('window.__sight.state()'));
+  await sleep(1000);
+  const later = evalInApp('window.__sight.state()');
+  check('Leaning back closes the sight and it stops rendering',
+    !shut.open && later.renders === shut.renders, `open ${shut.open}, ${later.renders - shut.renders} frames rendered after closing`);
+
+  evalInApp("(window.__sight.setMode('always'), true)");
+  await sleep(1000);
+  const always = evalInApp('window.__sight.state()');
+  evalInApp("(window.__sight.setMode('auto'), true)");
+  check('"Draw: always" renders the sight from anywhere, to measure its cost',
+    always.open && always.renders > later.renders, `${always.renders - later.renders} frames rendered from 30 cm away`);
+
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-sight-size'));
+  const sized = evalInApp("({ size: window.__sight.state().size, label: window.__gameMenu.text('menu-sight-size') })");
+  await menuButtonPress();
+  evalInApp('(window.__sight.setSize(512), true)');
+  check("The game menu's Practice button changes the sight's texture size",
+    sized.size === 1024 && sized.label === '1024²', `size ${sized.size}, label ${sized.label}`);
+
+  evalInApp('(window.__debug.world.player.position.set(0, 0, 0), window.__debug.world.player.rotation.set(0, 0, 0), true)');
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+}
+
 /** Press Y on the left controller: opens or closes the game menu. */
 async function menuButtonPress() {
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-left', buttons: [{ index: 4, value: 1 }] });
@@ -455,6 +527,14 @@ async function main() {
     platform ? `${platform.hz} Hz ${platform.hzSource}, multiview ${platform.multiview}, layers ${platform.layers}, ${platform.buffer}, [${platform.inputs.join('; ')}], features [${platform.features.join(', ')}]` : 'none',
   );
 
+
+  // 2c. Spike S1, the gunsight: Practice "Go to it" puts the head just
+  //     behind the eyepiece; leaning in to 6 cm opens it and the second
+  //     camera renders a picture with something in it (screenshots straight
+  //     ahead and laid on the 500 m target); leaning back closes it and the
+  //     rendering stops; "Draw: always" renders from anywhere; the menu's
+  //     size button changes the texture.
+  await sightStep();
 
   // 3. Blocks rest on the table.
   const blocks = [];
