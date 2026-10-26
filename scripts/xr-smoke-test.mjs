@@ -1235,11 +1235,13 @@ async function driverStation() {
   const handle = (id, deg) => evalInApp(`window.__driverStation.handle(${JSON.stringify(id)}${deg === undefined ? '' : `, ${deg}`})`);
   const squeeze = (device, value) => iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value }] });
   const handTo = (device, p, duration = 0.4) => iwsdk(['xr', 'animate-to'], { device, position: toOrigin(p), duration });
+  // A slow runner can take a few hundred ms to draw the frame the grab lands on: wait for it.
   const take = async (device, id) => {
     handTo(device, handle(id));
     await sleep(600);
     squeeze(device, 1);
-    await sleep(300);
+    const hand = device.replace('controller-', '');
+    await waitFor(`the ${hand} hand on the ${id}`, () => station().heldBy[id] === hand, 3000, 100).catch(() => {});
   };
 
   iwsdk(['xr', 'set-device-state'], {});
