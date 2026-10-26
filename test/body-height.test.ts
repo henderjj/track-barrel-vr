@@ -12,7 +12,8 @@ import {
 } from '../src/sim/body-height.js';
 import { parseSettings } from '../src/settings.js';
 import { SEAT_IDS, SEATS } from '../src/sim/cabin.js';
-import { BREECH_MOUTH, LEVER_LENGTH, LEVER_PIVOT, RACK_SLOTS } from '../src/sim/loading.js';
+import { BREECH_MOUTH, gunToTurret, LEVER_CLOSED, leverHandle, RACK_SLOTS } from '../src/sim/loading.js';
+import { MAX_ELEVATION, MIN_ELEVATION } from '../src/sim/turret.js';
 
 /** Feed `seconds` of a steady head height at 90 Hz. */
 function hold(eye: UprightEye, headY: number, seconds: number): void {
@@ -84,12 +85,22 @@ describe('rig offset', () => {
     }
   });
 
-  it('keeps the loading drill in reach from a chair when seated (spike S4)', () => {
+  it("keeps the gunner's rack, breech and lever in reach from a chair when seated, at every elevation (F1.10)", () => {
     const raised = rigOffset(targetEyeHeight({ raise: 0, seated: true }), 1.2);
-    const heights = [...RACK_SLOTS.map((slot) => slot[1]), BREECH_MOUTH[1], LEVER_PIVOT[1] + LEVER_LENGTH, LEVER_PIVOT[1]];
-    for (const y of heights) {
+    const seat = SEATS.gunner;
+    const points: number[][] = RACK_SLOTS.map((slot) => [...slot]);
+    for (const e of [MIN_ELEVATION, 0, MAX_ELEVATION]) {
+      points.push(gunToTurret(BREECH_MOUTH, e, 0, [0, 0, 0]));
+      points.push(gunToTurret(leverHandle(0, [0, 0, 0]), e, 0, [0, 0, 0]));
+      points.push(gunToTurret(leverHandle(LEVER_CLOSED, [0, 0, 0]), e, 0, [0, 0, 0]));
+    }
+    for (const p of points) {
+      // Between knee and chest above the real floor, which is the basket floor.
+      const y = p[1] - seat.floorY;
       expect(y - raised).toBeGreaterThan(0.45);
       expect(y - raised).toBeLessThan(1.4);
+      // Within a seated arm's reach of the eyes, with a little lean at full elevation (the head box allows 24 cm).
+      expect(Math.hypot(p[0] - seat.eye[0], p[1] - seat.eye[1], p[2] - seat.eye[2])).toBeLessThan(0.8);
     }
   });
 

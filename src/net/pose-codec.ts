@@ -26,6 +26,8 @@ export const PacketType = {
   DriverControls: 6,
   /** The turret's turn, the gun's elevation and the gunner's controls, from the gunner's page (F1.8, src/net/turret-codec.ts). */
   TurretState: 7,
+  /** The breech, the lever, the shells and the load stats, from the gunner's page (F1.10, src/net/loading-codec.ts). */
+  LoadingState: 8,
 } as const;
 
 /** One tracked pose: position (m) and rotation quaternion. */

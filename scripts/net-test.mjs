@@ -23,6 +23,9 @@
  * - the turret (F1.8): the gunner's page traverses and elevates at once and
  *   the driver's page draws it close behind, smoothly, on a clean link and
  *   at 150 ms RTT;
+ * - loading and firing (F1.10): a guest gunner's loading reaches the host,
+ *   and its shot is seen on both pages and decided by the host, on a clean
+ *   link and at 150 ms RTT;
  * - the crew lifecycle (spike S10): stepping away, going quiet and a broken
  *   connection;
  * - the practice crewmate sits in the seat the player leaves free.
@@ -412,6 +415,81 @@ async function turretChecks(host, guest, label) {
     home ? '' : JSON.stringify(await Promise.all([turret(host), turret(guest)])));
 }
 
+/**
+ * Loading and firing (F1.10): the gunner's page owns the loading and fires.
+ * With the host driving and the guest in the gunner's seat (as after
+ * turretChecks), a scripted right hand on the guest's page loads a shell and
+ * the host sees the breech loaded; the guest lays the gun on the 100 m target
+ * and pulls the trigger, both pages see the shot, the host decides the hit
+ * and the guest takes its word.
+ */
+async function firingChecks(host, guest, label) {
+  const drill = (p) => p.page.evaluate(() => window.__loading.state());
+  await host.page.evaluate(() => window.__drive.reset());
+  await guest.page.evaluate(() => window.__loading.reset());
+  await waitFor('the guest to own the loading with every shell in the rack', async () => {
+    const g = await drill(guest);
+    return g.owner && !(await drill(host)).owner && g.shells.every((s) => s.place === 'rack') && g.lever === 0;
+  }, 8000);
+  // The right hand's path, hull space: take shell 0 near its base, put its nose
+  // to the breech mouth, ram it, then pull the lever back a quarter turn.
+  await guest.page.evaluate(() => {
+    const L = window.__loading.layout();
+    const shell = window.__loading.state().shells[0];
+    const grip = [shell.centre[0], shell.centre[1], shell.centre[2] + 0.2];
+    const toNose = shell.nose.map((n, k) => grip[k] - n);
+    const noseAt = (x, y, z) => [L.mouth[0] + x + toNose[0], L.mouth[1] + y + toNose[1], L.mouth[2] + z + toNose[2]];
+    const handleAt = (a) => [L.pivot[0] + L.handleX, L.pivot[1] + L.leverLength * Math.cos(a), L.pivot[2] + L.leverLength * Math.sin(a)];
+    const rest = [L.eye[0] + 0.15, L.eye[1] - 0.45, L.eye[2] - 0.15];
+    const keys = [
+      [0, grip, false], [0.5, grip, true], [1, grip, true],
+      [2, noseAt(0.25, 0.05, 0.05), true], [2.8, noseAt(0, 0, 0.03), true], [4, noseAt(0, 0, -0.63), true], [4.5, noseAt(0, 0, -0.63), false],
+      [5.2, handleAt(0), false], [5.7, handleAt(0), true], [7.2, handleAt(1.8), true], [7.7, handleAt(1.8), false], [8.4, rest, false],
+    ];
+    let start = -1;
+    window.__loading.setTestHand('right', (now) => {
+      if (start < 0) start = now;
+      const t = (now - start) / 1000;
+      let i = 0;
+      while (i < keys.length - 2 && keys[i + 1][0] <= t) i++;
+      const [t0, p0, s0] = keys[i];
+      const [t1, p1] = keys[i + 1];
+      const f = Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
+      return { x: p0[0] + (p1[0] - p0[0]) * f, y: p0[1] + (p1[1] - p0[1]) * f, z: p0[2] + (p1[2] - p0[2]) * f, squeeze: s0 };
+    });
+  });
+  const loaded = await waitFor('the host to see the breech loaded', async () => {
+    const [h, g] = await Promise.all([drill(host), drill(guest)]);
+    return g.loaded && h.loaded && h.breechShell === 0 && Math.abs(h.lever - Math.PI / 2) < 0.01 ? { h, g } : null;
+  }, 20000).catch(() => null);
+  await guest.page.evaluate(() => window.__loading.setTestHand('right', null));
+  const now = loaded ?? { h: await drill(host), g: await drill(guest) };
+  check(`The gunner loads a shell and the driver sees the breech loaded and closed (${label})`, loaded !== null,
+    `gunner: loaded ${now.g.loaded}, board "${now.g.board.join(' | ')}"; driver draws loaded ${now.h.loaded}, breech shell ${now.h.breechShell}, lever ${now.h.lever.toFixed(2)}, ${now.h.received} loading packets`);
+
+  // Lay the gun on the 100 m target and fire.
+  const before = await Promise.all([host, guest].map((p) => p.page.evaluate(() => ({ shots: window.__firing.records().length, hits: window.__firing.hits()[0], casings: window.__loading.state().casings }))));
+  await guest.page.evaluate(() => window.__firing.aimAt(0));
+  await waitFor('the host to draw the gun laid', async () => {
+    const [h, g] = await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__turret.state())));
+    return Math.abs(h.yaw - g.yaw) < 1e-4 && Math.abs(h.elevation - g.elevation) < 1e-4;
+  }, 8000).catch(() => null);
+  await guest.page.evaluate(() => window.__turret.pullTrigger());
+  const shot = await waitFor('both pages to see the shot decided', async () => {
+    const [h, g] = await Promise.all([host, guest].map((p) => p.page.evaluate(() => ({ records: window.__firing.records(), hits: window.__firing.hits()[0], casings: window.__loading.state().casings, loaded: window.__loading.state().loaded }))));
+    const hr = h.records[before[0].shots];
+    const gr = g.records[before[1].shots];
+    return hr && gr && gr.line.startsWith('Hit') && h.casings > before[0].casings ? { h, g, hr, gr } : null;
+  }, 15000).catch(() => null);
+  const after = shot ?? { hr: null, gr: null, h: {}, g: {} };
+  check(`The gunner fires, both see the shot and the casing, the host decides the hit and the gunner takes its word (${label})`,
+    shot !== null && shot.hr.id === shot.gr.id && shot.hr.kind === 'target' && shot.hr.target === 0 && shot.gr.kind === 'target'
+      && shot.h.hits === before[0].hits + 1 && shot.g.hits === shot.h.hits && !shot.g.loaded && shot.g.casings > before[1].casings,
+    shot ? `host "${shot.hr.line}", gunner "${shot.gr.line}", hits ${shot.h.hits}/${shot.g.hits}, casings ${shot.h.casings}/${shot.g.casings}`
+      : JSON.stringify(await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__firing.records())))));
+  await guest.page.evaluate(() => window.__turret.forward());
+}
+
 async function lobbyChecks(browser, host, guest) {
   // Coat colours: each player's pick, told on connecting and on changing.
   const colors = async () => Promise.all([host, guest].map((p) => p.page.evaluate(() => ({ mine: window.__net.color, theirs: window.__net.remoteColor }))));
@@ -704,7 +782,7 @@ async function main() {
     }
     const room = 'TEST';
     // ONLY_SEATS=lag runs the quick seat checks at about 150 ms RTT.
-    const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' || process.env.ONLY_TURRET === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
+    const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' || process.env.ONLY_TURRET === 'lag' || process.env.ONLY_FIRING === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
     const a = await openPlayer(browser, `room=${room}&name=Ann${quickLag}`);
     await waitFor('Ann waiting in the lobby', async () => (await state(a.page)) === 'waiting');
     const b = await openPlayer(browser, `room=${room}&name=Bo${quickLag}`);
@@ -738,6 +816,12 @@ async function main() {
     if (process.env.ONLY_TURRET) {
       // Quick loop for F1.8: just the turret (ONLY_TURRET=lag at about 150 ms RTT).
       await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+      return;
+    }
+    if (process.env.ONLY_FIRING) {
+      // Quick loop for F1.10: the turret, then loading and firing (ONLY_FIRING=lag at about 150 ms RTT).
+      await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+      await firingChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
       return;
     }
 
@@ -839,6 +923,7 @@ async function main() {
     await seatChecks(a, b, 'local network');
     await driveChecks(a, b, 'local network');
     await turretChecks(a, b, 'local network');
+    await firingChecks(a, b, 'local network');
     await lobbyChecks(browser, a, b);
 
     const motion = await measureMotion(a, b, 3);
@@ -892,6 +977,7 @@ async function main() {
     await seatChecks(d, e, '150 ms RTT');
     await driveChecks(d, e, '150 ms RTT');
     await turretChecks(d, e, '150 ms RTT');
+    await firingChecks(d, e, '150 ms RTT');
 
     await d.context.close();
     await e.context.close();

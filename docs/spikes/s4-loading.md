@@ -2,6 +2,8 @@
 
 The question from the [plan](../plan.md#5-risks-and-spikes): can a seated player grab a shell, swing it to the breech, ram it and close the breech reliably in under about 5 seconds? Pass mark: ten loads in a row without a fumble, after some practice. (Not to be confused with [s4-networking.md](s4-networking.md), the airship template's fourth spike.)
 
+Since F1.10 the drill is the gunner's loading in the turret, shared between the crew, and the gun fires: see [loading-firing.md](../loading-firing.md). Its station beside the tank and Practice → Sit at the breech are gone; the steps below are now done from Practice → Load and fire, and the numbers below are S4's (the rack and breech positions moved into the turret).
+
 Status: built, unit-tested, and tested in the emulated headset (IWER, IWSDK's browser XR emulator) with the controller taking a shell, loading it and closing the breech. Whether it feels right, how fast it gets and how often it fumbles can only be found on a headset: the steps are at the end.
 
 ## What the player does
