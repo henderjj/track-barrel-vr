@@ -136,6 +136,23 @@ async function measureMotion(sender, receiver, seconds) {
     });
   });
   await new Promise((r) => setTimeout(r, 600)); // fill the jitter buffer
+  // Until then the receiver can still be drawing its way from the last pose
+  // onto the circle: on a slow runner with 150 ms RTT, 600 ms isn't always
+  // enough. Start once three frames in a row are on the circle (or after 3 s).
+  await receiver.page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        let onCircle = 0;
+        const end = performance.now() + 3000;
+        const frame = () => {
+          const p = window.__net.remotePose();
+          onCircle = p && Math.abs(Math.hypot(p.head.px, p.head.pz) - 0.5) < 0.01 ? onCircle + 1 : 0;
+          if (onCircle >= 3 || performance.now() > end) resolve();
+          else requestAnimationFrame(frame);
+        };
+        frame();
+      }),
+  );
   const samples = await receiver.page.evaluate(
     (ms) =>
       new Promise((resolve) => {
