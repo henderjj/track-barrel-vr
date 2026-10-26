@@ -15,11 +15,15 @@ export const PacketType = {
   Pong: 3,
   /** A loose object's state from its owner (spike S7). */
   Object: 4,
-  // Add your game's packets from 5: typically one for each piece of
+  // The game's packets from 5: typically one for each piece of
   // host-authoritative state that changes every frame (a shared control's
   // angle, a vehicle's pose), sent at 45 Hz, and one for the guest's hands
   // on the controls, so the host can simulate them. One-off happenings go
   // as reliable events instead (netLink.sendEvent).
+  /** The tank's pose, motion, engine and gearbox, from the host (F1.4, src/net/tank-codec.ts). */
+  TankState: 5,
+  /** The driver's tillers, gear lever and hand throttle, from a guest driver to the host (F1.4, src/net/tank-codec.ts). */
+  DriverControls: 6,
 } as const;
 
 /** One tracked pose: position (m) and rotation quaternion. */

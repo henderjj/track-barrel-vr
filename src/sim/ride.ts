@@ -18,6 +18,7 @@
  * and the scripted route; the caps and the vignette level carry over.
  */
 
+import { HEIGHT_SECONDS, MAX_ACCEL, MAX_REVERSE, MAX_SPEED, MAX_TILT, MAX_YAW_ACCEL, MAX_YAW_RATE, TILT_SECONDS } from './comfort.js';
 import { rng } from './random.js';
 
 const DEG = Math.PI / 180;
@@ -44,33 +45,26 @@ export const GUNNER_EYE = [-0.42, -0.4] as const;
 /** The vision slits of the closed cabin: height of their middle above the floor and their height, width, m. */
 export const SLIT = { y: 1.45, height: 0.2, width: 0.7 } as const;
 
-// Comfort caps (plan 4.10). Every motion of the tank and turret passes through these.
-/** Top forward and reverse speed, m/s (35 km/h, high range; 11 km/h back). */
-export const MAX_SPEED = 35 / 3.6;
-export const MAX_REVERSE = 3;
-/** Most the speed changes per second, m/s² (the concept's gentle acceleration). */
-export const MAX_ACCEL = 1.0;
-/** Fastest the hull turns, and the most its turn rate changes per second. */
-export const MAX_YAW_RATE = 15 * DEG;
-export const MAX_YAW_ACCEL = 20 * DEG;
-/** Most the hull pitches or rolls following the ground, and how quickly it eases there and to the ground's height, s. */
-export const MAX_TILT = 4 * DEG;
-export const TILT_SECONDS = 0.5;
-export const HEIGHT_SECONDS = 0.1;
+// Comfort caps (plan 4.10), shared with the drive: src/sim/comfort.ts.
+export {
+  HEIGHT_SECONDS,
+  MAX_ACCEL,
+  MAX_REVERSE,
+  MAX_SPEED,
+  MAX_TILT,
+  MAX_YAW_ACCEL,
+  MAX_YAW_RATE,
+  TILT_SECONDS,
+  VIGNETTE_AT_TOP_SPEED,
+  VIGNETTE_FULL_ACCEL,
+  VIGNETTE_FULL_TILT,
+  VIGNETTE_FULL_TURN,
+  vignetteLevel,
+} from './comfort.js';
 /** Power traverse: 6°/s at idle to 24°/s at full RPM (Tiger-style); how fast it starts and stops. */
 export const TRAVERSE_IDLE = 6 * DEG;
 export const TRAVERSE_MAX = 24 * DEG;
 export const TRAVERSE_ACCEL = 40 * DEG;
-
-// The comfort vignette's level (0 none, 1 full) from what the eyes see move.
-/** Turning of the view (hull, plus the turret for the gunner) that gives a full vignette. */
-export const VIGNETTE_FULL_TURN = 20 * DEG;
-/** Change of speed that gives a full vignette, m/s². */
-export const VIGNETTE_FULL_ACCEL = 1.0;
-/** Pitching and rolling together that gives a full vignette. */
-export const VIGNETTE_FULL_TILT = 8 * DEG;
-/** Steady speed gives a light vignette only: this much at top speed. */
-export const VIGNETTE_AT_TOP_SPEED = 0.4;
 
 // The ground. It repeats every TILE metres in x and z, so a route of any
 // length stays on it: the world model is drawn three tiles across and moved
@@ -277,24 +271,6 @@ export function stepTurret(s: TurretState, target: number, dt: number): TurretSt
   if (s.angle > Math.PI) s.angle -= 2 * Math.PI;
   else if (s.angle < -Math.PI) s.angle += 2 * Math.PI;
   return s;
-}
-
-/**
- * How strong the comfort vignette should be, 0 to 1, for a view turning at
- * `turnRate` (rad/s), changing speed at `accel` (m/s²), pitching and rolling
- * at `tiltRate` (rad/s) and moving at `speed` (m/s).
- */
-export function vignetteLevel(turnRate: number, accel: number, tiltRate: number, speed: number): number {
-  return clamp(
-    Math.max(
-      Math.abs(turnRate) / VIGNETTE_FULL_TURN,
-      Math.abs(accel) / VIGNETTE_FULL_ACCEL,
-      Math.abs(tiltRate) / VIGNETTE_FULL_TILT,
-      (Math.abs(speed) / MAX_SPEED) * VIGNETTE_AT_TOP_SPEED,
-    ),
-    0,
-    1,
-  );
 }
 
 export type Seat = 'driver' | 'gunner';
