@@ -20,3 +20,4 @@ This game's own spikes (plan §5), each with a headset check at the end.
 | Note | Question |
 | --- | --- |
 | [s1-sight-render.md](s1-sight-render.md) | A magnified gunsight from a second camera: its cost on Quest 3 and over Link, and whether the range marks read at 3× |
+| [s3-lever-feel.md](s3-lever-feel.md) | A hand-following lever with limits, springing back, with controllers and tracked hands, tried on a lane |

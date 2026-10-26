@@ -12,6 +12,7 @@ import { resetBlocks, restartGame } from './game-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
 import { SIGHT_BUTTONS } from './sight-system.js';
 import { startLoadingDrill } from './loading-drill-system.js';
+import { hideLeverTest, showLeverTest } from './lever-system.js';
 import { startScreen } from './start-screen-system.js';
 
 /** Where the menu stands in VR when opened: ahead of the head and a little below the eyes, m. */
@@ -251,6 +252,14 @@ export class GameMenuSystem extends createSystem({}) {
     ui.on('menu-loading', () => {
       this.setOpen(false);
       startLoadingDrill();
+    });
+    ui.on('menu-levers', () => {
+      this.setOpen(false);
+      showLeverTest();
+    });
+    ui.on('menu-levers-away', () => {
+      this.setOpen(false);
+      hideLeverTest();
     });
     ui.on('menu-exit', () => {
       this.setOpen(false);

@@ -28,7 +28,17 @@ export const HoldKind = {
   Block: 1,
   /** The breech lever's handle (LoadingDrillSystem, spike S4). 2–9 are kept for Phase 1's driver controls, wheels, periscope and shell. */
   BreechLever: 10,
+  /** Spike S3's test tillers (LeverSystem): one player's only, so never sent (LOCAL_HOLD_KINDS). */
+  TillerLeft: 11,
+  TillerRight: 12,
 } as const;
+
+/**
+ * Kinds held on controls only this page has (a test rig placed where this
+ * player stands), which the crewmate's page would lock their hand onto in
+ * the wrong place: sent as None.
+ */
+export const LOCAL_HOLD_KINDS: ReadonlySet<number> = new Set([HoldKind.TillerLeft, HoldKind.TillerRight]);
 
 /**
  * Where a hand at `hand` (scene space) holding a control grips it: the point

@@ -21,7 +21,12 @@
  *     and pulls one out of a pile without flinging the others;
  *  5. throws a block through the hoop (a scripted hand) and checks the score,
  *     then restarts from the game menu;
- *  6. switches to tracked hands (spike S9) and picks up a block with a pinch;
+ *  5b. opens Practice > Lever test (spike S3) and works a tiller with a
+ *     controller: it follows the hand, stops at its limit with the hand
+ *     kept on it, lets go when the hand is pulled off, springs back, and
+ *     both tillers forwards drive the tank up the board's lane;
+ *  6. switches to tracked hands (spike S9) and picks up a block with a pinch,
+ *     then works a tiller with a pinch (6a);
  *  6b. spike S4: Practice → Sit at the breech, then loads a shell with the
  *     right controller (rack, breech, ram, lever) and drops one;
  *  6c. rides the tank (spike S2) from the game menu's Practice section: the
@@ -840,6 +845,76 @@ async function main() {
     `score ${restarted.score}, menu ${restarted.open ? 'open' : 'closed'}, ${restarted.blocks.filter(onTable).length}/${BLOCK_COUNT} on the table`);
   iwsdk(['xr', 'set-device-state'], {});
 
+  // 5b. Spike S3, lever feel: Practice > Lever test puts two tillers in
+  //     front of the player. A gripped tiller follows the hand, stops at its
+  //     limit with the drawn hand kept on the handle, lets go when the hand
+  //     is pulled 45 cm off, springs back, and both forwards drive the tank
+  //     up the lane on the board.
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-levers'));
+  iwsdk(['xr', 'set-device-state'], {});
+  const leverShown = await waitFor('the lever test rig', () => evalInApp('window.__lever.shown'), 5000).catch(() => false);
+  check('Practice > Lever test puts the tillers in front of the player', leverShown, `handles at ${fmt(evalInApp('window.__lever.handle("left")'))} and ${fmt(evalInApp('window.__lever.handle("right")'))}`);
+  const tillers = () => evalInApp('window.__lever.tillers()');
+  const handleR = evalInApp('window.__lever.handle("right")');
+  const at = (p, dz, dy = 0) => toOrigin([p[0], p[1] + dy, p[2] + dz]);
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: at(handleR, 0), duration: 0.4 });
+  await sleep(600);
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 1 }] });
+  const gripped = await waitFor('the right tiller gripped', () => {
+    const t = tillers();
+    return t.right.heldBy === 'right' && evalInApp('window.__ownHands.locked("right")') > 0.9 && t;
+  }, 5000).catch(() => tillers());
+  check('Squeezing at a tiller’s handle takes hold of it, the drawn hand closed on it', gripped.right.heldBy === 'right', `held by ${gripped.right.heldBy}, angle ${gripped.right.angle.toFixed(1)}°`);
+  // 15 cm forwards at the handle's height is about 21° round the pivot.
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: at(handleR, -0.15), duration: 0.5 });
+  const pushed = await waitFor('the tiller to follow', () => { const t = tillers(); return t.right.angle > 15 && t; }, 5000).catch(() => tillers());
+  check('The tiller follows the hand forwards', pushed.right.angle > 15 && pushed.right.angle < 25 && pushed.right.demand > 0.5,
+    `angle ${pushed.right.angle.toFixed(1)}°, demand ${pushed.right.demand.toFixed(2)}`);
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: at(handleR, -0.32), duration: 0.5 });
+  const limited = await waitFor('the tiller at its limit', () => { const t = tillers(); return t.right.overshoot > 8 && t; }, 5000).catch(() => tillers());
+  const gapAtLimit = evalInApp('window.__lever.handleGap("right", window.__ownHands.fist("right"))');
+  check('Pushed past its limit, the tiller stops there with a tick and the drawn hand stays on the handle',
+    Math.abs(limited.right.angle - 25) < 0.5 && limited.right.limits >= 1 && limited.right.heldBy === 'right' && gapAtLimit < 0.02,
+    `angle ${limited.right.angle.toFixed(1)}°, hand ${limited.right.overshoot.toFixed(1)}° past it, ${limited.right.limits} limit tick(s), drawn fist ${(gapAtLimit * 100).toFixed(1)} cm from the handle`);
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: 0.6, y: 1.5, z: 0.3 } });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(evalInApp('window.__lever.handle("right")')) });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-lever-limit.png'], {});
+  iwsdk(['xr', 'set-device-state'], {});
+  // Pull the hand 45 cm back off the handle with the grip still squeezed.
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: at(handleR, 0.3, 0.2), duration: 0.4 });
+  const slipped = await waitFor('the hand to let go', () => { const t = tillers(); return t.right.heldBy === null && Math.abs(t.right.angle) < 1 && t; }, 5000).catch(() => tillers());
+  check('A hand pulled well off the tiller lets go, and the tiller springs back upright',
+    slipped.right.heldBy === null && Math.abs(slipped.right.angle) < 1, `held by ${slipped.right.heldBy}, angle ${slipped.right.angle.toFixed(1)}°`);
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 0 }] });
+  await sleep(300);
+  // Both tillers forwards: the tank drives straight up the lane.
+  const handleL = evalInApp('window.__lever.handle("left")');
+  evalInApp('(window.__lever.resetLane(), true)');
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: at(handleR, 0), duration: 0.4 });
+  iwsdk(['xr', 'animate-to'], { device: 'controller-left', position: at(handleL, 0), duration: 0.4 });
+  await sleep(600);
+  for (const device of ['controller-right', 'controller-left']) iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value: 1 }] });
+  await sleep(300);
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: at(handleR, -0.25), duration: 0.4 });
+  iwsdk(['xr', 'animate-to'], { device: 'controller-left', position: at(handleL, -0.25), duration: 0.4 });
+  // The CLI moves one controller after the other, so the tank turns while
+  // only one tiller is forwards: start the lane again once both are.
+  await waitFor('both tillers forwards', () => { const t = tillers(); return t.left.demand > 0.9 && t.right.demand > 0.9; }, 5000).catch(() => false);
+  evalInApp('(window.__lever.resetLane(), true)');
+  const driven = await waitFor('the tank to drive up the lane', () => { const l = evalInApp('window.__lever.lane()'); return l.y > 4 && l; }, 10000).catch(() => evalInApp('window.__lever.lane()'));
+  check('Both tillers forwards drive the tank straight up the lane', driven.started && driven.y > 4 && Math.abs(driven.heading) < 0.1 && !driven.off,
+    `tank at ${driven.x.toFixed(2)}, ${driven.y.toFixed(2)} m heading ${((driven.heading * 180) / Math.PI).toFixed(1)}° after ${driven.time.toFixed(1)} s`);
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: 0, y: 1.6, z: 0 } });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: { x: 0, y: 0.9, z: -0.8 } });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-lever-lane.png'], {});
+  for (const device of ['controller-right', 'controller-left']) iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value: 0 }] });
+  const released = await waitFor('both tillers let go', () => { const t = tillers(); return !t.left.heldBy && !t.right.heldBy && t; }, 3000).catch(() => tillers());
+  check('Letting go of both grips lets go of both tillers', !released.left.heldBy && !released.right.heldBy);
+  iwsdk(['xr', 'set-device-state'], {});
+
   // 6. Spike S9: tracked hands, gripping by pinching (the emulator's hands
   //    can pinch but not make a fist; fists are unit-tested).
   iwsdk(['xr', 'set-input-mode'], { mode: 'hand' });
@@ -866,6 +941,24 @@ async function main() {
   check('A pinching hand picks up a block', handBlock[1] > TABLE.height + 0.3, `block at ${fmt(handBlock)}`);
   iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 0 });
   await sleep(1500);
+  // 6a. Spike S3 with tracked hands: a pinch at the handle takes hold of a
+  //     tiller and it follows the hand; letting go of the pinch lets go.
+  evalInApp('(window.__lever.show(), true)');
+  await sleep(500);
+  const handHandle = evalInApp('window.__lever.handle("right")');
+  handTo('right', handHandle, 0.5, rightOffset);
+  await sleep(700);
+  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 1 });
+  await sleep(300);
+  handTo('right', [handHandle[0], handHandle[1], handHandle[2] - 0.12], 0.5, rightOffset);
+  const pinched = await waitFor('the tiller to follow the tracked hand', () => { const t = tillers(); return t.right.angle > 10 && t; }, 5000).catch(() => tillers());
+  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 0 });
+  const unpinched = await waitFor('the tracked hand to let go', () => { const t = tillers(); return t.right.heldBy === null && t; }, 3000).catch(() => tillers());
+  check('A pinching tracked hand works a tiller and lets go with the pinch',
+    pinched.right.heldBy === 'right' && pinched.right.angle > 10 && unpinched.right.heldBy === null,
+    `held by ${pinched.right.heldBy} at ${pinched.right.angle.toFixed(1)}°, then ${unpinched.right.heldBy ?? 'let go'}`);
+  evalInApp('(window.__lever.hide(), true)');
+  await sleep(300);
   iwsdk(['xr', 'set-input-mode'], { mode: 'controller' });
   await sleep(300);
 

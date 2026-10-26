@@ -7,6 +7,7 @@ import * as loading from '../src/scene-assets/loading-drill.scene-asset.js';
 import { BREECH_MOUTH, LEVER_CLOSED, LEVER_PIVOT, RACK_SLOTS, SHELL_LENGTH } from '../src/sim/loading.js';
 import * as sight from '../src/scene-assets/sight.scene-asset.js';
 import { SIGHT_STAND } from '../src/sim/sight.js';
+import * as leverRig from '../src/scene-assets/lever-rig.scene-asset.js';
 import { coplanarOverlaps, describeOverlaps, trianglesOf } from './support/coplanar.js';
 
 /**
@@ -87,6 +88,23 @@ describe('no faces that flicker through each other (z-fighting)', () => {
 
   it('on a shell', () => {
     expectNone([loading.createShell(0)], DECK_GAP);
+  });
+
+  it('on the lever test rig, with its tillers upright and at both limits', async () => {
+    const { Group } = await import('@iwsdk/core');
+    const { LEVER_RIG, TILLER } = await import('../src/sim/lever.js');
+    for (const angle of [0, TILLER.min, TILLER.max]) {
+      const rig = new Group();
+      rig.add(leverRig.createLeverRig());
+      for (const side of [-1, 1]) {
+        const tiller = leverRig.createTiller();
+        tiller.position.x = side * LEVER_RIG.side;
+        tiller.rotation.x = -angle;
+        rig.add(tiller);
+      }
+      rig.updateMatrixWorld(true);
+      expectNone([rig], DECK_GAP);
+    }
   });
 
   it('on the crew', () => {

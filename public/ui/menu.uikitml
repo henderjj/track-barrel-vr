@@ -342,6 +342,13 @@
         <Button id="menu-loading" class="choice" size="sm" variant="secondary">Sit at the breech</Button>
       </div>
     </div>
+    <div class="setting">
+      <div class="label">Lever test</div>
+      <div class="choices">
+        <Button id="menu-levers" class="choice" size="sm" variant="secondary">In front of me</Button>
+        <Button id="menu-levers-away" class="choice" size="sm" variant="secondary">Put away</Button>
+      </div>
+    </div>
   </div>
   <Divider></Divider>
 
