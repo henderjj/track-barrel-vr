@@ -28,11 +28,15 @@ export const HoldKind = {
   Block: 1,
   /** The breech lever's handle (LoadingDrillSystem, spike S4). 2–9 are kept for Phase 1's driver controls, wheels, periscope and shell. */
   BreechLever: 10,
+  /** The gunner's manual traverse crank and elevation handwheel (TurretSystem, F1.8). */
+  TraverseCrank: 6,
+  ElevationWheel: 7,
+  /** The gunner's power traverse grip (TurretSystem, F1.8). */
+  PowerTraverse: 12,
   /**
    * A mechanism-kit control only this page has (MechanismSystem): spike S3's
    * test tillers and the kit's test bench, placed where this player stands.
    * Never sent (LOCAL_HOLD_KINDS); resolved by which hand holds which control.
-   * 12 is free again.
    */
   LocalControl: 11,
 } as const;

@@ -41,10 +41,13 @@
  *     it and the ground moves round the hull, one stick turns it, letting go
  *     stops it, the gear lever grinds and shifts, the boulder stops it, and
  *     Back to start parks it;
- *  6e. looks over the test range (F1.7): the targets stand at 100, 250 and
+ *  6e. lays the gun (F1.8): Practice → Lay the gun, the power grip
+ *     traverses the turret with the gunner turning with it, the crank turns
+ *     it 2°, the elevation wheel raises the gun, and Forward puts it back;
+ *  6f. looks over the test range (F1.7): the targets stand at 100, 250 and
  *     500 m with markers up the road, the fog is on and turns off from the
- *     menu, and Practice → Up the range parks the tank facing the middle
- *     target;
+ *     menu, and Practice → Up the range parks the tank 200 m up the road
+ *     facing the far target;
  *  7. checks the perf CSV has rows, then re-enters XR with the frame-rate
  *     API removed, as desktop Chrome and Edge over Link may have it, and
  *     checks the game measures the refresh rate instead; IWSDK's controller
@@ -944,7 +947,7 @@ async function drivingTheTank() {
 }
 
 /**
- * 6e. The test range (F1.7): the three targets stand out at 100, 250 and
+ * 6f. The test range (F1.7): the three targets stand out at 100, 250 and
  *     500 m with a marker every 100 m up the road, the fog is on with the
  *     range's numbers and turns off and on from the menu's settings, and
  *     Practice → Test range → Up the range parks the tank 200 m up the road
@@ -1010,6 +1013,124 @@ async function theTestRange() {
   await menuButtonPress();
   evalInApp('(window.__drive.reset(), true)');
   evalInApp("(window.__seats.ask('driver'), true)");
+  iwsdk(['xr', 'set-device-state'], {});
+}
+
+/**
+ * 6e. The turret (F1.8): Practice → Lay the gun → Gunner puts the player in
+ *     the gunner's seat with a sign; the power grip twisted left traverses
+ *     the turret left and the gunner's play space turns with it (the head
+ *     stays put in the turret), the vignette darkening; let go, it stops;
+ *     a turn of the crank traverses about 2°; a quarter turn clockwise of
+ *     the elevation wheel raises the gun about 0.75°; Forward puts it back.
+ */
+async function layingTheGun() {
+  const turret = () => evalInApp('window.__turret.state()');
+  const names = evalInApp('window.__turret.names');
+  const state = (key) => evalInApp(`window.__mechanisms.state(${JSON.stringify(names[key])})`);
+  const scene = (key, p) => evalInApp(`window.__mechanisms.toScene(${JSON.stringify(names[key])}, ${JSON.stringify(p)})`);
+  const handle = (key, which = 1) => evalInApp(`window.__mechanisms.handle(${JSON.stringify(names[key])}, ${which})`);
+  const squeeze = (value) => iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value }] });
+  let fistOffset = [0, 0, 0];
+  const measureFist = () => {
+    const fist = evalInApp('window.__ownHands.fist("right")');
+    const grip = evalInApp('window.__debug.world.player.gripSpaces.right.getWorldPosition(window.__debug.world.player.position.clone()).toArray()');
+    fistOffset = [fist[0] - grip[0], fist[1] - grip[1], fist[2] - grip[2]];
+  };
+  const gripFor = (p) => toOrigin([p[0] - fistOffset[0], p[1] - fistOffset[1], p[2] - fistOffset[2]]);
+  const take = async (key, which = 1) => {
+    measureFist();
+    iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(handle(key, which)), duration: 0.4 });
+    await sleep(600);
+    squeeze(1);
+    return waitFor(`the ${key} taken hold of`, () => { const s = state(key); return s.heldBy === 'right' && s; }, 4000).catch(() => state(key));
+  };
+  const letGoOf = async (key) => {
+    squeeze(0);
+    await waitFor(`${key} let go`, () => state(key).heldBy === null, 3000).catch(() => false);
+  };
+
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-turret-go'));
+  const seated = await waitFor('the gunner\'s seat and the sign', () => {
+    const s = evalInApp('({ seat: window.__seats.mine, sign: window.__turret.sign, owner: window.__turret.owner() })');
+    return s.seat === 'gunner' && s.sign.startsWith('Laying') && s;
+  }, 5000).catch(() => evalInApp('({ seat: window.__seats.mine, sign: window.__turret.sign, owner: window.__turret.owner() })'));
+  check('Practice → Lay the gun puts the player in the gunner\'s seat with a sign saying how to lay the gun',
+    seated.seat === 'gunner' && seated.owner && seated.sign.startsWith('Laying'), `seat ${seated.seat}, sign "${seated.sign}"`);
+  evalInApp('(window.__turret.forward(), true)');
+  await sleep(300);
+
+  // The power grip: twisted left (anticlockwise seen from above) traverses left, and the basket turns the gunner with it.
+  iwsdk(['xr', 'set-transform'], { device: 'controller-right', orientation: { pitch: 0, yaw: 0, roll: 0 } });
+  await sleep(200);
+  measureFist();
+  const gripAt = gripFor(handle('twist'));
+  const held = await take('twist');
+  const headBefore = evalInApp('window.__turret.headInTurret()');
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripAt, orientation: { pitch: 0, yaw: 35, roll: 0 }, duration: 0.4 });
+  const traversing = await waitFor('the turret to traverse left', () => {
+    const s = turret();
+    return s.yawDeg > 8 && s.rateDeg > 4 && s;
+  }, 8000).catch(() => turret());
+  const turning = evalInApp('({ head: window.__turret.headInTurret(), drawn: window.__turret.drawn(), alpha: window.__drive.vignetteAlpha, grip: window.__mechanisms.state(window.__turret.names.twist) })');
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-turret.png'], {});
+  check('Twisting the power grip left traverses the turret left, at about the idle rate',
+    held.heldBy === 'right' && traversing.yawDeg > 8 && traversing.rateDeg > 4 && traversing.rateDeg < 9 && Math.abs(turning.drawn.yaw - traversing.yawDeg) < 3,
+    `turret ${traversing.yawDeg.toFixed(1)}° at ${traversing.rateDeg.toFixed(1)}°/s (drawn ${turning.drawn.yaw.toFixed(1)}°), grip ${turning.grip.angle.toFixed(1)}°`);
+  check('The gunner turns with the basket: the head stays put in the turret, and the vignette darkens',
+    Math.hypot(turning.head[0] - headBefore[0], turning.head[2] - headBefore[2]) < 0.03 && turning.alpha > 0.05,
+    `head moved ${(100 * Math.hypot(turning.head[0] - headBefore[0], turning.head[2] - headBefore[2])).toFixed(1)} cm in the turret, vignette ${turning.alpha.toFixed(2)}`);
+  await letGoOf('twist');
+  iwsdk(['xr', 'set-transform'], { device: 'controller-right', orientation: { pitch: 0, yaw: 0, roll: 0 } });
+  const stopped = await waitFor('the turret to stop', () => { const s = turret(); return s.rate === 0 && s; }, 4000).catch(() => turret());
+  check('Let go, the power grip springs back and the turret stops', stopped.rate === 0, `${stopped.rateDeg.toFixed(2)}°/s`);
+
+  // The crank: once round anticlockwise traverses 2° left.
+  const yaw0 = turret().yawDeg;
+  await take('crank');
+  const r = 0.08;
+  const knob = 0.03;
+  for (let k = 1; k <= 9; k++) {
+    const a = (k * Math.PI) / 4;
+    iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('crank', [-r * Math.sin(a), r * Math.cos(a), knob])), duration: 0.15 });
+    await sleep(200);
+  }
+  const cranked = await waitFor('the crank to turn once', () => { const s = state('crank'); return s.turns > 0.9 && s; }, 4000).catch(() => state('crank'));
+  const afterCrank = turret().yawDeg;
+  check('A turn of the crank traverses the turret about 2° left',
+    cranked.turns > 0.9 && afterCrank - yaw0 > 1.6 && afterCrank - yaw0 < 2.9, `${cranked.turns.toFixed(2)} turns: ${yaw0.toFixed(2)}° to ${afterCrank.toFixed(2)}°`);
+  await letGoOf('crank');
+
+  // The elevation wheel: taken at its right side and turned a quarter clockwise, the gun rises.
+  const e0 = turret().elevationDeg;
+  await take('elevation', 1);
+  const rr = 0.11;
+  for (let k = 1; k <= 6; k++) {
+    const a = -Math.PI / 2 - (k * Math.PI) / 12;
+    iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('elevation', [-rr * Math.sin(a), rr * Math.cos(a), 0])), duration: 0.15 });
+    await sleep(200);
+  }
+  const raised = await waitFor('the gun to rise', () => { const s = turret(); return s.elevationDeg - e0 > 0.4 && s; }, 4000).catch(() => turret());
+  const drawn = evalInApp('window.__turret.drawn()');
+  check('A quarter turn clockwise of the elevation wheel raises the gun about 0.75°',
+    raised.elevationDeg - e0 > 0.4 && raised.elevationDeg - e0 < 1.0 && Math.abs(drawn.elevation - raised.elevationDeg) < 0.05,
+    `gun ${e0.toFixed(2)}° to ${raised.elevationDeg.toFixed(2)}°, drawn ${drawn.elevation.toFixed(2)}°`);
+  await letGoOf('elevation');
+
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-turret-forward'));
+  await menuButtonPress();
+  const home = await waitFor('the turret forward', () => { const s = turret(); return Math.abs(s.yaw) < 1e-6 && s.elevation === 0 && s; }, 5000).catch(() => turret());
+  const headHome = evalInApp('window.__turret.headInTurret()');
+  check('Forward turns the turret and the gun straight ahead, with the gunner still in the seat',
+    Math.abs(home.yaw) < 1e-6 && home.elevation === 0 && Math.hypot(headHome[0] - headBefore[0], headHome[2] - headBefore[2]) < 0.05,
+    `turret ${home.yawDeg.toFixed(2)}°, gun ${home.elevationDeg.toFixed(2)}°`);
+  // Back in the driver's seat for what follows.
+  evalInApp("(window.__seats.ask('driver'), true)");
+  await sleep(500);
   iwsdk(['xr', 'set-device-state'], {});
 }
 
@@ -1275,7 +1396,10 @@ async function main() {
   // 6d. The tank drive (F1.4).
   await drivingTheTank();
 
-  // 6e. The test range (F1.7).
+  // 6e. The turret (F1.8).
+  await layingTheGun();
+
+  // 6f. The test range (F1.7).
   await theTestRange();
 
   // 7. Perf log.

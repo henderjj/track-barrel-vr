@@ -22,6 +22,7 @@ import { RideSystem } from './systems/ride-system.js';
 import { SeatSystem } from './systems/seat-system.js';
 import { SightSystem } from './systems/sight-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
+import { TurretSystem } from './systems/turret-system.js';
 
 // On a two-GPU PC, start on the graphics card Link uses (src/gpu-preference.ts).
 preferHighPerformanceGpu();
@@ -57,6 +58,8 @@ World.create(
   // grips, yokes, buttons), before the systems that read them and before
   // OwnHandsSystem draws hands on them.
   world.registerSystem(MechanismSystem);
+  // The turret (F1.8): after the kit has moved its controls, before OwnHandsSystem draws hands on them. It turns a seated gunner's play space with the turret.
+  world.registerSystem(TurretSystem);
   world.registerSystem(LeverSystem);
   world.registerSystem(MechanismBenchSystem);
   world.registerSystem(LoadingDrillSystem);

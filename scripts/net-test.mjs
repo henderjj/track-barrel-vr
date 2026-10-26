@@ -20,6 +20,9 @@
  * - the tank drive (F1.4): a guest driver drives the host's tank, both see
  *   it move and stop the same, and the host driving shows on the guest, on
  *   a clean link and at 150 ms RTT;
+ * - the turret (F1.8): the gunner's page traverses and elevates at once and
+ *   the driver's page draws it close behind, smoothly, on a clean link and
+ *   at 150 ms RTT;
  * - the crew lifecycle (spike S10): stepping away, going quiet and a broken
  *   connection;
  * - the practice crewmate sits in the seat the player leaves free.
@@ -348,6 +351,67 @@ async function driveChecks(host, guest, label) {
   await host.page.evaluate(() => window.__drive.reset());
 }
 
+/**
+ * The turret (F1.8): the gunner's page owns it. With the host driving and
+ * the guest in the gunner's seat (a fresh crew), the guest's power traverse
+ * turns its own turret at once and the host sees it turn close behind,
+ * smoothly; the guest's elevation reaches the host; the host's Forward (it
+ * isn't the gunner) asks the guest's page, and both see the turret back
+ * straight ahead.
+ */
+async function turretChecks(host, guest, label) {
+  const turret = (p) => p.page.evaluate(() => window.__turret.state());
+  await waitFor('the guest in the gunner\'s seat', async () => (await guest.page.evaluate(() => window.__turret.owner()))
+    && !(await host.page.evaluate(() => window.__turret.owner())), 8000);
+  await guest.page.evaluate(() => window.__turret.forward());
+  await waitFor('the turret forward on both', async () => {
+    const [h, g] = await Promise.all([turret(host), turret(guest)]);
+    return Math.abs(h.yaw) < 1e-3 && Math.abs(g.yaw) < 1e-3;
+  }, 8000).catch(() => null);
+  await guest.page.evaluate(() => window.__turret.set({ traverse: 1 }));
+  const turning = await waitFor('the host to see the turret turn', async () => {
+    const [h, g] = await Promise.all([turret(host), turret(guest)]);
+    return h.yawDeg > 3 ? { h, g } : null;
+  }, 15000).catch(() => null);
+  check(`The gunner's power traverse turns the turret on the gunner's page at once, and the host sees it close behind (${label})`,
+    turning !== null && turning.g.yawDeg >= turning.h.yawDeg && turning.g.yawDeg - turning.h.yawDeg < turning.g.rateDeg * 0.6 + 0.5,
+    turning ? `gunner ${turning.g.yawDeg.toFixed(2)}° at ${turning.g.rateDeg.toFixed(1)}°/s; host draws ${turning.h.yawDeg.toFixed(2)}°` : JSON.stringify(await Promise.all([turret(host), turret(guest)])));
+  // How smoothly the host draws it: frame by frame it never goes back or jumps.
+  const steps = await host.page.evaluate(() => new Promise((resolve) => {
+    const out = [];
+    const end = performance.now() + 2000;
+    const frame = () => {
+      out.push(window.__turret.state().yaw);
+      if (performance.now() < end) requestAnimationFrame(frame);
+      else resolve(out);
+    };
+    requestAnimationFrame(frame);
+  }));
+  const deltas = steps.slice(1).map((v, i) => Math.atan2(Math.sin(v - steps[i]), Math.cos(v - steps[i])));
+  const sorted = [...deltas].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
+  const backwards = deltas.filter((d) => d < -1e-5).length;
+  const biggest = sorted.at(-1) ?? 0;
+  check(`The host draws the traversing turret smoothly (${label})`, deltas.length >= 10 && backwards === 0 && biggest < Math.max(0.01, median * 5),
+    `${deltas.length} frames, ${backwards} backward steps, median ${((median * 180) / Math.PI).toFixed(2)}°, largest ${((biggest * 180) / Math.PI).toFixed(2)}° a frame`);
+  await guest.page.evaluate(() => window.__turret.set({ traverse: 0, elevation: 5 }));
+  const laid = await waitFor('both to see the turret stop and the gun at +5°', async () => {
+    const [h, g] = await Promise.all([turret(host), turret(guest)]);
+    const same = Math.abs(Math.atan2(Math.sin(h.yaw - g.yaw), Math.cos(h.yaw - g.yaw))) < 2e-3;
+    return h.rate === 0 && g.rate === 0 && same && Math.abs(h.elevationDeg - 5) < 0.05 ? { h, g } : null;
+  }, 15000).catch(() => null);
+  check(`Stopped and elevated, both see the turret and gun laid the same (${label})`, laid !== null,
+    laid ? `turret ${laid.h.yawDeg.toFixed(2)}°, gun ${laid.h.elevationDeg.toFixed(2)}°` : JSON.stringify(await Promise.all([turret(host), turret(guest)])));
+  await guest.page.evaluate(() => window.__turret.set(null));
+  await host.page.evaluate(() => window.__gameMenu.click('menu-turret-forward'));
+  const home = await waitFor('the turret forward', async () => {
+    const [h, g] = await Promise.all([turret(host), turret(guest)]);
+    return Math.abs(h.yaw) < 1e-3 && Math.abs(g.yaw) < 1e-3 && Math.abs(h.elevation) < 1e-3 && g.elevation === 0 ? h : null;
+  }, 8000).catch(() => null);
+  check(`The driver's Forward puts the gunner's turret straight ahead (${label})`, home !== null,
+    home ? '' : JSON.stringify(await Promise.all([turret(host), turret(guest)])));
+}
+
 async function lobbyChecks(browser, host, guest) {
   // Coat colours: each player's pick, told on connecting and on changing.
   const colors = async () => Promise.all([host, guest].map((p) => p.page.evaluate(() => ({ mine: window.__net.color, theirs: window.__net.remoteColor }))));
@@ -640,7 +704,7 @@ async function main() {
     }
     const room = 'TEST';
     // ONLY_SEATS=lag runs the quick seat checks at about 150 ms RTT.
-    const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
+    const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' || process.env.ONLY_TURRET === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
     const a = await openPlayer(browser, `room=${room}&name=Ann${quickLag}`);
     await waitFor('Ann waiting in the lobby', async () => (await state(a.page)) === 'waiting');
     const b = await openPlayer(browser, `room=${room}&name=Bo${quickLag}`);
@@ -669,6 +733,11 @@ async function main() {
     if (process.env.ONLY_DRIVE) {
       // Quick loop for F1.4: just the drive (ONLY_DRIVE=lag at about 150 ms RTT).
       await driveChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+      return;
+    }
+    if (process.env.ONLY_TURRET) {
+      // Quick loop for F1.8: just the turret (ONLY_TURRET=lag at about 150 ms RTT).
+      await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
       return;
     }
 
@@ -769,6 +838,7 @@ async function main() {
 
     await seatChecks(a, b, 'local network');
     await driveChecks(a, b, 'local network');
+    await turretChecks(a, b, 'local network');
     await lobbyChecks(browser, a, b);
 
     const motion = await measureMotion(a, b, 3);
@@ -821,6 +891,7 @@ async function main() {
 
     await seatChecks(d, e, '150 ms RTT');
     await driveChecks(d, e, '150 ms RTT');
+    await turretChecks(d, e, '150 ms RTT');
 
     await d.context.close();
     await e.context.close();

@@ -21,6 +21,9 @@ export const MAX_YAW_ACCEL = 20 * DEG;
 export const MAX_TILT = 4 * DEG;
 export const TILT_SECONDS = 0.5;
 export const HEIGHT_SECONDS = 0.1;
+/** Fastest the turret traverses (it turns the gunner's view with it), and the most its rate changes per second (spike S2's, F1.8). */
+export const MAX_TRAVERSE = 24 * DEG;
+export const MAX_TRAVERSE_ACCEL = 40 * DEG;
 
 // The comfort vignette's level (0 none, 1 full) from what the eyes see move.
 /** Turning of the view (hull, plus the turret for the gunner) that gives a full vignette. */

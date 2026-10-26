@@ -11,8 +11,10 @@ export const seating = {
   mine: settings.seat,
   /** The crewmate's seat, while there is a crewmate. */
   crew: otherSeat(settings.seat),
-  /** The turret's angle from facing forward, rad, positive to the left (0 until the turret turns, F1.8). */
+  /** The turret's angle from facing forward, rad, positive to the left, as drawn on this page (TurretSystem sets it, F1.8). */
   turretYaw: 0,
+  /** How fast the turret is traversing, rad/s (TurretSystem; the comfort vignette adds it for the gunner). */
+  turretRate: 0,
   /**
    * Ask for a seat: taken at once when alone or before the crewmate is
    * aboard; in a crew, asking for the crewmate's seat asks them to swap,

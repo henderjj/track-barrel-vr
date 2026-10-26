@@ -33,6 +33,7 @@ import {
   type DriverControls,
   type Gear,
   GEARS,
+  IDLE_RPM,
   keyControls,
   kmh,
   settle,
@@ -104,6 +105,11 @@ export function placeTank(x: number, z: number, heading: number): void {
 /** Move the gear lever (the menu, keys 0, 1 and 2). */
 export function setGear(gear: Gear): void {
   drive.gear = gear;
+}
+
+/** The engine's RPM as drawn on this page (the host's, or the guest's copy of it): the turret's power traverse runs off it (F1.8). */
+export function engineRpm(): number {
+  return active?.shown.rpm ?? IDLE_RPM;
 }
 
 /** One line on the tank for the menu: who drives, speed, gear, RPM. */
@@ -452,7 +458,9 @@ export class DriveSystem extends createSystem({}) {
     let target = 0;
     if (drive.vignette && this.world.session != null) {
       const s = this.shown;
-      target = vignetteLevel(s.yawRate, s.accel, Math.abs(s.pitchRate) + Math.abs(s.rollRate), s.speed) * VIGNETTE_STRENGTH;
+      // The gunner's view turns with the turret too.
+      const turn = s.yawRate + (seating.mine === 'gunner' ? seating.turretRate : 0);
+      target = vignetteLevel(turn, s.accel, Math.abs(s.pitchRate) + Math.abs(s.rollRate), s.speed) * VIGNETTE_STRENGTH;
     }
     alpha.value += (target - alpha.value) * Math.min(1, dt * 6);
     this.vignette.visible = alpha.value > 0.002;

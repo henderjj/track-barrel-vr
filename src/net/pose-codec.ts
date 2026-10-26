@@ -24,6 +24,8 @@ export const PacketType = {
   TankState: 5,
   /** The driver's tillers, gear lever and hand throttle, from a guest driver to the host (F1.4, src/net/tank-codec.ts). */
   DriverControls: 6,
+  /** The turret's turn, the gun's elevation and the gunner's controls, from the gunner's page (F1.8, src/net/turret-codec.ts). */
+  TurretState: 7,
 } as const;
 
 /** One tracked pose: position (m) and rotation quaternion. */

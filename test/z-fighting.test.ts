@@ -1,4 +1,4 @@
-import { type BufferGeometry, Mesh, MeshLambertMaterial, type Object3D, type Vector3 } from '@iwsdk/core';
+import { type BufferGeometry, Group, Mesh, MeshLambertMaterial, type Object3D, type Vector3 } from '@iwsdk/core';
 import { describe, expect, it } from 'vitest';
 import * as avatar from '../src/scene-assets/avatar.scene-asset.js';
 import * as cabin from '../src/scene-assets/cabin.scene-asset.js';
@@ -13,6 +13,16 @@ import { createTerrain } from '../src/scene-assets/terrain.scene-asset.js';
 import { GROUND_Y } from '../src/sim/cabin.js';
 import { TURRET } from '../src/sim/cabin.js';
 import { SIGHT_STAND } from '../src/sim/sight.js';
+import {
+  ELEVATION_WHEEL,
+  MAX_ELEVATION,
+  MIN_ELEVATION,
+  POWER_GRIP,
+  STATION,
+  STATION_CONTROLS,
+  TRAVERSE_CRANK,
+  TRUNNION,
+} from '../src/sim/turret.js';
 import * as leverRig from '../src/scene-assets/lever-rig.scene-asset.js';
 import * as mechanism from '../src/scene-assets/mechanism.scene-asset.js';
 import * as bench from '../src/sim/mechanism-bench.js';
@@ -44,6 +54,38 @@ function expectNone(objects: Object3D[], gap: number, ignore?: (at: Vector3, n: 
   expect(found.length, `faces sharing a plane:\n${describeOverlaps(found)}`).toBe(0);
 }
 
+/**
+ * The turret turned `yaw`, with its gun elevated `elevation` and the
+ * gunner's controls on their mounts, the wheels turned `turn` and the grip
+ * twisted to match (F1.8), as TurretSystem draws them.
+ */
+function turretWith(yaw: number, elevation: number, turn: number): Object3D {
+  const turret = cabin.createTurret();
+  turret.position.set(0, 0, TURRET.z);
+  turret.rotation.y = yaw;
+  const gun = cabin.createGun();
+  gun.position.set(0, TRUNNION.y, TRUNNION.z);
+  gun.rotation.x = elevation;
+  turret.add(gun);
+  const parts = {
+    elevation: mechanism.createWheel(ELEVATION_WHEEL),
+    crank: mechanism.createWheel(TRAVERSE_CRANK),
+    twist: mechanism.createTwistGrip(POWER_GRIP),
+  };
+  for (const key of STATION_CONTROLS) {
+    const mount = new Group();
+    mount.position.set(...STATION[key].at);
+    mount.rotation.x = STATION[key].tilt;
+    const part = parts[key];
+    if (key === 'twist') part.rotation.y = Math.max(-POWER_GRIP.max, Math.min(POWER_GRIP.max, turn / 3));
+    else part.rotation.z = turn;
+    mount.add(part);
+    turret.add(mount);
+  }
+  turret.updateMatrixWorld(true);
+  return turret;
+}
+
 describe('no faces that flicker through each other (z-fighting)', () => {
   // Add every new model here: static scenery with what stands on it, and
   // each moving part in each of the poses it is drawn in.
@@ -51,11 +93,14 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     const hull = cabin.createHull();
     expectNone([hull], CABIN_GAP);
     for (const yaw of [0, Math.PI / 4, Math.PI / 2, Math.PI, -Math.PI / 3]) {
-      const turret = cabin.createTurret();
-      turret.position.set(0, 0, TURRET.z);
-      turret.rotation.y = yaw;
-      turret.updateMatrixWorld(true);
-      expectNone([hull, turret], CABIN_GAP);
+      expectNone([hull, turretWith(yaw, 0, 0)], CABIN_GAP);
+    }
+  });
+
+  it("in the turret: the gun at each end of its elevation, and the gunner's controls turned (F1.8)", () => {
+    const hull = cabin.createHull();
+    for (const [elevation, turn] of [[MIN_ELEVATION, 0], [MAX_ELEVATION, 1.3], [0.05, -2.2], [-0.1, Math.PI]]) {
+      expectNone([hull, turretWith(0.3, elevation, turn)], CABIN_GAP);
     }
   });
 
@@ -84,8 +129,7 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     const stand = sight.createSightStand();
     stand.position.set(SIGHT_STAND.x, 0, SIGHT_STAND.z);
     const lens = mesh(sight.createSightLensGeometry(), 'Sight Lens');
-    const turret = cabin.createTurret();
-    turret.position.set(0, 0, TURRET.z);
+    const turret = turretWith(0, 0, 0);
     for (const [pitch, yaw] of [[0, 0], [0.02, 0.05]]) {
       const body = sight.createSightBody();
       body.position.set(0, SIGHT_STAND.lensHeight, 0);

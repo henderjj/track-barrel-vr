@@ -17,7 +17,7 @@ import {
   createSightLensGeometry,
   createSightStand,
 } from '../scene-assets/sight.scene-asset.js';
-import { turnAboutHead } from '../sim/cabin.js';
+import { TURRET, turnAboutHead } from '../sim/cabin.js';
 import { RANGE_TARGETS, targetFoot, targetMiddle } from '../sim/range.js';
 import {
   DRAW_MODES,
@@ -175,9 +175,12 @@ export class SightSystem extends createSystem({}) {
       if (active === this) active = null;
     });
 
+    // It hangs from the turret's roof and turns with the turret (F1.8), until F1.9 puts the gunsight on the gun.
     const stand = createSightStand();
-    stand.position.set(SIGHT_STAND.x, 0, SIGHT_STAND.z);
-    const standEntity = this.world.createTransformEntity(stand);
+    const turret = this.world.getSceneEntity('turret');
+    if (turret) stand.position.set(SIGHT_STAND.x, 0, SIGHT_STAND.z - TURRET.z);
+    else stand.position.set(SIGHT_STAND.x, 0, SIGHT_STAND.z);
+    const standEntity = this.world.createTransformEntity(stand, turret ? { parent: turret } : undefined);
     this.pivot = createSightBody();
     this.pivot.position.set(0, SIGHT_STAND.lensHeight, 0);
     this.pivot.rotation.order = 'YXZ';
@@ -328,13 +331,13 @@ export class SightSystem extends createSystem({}) {
     player.head.getWorldQuaternion(this.headQuat);
     this.forward.set(0, 0, -1).applyQuaternion(this.headQuat);
     const headYaw = Math.atan2(-this.forward.x, -this.forward.z);
-    const turn = this.pivot.rotation.y - headYaw;
+    const turn = this.pivot.rotation.y + seating.turretYaw - headYaw;
     turnAboutHead(player.position.x, player.position.z, this.head.x, this.head.z, turn, this.turned);
     player.rotateY(turn);
     player.position.x = this.turned[0];
     player.position.z = this.turned[1];
     this.lens.getWorldPosition(this.lensAt);
-    const yaw = this.pivot.rotation.y;
+    const yaw = this.pivot.rotation.y + seating.turretYaw;
     player.position.x += this.lensAt.x + Math.sin(yaw) * APPROACH - this.head.x;
     player.position.z += this.lensAt.z + Math.cos(yaw) * APPROACH - this.head.z;
     console.info('[Sight] player moved to the eyepiece');
@@ -347,7 +350,8 @@ export class SightSystem extends createSystem({}) {
       this.pivot.rotation.set(0, 0, 0);
     } else {
       // The targets stand in the world, so an aim is only laid on one with
-      // the tank parked at its start; the gunsight (F1.9) lays the gun on
+      // the tank parked at its start and the turret facing forward; the
+      // gunsight (F1.9) lays the gun on
       // whatever the turret is pointed at, wherever the tank stands.
       const [x, z] = targetFoot(i);
       layOnMark([SIGHT_STAND.x, SIGHT_STAND.lensHeight, SIGHT_STAND.z], [x, targetMiddle(i), z], RANGE_TARGETS[i].range, this.aimOut);
