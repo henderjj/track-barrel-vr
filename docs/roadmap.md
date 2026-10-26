@@ -40,7 +40,7 @@ Every feature of the game, by phase, with where it stands. The approach behind e
 | F0.2 | Rename the template to Track & Barrel VR | Building | | #2 | `package.json` name, page title, `coop-vr.` storage keys, README, lobby Worker name |
 | F0.3 | Spike S1: magnified sight render on Quest 3 | Planned | F0.2 | | Second camera into a 512² texture; measure frame time on Quest 3 and over Link |
 | F0.4 | Spike S2: riding the tank | Planned | F0.2 | | World moves round the hull; gunner's space turns with the turret; comfort with and without the vignette |
-| F0.5 | Spike S3: lever feel | Building | F0.2 | | Two test tillers and a lane board (Practice > Lever test); headset check in [spikes/s3-lever-feel.md](spikes/s3-lever-feel.md) |
+| F0.5 | Spike S3: lever feel | Headset check | F0.2 | #4 | Two test tillers and a lane board (Practice > Lever test); headset check in [spikes/s3-lever-feel.md](spikes/s3-lever-feel.md) |
 | F0.6 | Spike S4: loading a shell | Planned | F0.2 | | Grab, swing, ram, close, seated; time and fumbles |
 
 ## Phase 1: Core controls prototype
