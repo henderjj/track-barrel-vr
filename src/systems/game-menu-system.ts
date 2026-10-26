@@ -6,9 +6,11 @@ import { CREW_COLORS } from '../scene-assets/avatar.scene-asset.js';
 import { settings } from '../settings.js';
 import { EYE_RAISE_STEP, MAX_EYE_RAISE } from '../sim/body-height.js';
 import { otherSeat, parseSeat, SEAT_IDS, SEATS } from '../sim/cabin.js';
+import { GEARS, type Gear } from '../sim/tank-drive.js';
 import { body, chooseBody } from './body-height-system.js';
 import { OPEN_MENU_EVENT } from './net-system.js';
 import { PanelUi } from './panel-ui.js';
+import { drive, driveStatus, resetTank, setGear, startDriving } from './drive-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
 import { seating } from './seating.js';
 import { SIGHT_BUTTONS } from './sight-system.js';
@@ -75,6 +77,26 @@ const CHOICE_ROWS: readonly ChoiceRow[] = [
     ],
     current: () => yesNo(body.choice.seated),
     choose: (value) => chooseBody({ raise: body.choice.raise, seated: value === '1' }),
+  },
+  // The drive (docs/tank-drive.md): the gear lever until the driver's station has one (F1.5), and the comfort vignette.
+  {
+    id: 'gear',
+    label: 'Gear lever',
+    options: GEARS.map((gear, i) => [`${i}`, gear.name] as const),
+    current: () => `${drive.gear}`,
+    choose: (value) => setGear(Number(value) as Gear),
+  },
+  {
+    id: 'drive-vignette',
+    label: 'Vignette',
+    options: [
+      ['1', 'On'],
+      ['0', 'Off'],
+    ],
+    current: () => yesNo(drive.vignette),
+    choose: (value) => {
+      drive.vignette = value === '1';
+    },
   },
   // Spike S2's options, shown only while riding (docs/spikes/s2-riding.md).
   {
@@ -175,8 +197,11 @@ interface GameMenuDebug {
  *   (in a crew, once the crewmate agrees) and calibrate again;
  * - Sound and view: the settings that apply straight away (LIVE_ITEMS,
  *   src/live-settings.ts), kept in this browser;
+ * - Driving (not while riding): who drives and how fast, the gear lever
+ *   (until the driver's station, F1.5) and the comfort vignette;
  * - Riding (only while riding the tank, spike S2): the ride's options;
- * - Practice: shortcuts straight to a situation to test (sit in either seat);
+ * - Practice: shortcuts straight to a situation to test (sit in either
+ *   seat, drive the tank or put it back at its start);
  * - Back to start screen (leaves any crew) and Exit VR.
  */
 export class GameMenuSystem extends createSystem({}) {
@@ -243,6 +268,15 @@ export class GameMenuSystem extends createSystem({}) {
       this.setOpen(false);
       stopRide();
       seating.reseat();
+    });
+    ui.on('menu-drive-go', () => {
+      this.setOpen(false);
+      stopRide();
+      startDriving();
+    });
+    ui.on('menu-drive-reset', () => {
+      resetTank();
+      this.render();
     });
     ui.on('menu-swap', () => {
       // Alone, straight into the other seat; in a crew, an ask (or the answer to theirs).
@@ -353,10 +387,11 @@ export class GameMenuSystem extends createSystem({}) {
       this.shownReach = body.reach;
       this.render();
     }
-    if (this.open && ride.active && time > this.statusAt) {
-      // The ride's clock and speed tick on while the menu is open.
+    if (this.open && time > this.statusAt) {
+      // The ride's clock and the tank's speed tick on while the menu is open.
       this.statusAt = time + 0.5;
-      this.ui?.setText('menu-ride-status', rideStatus());
+      if (ride.active) this.ui?.setText('menu-ride-status', rideStatus());
+      else this.ui?.setText('menu-drive-status', driveStatus());
     }
     const left = this.input.xr.gamepads.left;
     if (left && (left.getButtonDown(InputComponent.Y_Button) || left.getButtonDown(InputComponent.Menu))) {
@@ -406,6 +441,8 @@ export class GameMenuSystem extends createSystem({}) {
       });
     }
     CREW_COLORS.forEach((_, i) => this.select(`coat-${i}`, i === c.color));
+    ui.show('menu-drive', !ride.active);
+    ui.setText('menu-drive-status', driveStatus());
     ui.show('menu-ride', ride.active);
     ui.show('menu-ride-stop', ride.active);
     ui.setText('menu-ride-status', rideStatus());

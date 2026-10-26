@@ -1,0 +1,473 @@
+import {
+  createSystem,
+  type CylinderGeometry,
+  Euler,
+  InputComponent,
+  Matrix4,
+  type Mesh,
+  type Object3D,
+  Quaternion,
+  type ShaderMaterial,
+  Vector3,
+  VisibilityState,
+} from '@iwsdk/core';
+import { crewPresence } from '../net/crew-presence.js';
+import { PacketType, seqNewer } from '../net/pose-codec.js';
+import { TankBuffer } from '../net/tank-buffer.js';
+import {
+  decodeDriverControls,
+  decodeTankState,
+  DRIVER_CONTROLS_BYTES,
+  encodeDriverControls,
+  encodeTankState,
+  TANK_STATE_BYTES,
+  type TankHeader,
+} from '../net/tank-codec.js';
+import { settings } from '../settings.js';
+import { vignetteLevel } from '../sim/comfort.js';
+import {
+  angleDelta,
+  copyTankDrive,
+  createControls,
+  createTankDrive,
+  type DriverControls,
+  type Gear,
+  GEARS,
+  keyControls,
+  kmh,
+  settle,
+  stepDrive,
+  type TankDrive,
+  twinStickControls,
+} from '../sim/tank-drive.js';
+import { wrapTile } from '../sim/terrain.js';
+import { createVignette } from './comfort-vignette.js';
+import { drawSignBackground, FloatingSign } from './floating-sign.js';
+import { bufferDelayMs, netLink } from './net-system.js';
+import { ride } from './ride-system.js';
+import { seating } from './seating.js';
+
+/** The drive's options and the driver's gear lever, for the menu and the tests. */
+export const drive = {
+  /** Where the gear lever is (until the driver's station has a real one, F1.5): the menu and keys 0, 1, 2 move it. */
+  gear: 1 as Gear,
+  /** The comfort vignette, on by default (F1.14 makes it a setting of its own). */
+  vignette: true,
+};
+
+const SEND_HZ = 45;
+/** Longest step the simulation takes in one go, s; a slow frame takes several. */
+const MAX_STEP = 1 / 60;
+/** A guest driver's controls older than this are treated as let go, ms. */
+const CONTROLS_STALE_MS = 500;
+/** How dark the vignette gets at its strongest (as spike S2's). */
+const VIGNETTE_STRENGTH = 0.5;
+/** How long a sign stays up, s. */
+const SIGN_SECONDS = 6;
+
+let active: DriveSystem | null = null;
+
+/** Practice → Drive: into the driver's seat, with a sign saying how to drive. */
+export function startDriving(): void {
+  seating.ask('driver');
+  active?.sayHowToDrive();
+}
+
+/** Practice → Back to start: the tank parked where it began (the host does it; a guest asks). */
+export function resetTank(): void {
+  active?.reset();
+}
+
+/** Move the gear lever (the menu, keys 0, 1 and 2). */
+export function setGear(gear: Gear): void {
+  drive.gear = gear;
+}
+
+/** One line on the tank for the menu: who drives, speed, gear, RPM. */
+export function driveStatus(): string {
+  const s = active?.shown;
+  if (s == null) return '';
+  const who = seating.mine === 'driver' ? 'You drive' : netLink.connected && seating.crew === 'driver' ? 'Your crewmate drives' : 'Nobody drives';
+  const gear = s.grinding ? 'grinding' : `${GEARS[s.gear].name.toLowerCase()} gear`;
+  return `${who}: ${kmh(s)} km/h${s.speed < -0.05 ? ' backwards' : ''}, ${gear}, ${Math.round(s.rpm / 10) * 10} rpm`;
+}
+
+interface DriveDebug {
+  /** The tank as drawn on this page (the host's simulation, or the guest's copy of it). */
+  state(): TankDrive;
+  /** The controls the tank is driven by on the host, or this page's own on a guest driver. */
+  controls(): DriverControls;
+  /** Who drives, as this page sees it. */
+  driver(): 'me' | 'crew' | 'nobody';
+  /** Drive as if from the sticks (tests): tillers and lever, or null to go back to the real ones. */
+  set(controls: Partial<DriverControls> | null): void;
+  reset(): void;
+  /** Host only: put the tank at rest at (x, z) facing `heading` (tests and Practice). */
+  place(x: number, z: number, heading: number): void;
+  /** Where a world-space point is drawn, in hull space. */
+  drawnAt(x: number, y: number, z: number): number[];
+  readonly vignetteAlpha: number;
+  readonly sightRangeShown: boolean;
+  readonly sign: string;
+  /** Tank packets sent and received. */
+  readonly sent: number;
+  readonly received: number;
+  readonly lateFrames: number;
+}
+
+/**
+ * The tank's drive (F1.4, docs/tank-drive.md). The tank stays at the
+ * origin and the ground moves round it by the inverse of the tank's pose
+ * (plan decision 4), so the cabin, the crew and everything aboard stay
+ * still relative to each other however the tank moves.
+ *
+ * The host runs the simulation (src/sim/tank-drive.ts) whichever seat it
+ * sits in, and sends the tank's state 45 times a second (PacketType 5).
+ * Whoever sits in the driver's seat drives: the host from its own
+ * controls, a guest by sending its controls 45 times a second (PacketType
+ * 6). A guest draws the tank from the host's states a little in the past
+ * (TankBuffer). With nobody in the driver's seat, or while the crew is on
+ * hold (crewPresence.paused, with its sign), the tillers count as let go
+ * and the tank rolls to a stop.
+ *
+ * Until the driver's station (F1.5) the tillers are the thumbsticks (each
+ * stick's forward push drives its own track) or W A S D on the flat page,
+ * and the gear lever is in the menu (keys 0, 1, 2). A comfort vignette
+ * darkens the edge of view with the tank's motion. Spike S2's ride takes
+ * over while it runs.
+ */
+export class DriveSystem extends createSystem({}) {
+  /** The host's simulation. */
+  private sim = createTankDrive();
+  /** What is drawn: the simulation on the host, the host's states on a guest. */
+  readonly shown = createTankDrive();
+  private controls = createControls();
+  private remoteControls = createControls();
+  private remoteAt = Number.NEGATIVE_INFINITY;
+  private remoteSeq = -1;
+  private override: Partial<DriverControls> | null = null;
+  private buffer = new TankBuffer();
+  private incoming = createTankDrive();
+  private header: TankHeader = { seq: 0, timeMs: 0 };
+  private stateBuffer = new ArrayBuffer(TANK_STATE_BYTES);
+  private controlsBuffer = new ArrayBuffer(DRIVER_CONTROLS_BYTES);
+  private seq = 0;
+  private sendAccumulator = 0;
+  private sent = 0;
+  private received = 0;
+  private wasHost = true;
+  private ground: Object3D | null = null;
+  private sightRange: Object3D | null = null;
+  private lookedForSightRange = 0;
+  private vignette!: Mesh<CylinderGeometry, ShaderMaterial>;
+  private sign!: FloatingSign;
+  private signText = '';
+  private signUntil = 0;
+  private time = 0;
+  private wasGrinding = false;
+  private keys = new Set<string>();
+  private matrix = new Matrix4();
+  private euler = new Euler(0, 0, 0, 'YXZ');
+  private quat = new Quaternion();
+  private pos = new Vector3();
+  private one = new Vector3(1, 1, 1);
+
+  init(): void {
+    active = this;
+    this.ground = this.world.getSceneEntity('ground')?.object3D ?? null;
+    if (this.ground == null) console.warn('[Drive] no ground in the scene');
+    else if (!settings.ground) this.ground.visible = false;
+    this.vignette = createVignette();
+    this.vignette.visible = false;
+    this.camera.add(this.vignette);
+    this.sign = new FloatingSign('Drive Sign', 0.7, [512, 160], 1.1, 0.25);
+    this.world.createTransformEntity(this.sign.mesh);
+
+    netLink.handlers.set(PacketType.TankState, (view) => this.onTankState(view));
+    netLink.handlers.set(PacketType.DriverControls, (view) => this.onDriverControls(view));
+    netLink.events.set('drive-reset', () => {
+      if (netLink.isHost) this.reset();
+    });
+
+    const typing = (event: KeyboardEvent) => (event.target as Element | null)?.closest?.('input, textarea, select') != null;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (typing(event) || this.world.visibilityState.peek() !== VisibilityState.NonImmersive) return;
+      const key = event.key.toLowerCase();
+      if (key === '0' || key === '1' || key === '2') setGear(Number(key) as Gear);
+      else this.keys.add(key);
+    };
+    const onKeyUp = (event: KeyboardEvent) => this.keys.delete(event.key.toLowerCase());
+    const onBlur = () => this.keys.clear();
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    this.cleanupFuncs.push(
+      () => {
+        if (active === this) active = null;
+        this.vignette.removeFromParent();
+        this.vignette.geometry.dispose();
+        this.vignette.material.dispose();
+      },
+      () => netLink.handlers.delete(PacketType.TankState),
+      () => netLink.handlers.delete(PacketType.DriverControls),
+      () => netLink.events.delete('drive-reset'),
+      () => window.removeEventListener('keydown', onKeyDown),
+      () => window.removeEventListener('keyup', onKeyUp),
+      () => window.removeEventListener('blur', onBlur),
+    );
+
+    const self = this;
+    (window as unknown as { __drive: DriveDebug }).__drive = {
+      state: () => ({ ...self.shown }),
+      controls: () => ({ ...self.controls }),
+      driver: () => self.driver(),
+      set: (controls) => {
+        self.override = controls === null ? null : { ...controls };
+        if (controls?.gear !== undefined) drive.gear = controls.gear;
+      },
+      reset: () => self.reset(),
+      place: (x, z, heading) => {
+        if (!netLink.isHost) return;
+        Object.assign(self.sim, createTankDrive(x, z, heading), { gear: self.sim.gear });
+        settle(self.sim);
+        copyTankDrive(self.sim, self.shown);
+      },
+      drawnAt: (x, y, z) => (self.ground ? self.ground.localToWorld(new Vector3(x, y, z)).toArray() : []),
+      get vignetteAlpha() { return self.vignette.material.uniforms.uAlpha.value as number; },
+      get sightRangeShown() { return self.sightRange?.visible ?? false; },
+      get sign() { return self.sign.visible ? self.signText : ''; },
+      get sent() { return self.sent; },
+      get received() { return self.received; },
+      get lateFrames() { return self.buffer.late; },
+    };
+  }
+
+  /** Who sits in the driver's seat, as this page sees it. */
+  private driver(): 'me' | 'crew' | 'nobody' {
+    if (seating.mine === 'driver') return 'me';
+    return netLink.connected && seating.crew === 'driver' ? 'crew' : 'nobody';
+  }
+
+  reset(): void {
+    if (!netLink.isHost) {
+      netLink.sendEvent({ t: 'drive-reset' });
+      return;
+    }
+    const gear = this.sim.gear;
+    Object.assign(this.sim, createTankDrive(), { gear });
+    copyTankDrive(this.sim, this.shown);
+    console.info('[Drive] back at the start');
+  }
+
+  sayHowToDrive(): void {
+    const vr = this.world.visibilityState.peek() !== VisibilityState.NonImmersive;
+    this.say('Driving', vr ? 'Sticks forward: tracks. Gear: menu (Y)' : 'W A S D to drive, 0 1 2: gear');
+  }
+
+  update(delta: number): void {
+    const dt = Math.min(delta, 0.25);
+    this.time += dt;
+    const isHost = netLink.isHost;
+    if (isHost && !this.wasHost) {
+      // The host left and this page took over: carry on from the tank as drawn.
+      copyTankDrive(this.shown, this.sim);
+      this.buffer.clear();
+      console.info('[Drive] running the tank now');
+    } else if (!isHost && this.wasHost) {
+      this.buffer.clear();
+      this.remoteSeq = -1;
+    }
+    this.wasHost = isHost;
+
+    this.readLocalControls();
+    if (isHost) {
+      this.runHost(dt);
+    } else {
+      this.followHost();
+    }
+    this.send(delta);
+
+    // Spike S2's ride moves its own world and hides this one.
+    if (ride.active) {
+      this.vignette.visible = false;
+      return;
+    }
+    this.placeGround();
+    this.showSightRange();
+    this.shade(dt);
+    this.signs(delta);
+  }
+
+  /** This page's own controls: the sticks in VR, keys on the flat page, or a test's. */
+  private readLocalControls(): void {
+    const c = this.controls;
+    c.gear = drive.gear;
+    c.left = 0;
+    c.right = 0;
+    // Spike S2's ride has the sticks while it runs.
+    if (seating.mine !== 'driver' || ride.active) return;
+    if (this.world.visibilityState.peek() !== VisibilityState.NonImmersive) {
+      const left = this.input.xr.gamepads.left?.getAxesValues(InputComponent.Thumbstick);
+      const right = this.input.xr.gamepads.right?.getAxesValues(InputComponent.Thumbstick);
+      twinStickControls(left?.y ?? 0, right?.y ?? 0, c);
+    } else if (this.keys.size > 0) {
+      const k = this.keys;
+      const forward = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0);
+      const turn = (k.has('a') || k.has('arrowleft') ? 1 : 0) - (k.has('d') || k.has('arrowright') ? 1 : 0);
+      keyControls(forward, turn, c);
+    }
+    const o = this.override;
+    if (o) {
+      c.left = o.left ?? c.left;
+      c.right = o.right ?? c.right;
+      c.throttle = o.throttle ?? c.throttle;
+    }
+  }
+
+  /** The host: drive the tank from whoever sits in the driver's seat. */
+  private runHost(dt: number): void {
+    let source = this.controls;
+    const driver = this.driver();
+    if (driver === 'crew') {
+      source = this.remoteControls;
+      if (performance.now() - this.remoteAt > CONTROLS_STALE_MS) {
+        source.left = 0;
+        source.right = 0;
+      }
+    } else if (driver === 'nobody') {
+      // An empty seat: tillers let go, the lever where it was left.
+      source.left = 0;
+      source.right = 0;
+      source.gear = this.sim.gear;
+    }
+    if (crewPresence.paused) {
+      // The crew is on hold (its sign says why): the tank rolls to a stop.
+      source.left = 0;
+      source.right = 0;
+    }
+    for (let left = dt; left > 1e-6; left -= MAX_STEP) {
+      stepDrive(this.sim, source, Math.min(left, MAX_STEP));
+    }
+    if (driver === 'crew') {
+      this.controls.left = source.left;
+      this.controls.right = source.right;
+      this.controls.gear = source.gear;
+      this.controls.throttle = source.throttle;
+    }
+    copyTankDrive(this.sim, this.shown);
+  }
+
+  /** A guest: draw the host's tank a little in the past. */
+  private followHost(): void {
+    const b = this.buffer;
+    if (b.count === 0) return;
+    const delay = Math.max(0, b.transit) + bufferDelayMs(b.interval, b.jitter);
+    const heading = this.shown.heading;
+    b.sample(performance.now() - delay, this.shown);
+    // Keep the drawn heading continuous (the packets carry it within one turn).
+    this.shown.heading = heading + angleDelta(heading, this.shown.heading);
+  }
+
+  /** 45 times a second: the host sends the tank; a guest driver sends its controls. */
+  private send(delta: number): void {
+    if (!netLink.connected) return;
+    this.sendAccumulator += delta;
+    if (this.sendAccumulator < 1 / SEND_HZ) return;
+    this.sendAccumulator = Math.min(this.sendAccumulator - 1 / SEND_HZ, 1 / SEND_HZ);
+    const now = performance.now();
+    if (netLink.isHost) {
+      netLink.send(this.stateBuffer, encodeTankState(this.stateBuffer, this.seq, now, this.sim));
+    } else if (seating.mine === 'driver') {
+      netLink.send(this.controlsBuffer, encodeDriverControls(this.controlsBuffer, this.seq, now, this.controls));
+    } else {
+      return;
+    }
+    this.seq = (this.seq + 1) & 0xffff;
+    this.sent++;
+  }
+
+  private onTankState(view: DataView): void {
+    if (netLink.isHost || !decodeTankState(view, this.header, this.incoming)) return;
+    this.received++;
+    // Until the clocks are matched, a packet's time can't be placed.
+    if (!netLink.clockSynced) return;
+    this.buffer.push(netLink.toLocal(this.header.timeMs), performance.now(), this.incoming);
+  }
+
+  private onDriverControls(view: DataView): void {
+    if (!netLink.isHost || !decodeDriverControls(view, this.header, this.remoteControls)) return;
+    this.received++;
+    if (this.remoteSeq >= 0 && !seqNewer(this.header.seq, this.remoteSeq)) return;
+    this.remoteSeq = this.header.seq;
+    this.remoteAt = performance.now();
+  }
+
+  /** The ground goes where the tank's inverse pose puts it, less whole tiles. */
+  private placeGround(): void {
+    const ground = this.ground;
+    if (ground == null) return;
+    const s = this.shown;
+    this.euler.set(s.pitch, s.heading, s.roll, 'YXZ');
+    this.quat.setFromEuler(this.euler);
+    this.pos.set(wrapTile(s.x), s.y, wrapTile(s.z));
+    this.matrix.compose(this.pos, this.quat, this.one).invert();
+    this.matrix.decompose(ground.position, ground.quaternion, ground.scale);
+  }
+
+  /**
+   * Spike S1's range stands in hull space, so it rides with the tank: show
+   * it only while the tank is parked at its start, where it stands on the
+   * ground's lane.
+   */
+  private showSightRange(): void {
+    if (this.sightRange == null) {
+      if (this.time < this.lookedForSightRange) return;
+      this.lookedForSightRange = this.time + 1;
+      this.sightRange = this.scene.getObjectByName('Sight Range') ?? null;
+      if (this.sightRange == null) return;
+    }
+    const s = this.shown;
+    const atStart = Math.hypot(s.x, s.z) < 0.5 && Math.abs(angleDelta(0, s.heading)) < 0.01;
+    if (this.sightRange.visible !== atStart) this.sightRange.visible = atStart;
+  }
+
+  /** The vignette follows what the eyes see turn, speed up and tilt. */
+  private shade(dt: number): void {
+    const alpha = this.vignette.material.uniforms.uAlpha;
+    let target = 0;
+    if (drive.vignette && this.world.session != null) {
+      const s = this.shown;
+      target = vignetteLevel(s.yawRate, s.accel, Math.abs(s.pitchRate) + Math.abs(s.rollRate), s.speed) * VIGNETTE_STRENGTH;
+    }
+    alpha.value += (target - alpha.value) * Math.min(1, dt * 6);
+    this.vignette.visible = alpha.value > 0.002;
+  }
+
+  private signs(delta: number): void {
+    const grinding = this.shown.grinding;
+    if (grinding && !this.wasGrinding && seating.mine === 'driver') {
+      this.say('Gears grinding', 'Centre both tillers to change gear');
+    }
+    this.wasGrinding = grinding;
+    if (this.sign.visible) {
+      if (this.time > this.signUntil) this.sign.setVisible(false);
+      else this.sign.follow(this.world.visibilityState.peek() !== VisibilityState.NonImmersive ? this.player.head : this.camera, delta);
+    }
+  }
+
+  private say(title: string, line: string): void {
+    const { ctx, width, height } = this.sign;
+    drawSignBackground(ctx, width, height);
+    ctx.fillStyle = '#f4ead8';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 44px sans-serif';
+    ctx.fillText(title, width / 2, 68);
+    ctx.font = '30px sans-serif';
+    ctx.fillText(line, width / 2, 120);
+    this.sign.refresh();
+    this.sign.setVisible(true);
+    this.signText = `${title}. ${line}`;
+    this.signUntil = this.time + SIGN_SECONDS;
+    console.info(`[Drive] sign: ${this.signText}`);
+  }
+}

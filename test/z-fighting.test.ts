@@ -6,6 +6,8 @@ import * as ride from '../src/scene-assets/ride.scene-asset.js';
 import * as loading from '../src/scene-assets/loading-drill.scene-asset.js';
 import { BREECH_MOUTH, LEVER_CLOSED, LEVER_PIVOT, RACK_SLOTS, SHELL_LENGTH } from '../src/sim/loading.js';
 import * as sight from '../src/scene-assets/sight.scene-asset.js';
+import { createTerrain } from '../src/scene-assets/terrain.scene-asset.js';
+import { GROUND_Y } from '../src/sim/cabin.js';
 import { TURRET } from '../src/sim/cabin.js';
 import { SIGHT_STAND } from '../src/sim/sight.js';
 import * as leverRig from '../src/scene-assets/lever-rig.scene-asset.js';
@@ -54,8 +56,16 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
-  it('on the ground', () => {
-    expectNone([cabin.createGround(), cabin.createHull()], WORLD_GAP);
+  /** The drive's ground (F1.4) where the scene puts it, under the hull parked at the start. */
+  const ground = () => {
+    const terrain = createTerrain();
+    terrain.position.y = GROUND_Y;
+    terrain.updateMatrixWorld(true);
+    return terrain;
+  };
+
+  it('on the ground, with its rocks, walls and houses, and the tank parked on it', () => {
+    expectNone([ground(), cabin.createHull()], WORLD_GAP);
   });
 
   it("on spike S1's sight, hanging in the turret and aimed, and its range", () => {
@@ -74,8 +84,8 @@ describe('no faces that flicker through each other (z-fighting)', () => {
       stand.remove(body);
     }
     expectNone([sight.createSightRange()], WORLD_GAP);
-    // The range's plain overlaps the tank's ground.
-    expectNone([cabin.createGround(), sight.createSightRange()], WORLD_GAP);
+    // Its targets stand on the drive's ground with the tank at the start.
+    expectNone([ground(), sight.createSightRange()], WORLD_GAP);
   });
 
   it('on the loading station (spike S4) and its platform, with its shells in the rack and the breech open and closed', () => {

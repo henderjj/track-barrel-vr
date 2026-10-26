@@ -17,6 +17,9 @@
  *   gunner's; asking for the other seat asks the crewmate, and both swap
  *   once they agree (F1.2), decided by the host, and each draws the crewmate's legs in the crewmate's seat, on
  *   a clean link and at 150 ms RTT;
+ * - the tank drive (F1.4): a guest driver drives the host's tank, both see
+ *   it move and stop the same, and the host driving shows on the guest, on
+ *   a clean link and at 150 ms RTT;
  * - the crew lifecycle (spike S10): stepping away, going quiet and a broken
  *   connection;
  * - the practice crewmate sits in the seat the player leaves free.
@@ -35,7 +38,9 @@ const LOBBY_PORT = 8787;
 const PREVIEW_PORT = 4173;
 // The IWSDK Vite plugin serves HTTPS with a local development certificate.
 const BASE = `https://localhost:${PREVIEW_PORT}/`;
-const QUIET = 'hud=0';
+// No perf HUD, and no ground: software rendering of the drive's ground
+// halves the frame rate the motion checks sample (docs/testing.md).
+const QUIET = 'hud=0&ground=0';
 
 const results = [];
 function check(name, pass, detail) {
@@ -97,7 +102,7 @@ async function openPlayer(browser, query, initScript) {
   const errors = [];
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
-    if (/^\[(Net|Seat|Bot)\]/.test(m.text())) console.log(`    ${m.text()}`);
+    if (/^\[(Net|Seat|Bot|Drive)\]/.test(m.text())) console.log(`    ${m.text()}`);
   });
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`${BASE}?${QUIET}&${query}`);
@@ -263,6 +268,84 @@ async function seatChecks(host, guest, label, hostSeat = 'driver') {
   const back = await seated(hostSeat, other[hostSeat]);
   check(`The host asking to swap back waits for the guest, who agrees, and both swap back (${label})`, asked !== null && back !== null,
     JSON.stringify(back ?? asked ?? await seats()));
+}
+
+/**
+ * The tank drive (F1.4): the host runs the tank whichever seat it sits in.
+ * The guest takes the driver's seat (the host agreeing to the swap) and drives with both tillers forwards;
+ * the host's tank pulls away and the guest draws it moving smoothly close
+ * behind; let go, both see it stop at the same spot; the guest's Back to
+ * start parks it. Then the host drives and the guest sees it move. Seats
+ * go back as they were. `host` drives first from the driver's seat.
+ */
+async function driveChecks(host, guest, label) {
+  const tank = (p) => p.page.evaluate(() => window.__drive.state());
+  // The host's word on the seats first (a fresh crew): the host drives, the guest gunner.
+  await waitFor('the host in the driver\'s seat', async () => (await host.page.evaluate(() => window.__drive.driver())) === 'me'
+    && (await guest.page.evaluate(() => window.__drive.driver())) === 'crew', 8000);
+  // A swap needs both (F1.2): the guest asks, the host agrees.
+  await guest.page.evaluate(() => window.__gameMenu.click('row-seat-0'));
+  await waitFor('the host to hear the ask', async () => (await host.page.evaluate(() => window.__seats.swap)) === 'offered', 8000);
+  await host.page.evaluate(() => window.__gameMenu.click('menu-swap'));
+  await waitFor('the guest in the driver\'s seat', async () => (await guest.page.evaluate(() => window.__drive.driver())) === 'me'
+    && (await host.page.evaluate(() => window.__drive.driver())) === 'crew', 8000);
+  await host.page.evaluate(() => window.__drive.reset());
+  await guest.page.evaluate(() => window.__drive.set({ left: 1, right: 1 }));
+  const going = await waitFor('the host\'s tank to pull away', async () => {
+    const [h, g] = await Promise.all([tank(host), tank(guest)]);
+    return h.speed > 2 && g.speed > 1.5 ? { h, g } : null;
+  }, 15000).catch(() => null);
+  const ahead = going ? Math.abs(going.h.z - going.g.z) : NaN;
+  check(`The guest driver's tillers drive the host's tank, and the guest sees it move close behind (${label})`,
+    going !== null && going.h.z < -1 && ahead < going.h.speed * 0.6 + 0.3,
+    going ? `host at ${going.h.speed.toFixed(1)} m/s, z ${going.h.z.toFixed(2)}; guest draws ${going.g.speed.toFixed(1)} m/s, z ${going.g.z.toFixed(2)}` : JSON.stringify(await Promise.all([tank(host), tank(guest)])));
+  // How smoothly the guest draws it: the distance driven, frame by frame, never goes back or jumps.
+  const steps = await guest.page.evaluate(() => new Promise((resolve) => {
+    const out = [];
+    const end = performance.now() + 2000;
+    const frame = () => {
+      out.push(window.__drive.state().odometer);
+      if (performance.now() < end) requestAnimationFrame(frame);
+      else resolve(out);
+    };
+    requestAnimationFrame(frame);
+  }));
+  const deltas = steps.slice(1).map((v, i) => v - steps[i]);
+  const sorted = [...deltas].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
+  const backwards = deltas.filter((d) => d < -1e-4).length;
+  const biggest = sorted.at(-1) ?? 0;
+  check(`The guest draws the moving tank smoothly (${label})`, deltas.length >= 10 && backwards === 0 && biggest < Math.max(0.05, median * 5),
+    `${deltas.length} frames, ${backwards} backward steps, median ${(median * 100).toFixed(1)} cm, largest ${(biggest * 100).toFixed(1)} cm a frame`);
+  await guest.page.evaluate(() => window.__drive.set(null));
+  const stopped = await waitFor('both to see the tank stop', async () => {
+    const [h, g] = await Promise.all([tank(host), tank(guest)]);
+    return h.speed === 0 && Math.abs(g.speed) < 0.01 && Math.hypot(h.x - g.x, h.z - g.z) < 0.02 ? { h, g } : null;
+  }, 15000).catch(() => null);
+  check(`Let go, both see the tank stop at the same spot (${label})`, stopped !== null,
+    stopped ? `at z ${stopped.h.z.toFixed(2)}` : JSON.stringify(await Promise.all([tank(host), tank(guest)])));
+  await guest.page.evaluate(() => window.__gameMenu.click('menu-drive-reset'));
+  const home = await waitFor('the tank back at its start', async () => {
+    const [h, g] = await Promise.all([tank(host), tank(guest)]);
+    return Math.hypot(h.x, h.z) < 0.01 && Math.hypot(g.x, g.z) < 0.01 ? h : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Back to start parks the host's tank (${label})`, home !== null);
+
+  // Back as they were: the host drives, and the guest sees it.
+  await guest.page.evaluate(() => window.__gameMenu.click('row-seat-1'));
+  await waitFor('the host to hear the ask', async () => (await host.page.evaluate(() => window.__seats.swap)) === 'offered', 8000);
+  await host.page.evaluate(() => window.__gameMenu.click('menu-swap'));
+  await waitFor('the host in the driver\'s seat', async () => (await host.page.evaluate(() => window.__drive.driver())) === 'me', 8000);
+  await host.page.evaluate(() => window.__drive.set({ left: 1, right: 1 }));
+  const hostDrives = await waitFor('the guest to see the host drive', async () => {
+    const g = await tank(guest);
+    return g.speed > 1 ? g : null;
+  }, 15000).catch(() => null);
+  await host.page.evaluate(() => window.__drive.set(null));
+  check(`The host drives from the driver's seat and the guest sees it (${label})`, hostDrives !== null,
+    hostDrives ? `${hostDrives.speed.toFixed(1)} m/s` : JSON.stringify(await tank(guest)));
+  await waitFor('the tank to stop', async () => (await tank(host)).speed === 0, 15000).catch(() => null);
+  await host.page.evaluate(() => window.__drive.reset());
 }
 
 async function lobbyChecks(browser, host, guest) {
@@ -557,7 +640,7 @@ async function main() {
     }
     const room = 'TEST';
     // ONLY_SEATS=lag runs the quick seat checks at about 150 ms RTT.
-    const quickLag = process.env.ONLY_SEATS === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
+    const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
     const a = await openPlayer(browser, `room=${room}&name=Ann${quickLag}`);
     await waitFor('Ann waiting in the lobby', async () => (await state(a.page)) === 'waiting');
     const b = await openPlayer(browser, `room=${room}&name=Bo${quickLag}`);
@@ -581,6 +664,11 @@ async function main() {
     if (process.env.ONLY_SEATS) {
       // Quick loop for F1.1: just the seats.
       await seatChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+      return;
+    }
+    if (process.env.ONLY_DRIVE) {
+      // Quick loop for F1.4: just the drive (ONLY_DRIVE=lag at about 150 ms RTT).
+      await driveChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
       return;
     }
 
@@ -680,6 +768,7 @@ async function main() {
     check('Players swap platform reports', crews !== null, crews ? `Ann sees "${crews[0].browser} on ${crews[0].os}, mic ${crews[0].mic}"` : '');
 
     await seatChecks(a, b, 'local network');
+    await driveChecks(a, b, 'local network');
     await lobbyChecks(browser, a, b);
 
     const motion = await measureMotion(a, b, 3);
@@ -731,6 +820,7 @@ async function main() {
     check('Voice through the loopback route', loopActive && loopVoice > 0.01, `loopback ${loopActive}, peak level ${loopVoice.toFixed(3)}`);
 
     await seatChecks(d, e, '150 ms RTT');
+    await driveChecks(d, e, '150 ms RTT');
 
     await d.context.close();
     await e.context.close();

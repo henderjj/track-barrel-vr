@@ -52,6 +52,12 @@ export interface Settings {
   seated: boolean;
   /** The seat a player starts in when playing alone or starting a crew (a guest is given the other one), src/sim/cabin.ts. */
   seat: SeatId;
+  /**
+   * Draw the drive's ground (F1.4). `ground=0` hides it, for the network
+   * test: its software renderer slows to about half the frame rate drawing
+   * the ground's triangles, too few frames for the motion checks.
+   */
+  ground: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -75,6 +81,7 @@ export const DEFAULT_SETTINGS: Settings = {
   raise: 0,
   seated: true,
   seat: 'driver',
+  ground: true,
 };
 
 function num(params: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
@@ -122,6 +129,7 @@ export function parseSettings(search: string): Settings {
     raise: clampEyeRaise(num(params, 'raise', d.raise, -1, 1)),
     seated: bool(params, 'seated', d.seated),
     seat: parseSeat(params.get('seat'), d.seat),
+    ground: bool(params, 'ground', d.ground),
   };
 }
 

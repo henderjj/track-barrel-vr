@@ -37,6 +37,10 @@
  *     driver's seat holds the head in the hull while the ground moves round
  *     it, the vignette darkens with the motion and turns off from the menu,
  *     the gunner's seat turns with the turret, and Stop brings the cabin back;
+ *  6d. drives the tank (F1.4): Practice → Drive the tank, both sticks drive
+ *     it and the ground moves round the hull, one stick turns it, letting go
+ *     stops it, the gear lever grinds and shifts, the boulder stops it, and
+ *     Back to start parks it;
  *  7. checks the perf CSV has rows, then re-enters XR with the frame-rate
  *     API removed, as desktop Chrome and Edge over Link may have it, and
  *     checks the game measures the refresh rate instead; IWSDK's controller
@@ -824,6 +828,114 @@ async function ridingTheTank() {
   iwsdk(['xr', 'set-device-state'], {});
 }
 
+/** Mirrors src/sim/terrain.ts and src/sim/tank-drive.ts. */
+const DRIVE = { tile: 800, front: -3.0, rock: [-10, -45, 1.5] };
+
+/**
+ * 6d. The tank drive (F1.4): Practice → Drive the tank puts the player in
+ *     the driver's seat with a sign; both sticks forwards drive the tank and
+ *     the ground moves round the still hull (the tank's spot stays under the
+ *     hull floor), the vignette darkens and S1's range rides out of sight;
+ *     one stick turns the tank the other way; letting go stops it; the
+ *     menu's gear lever grinds with a stick pushed and engages once both are
+ *     let go; driven at the boulder, the tank stops against it without going
+ *     in; Back to start parks it where it began.
+ */
+async function drivingTheTank() {
+  const state = () => evalInApp('window.__drive.state()');
+  const thumbstick = (device, x, y) =>
+    iwsdk(['xr', 'set-gamepad-state'], { device, axes: [{ index: 0, value: x }, { index: 1, value: y }] });
+  const sticks = (left, right) => {
+    thumbstick('controller-left', 0, -left);
+    thumbstick('controller-right', 0, -right);
+  };
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-drive-go'));
+  const seated = await waitFor('the driver\'s seat and the sign', () => {
+    const s = evalInApp('({ seat: window.__seats.mine, sign: window.__drive.sign, driver: window.__drive.driver() })');
+    return s.seat === 'driver' && s.sign.startsWith('Driving') && s;
+  }, 5000).catch(() => evalInApp('({ seat: window.__seats.mine, sign: window.__drive.sign, driver: window.__drive.driver() })'));
+  check('Practice → Drive the tank puts the player in the driver\'s seat with a sign saying how to drive',
+    seated.seat === 'driver' && seated.driver === 'me' && seated.sign.startsWith('Driving'), `seat ${seated.seat}, sign "${seated.sign}"`);
+  evalInApp('(window.__drive.reset(), true)');
+
+  sticks(1, 1);
+  const moving = await waitFor('the tank to get going', () => { const s = state(); return s.speed > 1.5 && s; }, 10000).catch(() => state());
+  const placed = evalInApp(`(() => {
+    const s = window.__drive.state();
+    const w = (v) => v - ${DRIVE.tile} * Math.round(v / ${DRIVE.tile});
+    const f = [-Math.sin(s.heading), -Math.cos(s.heading)];
+    return {
+      floor: window.__drive.drawnAt(w(s.x), s.y, w(s.z)),
+      ahead: window.__drive.drawnAt(w(s.x) + 10 * f[0], s.y, w(s.z) + 10 * f[1]),
+      alpha: window.__drive.vignetteAlpha,
+      range: window.__drive.sightRangeShown,
+    };
+  })()`);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-drive.png'], {});
+  check('Both sticks forwards drive the tank straight ahead and the ground moves round the hull',
+    moving.speed > 1.5 && moving.z < -0.5 && Math.abs(moving.yawRate) < 1e-3 && Math.hypot(...placed.floor) < 0.01 && Math.abs(placed.ahead[0]) < 0.05 && Math.abs(placed.ahead[2] + 10) < 0.1,
+    `${moving.speed.toFixed(1)} m/s at ${moving.rpm.toFixed(0)} rpm after ${moving.odometer.toFixed(1)} m, the tank's spot drawn at ${fmt(placed.floor)}, 10 m ahead at ${fmt(placed.ahead)}`);
+  check('The vignette darkens as the tank pulls away, and the S1 range rides out of sight', placed.alpha > 0.1 && !placed.range,
+    `alpha ${placed.alpha.toFixed(2)}, range ${placed.range ? 'shown' : 'hidden'}`);
+
+  sticks(1, 0);
+  const turning = await waitFor('the tank to turn right', () => { const s = state(); return s.yawRate < -0.1 && s; }, 6000).catch(() => state());
+  check('One stick forwards turns the tank the other way', turning.yawRate < -0.1 && turning.leftTrack > turning.rightTrack,
+    `turning ${((turning.yawRate * 180) / Math.PI).toFixed(1)}°/s, tracks ${turning.leftTrack.toFixed(2)} and ${turning.rightTrack.toFixed(2)} m/s`);
+  sticks(0, 0);
+  const stopped = await waitFor('the tank to stop', () => { const s = state(); return Math.abs(s.speed) < 0.01 && Math.abs(s.yawRate) < 0.01 && s; }, 10000).catch(() => state());
+  check('Letting go of the sticks stops the tank', Math.abs(stopped.speed) < 0.01, `${stopped.speed.toFixed(2)} m/s`);
+
+  // The gear lever: into high with a stick pushed grinds; let go and it goes in.
+  sticks(1, 1);
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'row-gear-2'));
+  const grinding = await waitFor('the gears to grind', () => {
+    const s = { ...state(), sign: evalInApp('window.__drive.sign') };
+    return s.grinding && s;
+  }, 5000).catch(() => ({ ...state(), sign: evalInApp('window.__drive.sign') }));
+  check('Moving the gear lever with a stick pushed grinds: out of gear, with a sign',
+    grinding.grinding && grinding.gear === 0 && grinding.sign.startsWith('Gears grinding'), `gear ${grinding.gear}, sign "${grinding.sign}"`);
+  sticks(0, 0);
+  // The menu's line redraws twice a second.
+  const geared = () => ({ ...state(), status: evalInApp('window.__gameMenu.text("menu-drive-status")') });
+  const shifted = await waitFor('high gear to engage', () => { const s = geared(); return s.gear === 2 && s.status.includes('high gear') && s; }, 5000).catch(() => geared());
+  const status = shifted.status;
+  check('With the sticks let go the gear goes in, and the menu says so', shifted.gear === 2 && !shifted.grinding && status.includes('high gear'),
+    `gear ${shifted.gear}, "${status}"`);
+  await rayClick(elementPosition('menu-panel', 'row-gear-1'));
+  await menuButtonPress();
+
+  // Into the boulder: the tank stops against it, never in it.
+  const [rx, rz, rr] = DRIVE.rock;
+  const stopAt = rz + rr - DRIVE.front;
+  evalInApp(`(window.__drive.place(${rx}, ${stopAt + 6}, 0), true)`);
+  await waitFor('low gear', () => state().gear === 1, 5000).catch(() => null);
+  sticks(1, 1);
+  const bumped = await waitFor('the tank to stop at the boulder', () => {
+    const s = state();
+    return s.touching && Math.abs(s.speed) < 0.1 && s;
+  }, 15000).catch(() => state());
+  sticks(0, 0);
+  check('Driven at the boulder, the tank stops against it without going in',
+    bumped.touching && Math.abs(bumped.speed) < 0.1 && bumped.z > stopAt - 0.02 && bumped.z < stopAt + 0.3,
+    `stopped at z ${bumped.z.toFixed(2)} for the boulder's edge at ${stopAt.toFixed(2)}, ${bumped.speed.toFixed(2)} m/s, ${bumped.bumps} bump(s)`);
+
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-drive-reset'));
+  await menuButtonPress();
+  const home = await waitFor('the tank back at its start', () => {
+    const s = { ...state(), range: evalInApp('window.__drive.sightRangeShown') };
+    return Math.hypot(s.x, s.z) < 0.01 && s.range && s;
+  }, 5000).catch(() => ({ ...state(), range: evalInApp('window.__drive.sightRangeShown') }));
+  check('Back to start parks the tank where it began, with the S1 range back', Math.hypot(home.x, home.z) < 0.01 && home.speed === 0 && home.range,
+    `at ${home.x.toFixed(2)}, ${home.z.toFixed(2)}, range ${home.range ? 'shown' : 'hidden'}`);
+  iwsdk(['xr', 'set-device-state'], {});
+}
+
 async function main() {
   mkdirSync(`${ROOT}/artifacts`, { recursive: true });
   await ensureRuntime();
@@ -1082,6 +1194,9 @@ async function main() {
 
   // 6c. Spike S2: riding the tank.
   await ridingTheTank();
+
+  // 6d. The tank drive (F1.4).
+  await drivingTheTank();
 
   // 7. Perf log.
   const rows = evalInApp('window.__perf.recorder.rows.length');

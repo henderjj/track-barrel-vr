@@ -8,7 +8,7 @@
   LIVE_ITEMS in src/live-settings.ts). The crew section shows only in a crew.
   Practice holds shortcuts straight to a situation worth testing, one per
   feature, so a headset check never has to play its way there (the cabin's:
-  sit in either seat). You → Seat swaps seats (in a crew, once the
+  sit in either seat; the drive's: drive, or put the tank back at its start). You → Seat swaps seats (in a crew, once the
   crewmate agrees) and Calibration measures the eyes and reach again.
 -->
 <style>
@@ -277,6 +277,25 @@
       </div>
     </div>
   </div>
+  <div id="menu-drive" class="section">
+    <div class="section-title">DRIVING</div>
+    <div id="menu-drive-status" class="hint">Driving</div>
+    <div id="row-gear" class="setting">
+      <div id="row-gear-label" class="label">Gear lever</div>
+      <div class="choices">
+        <Button id="row-gear-0" class="choice" size="sm" variant="secondary">Neutral</Button>
+        <Button id="row-gear-1" class="choice" size="sm" variant="secondary">Low</Button>
+        <Button id="row-gear-2" class="choice" size="sm" variant="secondary">High</Button>
+      </div>
+    </div>
+    <div id="row-drive-vignette" class="setting">
+      <div id="row-drive-vignette-label" class="label">Vignette</div>
+      <div class="choices">
+        <Button id="row-drive-vignette-0" class="choice" size="sm" variant="secondary">On</Button>
+        <Button id="row-drive-vignette-1" class="choice" size="sm" variant="secondary">Off</Button>
+      </div>
+    </div>
+  </div>
   <div id="menu-ride" class="section" style="display: none">
     <div class="section-title">RIDING (SPIKE S2)</div>
     <div id="menu-ride-status" class="hint">Riding</div>
@@ -318,6 +337,13 @@
       <div id="row-seat-choices" class="choices">
         <Button id="row-seat-0" class="choice" size="sm" variant="secondary">Driver</Button>
         <Button id="row-seat-1" class="choice" size="sm" variant="secondary">Gunner</Button>
+      </div>
+    </div>
+    <div class="setting">
+      <div class="label">Drive the tank</div>
+      <div class="choices">
+        <Button id="menu-drive-go" class="choice" size="sm" variant="secondary">Drive</Button>
+        <Button id="menu-drive-reset" class="choice" size="sm" variant="secondary">Back to start</Button>
       </div>
     </div>
     <div class="setting">

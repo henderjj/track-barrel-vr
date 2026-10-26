@@ -21,8 +21,8 @@ import {
 
 /**
  * The tank, seen from inside: the hull with the driver's seat, and the
- * turret with its basket, the gunner's seat, the breech and the gun, on a
- * plain ground until the test range comes (F1.7). Sizes come from
+ * turret with its basket, the gunner's seat, the breech and the gun. The
+ * ground it drives on is src/scene-assets/terrain.scene-asset.ts. Sizes come from
  * src/sim/cabin.ts, so the systems and tests use the same numbers.
  *
  * Hull space: hull floor at y = 0, the front towards -Z. The turret is its
@@ -46,7 +46,6 @@ const LEATHER = 0x5a3d26;
 const RUBBER = 0x1e1e1e;
 const TRACK = 0x34322e;
 const WHEEL = 0x5f5b3e;
-const GRASS = 0x6f9a4a;
 
 type Vec3 = readonly [number, number, number];
 
@@ -268,13 +267,5 @@ export function createHull(): Mesh {
 export function createTurret(): Mesh {
   const mesh = new Mesh(mergeParts(turretParts()), material);
   mesh.name = 'Turret';
-  return mesh;
-}
-
-/** A wide, flat ground under the tracks, until the test range replaces it (F1.7). */
-export function createGround(): Mesh {
-  const ground = new CylinderGeometry(300, 300, 0.1, 32, 1);
-  const mesh = new Mesh(mergeParts([{ geometry: ground, color: GRASS, position: [0, GROUND_Y - 0.05, 0] }]), material);
-  mesh.name = 'Ground';
   return mesh;
 }
