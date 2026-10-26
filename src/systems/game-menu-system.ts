@@ -5,10 +5,11 @@ import { crewControls, onCrewChange } from '../net/crew-controls.js';
 import { CREW_COLORS } from '../scene-assets/avatar.scene-asset.js';
 import { settings } from '../settings.js';
 import { DEFAULT_CHARACTER_HEIGHT, EYES_BELOW_TOP, MAX_CHARACTER_HEIGHT, MIN_CHARACTER_HEIGHT } from '../sim/body-height.js';
+import { parseSeat, SEAT_IDS, SEATS } from '../sim/cabin.js';
 import { body, chooseBody } from './body-height-system.js';
 import { OPEN_MENU_EVENT } from './net-system.js';
 import { PanelUi } from './panel-ui.js';
-import { resetBlocks, restartGame } from './game-system.js';
+import { seating } from './seating.js';
 import { startScreen } from './start-screen-system.js';
 
 /** Where the menu stands in VR when opened: ahead of the head and a little below the eyes, m. */
@@ -34,7 +35,7 @@ interface ChoiceRow {
 
 const yesNo = (on: boolean) => (on ? '1' : '0');
 
-/** The rows of choice buttons: the crew's, standing or seated play, then the live settings. */
+/** The rows of choice buttons: the crew's, standing or seated play, the live settings, then Practice's. */
 const CHOICE_ROWS: readonly ChoiceRow[] = [
   {
     id: 'mic',
@@ -79,6 +80,14 @@ const CHOICE_ROWS: readonly ChoiceRow[] = [
       choose: (value) => changeSetting(item, value),
     }),
   ),
+  {
+    // Practice: straight into either seat, to check it (in a crew, the host swaps both players).
+    id: 'seat',
+    label: 'Sit in',
+    options: SEAT_IDS.map((id) => [id, SEATS[id].label] as const),
+    current: () => seating.mine,
+    choose: (value) => seating.ask(parseSeat(value, seating.mine)),
+  },
 ];
 
 /** The player's own height, m, from their upright eyes in VR (NaN before it is measured). */
@@ -107,17 +116,20 @@ interface GameMenuDebug {
  *
  * - Crew (only in a crew): the crew's state, this player's microphone on or
  *   muted, and the crewmate's voice on or muted (for this player only);
- * - You: coat colour as swatches, standing or seated play, and character
- *   height in 5 cm steps or the player's own;
+ * - You: coat colour as swatches, standing or seated play, character
+ *   height in 5 cm steps or the player's own, and back in their seat
+ *   (facing forward, with their eyes where the seat puts them);
  * - Sound and view: the settings that apply straight away (LIVE_ITEMS,
  *   src/live-settings.ts), kept in this browser;
- * - Game: start again; Practice: shortcuts straight to a situation to test;
+ * - Practice: shortcuts straight to a situation to test (sit in either seat);
  * - Back to start screen (leaves any crew) and Exit VR.
  */
 export class GameMenuSystem extends createSystem({}) {
   private ui: PanelUi | null = null;
   private open = false;
   private selected = new Map<string, boolean>();
+  /** The seat the menu last showed, so it redraws when the host moves this player. */
+  private shownSeat = seating.mine;
 
   init(): void {
     const asset = this.world.getSceneObject<UIKitMLAsset>('menu-panel');
@@ -169,14 +181,9 @@ export class GameMenuSystem extends createSystem({}) {
       this.setOpen(false);
       startScreen.show();
     });
-    ui.on('menu-restart', () => {
+    ui.on('menu-reseat', () => {
       this.setOpen(false);
-      restartGame();
-    });
-    // Practice shortcuts: one per feature, straight to the situation a headset check needs.
-    ui.on('menu-blocks', () => {
-      this.setOpen(false);
-      resetBlocks();
+      seating.reseat();
     });
     ui.on('menu-exit', () => {
       this.setOpen(false);
@@ -226,6 +233,10 @@ export class GameMenuSystem extends createSystem({}) {
   }
 
   update(): void {
+    if (seating.mine !== this.shownSeat) {
+      this.shownSeat = seating.mine;
+      this.render();
+    }
     const left = this.input.xr.gamepads.left;
     if (left && (left.getButtonDown(InputComponent.Y_Button) || left.getButtonDown(InputComponent.Menu))) {
       this.setOpen(!this.open);

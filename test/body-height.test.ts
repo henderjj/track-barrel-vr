@@ -13,7 +13,7 @@ import {
   UprightEye,
 } from '../src/sim/body-height.js';
 import { parseSettings } from '../src/settings.js';
-import { TABLE } from '../src/sim/play-area.js';
+import { SEAT_IDS, SEATS } from '../src/sim/cabin.js';
 
 /** Feed `seconds` of a steady head height at 90 Hz. */
 function hold(eye: UprightEye, headY: number, seconds: number): void {
@@ -74,12 +74,16 @@ describe('rig offset', () => {
     expect(1.15 + rigOffset(targetEyeHeight({ height: 1.9, seated: true }), 1.15)).toBeCloseTo(1.9 - EYES_BELOW_TOP, 6);
   });
 
-  it('keeps the table in reach from a chair when seated', () => {
-    // A seated player's hands reach from about 0.45 m (beside the chair) to 1.4 m above their floor.
-    // Check every control your game adds the same way.
-    const raised = rigOffset(targetEyeHeight({ height: 0, seated: true }), 1.2);
-    expect(TABLE.height - raised).toBeGreaterThan(0.45);
-    expect(TABLE.height - raised).toBeLessThan(1.4);
+  it('puts a seated player\'s eyes on either seat\'s eye point, from any chair', () => {
+    // The seat system puts the play space's floor on the seat's floor (src/systems/seat-system.ts).
+    // Check each control the tank adds for reach from these eyes the same way (knee to chest height).
+    for (const id of SEAT_IDS) {
+      const seat = SEATS[id];
+      for (const chairEye of [1.1, 1.2, 1.3]) {
+        const eye = seat.floorY + chairEye + rigOffset(targetEyeHeight({ height: 0, seated: true }), chairEye);
+        expect(eye).toBeCloseTo(seat.eye[1], 6);
+      }
+    }
   });
 
   it('never lifts the rig more than its limit', () => {
