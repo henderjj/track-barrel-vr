@@ -30,7 +30,7 @@ The tank moves. The host simulates its drive (skid steering, the engine's RPM, t
 | Outline | 3.6 × 5.6 m (the tracks' outer faces and ends), tested at 32 points | The cabin model; the gun overhangs it (F1.8) |
 | Ground | repeats every 800 m, height field sampled every 16 m, waves up to about 2 m peak to peak, flat within about 18 m of the start and 16 m either side of the lane | The drawn edge is always 800 m or more away, on the horizon; the S1 target at 500 m stands on the lane |
 | Obstacles | 61 per tile: 41 rocks (0.8 to 2.2 m), 11 walls, 9 houses | Enough to bump into within a minute of the start |
-| Ground model | one mesh, about 73k triangles, three tiles across | Inside the 300k budget with the cabin |
+| Ground model | three tiles across, about 63k triangles, in 36 meshes of 400 m square; the small stones and bushes only in the middle tile and 150 m round it | Inside the 300k budget with the cabin; the renderer skips the squares out of view or beyond the 1.2 km far plane, about two thirds of them, which keeps CI's software-rendered two-player test at its old frame rate |
 
 ## Sharing
 

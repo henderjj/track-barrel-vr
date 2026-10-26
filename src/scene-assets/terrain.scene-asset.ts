@@ -4,6 +4,7 @@ import {
   BufferGeometry,
   ConeGeometry,
   DodecahedronGeometry,
+  Group,
   Mesh,
   MeshStandardMaterial,
   OctahedronGeometry,
@@ -15,9 +16,13 @@ import { jitter, mergeParts, type Part, rng, shade } from './lowpoly.js';
  * The ground the tank drives on (F1.4, docs/tank-drive.md): the height
  * field of src/sim/terrain.ts three tiles across, with its rocks, walls and
  * houses and a scatter of small stones and bushes low enough to pass under
- * the hull, all merged into one mesh. It repeats every tile, so the drive
- * system moves it by the tank's position less whole tiles and a drive of
- * any length never shows its edge. A blockout until the test range (F1.7).
+ * the hull. It repeats every tile, so the drive system moves it by the
+ * tank's position less whole tiles and a drive of any length never shows
+ * its edge. A blockout until the test range (F1.7).
+ *
+ * Merged into one mesh per CHUNK-metre square, so the renderer skips the
+ * squares out of view or past the camera's far plane: most of the ground
+ * is behind the tank or beyond 1.2 km at any moment.
  *
  * World space, the ground at the start at y = 0: the scene places the mesh
  * GROUND_Y under the hull floor, and the drive system then moves it by the
@@ -36,6 +41,15 @@ const material = new MeshStandardMaterial({ vertexColors: true, flatShading: tru
 
 /** How many cells the drawn ground spans each way from its middle: three tiles across. */
 const HALF_CELLS = Math.round((1.5 * TILE) / CELL);
+/** The side of each separately drawn square of ground, m: half a tile, so 6 × 6 squares. */
+const CHUNK = TILE / 2;
+const CHUNK_CELLS = CHUNK / CELL;
+/**
+ * Small scatter only matters near the tank, which is always in the middle
+ * tile (the drive system moves the ground by whole tiles): it goes in the
+ * middle tile and this far into its neighbours, m.
+ */
+const SCATTER_MARGIN = 150;
 
 /** A shade for a cell of ground that repeats with the tiles, so the copies join up. */
 function patch(x: number, z: number): number {
@@ -46,16 +60,17 @@ function patch(x: number, z: number): number {
 }
 
 /**
- * The height field as triangles, each cell split along the diagonal from
- * its (-x, -z) corner to its (+x, +z) corner, as groundHeight joins them.
+ * The height field as triangles, `cells` square from grid corner (ix0, iz0),
+ * each cell split along the diagonal from its (-x, -z) corner to its
+ * (+x, +z) corner, as groundHeight joins them.
  */
-function groundGeometry(): BufferGeometry {
-  const n = 2 * HALF_CELLS + 1;
+function groundGeometry(ix0: number, iz0: number, cells: number): BufferGeometry {
+  const n = cells + 1;
   const positions = new Float32Array(n * n * 3);
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
-      const ix = i - HALF_CELLS;
-      const iz = j - HALF_CELLS;
+      const ix = ix0 + i;
+      const iz = iz0 + j;
       const k = (j * n + i) * 3;
       positions[k] = ix * CELL;
       positions[k + 1] = cornerHeight(ix, iz);
@@ -118,34 +133,60 @@ function obstacleParts(o: Obstacle, x: number, z: number, random: () => number):
 /** Small stones and bushes per tile, low enough to pass under the hull: something near to see the ground go by. */
 const SCATTER_PER_TILE = 160;
 
-/** The ground three tiles across with its obstacles and scatter, in one mesh. */
-export function createTerrain(): Mesh {
-  const parts: Part[] = [{ geometry: groundGeometry(), color: (_, c) => shade(GRASS, patch(c.x, c.z)) }];
+/** The ground three tiles across with its obstacles and scatter, one mesh per chunk. */
+export function createTerrain(): Group {
+  const chunks = 2 * HALF_CELLS / CHUNK_CELLS;
+  const parts: Part[][] = [];
+  for (let c = 0; c < chunks; c++) {
+    for (let r = 0; r < chunks; r++) {
+      const ix0 = -HALF_CELLS + r * CHUNK_CELLS;
+      const iz0 = -HALF_CELLS + c * CHUNK_CELLS;
+      parts.push([{ geometry: groundGeometry(ix0, iz0, CHUNK_CELLS), color: (_, p) => shade(GRASS, patch(p.x, p.z)) }]);
+    }
+  }
+  const edge = HALF_CELLS * CELL;
+  /** The parts of the chunk that (x, z) is in. */
+  const chunkAt = (x: number, z: number) => {
+    const r = Math.min(chunks - 1, Math.max(0, Math.floor((x + edge) / CHUNK)));
+    const c = Math.min(chunks - 1, Math.max(0, Math.floor((z + edge) / CHUNK)));
+    return parts[c * chunks + r];
+  };
   const random = rng(91);
   const scatter: [x: number, z: number, size: number, stone: boolean][] = [];
   for (let i = 0; i < SCATTER_PER_TILE; i++) {
     const stone = i % 3 !== 0;
     scatter.push([(random() - 0.5) * TILE, (random() - 0.5) * TILE, stone ? 0.12 + random() * 0.2 : 0.25 + random() * 0.2, stone]);
   }
+  const near = TILE / 2 + SCATTER_MARGIN;
   for (let tx = -1; tx <= 1; tx++) {
     for (let tz = -1; tz <= 1; tz++) {
       for (const o of OBSTACLES) {
-        parts.push(...obstacleParts(o, o.x + tx * TILE, o.z + tz * TILE, random));
+        const x = o.x + tx * TILE;
+        const z = o.z + tz * TILE;
+        chunkAt(x, z).push(...obstacleParts(o, x, z, random));
       }
       for (const [sx, sz, size, stone] of scatter) {
         const x = sx + tx * TILE;
         const z = sz + tz * TILE;
+        // Random numbers are drawn for every copy, so the near ones look the same whatever the margin.
         const geometry = jitter(new OctahedronGeometry(size, 0), size * 0.4, random);
-        parts.push({
+        const color = stone ? shade(STONE, 0.8 + random() * 0.3) : shade(LEAVES, 0.85 + random() * 0.3);
+        if (Math.abs(x) > near || Math.abs(z) > near) continue;
+        chunkAt(x, z).push({
           geometry,
-          color: stone ? shade(STONE, 0.8 + random() * 0.3) : shade(LEAVES, 0.85 + random() * 0.3),
+          color,
           position: [x, groundHeight(x, z) + size * 0.25, z],
           scale: [1, stone ? 0.55 : 0.8, 1],
         });
       }
     }
   }
-  const mesh = new Mesh(mergeParts(parts), material);
-  mesh.name = 'Ground';
-  return mesh;
+  const group = new Group();
+  group.name = 'Ground';
+  parts.forEach((list, k) => {
+    const mesh = new Mesh(mergeParts(list), material);
+    mesh.name = `Ground ${k % chunks},${Math.floor(k / chunks)}`;
+    group.add(mesh);
+  });
+  return group;
 }
