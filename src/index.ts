@@ -9,6 +9,7 @@ import { FrameRateSystem } from './systems/frame-rate-system.js';
 import { GameMenuSystem } from './systems/game-menu-system.js';
 import { GameSystem } from './systems/game-system.js';
 import { GripSystem } from './systems/grip-system.js';
+import { LoadingDrillSystem } from './systems/loading-drill-system.js';
 import { NetSystem } from './systems/net-system.js';
 import { OwnHandsSystem } from './systems/own-hands-system.js';
 import { PerfHudSystem } from './systems/perf-hud-system.js';
@@ -42,6 +43,7 @@ World.create(
   world.registerSystem(CrewStatusSystem);
   // Add your game's systems here. Ones that hold a hand (handUse) go
   // before the throwables, which skip hands already holding something.
+  world.registerSystem(LoadingDrillSystem);
   world.registerSystem(ThrowablesSystem);
   // After the systems it drives; their scripted hands are functions of time, so a frame late costs nothing.
   world.registerSystem(CrewBotSystem);

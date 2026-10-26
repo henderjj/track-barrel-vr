@@ -18,7 +18,7 @@ A throwaway ride, reached from the game menu's Practice section, so the comfort 
   - **Open top** (the default): hull sides 1 m high, below a seated rider's eyes, so the world is in full view: the worst case for comfort, and the view a rider will have out of a hatch (F2.1).
   - **Closed:** hull sides up to a roof at 1.75 m, a 70 × 20 cm vision slit in front of the driver's eyes, and the turret's walls and roof above the basket. The gunner sees only the inside of the hull turning round the basket, which is what Phase 1's gunner sees until the gunsight (F1.9).
 - **Trees in the tank's way sink into the ground** from 14 m to 5 m away rather than pass through the hull (there are no collisions until F1.4). Rocks and bushes are low enough to pass under the hull.
-- The template's deck, blocks and scoreboard are hidden while riding and come back on Stop (F1.1 removes them). The blocks are still there, invisible, so a squeeze near the old table can pick one up.
+- The template's deck, blocks and scoreboard, and the S1 sight and S4 loading station on the deck, are hidden while riding and come back on Stop (F1.1 removes them). The blocks and shells are still there, invisible, so a squeeze near where they were can pick one up.
 - **Solo only.** Each page rides on its own; in a crew, the crewmate is drawn wherever they are, with the hull round them. Sharing the tank and turret over the network is F1.4 and F1.8.
 
 ## The numbers

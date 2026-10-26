@@ -78,8 +78,8 @@ const MAX_STEP = 1 / 30;
 const FOG_COLOR = 0xd9e0e6;
 const FOG_NEAR = 60;
 const FOG_FAR = 230;
-/** Names of the template's demo objects and spike S1's sight and targets, hidden while riding (F1.1 removes them). */
-const DEMO_NAMES = /^(Play Area|Scoreboard|Block \d+|Sight|Sight Stand|Sight Range|Sight Lens)$/;
+/** Names of the template's demo objects and spikes S1's and S4's set-ups on the deck, hidden while riding (F1.1 removes them). */
+const DEMO_NAMES = /^(Play Area|Scoreboard|Block \d+|Sight|Sight Stand|Sight Range|Sight Lens|Loading Station|Loading Board|Shell \d+|Breech Block|Breech Lever)$/;
 
 let active: RideSystem | null = null;
 
