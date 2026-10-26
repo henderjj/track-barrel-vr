@@ -26,7 +26,9 @@
  *     kept on it, lets go when the hand is pulled off, springs back, and
  *     both tillers forwards drive the tank up the board's lane;
  *  6. switches to tracked hands (spike S9) and picks up a block with a pinch,
- *     then works a tiller with a pinch;
+ *     then works a tiller with a pinch (6a);
+ *  6b. spike S4: Practice → Sit at the breech, then loads a shell with the
+ *     right controller (rack, breech, ram, lever) and drops one;
  *  7. checks the perf CSV has rows, then re-enters XR with the frame-rate
  *     API removed, as desktop Chrome and Edge over Link may have it, and
  *     checks the game measures the refresh rate instead; IWSDK's controller
@@ -369,6 +371,102 @@ async function sightStep() {
     sized.size === 1024 && sized.label === '1024²', `size ${sized.size}, label ${sized.label}`);
 
   evalInApp('(window.__debug.world.player.position.set(0, 0, 0), window.__debug.world.player.rotation.set(0, 0, 0), true)');
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+}
+
+/**
+ * 6b. Spike S4, the loading drill: Practice → Sit at the breech puts the
+ *     head over the loader's seat facing the gun. The right controller takes
+ *     a shell from the rack near its base, swings it across to the breech
+ *     where it snaps onto the bore, pushes it home, and pulls the lever back
+ *     to close the breech: the drill counts and times the load, then fires,
+ *     opening the breech and putting the shell back in the rack. A shell let
+ *     go away from the breech is a fumble and goes back in the rack too.
+ */
+async function loadingDrill() {
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-loading'));
+  const drill = () => evalInApp('window.__loading.state()');
+  const { seat, layout } = evalInApp('({ seat: window.__loading.seat, layout: window.__loading.layout })');
+  const head = evalInApp('window.__deckWalk.head()');
+  const fresh = drill();
+  check('Practice → Sit at the breech puts the head over the loader\'s seat, every shell in the rack',
+    Math.hypot(head[0] - seat.x, head[2] - seat.z) < 0.02 && fresh.shells.every((s) => s.place === 'rack') && fresh.lever === 0,
+    `head at ${fmt(head)} for seat ${seat.x}, ${seat.z}; shells ${fresh.shells.map((s) => s.place).join(', ')}`);
+
+  // Grip poses are where the drill takes hold; put the right one at a point by moving the controller.
+  const gripWorld = () => evalInApp('window.__debug.world.player.gripSpaces.right.getWorldPosition(window.__debug.world.player.position.clone()).toArray()');
+  const { result: ctrl } = iwsdk(['xr', 'get-transform'], { device: 'controller-right' });
+  const g = toOrigin(gripWorld());
+  const off = { x: ctrl.position.x - g.x, y: ctrl.position.y - g.y, z: ctrl.position.z - g.z };
+  const gripTo = async (p, duration = 0.4) => {
+    const o = toOrigin(p);
+    iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: { x: o.x + off.x, y: o.y + off.y, z: o.z + off.z }, duration });
+    await sleep(duration * 1000 + 400);
+  };
+  const squeeze = (on) => iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: on ? 1 : 0 }] });
+
+  const shell = fresh.shells[0];
+  await gripTo([shell.centre[0], shell.centre[1], shell.centre[2] + 0.2], 0.5);
+  squeeze(true);
+  const took = await waitFor('a shell in the right hand', () => drill().holds.right === 0, 4000).catch(() => false);
+  const held = drill();
+  const nose0 = held.shells[0].nose;
+  const grip0 = gripWorld();
+  const noseAt = (n) => [grip0[0] + n[0] - nose0[0], grip0[1] + n[1] - nose0[1], grip0[2] + n[2] - nose0[2]];
+  await gripTo(noseAt([-0.1, 1.15, layout.mouth[2] + 0.05]), 0.5);
+  await gripTo(noseAt([layout.mouth[0], layout.mouth[1], layout.mouth[2] + 0.03]), 0.4);
+  const captured = await waitFor('the shell on the bore', () => drill().breechShell === 0, 4000).catch(() => false);
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(layout.mouth) });
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-loading-breech.png'], {});
+  const here = gripWorld();
+  await gripTo([here[0], here[1], here[2] - 0.66], 0.6);
+  const rammed = await waitFor('the shell rammed home', () => { const d = drill(); return d.rammed && d.holds.right === -1 && d; }, 4000).catch(() => drill());
+  squeeze(false);
+  check('A shell taken from the rack and swung to the breech snaps onto the bore and pushes home',
+    took && captured && rammed.rammed && rammed.holds.right === -1,
+    `took ${took}, on the bore ${captured}, depth ${rammed.depth.toFixed(3)} m, rammed ${rammed.rammed}`);
+
+  // The lever: take its handle open (up) and pull it back towards the seat a quarter turn.
+  const handleAt = (a) => [layout.pivot[0] + layout.handleX, layout.pivot[1] + layout.leverLength * Math.cos(a), layout.pivot[2] + layout.leverLength * Math.sin(a)];
+  await gripTo(handleAt(0), 0.5);
+  squeeze(true);
+  const onLever = await waitFor('the lever in the right hand', () => drill().holds.right === -2, 4000).catch(() => false);
+  for (const a of [0.4, 0.8, 1.2, 1.6, 1.8]) {
+    await gripTo(handleAt(a), 0.25);
+  }
+  const loaded = await waitFor('the load counted', () => evalInApp('window.__loading.stats.loads') === 1, 4000).catch(() => false);
+  const closed = drill();
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([-0.2, 1.2, 0.8]) });
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-loading-closed.png'], {});
+  squeeze(false);
+  const stats = evalInApp('({ ...window.__loading.stats })');
+  // A load counts only when the lever closes on a rammed shell. The drill may
+  // already have fired (1.5 s later) by the time a slow runner reads it back.
+  check('Pulling the lever back closes the breech on the rammed shell, and the drill counts and times the load',
+    onLever && loaded && (closed.loaded ? Math.abs(closed.lever - Math.PI / 2) < 1e-6 : true) && stats.last > 0 && stats.fumbles === 0,
+    `lever ${closed.lever.toFixed(2)} rad, loads ${stats.loads}, ${stats.last?.toFixed(1)} s, board "${closed.board.join(' | ')}"`);
+  const fired = await waitFor('the drill to fire', () => { const d = drill(); return !d.loaded && d.lever === 0 && d.shells[0].place === 'rack' && d; }, 6000).catch(() => drill());
+  check('The drill fires, opening the breech and putting the shell back in the rack',
+    !fired.loaded && fired.lever === 0 && fired.breechShell === -1 && fired.shells[0].place === 'rack',
+    `loaded ${fired.loaded}, lever ${fired.lever.toFixed(2)}, shell ${fired.shells[0].place}`);
+
+  // A shell let go away from the breech: a fumble, and back to the rack.
+  const second = fired.shells[1];
+  await gripTo([second.centre[0], second.centre[1], second.centre[2] + 0.2], 0.5);
+  squeeze(true);
+  await waitFor('a second shell in the hand', () => drill().holds.right === 1, 4000).catch(() => false);
+  await gripTo([0.15, 1.25, seat.z - 0.3], 0.4);
+  squeeze(false);
+  const dropped = await waitFor('the fumble', () => evalInApp('window.__loading.stats.dropped') === 1, 4000).catch(() => false);
+  const back = await waitFor('the dropped shell back in the rack', () => drill().shells[1].place === 'rack', 6000).catch(() => false);
+  check('A shell let go away from the breech counts as a fumble and goes back in the rack', dropped && back,
+    `fumbles ${evalInApp('window.__loading.stats.fumbles')}, shell ${drill().shells[1].place}`);
+
+  evalInApp('(window.__debug.world.player.position.set(0, 0, 0), window.__debug.world.player.rotation.set(0, 0, 0), window.__loading.reset(), true)');
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
 }
@@ -752,7 +850,7 @@ async function main() {
   check('A pinching hand picks up a block', handBlock[1] > TABLE.height + 0.3, `block at ${fmt(handBlock)}`);
   iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 0 });
   await sleep(1500);
-  // 6b. Spike S3 with tracked hands: a pinch at the handle takes hold of a
+  // 6a. Spike S3 with tracked hands: a pinch at the handle takes hold of a
   //     tiller and it follows the hand; letting go of the pinch lets go.
   evalInApp('(window.__lever.show(), true)');
   await sleep(500);
@@ -772,6 +870,8 @@ async function main() {
   await sleep(300);
   iwsdk(['xr', 'set-input-mode'], { mode: 'controller' });
   await sleep(300);
+
+  await loadingDrill();
 
   // 7. Perf log.
   const rows = evalInApp('window.__perf.recorder.rows.length');

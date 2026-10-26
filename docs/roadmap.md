@@ -41,7 +41,7 @@ Every feature of the game, by phase, with where it stands. The approach behind e
 | F0.3 | Spike S1: magnified sight render on Quest 3 | Headset check | F0.2 | #3 | Second camera into a 512² texture shown at infinity through the lens, reticle with range marks; [spike note](spikes/s1-sight-render.md) with the headset check |
 | F0.4 | Spike S2: riding the tank | Planned | F0.2 | | World moves round the hull; gunner's space turns with the turret; comfort with and without the vignette |
 | F0.5 | Spike S3: lever feel | Headset check | F0.2 | #4 | Two test tillers and a lane board (Practice > Lever test); headset check in [spikes/s3-lever-feel.md](spikes/s3-lever-feel.md) |
-| F0.6 | Spike S4: loading a shell | Planned | F0.2 | | Grab, swing, ram, close, seated; time and fumbles |
+| F0.6 | Spike S4: loading a shell | Headset check | F0.2 | #6 | Grab, swing, ram, close, seated; time and fumbles. [spikes/s4-loading.md](spikes/s4-loading.md); Practice → Sit at the breech |
 
 ## Phase 1: Core controls prototype
 
