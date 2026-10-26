@@ -1016,11 +1016,12 @@ async function driverStation() {
   handTo('controller-left', handle('gear', 0), 0.3);
   await sleep(400);
   handTo('controller-left', handle('gear', 24), 0.3);
+  // Read in one go: the station counts a grind on the frame the tank starts grinding.
+  const both = () => evalInApp('({ s: window.__driverStation.state(), t: window.__drive.state(), sign: window.__drive.sign })');
   const grinding = await waitFor('the gears to grind', () => {
-    const s = station();
-    const t = tank();
-    return t.grinding && s.gear === 2 && { s, t, sign: evalInApp('window.__drive.sign') };
-  }, 6000).catch(() => ({ s: station(), t: tank(), sign: evalInApp('window.__drive.sign') }));
+    const b = both();
+    return b.t.grinding && b.s.gear === 2 && b.s.grinds > before.grinds && b;
+  }, 6000).catch(() => both());
   check('Moving the gear lever from low to high with a tiller pushed grinds the gears',
     onLever.heldBy.gear === 'left' && grinding.t.grinding && grinding.t.gear === 0 && grinding.s.grinds > before.grinds && grinding.sign.startsWith('Gears grinding'),
     `lever held by ${onLever.heldBy.gear} at ${grinding.s.angles.gear.toFixed(1)}° (gear ${grinding.s.gear}), box in gear ${grinding.t.gear}, ${grinding.s.grinds - before.grinds} grind(s), sign "${grinding.sign}"`);
