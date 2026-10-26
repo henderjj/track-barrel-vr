@@ -9,7 +9,9 @@ import {
   TorusGeometry,
   type Vector3,
 } from '@iwsdk/core';
+import { driverStationParts } from './driver-station.scene-asset.js';
 import { beam, mergeParts, type Part } from './lowpoly.js';
+import { GEARBOX } from '../sim/driver-station.js';
 import {
   GROUND_Y,
   GUN,
@@ -29,7 +31,7 @@ import { binParts, boardParts, BREECH_HOLE, breechFittings, rackParts } from './
  *
  * Hull space: hull floor at y = 0, the front towards -Z. The turret is its
  * own mesh in turret space (origin at the ring's centre), so it can turn,
- * and the gun its own again inside it, so it can elevate (F1.8); the seats' moving controls come as their own meshes too (F1.5).
+ * and the gun its own again inside it, so it can elevate (F1.8); the seats' moving controls come as their own meshes too (the driver's from DriverStationSystem, F1.5).
  * Each is merged into one draw call, vertex-coloured and flat-shaded.
  *
  * Plates are painted on the outside and ivory inside, as the real tanks'
@@ -167,11 +169,12 @@ function hullParts(): Part[] {
   // The driver's hatch lid, standing open behind the hole.
   parts.push(box([hx1 - hx0, LID, 0.05], [(hx0 + hx1) / 2, top + LID / 2, hz1 + 0.03], PAINT_DARK));
 
-  // The driver's place: seat, a dash under the slit, and the gearbox's hump beside their legs.
+  // The driver's place: seat, the gearbox's hump beside their legs, and the station's fixed parts (F1.5).
   const driver = SEATS.driver;
   parts.push(...seatParts(driver.cushion, driver.floorY));
-  parts.push(box([0.8, 0.08, 0.2], [s.x, slitBottom - 0.26, HULL.front + 0.1], STEEL_LIGHT));
-  parts.push(box([0.6, 0.45, 1.3], [0, 0.225, HULL.front + 0.65], PAINT_DARK));
+  const g = GEARBOX;
+  parts.push(box([g.x1 - g.x0, g.top, g.z1 - g.z0], [(g.x0 + g.x1) / 2, g.top / 2, (g.z0 + g.z1) / 2], PAINT_DARK));
+  parts.push(...driverStationParts());
 
   // The engine compartment behind the bulkhead.
   parts.push(box([2 * outer, 1.7, 0.6], [0, bottom + 0.85, rear + 0.3], PAINT));

@@ -68,6 +68,22 @@ export const SHIFT_DEADBAND = 0.2;
 /** How long the lever must sit in a gear, tillers centred, before the gear engages, s. */
 export const SHIFT_SECONDS = 0.35;
 
+/**
+ * The engine's gauges (F1.5, docs/driver-station.md). Phase 1 shows them
+ * without failures (plan decision 7): the coolant warms from COOLANT_START
+ * towards COOLANT_IDLE at idle and COOLANT_FULL at full revs over
+ * COOLANT_SECONDS; the fuel burns from full in FUEL_HOURS at full revs (a
+ * fifth of that rate at idle) and stops at FUEL_RESERVE; Back to start
+ * refuels. The oil pressure follows the revs, a little lower when hot.
+ */
+export const COOLANT_START = 55;
+export const COOLANT_IDLE = 72;
+export const COOLANT_FULL = 92;
+export const COOLANT_SECONDS = 150;
+export const FUEL_HOURS = 2;
+export const FUEL_RESERVE = 0.1;
+const FUEL_AT_IDLE = 0.2;
+
 /** Most the tank slows for an obstacle ahead, m/s²: a firm but soft stop, never a jolt. */
 export const BUMP_DECEL = 3;
 /** Closer than this to an obstacle counts as touching it, m. */
@@ -122,6 +138,10 @@ export interface TankDrive {
   odometer: number;
   /** Time the lever has sat in a new gear with the tillers centred, s. */
   shiftTimer: number;
+  /** The engine's coolant temperature, °C (the driver's gauge, F1.5): warms with the revs, slowly. */
+  coolant: number;
+  /** Fuel left, 0 (empty) to 1 (full): burnt with the revs, slowly, never below FUEL_RESERVE in Phase 1. */
+  fuel: number;
 }
 
 /** A tank at rest at (x, z), facing `heading`, on the ground, in low gear. */
@@ -131,6 +151,7 @@ export function createTankDrive(x = 0, z = 0, heading = 0): TankDrive {
     speed: 0, accel: 0, yawRate: 0, pitchRate: 0, rollRate: 0,
     leftTrack: 0, rightTrack: 0, rpm: IDLE_RPM, gear: LOW, grinding: false,
     touching: false, bumps: 0, odometer: 0, shiftTimer: 0,
+    coolant: COOLANT_START, fuel: 1,
   };
   settle(s);
   return s;
@@ -216,7 +237,7 @@ export function stepDrive(s: TankDrive, c: DriverControls, dt: number, obstacles
   const speedTarget = clamp((left + right) / 2, -MAX_REVERSE, MAX_SPEED);
   const yawTarget = clamp((right - left) / TRACK_GAUGE, -MAX_YAW_RATE, MAX_YAW_RATE);
   // The engine pulls harder as it revs up; slowing down is always at the full rate.
-  const engine = clamp((s.rpm - IDLE_RPM) / (MAX_RPM - IDLE_RPM), 0, 1);
+  const engine = engineLoad(s.rpm);
   const speeding = Math.abs(speedTarget) > Math.abs(s.speed) && speedTarget * s.speed >= 0;
   const pull = speeding ? IDLE_PULL + (1 - IDLE_PULL) * engine : 1;
   const before = s.speed;
@@ -253,7 +274,28 @@ export function stepDrive(s: TankDrive, c: DriverControls, dt: number, obstacles
   s.pitch = pitch;
   s.roll = roll;
   s.y += (g.height + CLEARANCE - s.y) * (1 - Math.exp(-dt / HEIGHT_SECONDS));
+  stepEngineGauges(s, dt);
   return s;
+}
+
+/** How hard the engine works, 0 at idle to 1 at top RPM. */
+export function engineLoad(rpm: number): number {
+  return clamp((rpm - IDLE_RPM) / (MAX_RPM - IDLE_RPM), 0, 1);
+}
+
+/** The coolant and the fuel, `dt` seconds on at the tank's RPM. */
+export function stepEngineGauges(s: TankDrive, dt: number): void {
+  const load = engineLoad(s.rpm);
+  const hot = COOLANT_IDLE + (COOLANT_FULL - COOLANT_IDLE) * load;
+  s.coolant += (hot - s.coolant) * (1 - Math.exp(-dt / COOLANT_SECONDS));
+  const burn = (FUEL_AT_IDLE + (1 - FUEL_AT_IDLE) * load) / (FUEL_HOURS * 3600);
+  s.fuel = Math.max(FUEL_RESERVE, s.fuel - burn * dt);
+}
+
+/** The oil pressure for the gauge, bar: about 1.5 at idle and 5 at top RPM, a little lower when the engine runs hot. */
+export function oilPressure(rpm: number, coolant: number): number {
+  const thin = clamp((coolant - COOLANT_IDLE) / (COOLANT_FULL - COOLANT_IDLE), 0, 1) * 0.4;
+  return 1.5 + 3.5 * engineLoad(rpm) - thin;
 }
 
 interface GroundSample {
@@ -401,6 +443,8 @@ export function lerpTankDrive(a: TankDrive, b: TankDrive, t: number, out: TankDr
   out.rightTrack = l(a.rightTrack, b.rightTrack);
   out.rpm = l(a.rpm, b.rpm);
   out.odometer = l(a.odometer, b.odometer);
+  out.coolant = l(a.coolant, b.coolant);
+  out.fuel = l(a.fuel, b.fuel);
   out.gear = b.gear;
   out.grinding = b.grinding;
   out.touching = b.touching;
