@@ -101,6 +101,18 @@ const MIRROR_X = new Matrix4().makeScale(-1, 1, 1);
 export const FIST_AXIS: readonly [number, number, number] = [0.19326625764369965, 0.700115978717804, -0.6873756647109985];
 export const FIST_CENTRE: readonly [number, number, number] = [0.016, -0.019, 0.011];
 
+/**
+ * The tip of a straight index finger in a right hand's grip space, for
+ * pressing buttons (the mechanism kit): the knuckle plus the finger's
+ * length along the wrist's -Z. A left hand's is this mirrored in X.
+ */
+export const INDEX_TIP: readonly [number, number, number] = (() => {
+  const index = FINGERS[0];
+  const length = index.lengths[0] + index.lengths[1] + index.lengths[2];
+  const tip = new Vector3(index.base[0], index.base[1], index.base[2] - length).applyMatrix4(WRIST_IN_GRIP);
+  return [tip.x, tip.y, tip.z] as const;
+})();
+
 const xAxis = new Vector3();
 const yAxis = new Vector3();
 const zAxis = new Vector3();

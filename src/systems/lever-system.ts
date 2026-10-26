@@ -10,19 +10,18 @@ import {
   Vector3,
   VisibilityState,
 } from '@iwsdk/core';
-import { createLeverRig, createTiller, SCREEN_GAP } from '../scene-assets/lever-rig.scene-asset.js';
-import { FIST_CENTRE } from '../scene-assets/hand.scene-asset.js';
-import { angleOf, Lever, LEVER_RIG, LeverEvent, TILLER } from '../sim/lever.js';
+import { createLeverRig, SCREEN_GAP } from '../scene-assets/lever-rig.scene-asset.js';
+import { createLever } from '../scene-assets/mechanism.scene-asset.js';
+import { LEVER_RIG, TILLER } from '../sim/lever.js';
 import { LANE, LANE_HALF_WIDTH, LaneRun, TRACK_SPACING } from '../sim/lever-lane.js';
-import { grip, handUse } from './grip-system.js';
-import { HoldKind, lockResolvers } from './hand-lock.js';
-import { buzz } from './haptics.js';
+import { Lever, MechEvent } from '../sim/mechanism.js';
+import { HoldKind } from './hand-lock.js';
+import { addControl, type Control, letGo } from './mechanism-system.js';
 
 type Side = 'left' | 'right';
 const SIDES: readonly Side[] = ['left', 'right'];
 /** The `handUse` name of a hand on each tiller. */
 const USE: Record<Side, string> = { left: 'tiller-left', right: 'tiller-right' };
-const KIND: Record<Side, number> = { left: HoldKind.TillerLeft, right: HoldKind.TillerRight };
 
 /** The lane board's canvas, px: a band of figures along the top, the map below. */
 const PX = 512;
@@ -33,8 +32,6 @@ const VIEW_M = 48;
 const DRAW_HZ = 20;
 /** After a finish, or with the tank off the lane, letting go of both tillers this long starts again, s. */
 const RESET_AFTER = 3;
-/** While the hand pushes past a limit, a light buzz this often, s, stronger the further past. */
-const STRAIN_BUZZ_EVERY = 0.1;
 const DEG = Math.PI / 180;
 
 let requested: 'show' | 'hide' | null = null;
@@ -66,32 +63,28 @@ interface LeverDebug {
  * them, stop at their limits with the hand kept on the handle (grip locking),
  * tick at their limits and the middle, spring back when let go, and drive a
  * tank along a lane on a board in front of them (src/sim/lever-lane.ts).
- * Works with controllers (the grip button) and tracked hands (a fist or a
- * pinch: see GripSystem); tracked hands are steadied by a one-euro filter.
+ * The tillers are the mechanism kit's levers (F1.3, MechanismSystem takes
+ * hold, moves and buzzes them); this system places the rig, draws them and
+ * runs the lane.
  *
  * One player's only: the rig is drawn where this player put it and nothing
  * goes over the network (the crewmate sees their hand where it is, not
- * closed on a tiller). The mechanism kit (F1.3) makes shared controls.
+ * closed on a tiller: HoldKind.LocalControl isn't sent).
  */
 export class LeverSystem extends createSystem({}) {
   private root = new Group();
+  /** Each tiller's mount (its pivot, which doesn't turn: the lever's space) and the group that turns with it. */
+  private mounts: Record<Side, Group> = { left: new Group(), right: new Group() };
   private pivots: Record<Side, Group> = { left: new Group(), right: new Group() };
   private levers: Record<Side, Lever> = { left: new Lever(TILLER), right: new Lever(TILLER) };
-  /** Which hand holds each tiller. */
-  private holder: Record<Side, Side | null> = { left: null, right: null };
+  private controls!: Record<Side, Control>;
   private counts = { left: { limits: 0, detents: 0 }, right: { limits: 0, detents: 0 } };
-  private strainClock = { left: 0, right: 0 };
   private run = new LaneRun();
   private bestTime = 0;
   private idle = 0;
   private drawClock = 0;
   private ctx!: CanvasRenderingContext2D;
   private texture!: CanvasTexture;
-  private gripPos = new Vector3();
-  private gripQuat = new Quaternion();
-  private fist = new Vector3();
-  private local = new Vector3();
-  private centre = { left: new Vector3(), right: new Vector3() };
   private handleTmp: [number, number, number] = [0, 0, 0];
   private headPos = new Vector3();
   private headQuat = new Quaternion();
@@ -100,10 +93,10 @@ export class LeverSystem extends createSystem({}) {
   init(): void {
     for (const side of SIDES) {
       const m = side === 'left' ? -1 : 1;
-      this.centre[side].set(FIST_CENTRE[0] * m, FIST_CENTRE[1], FIST_CENTRE[2]);
-      this.pivots[side].position.set(m * LEVER_RIG.side, 0, 0);
-      this.pivots[side].add(createTiller());
-      this.root.add(this.pivots[side]);
+      this.mounts[side].position.set(m * LEVER_RIG.side, 0, 0);
+      this.pivots[side].add(createLever(TILLER));
+      this.mounts[side].add(this.pivots[side]);
+      this.root.add(this.mounts[side]);
     }
     this.root.add(createLeverRig());
     this.root.add(this.createScreen());
@@ -112,12 +105,18 @@ export class LeverSystem extends createSystem({}) {
     this.world.createTransformEntity(this.root);
     this.run.reset();
 
-    for (const side of SIDES) {
-      lockResolvers.set(KIND[side], (hand, point, axis) => this.resolve(side, hand, point, axis));
-    }
-    this.cleanupFuncs.push(() => {
-      for (const side of SIDES) lockResolvers.delete(KIND[side]);
+    const control = (side: Side): Control => ({
+      name: USE[side],
+      mech: this.levers[side],
+      frame: this.mounts[side],
+      kind: HoldKind.LocalControl,
+      active: () => this.root.visible,
+      moved: (events) => this.moved(side, events),
     });
+    this.controls = { left: control('left'), right: control('right') };
+    for (const side of SIDES) {
+      this.cleanupFuncs.push(addControl(this.controls[side]));
+    }
 
     const self = this;
     const debug: LeverDebug = {
@@ -128,15 +127,12 @@ export class LeverSystem extends createSystem({}) {
         const out = {} as ReturnType<LeverDebug['tillers']>;
         for (const side of SIDES) {
           const l = this.levers[side];
-          out[side] = { angle: l.angle / DEG, overshoot: l.overshoot / DEG, heldBy: this.holder[side], demand: l.demand(), ...this.counts[side] };
+          out[side] = { angle: l.angle / DEG, overshoot: l.overshoot / DEG, heldBy: this.holder(side), demand: l.demand(), ...this.counts[side] };
         }
         return out;
       },
       handle: (side) => this.handleWorld(side, new Vector3()).toArray(),
-      handleGap: (side, point) => {
-        this.root.updateMatrixWorld(true);
-        return this.handleDistance(side, this.root.worldToLocal(new Vector3(point[0], point[1], point[2])));
-      },
+      handleGap: (side, point) => (window as unknown as { __mechanisms: { gap(n: string, p: number[]): number } }).__mechanisms.gap(USE[side], point),
       lane: () => ({
         x: this.run.x, y: this.run.y, heading: this.run.heading, time: this.run.time, offTime: this.run.offTime,
         started: this.run.started, finished: this.run.finished, off: this.run.off, best: this.run.best,
@@ -155,13 +151,6 @@ export class LeverSystem extends createSystem({}) {
     }
     if (!this.root.visible) {
       return;
-    }
-    this.root.updateMatrixWorld(true);
-    for (const side of SIDES) {
-      this.updateHand(side);
-    }
-    for (const side of SIDES) {
-      this.updateLever(side, dt);
     }
     this.updateLane(dt);
     this.drawClock += dt;
@@ -193,79 +182,27 @@ export class LeverSystem extends createSystem({}) {
 
   private putAway(): void {
     for (const side of SIDES) {
-      const hand = this.holder[side];
-      if (hand) this.letGo(side, hand);
+      letGo(this.controls[side]);
       this.levers[side].angle = TILLER.rest;
       this.pivots[side].rotation.x = 0;
     }
     this.root.visible = false;
   }
 
-  /** Take hold of a tiller on a fresh grip near its handle; let go when the grip is let go. */
-  private updateHand(hand: Side): void {
-    const held = this.holding(hand);
-    const present = this.input.xr.getPrimaryInputSource(hand) !== undefined;
-    if (held) {
-      if (!grip[hand].pressed || !present || handUse[hand] !== USE[held]) {
-        this.letGo(held, hand);
-      }
-      return;
-    }
-    if (!present || !grip[hand].down || handUse[hand]) {
-      return;
-    }
-    this.fistLocal(hand, this.local);
-    let best: Side | null = null;
-    let bestDistance: number = LEVER_RIG.reach;
-    for (const side of SIDES) {
-      if (this.holder[side]) continue;
-      const d = this.handleDistance(side, this.local);
-      if (d < bestDistance) {
-        best = side;
-        bestDistance = d;
-      }
-    }
-    if (best && this.levers[best].grab(angleOf(this.local.y, this.local.z), grip[hand].hand)) {
-      this.holder[best] = hand;
-      handUse[hand] = USE[best];
-      this.pulse(hand, 0.4, 20);
-    }
+  /** Which hand holds a tiller. */
+  private holder(side: Side): Side | null {
+    const held = this.levers[side].held;
+    return held[0] ? 'left' : held[1] ? 'right' : null;
   }
 
-  private letGo(side: Side, hand: Side): void {
-    this.levers[side].release();
-    this.holder[side] = null;
-    if (handUse[hand] === USE[side]) handUse[hand] = null;
-  }
-
-  private holding(hand: Side): Side | null {
-    return this.holder.left === hand ? 'left' : this.holder.right === hand ? 'right' : null;
-  }
-
-  private updateLever(side: Side, dt: number): void {
-    const lever = this.levers[side];
-    const hand = this.holder[side];
-    let angle = Number.NaN;
-    if (hand) {
-      this.fistLocal(hand, this.local);
-      angle = angleOf(this.local.y, this.local.z);
-    }
-    const events = lever.update(dt, angle);
-    this.pivots[side].rotation.x = -lever.angle;
-    if (!hand) return;
-    if (events & LeverEvent.Limit) {
+  /** The kit moved a tiller: turn it, and count its ticks while held. */
+  private moved(side: Side, events: number): void {
+    this.pivots[side].rotation.x = -this.levers[side].angle;
+    if (!this.levers[side].anyHeld) return;
+    if (events & MechEvent.Limit) {
       this.counts[side].limits++;
-      this.pulse(hand, 0.8, 35);
-    } else if (events & LeverEvent.Detent) {
+    } else if (events & MechEvent.Detent) {
       this.counts[side].detents++;
-      this.pulse(hand, 0.3, 15);
-    }
-    // Pushing on past a limit: a light buzz, stronger the further the hand goes.
-    const strain = Math.abs(lever.overshoot);
-    this.strainClock[side] += dt;
-    if (strain > 2 * DEG && this.strainClock[side] >= STRAIN_BUZZ_EVERY) {
-      this.strainClock[side] = 0;
-      this.pulse(hand, Math.min(0.6, 0.15 + strain / (20 * DEG)), 40);
     }
   }
 
@@ -275,7 +212,7 @@ export class LeverSystem extends createSystem({}) {
     if (run.finished && (this.bestTime === 0 || run.time < this.bestTime)) {
       this.bestTime = run.time;
     }
-    const letGo = !this.holder.left && !this.holder.right;
+    const letGo = !this.levers.left.anyHeld && !this.levers.right.anyHeld;
     this.idle = letGo && run.started && (run.finished || run.off) ? this.idle + dt : 0;
     if (this.idle >= RESET_AFTER) {
       run.reset();
@@ -283,53 +220,11 @@ export class LeverSystem extends createSystem({}) {
     }
   }
 
-  /** The middle of `hand`'s fist (where a handle runs through it), in rig space, into `out`. */
-  private fistLocal(hand: Side, out: Vector3): Vector3 {
-    const space = this.player.gripSpaces[hand];
-    space.updateWorldMatrix(true, false);
-    space.getWorldPosition(this.gripPos);
-    space.getWorldQuaternion(this.gripQuat);
-    out.copy(this.centre[hand]).applyQuaternion(this.gripQuat).add(this.gripPos);
-    return this.root.worldToLocal(out);
-  }
-
-  /** How far a point in rig space is from `side`'s handle's centre line. */
-  private handleDistance(side: Side, local: Vector3): number {
-    const t = this.handleParam(side, local);
-    const a = this.levers[side].angle;
-    const px = this.pivots[side].position.x;
-    return Math.hypot(local.x - px, local.y - t * Math.cos(a), local.z + t * Math.sin(a));
-  }
-
-  /** How far up `side`'s lever from its pivot the point nearest `local` on its handle is. */
-  private handleParam(side: Side, local: Vector3): number {
-    const a = this.levers[side].angle;
-    const along = local.y * Math.cos(a) - local.z * Math.sin(a);
-    const lo = TILLER.length - TILLER.gripLength;
-    return along < lo ? lo : along > TILLER.length ? TILLER.length : along;
-  }
-
-  /** Grip locking: the point on the handle nearest the hand, and the lever's direction, scene space. */
-  private resolve(side: Side, hand: Vector3, point: Vector3, axis: Vector3): void {
-    this.root.updateMatrixWorld(true);
-    this.local.copy(hand);
-    this.root.worldToLocal(this.local);
-    const t = this.handleParam(side, this.local);
-    const a = this.levers[side].angle;
-    point.set(this.pivots[side].position.x, t * Math.cos(a), -t * Math.sin(a));
-    this.root.localToWorld(point);
-    axis.set(0, Math.cos(a), -Math.sin(a)).applyQuaternion(this.root.quaternion);
-  }
-
   private handleWorld(side: Side, out: Vector3): Vector3 {
     const [x, y, z] = this.levers[side].gripCentre(this.handleTmp);
-    out.set(x + this.pivots[side].position.x, y, z);
+    out.set(x + this.mounts[side].position.x, y, z);
     this.root.updateMatrixWorld(true);
     return this.root.localToWorld(out);
-  }
-
-  private pulse(hand: Side, intensity: number, ms: number): void {
-    buzz(this.input.xr.gamepads[hand]?.gamepad, hand, intensity, ms);
   }
 
   private createScreen(): Mesh {
@@ -407,7 +302,7 @@ export class LeverSystem extends createSystem({}) {
       const mid = BAND + mapH / 2;
       ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
       ctx.fillRect(x, BAND + 10, 16, mapH - 20);
-      ctx.fillStyle = this.holder[side] ? '#f0c040' : '#a0a0a0';
+      ctx.fillStyle = this.levers[side].anyHeld ? '#f0c040' : '#a0a0a0';
       const h = (d * (mapH - 20)) / 2;
       ctx.fillRect(x, h > 0 ? mid - h : mid, 16, Math.abs(h) || 2);
     }
@@ -430,7 +325,7 @@ export class LeverSystem extends createSystem({}) {
       ? 'Grip both tillers and push them forwards'
       : run.finished
         ? 'Finished! Let go of both to go again'
-        : run.off && !this.holder.left && !this.holder.right
+        : run.off && !this.levers.left.anyHeld && !this.levers.right.anyHeld
           ? 'Off the lane: let go of both to start again'
           : '';
     if (note) {

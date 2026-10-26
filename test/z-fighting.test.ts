@@ -9,6 +9,8 @@ import * as sight from '../src/scene-assets/sight.scene-asset.js';
 import { TURRET } from '../src/sim/cabin.js';
 import { SIGHT_STAND } from '../src/sim/sight.js';
 import * as leverRig from '../src/scene-assets/lever-rig.scene-asset.js';
+import * as mechanism from '../src/scene-assets/mechanism.scene-asset.js';
+import * as bench from '../src/sim/mechanism-bench.js';
 import { coplanarOverlaps, describeOverlaps, trianglesOf } from './support/coplanar.js';
 
 /**
@@ -107,13 +109,46 @@ describe('no faces that flicker through each other (z-fighting)', () => {
       const rig = new Group();
       rig.add(leverRig.createLeverRig());
       for (const side of [-1, 1]) {
-        const tiller = leverRig.createTiller();
+        const tiller = mechanism.createLever(TILLER);
         tiller.position.x = side * LEVER_RIG.side;
         tiller.rotation.x = -angle;
         rig.add(tiller);
       }
       rig.updateMatrixWorld(true);
       expectNone([rig], CABIN_GAP);
+    }
+  });
+
+  it("on the mechanism kit's test bench, with every control at its ends and in between", async () => {
+    const { Group } = await import('@iwsdk/core');
+    const { MOUNTS, NOTCHED_LEVER, CRANK, HANDWHEEL, TWIST, YOKE, BUTTON, SWITCH } = bench;
+    const DEG = Math.PI / 180;
+    const poses = [
+      { lever: NOTCHED_LEVER.min, crank: 0, wheel: 0, twist: -TWIST.max, yoke: 0, button: 0, switch: 0 },
+      { lever: 0, crank: 50 * DEG, wheel: 100 * DEG, twist: 0, yoke: 35 * DEG, button: BUTTON.travel, switch: SWITCH.travel / 2 },
+      { lever: NOTCHED_LEVER.max, crank: 200 * DEG, wheel: -170 * DEG, twist: TWIST.max, yoke: 90 * DEG, button: BUTTON.travel / 2, switch: SWITCH.travel },
+      { lever: 12 * DEG, crank: -95 * DEG, wheel: 7 * DEG, twist: 17 * DEG, yoke: -150 * DEG, button: 0, switch: 0 },
+    ];
+    for (const pose of poses) {
+      const root = new Group();
+      root.add(mechanism.createBench());
+      const part = (key: keyof typeof MOUNTS, mesh: Object3D) => {
+        const mount = new Group();
+        mount.position.set(MOUNTS[key].at[0], MOUNTS[key].at[1], MOUNTS[key].at[2]);
+        mount.rotation.x = MOUNTS[key].tilt;
+        mount.add(mesh);
+        root.add(mount);
+        return mesh;
+      };
+      part('lever', mechanism.createLever(NOTCHED_LEVER)).rotation.x = -pose.lever;
+      part('crank', mechanism.createWheel(CRANK)).rotation.z = pose.crank;
+      part('wheel', mechanism.createWheel(HANDWHEEL)).rotation.z = pose.wheel;
+      part('twist', mechanism.createTwistGrip(TWIST)).rotation.y = pose.twist;
+      part('yoke', mechanism.createYoke(YOKE)).rotation.y = pose.yoke;
+      part('button', mechanism.createButtonCap(BUTTON, 0xa83228)).position.z = -pose.button;
+      part('switch', mechanism.createButtonCap(SWITCH, 0x3a8a3a)).position.z = -pose.switch;
+      root.updateMatrixWorld(true);
+      expectNone([root], CABIN_GAP);
     }
   });
 

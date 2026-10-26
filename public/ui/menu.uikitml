@@ -347,6 +347,13 @@
         <Button id="menu-levers-away" class="choice" size="sm" variant="secondary">Put away</Button>
       </div>
     </div>
+    <div class="setting">
+      <div class="label">Mechanism kit</div>
+      <div class="choices">
+        <Button id="menu-bench" class="choice" size="sm" variant="secondary">In front of me</Button>
+        <Button id="menu-bench-away" class="choice" size="sm" variant="secondary">Put away</Button>
+      </div>
+    </div>
   </div>
   <Divider></Divider>
 

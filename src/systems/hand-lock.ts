@@ -28,9 +28,13 @@ export const HoldKind = {
   Block: 1,
   /** The breech lever's handle (LoadingDrillSystem, spike S4). 2–9 are kept for Phase 1's driver controls, wheels, periscope and shell. */
   BreechLever: 10,
-  /** Spike S3's test tillers (LeverSystem): one player's only, so never sent (LOCAL_HOLD_KINDS). */
-  TillerLeft: 11,
-  TillerRight: 12,
+  /**
+   * A mechanism-kit control only this page has (MechanismSystem): spike S3's
+   * test tillers and the kit's test bench, placed where this player stands.
+   * Never sent (LOCAL_HOLD_KINDS); resolved by which hand holds which control.
+   * 12 is free again.
+   */
+  LocalControl: 11,
 } as const;
 
 /**
@@ -38,14 +42,23 @@ export const HoldKind = {
  * player stands), which the crewmate's page would lock their hand onto in
  * the wrong place: sent as None.
  */
-export const LOCAL_HOLD_KINDS: ReadonlySet<number> = new Set([HoldKind.TillerLeft, HoldKind.TillerRight]);
+export const LOCAL_HOLD_KINDS: ReadonlySet<number> = new Set([HoldKind.LocalControl]);
+
+/**
+ * The HoldKind of each mechanism-kit control by its `handUse` name, kept by
+ * MechanismSystem as controls are added, so `holdKindOf` (net-system.ts)
+ * knows them without a case each.
+ */
+export const controlHoldKinds = new Map<string, number>();
 
 /**
  * Where a hand at `hand` (scene space) holding a control grips it: the point
  * on the handle's centre line its palm closes round, and which way the
- * handle runs (unit, either sign).
+ * handle runs (unit, either sign). `side` is which hand it is, and `own`
+ * whether it is this player's (false: the crewmate's), for controls that
+ * remember where each of this player's hands took hold.
  */
-export type LockResolver = (hand: Vector3, point: Vector3, axis: Vector3) => void;
+export type LockResolver = (hand: Vector3, point: Vector3, axis: Vector3, side: 'left' | 'right', own: boolean) => void;
 
 /** Resolvers by `HoldKind`, registered by the systems that own the controls. */
 export const lockResolvers = new Map<number, LockResolver>();
@@ -77,7 +90,8 @@ export class LockedHand {
   private holding = false;
   private sign = 1;
 
-  constructor(readonly side: 'left' | 'right' = 'right') {
+  /** `own`: this player's hand (false: the crewmate's, drawn by NetSystem). */
+  constructor(readonly side: 'left' | 'right' = 'right', readonly own = true) {
     const m = side === 'left' ? -1 : 1;
     this.fistAxis = new Vector3(FIST_AXIS[0] * m, FIST_AXIS[1], FIST_AXIS[2]).normalize();
     this.centre = new Vector3(FIST_CENTRE[0] * m, FIST_CENTRE[1], FIST_CENTRE[2]);
@@ -102,7 +116,7 @@ export class LockedHand {
     this.handAxis.copy(this.fistAxis).applyQuaternion(quat);
     this.fist.copy(this.centre).applyQuaternion(quat).add(pos);
     if (resolver) {
-      resolver(this.fist, this.point, this.axis);
+      resolver(this.fist, this.point, this.axis, this.side, this.own);
       // Grip it the way round the hand faces as it takes hold, and keep to that.
       if (!this.holding || kind !== this.kind) {
         this.sign = this.handAxis.dot(this.axis) < 0 ? -1 : 1;

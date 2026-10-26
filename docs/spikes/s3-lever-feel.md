@@ -1,6 +1,6 @@
 # Spike S3: lever feel
 
-Status: built and tested in the emulated headset with controllers and with tracked hands (pinch). Whether the levers feel natural, and whether a player can drive the lane with them within a few minutes (the plan's pass mark), can only be judged in a headset: the steps are at the end.
+Status: built and tested in the emulated headset with controllers and with tracked hands (pinch). Since F1.3 the tillers are the mechanism kit's levers ([mechanisms.md](../mechanisms.md)): the lever, its filter and the grabbing and haptics described here moved into the kit unchanged, so this check still applies. Whether the levers feel natural, and whether a player can drive the lane with them within a few minutes (the plan's pass mark), can only be judged in a headset: the steps are at the end.
 
 The question from [the plan](../plan.md#5-risks-and-spikes): does a hand-following lever with limits feel natural and stay stable with controllers and tracked hands? The answer decides how the mechanism kit (F1.3) builds every lever in the tank: the tillers, the gear lever, the hand throttle and the breech lever.
 
@@ -19,15 +19,15 @@ The question from [the plan](../plan.md#5-risks-and-spikes): does a hand-followi
 
 | What | Value | Where |
 | --- | --- | --- |
-| Tiller length, pivot to top | 45 cm, the top 12 cm the handle | `TILLER` in `src/sim/lever.ts` |
+| Tiller length, pivot to top | 45 cm, the top 12 cm the handle | `TILLER` in `src/sim/lever.ts` (the lever itself is `Lever` in `src/sim/mechanism.ts`) |
 | Travel | ±25°, rest upright | `TILLER` |
 | Spring back | exponential, rate 10/s (63% in 0.1 s, 95% in 0.3 s) | `TILLER.spring` |
 | Deadband round upright, read as no drive | ±2° | `TILLER.deadband` |
-| Grab reach from the handle's centre line | 10 cm | `LEVER_RIG.reach` |
+| Grab reach from the handle's centre line | 10 cm | `REACH` in `src/sim/mechanism.ts` |
 | Rig placement | pivots 42 cm ahead of the eyes and 1 m below them, 34 cm apart | `LEVER_RIG` |
 | Hand filter, controllers | one-euro, 8 Hz at rest, β 0.5 | `CONTROLLER_FILTER` |
 | Hand filter, tracked hands | one-euro, 1.5 Hz at rest, β 4 | `TRACKED_HAND_FILTER` |
-| Haptics | take hold 0.4 × 20 ms; limit 0.8 × 35 ms; middle 0.3 × 15 ms; past a limit 0.15–0.6 × 40 ms every 0.1 s | `LeverSystem` |
+| Haptics | take hold 0.4 × 20 ms; limit 0.8 × 35 ms; middle 0.3 × 15 ms; past a limit 0.15–0.6 × 40 ms every 0.1 s | `MechanismSystem` |
 | Lane tank | tracks 2.8 m apart, 5 m/s (18 km/h) each at full tiller, reaching it at rate 2.5/s | `src/sim/lever-lane.ts` |
 | Board | 42 cm square, 25° tilted back, 20 redraws a second | `LEVER_RIG.board`, `LeverSystem` |
 
@@ -35,11 +35,11 @@ The rig is placed from the eyes, not the floor, so the handles land at lap heigh
 
 ## How it works
 
-- **The lever** (`src/sim/lever.ts`, engine-free). The hand's position is taken into lever space and its angle round the pivot measured in the plane the lever swings in. On taking hold the lever keeps the difference between its angle and the hand's, so it never jumps. Each frame the angle is the hand's angle plus that difference, clamped to the limits; the amount clamped off is the overshoot. Let go, it eases back to rest. A hand closer than 5 cm to the pivot can't steer it (its angle there is meaningless); a lost hand holds the lever where it is for that frame.
+- **The lever** (`src/sim/mechanism.ts` since F1.3, engine-free). The hand's position is taken into lever space and its angle round the pivot measured in the plane the lever swings in. On taking hold the lever keeps the difference between its angle and the hand's, so it never jumps. Each frame the angle is the hand's angle plus that difference, clamped to the limits; the amount clamped off is the overshoot. Let go, it eases back to rest. A hand closer than 5 cm to the pivot can't steer it (its angle there is meaningless); a lost hand holds the lever where it is for that frame.
 - **Steadiness.** Tracked hands jitter by a few millimetres, about a degree on a 39 cm lever arm. A [one-euro filter](https://gery.casiez.net/1euro/) on the hand's angle smooths hard while the hand is nearly still and hardly at all while it moves, so a held lever stays still without lagging behind a deliberate push. Unit-tested: ±0.6° of jitter becomes under 0.3° of wobble, and a 15° push in 0.2 s is followed to within 2° 0.1 s after it ends. Controllers get a much lighter filter.
 - **Which point is the hand.** The middle of the fist (where a handle runs through it, `FIST_CENTRE`), not the controller's grip origin, so a hand closed on the handle and the lever agree on where the hand is.
-- **Hands on the handle.** Each tiller has a `HoldKind` (11 and 12) with a resolver that returns the point on the handle nearest the hand and the lever's direction, so OwnHandsSystem draws the glove closed on the handle, keeping the hand's twist, and lets go at 25 cm.
-- **One player's.** The rig is drawn where this player put it and its tillers aren't shared. The two hold kinds are in `LOCAL_HOLD_KINDS` and sent to the crewmate as nothing held, so their page doesn't pull the hand onto its own rig. Shared controls come with the mechanism kit (F1.3), following the skill's pattern.
+- **Hands on the handle.** Each tiller has a `HoldKind` (since F1.3 both are `LocalControl`, 11, resolved by which hand holds which) with a resolver that returns the point on the handle nearest the hand and the lever's direction, so OwnHandsSystem draws the glove closed on the handle, keeping the hand's twist, and lets go at 25 cm.
+- **One player's.** The rig is drawn where this player put it and its tillers aren't shared. The hold kind is in `LOCAL_HOLD_KINDS` and sent to the crewmate as nothing held, so their page doesn't pull the hand onto its own rig. Shared controls come with the mechanism kit (F1.3), following the skill's pattern.
 - **The lane** (`src/sim/lever-lane.ts`, engine-free) is a stand-in for the tank drive (F1.4): skid steering, each track easing to its tiller's demand, the tank moving at their mean and turning by their difference. It exists so the plan's pass mark can be tried before there is a tank to ride.
 
 Testing note: the emulator's CLI moves one controller after the other, so in the test the tank turns while only one tiller is forwards; the test starts the lane again once both are.
