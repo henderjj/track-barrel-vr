@@ -85,7 +85,7 @@ const FOG_FAR = 230;
  * until F1.4 moves the cabin with the tank. The test range's targets and
  * roads (F1.7) are part of `Ground`, so they go with it.
  */
-const DEMO_NAMES = /^(Hull|Turret|Ground|Sight|Sight Stand|Sight Lens|Loading Drill|Loading Station|Loading Board|Shell \d+|Breech Block|Breech Lever)$/;
+const DEMO_NAMES = /^(Hull|Turret|Driver Station|Ground|Sight|Sight Stand|Sight Lens|Loading Drill|Loading Station|Loading Board|Shell \d+|Breech Block|Breech Lever)$/;
 
 let active: RideSystem | null = null;
 

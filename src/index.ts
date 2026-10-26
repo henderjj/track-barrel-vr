@@ -6,6 +6,7 @@ import { CalibrationSystem } from './systems/calibration-system.js';
 import { CrewBotSystem } from './systems/crew-bot-system.js';
 import { CrewStatusSystem } from './systems/crew-status-system.js';
 import { DriveSystem } from './systems/drive-system.js';
+import { DriverStationSystem } from './systems/driver-station-system.js';
 import { FrameRateSystem } from './systems/frame-rate-system.js';
 import { GameMenuSystem } from './systems/game-menu-system.js';
 import { GripSystem } from './systems/grip-system.js';
@@ -60,6 +61,8 @@ World.create(
   world.registerSystem(MechanismSystem);
   // The turret (F1.8): after the kit has moved its controls, before OwnHandsSystem draws hands on them. It turns a seated gunner's play space with the turret.
   world.registerSystem(TurretSystem);
+  // After the kit has moved its levers: it reads them into the drive (DriveSystem drives by them next frame) and draws the gauges.
+  world.registerSystem(DriverStationSystem);
   world.registerSystem(LeverSystem);
   world.registerSystem(MechanismBenchSystem);
   world.registerSystem(LoadingDrillSystem);

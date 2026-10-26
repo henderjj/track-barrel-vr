@@ -4,7 +4,9 @@
  * free when given reusable buffers:
  *
  * - TankState, host → guest at 45 Hz: the tank's pose in world space (the
- *   guest moves its world by its inverse), how it moves, its RPM and gearbox.
+ *   guest moves its world by its inverse), how it moves, its RPM and
+ *   gearbox, and (since F1.5) its gauges and the driver's controls it ran
+ *   on, so a guest gunner sees the host driver's levers move.
  * - DriverControls, guest driver → host at 45 Hz: the tillers, the gear
  *   lever and the hand throttle, which the host simulates.
  *
@@ -21,9 +23,13 @@ const HEADER = 7;
  * 65534), pitch and roll (1e-4 rad), speed and accel (mm/s, mm/s²), yaw,
  * pitch and roll rates (1e-4 rad/s), left and right track (mm/s); RPM
  * (uint16), gear (uint8), flags (uint8: bit 0 grinding, bit 1 touching),
- * bumps (uint16) and odometer (float32, m).
+ * bumps (uint16) and odometer (float32, m). F1.5 added: coolant (uint8,
+ * °C), fuel (uint8, 0-255), then the driver's controls as in
+ * DriverControls (tillers int8, gear lever uint8, throttle uint8).
  */
-export const TANK_STATE_BYTES = HEADER + 12 + 20 + 2 + 1 + 1 + 2 + 4;
+export const TANK_STATE_BYTES = HEADER + 12 + 20 + 2 + 1 + 1 + 2 + 4 + 2 + 4;
+/** F1.4's TankState, without the gauges and controls: still decoded, for a page on the previous build. */
+export const TANK_STATE_V1_BYTES = TANK_STATE_BYTES - 6;
 /** DriverControls: header, left and right tiller (int8, ±127), gear (uint8), throttle (uint8, 0-255). */
 export const DRIVER_CONTROLS_BYTES = HEADER + 4;
 
@@ -60,8 +66,11 @@ function readHeader(view: DataView, header: TankHeader): void {
   header.timeMs = view.getUint32(3);
 }
 
-/** Write a TankState packet into `buffer` (at least TANK_STATE_BYTES long); returns its length. */
-export function encodeTankState(buffer: ArrayBuffer, seq: number, timeMs: number, s: TankDrive): number {
+/**
+ * Write a TankState packet into `buffer` (at least TANK_STATE_BYTES long),
+ * with the driver's `controls` the host drove it by; returns its length.
+ */
+export function encodeTankState(buffer: ArrayBuffer, seq: number, timeMs: number, s: TankDrive, controls: DriverControls): number {
   const view = new DataView(buffer);
   writeHeader(view, PacketType.TankState, seq, timeMs);
   let o = HEADER;
@@ -85,16 +94,22 @@ export function encodeTankState(buffer: ArrayBuffer, seq: number, timeMs: number
   view.setUint8(o + 3, (s.grinding ? FLAG_GRINDING : 0) | (s.touching ? FLAG_TOUCHING : 0));
   view.setUint16(o + 4, s.bumps & 0xffff);
   view.setFloat32(o + 6, s.odometer);
-  return o + 10;
+  o += 10;
+  view.setUint8(o, Math.max(0, Math.min(255, Math.round(s.coolant))));
+  view.setUint8(o + 1, Math.round(Math.max(0, Math.min(1, s.fuel)) * 255));
+  writeControls(view, o + 2, controls);
+  return o + 6;
 }
 
 /**
- * Decode a TankState packet into `out`; returns false if it isn't one. The
- * heading comes back within (-π, π]: the guest unwraps it against the last
- * one it drew (lerpTankDrive takes the short way round).
+ * Decode a TankState packet into `out`, and the driver's controls into
+ * `controls`; returns false if it isn't one. The heading comes back within
+ * (-π, π]: the guest unwraps it against the last one it drew (lerpTankDrive
+ * takes the short way round). An F1.4 packet leaves the gauges in `out`
+ * and `controls` as they were.
  */
-export function decodeTankState(view: DataView, header: TankHeader, out: TankDrive): boolean {
-  if (view.byteLength < TANK_STATE_BYTES || view.getUint8(0) !== PacketType.TankState) {
+export function decodeTankState(view: DataView, header: TankHeader, out: TankDrive, controls: DriverControls | null = null): boolean {
+  if (view.byteLength < TANK_STATE_V1_BYTES || view.getUint8(0) !== PacketType.TankState) {
     return false;
   }
   readHeader(view, header);
@@ -122,6 +137,12 @@ export function decodeTankState(view: DataView, header: TankHeader, out: TankDri
   out.bumps = view.getUint16(o + 4);
   out.odometer = view.getFloat32(o + 6);
   out.shiftTimer = 0;
+  o += 10;
+  if (view.byteLength >= TANK_STATE_BYTES) {
+    out.coolant = view.getUint8(o);
+    out.fuel = view.getUint8(o + 1) / 255;
+    if (controls) readControls(view, o + 2, controls);
+  }
   return true;
 }
 
@@ -129,14 +150,25 @@ function tiller(v: number): number {
   return Math.round((v < -1 ? -1 : v > 1 ? 1 : v) * 127);
 }
 
+function writeControls(view: DataView, o: number, c: DriverControls): void {
+  view.setInt8(o, tiller(c.left));
+  view.setInt8(o + 1, tiller(c.right));
+  view.setUint8(o + 2, c.gear);
+  view.setUint8(o + 3, Math.round((c.throttle < 0 ? 0 : c.throttle > 1 ? 1 : c.throttle) * 255));
+}
+
+function readControls(view: DataView, o: number, out: DriverControls): void {
+  out.left = view.getInt8(o) / 127;
+  out.right = view.getInt8(o + 1) / 127;
+  out.gear = Math.min(2, view.getUint8(o + 2)) as Gear;
+  out.throttle = view.getUint8(o + 3) / 255;
+}
+
 /** Write a DriverControls packet into `buffer` (at least DRIVER_CONTROLS_BYTES long); returns its length. */
 export function encodeDriverControls(buffer: ArrayBuffer, seq: number, timeMs: number, c: DriverControls): number {
   const view = new DataView(buffer);
   writeHeader(view, PacketType.DriverControls, seq, timeMs);
-  view.setInt8(HEADER, tiller(c.left));
-  view.setInt8(HEADER + 1, tiller(c.right));
-  view.setUint8(HEADER + 2, c.gear);
-  view.setUint8(HEADER + 3, Math.round((c.throttle < 0 ? 0 : c.throttle > 1 ? 1 : c.throttle) * 255));
+  writeControls(view, HEADER, c);
   return DRIVER_CONTROLS_BYTES;
 }
 
@@ -146,9 +178,6 @@ export function decodeDriverControls(view: DataView, header: TankHeader, out: Dr
     return false;
   }
   readHeader(view, header);
-  out.left = view.getInt8(HEADER) / 127;
-  out.right = view.getInt8(HEADER + 1) / 127;
-  out.gear = Math.min(2, view.getUint8(HEADER + 2)) as Gear;
-  out.throttle = view.getUint8(HEADER + 3) / 255;
+  readControls(view, HEADER, out);
   return true;
 }

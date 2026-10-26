@@ -26,7 +26,12 @@ export const HoldKind = {
   None: 0,
   /** A block (ThrowablesSystem): drawn in the hand, so the hand isn't locked. */
   Block: 1,
-  /** The breech lever's handle (LoadingDrillSystem, spike S4). 2–9 are kept for Phase 1's driver controls, wheels, periscope and shell. */
+  /** The driver's controls (DriverStationSystem, F1.5): each tiller, the gear lever and the hand throttle. */
+  TillerLeft: 2,
+  TillerRight: 3,
+  GearLever: 4,
+  HandThrottle: 5,
+  /** The breech lever's handle (LoadingDrillSystem, spike S4). 6–9 are kept for Phase 1's wheels, periscope and shell. */
   BreechLever: 10,
   /** The gunner's manual traverse crank and elevation handwheel (TurretSystem, F1.8). */
   TraverseCrank: 6,

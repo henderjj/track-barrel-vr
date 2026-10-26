@@ -8,9 +8,10 @@ import {
   encodeDriverControls,
   encodeTankState,
   TANK_STATE_BYTES,
+  TANK_STATE_V1_BYTES,
   type TankHeader,
 } from '../src/net/tank-codec.js';
-import { createControls, createTankDrive, HIGH, NEUTRAL } from '../src/sim/tank-drive.js';
+import { createControls, createTankDrive, HIGH, LOW, NEUTRAL } from '../src/sim/tank-drive.js';
 
 describe('tank packets (F1.4)', () => {
   it('uses the packet types set aside for it', () => {
@@ -23,13 +24,23 @@ describe('tank packets (F1.4)', () => {
     Object.assign(s, {
       y: 0.83, pitch: 0.051, roll: -0.033, speed: 8.765, accel: -0.987, yawRate: 0.2345, pitchRate: -0.0123, rollRate: 0.0456,
       leftTrack: 8.1, rightTrack: 9.4, rpm: 2143.6, gear: HIGH, grinding: true, touching: false, bumps: 3, odometer: 4321.5,
+      coolant: 81.4, fuel: 0.62,
     });
+    const controls = { left: 0.75, right: -0.25, gear: LOW, throttle: 0.3 } as const;
     const buffer = new ArrayBuffer(TANK_STATE_BYTES);
-    const length = encodeTankState(buffer, 65535, 123456.7, s);
+    const length = encodeTankState(buffer, 65535, 123456.7, s, controls);
     expect(length).toBe(TANK_STATE_BYTES);
     const header: TankHeader = { seq: 0, timeMs: 0 };
     const out = createTankDrive();
-    expect(decodeTankState(new DataView(buffer, 0, length), header, out)).toBe(true);
+    const outControls = createControls();
+    expect(decodeTankState(new DataView(buffer, 0, length), header, out, outControls)).toBe(true);
+    // The gauges and the controls the host drove by (F1.5).
+    expect(out.coolant).toBe(81);
+    expect(out.fuel).toBeCloseTo(0.62, 2);
+    expect(outControls.left).toBeCloseTo(0.75, 2);
+    expect(outControls.right).toBeCloseTo(-0.25, 2);
+    expect(outControls.gear).toBe(LOW);
+    expect(outControls.throttle).toBeCloseTo(0.3, 2);
     expect(header).toEqual({ seq: 65535, timeMs: 123456 });
     expect(out.x).toBeCloseTo(s.x, 2);
     expect(out.z).toBeCloseTo(s.z, 2);
@@ -45,6 +56,20 @@ describe('tank packets (F1.4)', () => {
     expect(out.touching).toBe(false);
     expect(out.bumps).toBe(3);
     expect(out.odometer).toBeCloseTo(4321.5, 2);
+  });
+
+  it('still reads an F1.4 tank state, leaving the gauges and controls as they were', () => {
+    const s = Object.assign(createTankDrive(), { z: -12.5, rpm: 1500, coolant: 90, fuel: 0.3 });
+    const buffer = new ArrayBuffer(TANK_STATE_BYTES);
+    encodeTankState(buffer, 1, 10, s, { left: 1, right: 1, gear: HIGH, throttle: 1 });
+    const out = createTankDrive();
+    const controls = createControls();
+    expect(decodeTankState(new DataView(buffer, 0, TANK_STATE_V1_BYTES), { seq: 0, timeMs: 0 }, out, controls)).toBe(true);
+    expect(out.z).toBeCloseTo(-12.5, 3);
+    expect(out.rpm).toBe(1500);
+    expect(out.coolant).toBe(createTankDrive().coolant);
+    expect(out.fuel).toBe(1);
+    expect(controls).toEqual(createControls());
   });
 
   it('round-trips the driver\'s controls, and turns away other packets', () => {
