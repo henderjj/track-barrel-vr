@@ -113,7 +113,7 @@ Because the bench is a one-player test rig: no practice crewmate part and no net
 
 ## Numbers kept for later features
 
-HoldKind 2–5 the driver's controls (F1.5), 6–7 the traverse and elevation wheels (F1.8), 8 the periscope (F1.6), 9 a shell, 10 the breech lever (spike S4), 11 `LocalControl`; 12 is free; 13–15 are used by `test/hand-lock.test.ts`.
+HoldKind 2–5 the driver's controls (F1.5: 2 left tiller, 3 right tiller, 4 gear lever, 5 hand throttle), 6–7 the traverse and elevation wheels (F1.8), 8 the periscope (F1.6), 9 a shell, 10 the breech lever (spike S4), 11 `LocalControl`; 12 is free; 13–15 are used by `test/hand-lock.test.ts`.
 
 ## Headset check
 

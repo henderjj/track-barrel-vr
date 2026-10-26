@@ -80,8 +80,8 @@ interface StationDebug {
   };
   /** What each gauge's needle points at, in its dial's units (speed km/h, rpm, coolant °C, oil bar, fuel 0-1). */
   gauges(): Record<Dial['id'], number>;
-  /** The middle of a control's handle, scene space. */
-  handle(id: DriverControlId): number[];
+  /** The middle of a control's handle, scene space: where it is, or where it would be at `degrees`. */
+  handle(id: DriverControlId, degrees?: number): number[];
 }
 
 /**
@@ -181,11 +181,12 @@ export class DriverStationSystem extends createSystem({}) {
         if (s) for (const dial of DIALS) out[dial.id] = gaugeValue(dial, s);
         return out;
       },
-      handle: (id) => {
-        const l = self.levers[id];
-        const p = l.handle(1, [0, 0, 0]);
+      handle: (id, degrees) => {
+        const { spec } = DRIVER_CONTROLS[id];
+        const a = degrees === undefined ? self.levers[id].angle : degrees * DEG;
+        const r = spec.length - spec.gripLength / 2;
         self.mounts[id].updateWorldMatrix(true, false);
-        return self.tmp.set(p[0], p[1], p[2]).applyMatrix4(self.mounts[id].matrixWorld).toArray();
+        return self.tmp.set(0, r * Math.cos(a), -r * Math.sin(a)).applyMatrix4(self.mounts[id].matrixWorld).toArray();
       },
     };
     (window as unknown as { __driverStation: StationDebug }).__driverStation = debug;

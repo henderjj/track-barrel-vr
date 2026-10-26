@@ -299,6 +299,13 @@ async function driveChecks(host, guest, label) {
   check(`The guest driver's tillers drive the host's tank, and the guest sees it move close behind (${label})`,
     going !== null && going.h.z < -1 && ahead < going.h.speed * 0.6 + 0.3,
     going ? `host at ${going.h.speed.toFixed(1)} m/s, z ${going.h.z.toFixed(2)}; guest draws ${going.g.speed.toFixed(1)} m/s, z ${going.g.z.toFixed(2)}` : JSON.stringify(await Promise.all([tank(host), tank(guest)])));
+  // The driver's station (F1.5): the host's page draws the guest's tillers forwards.
+  const hostSees = await waitFor('the host to draw the guest\'s tillers', async () => {
+    const st = await host.page.evaluate(() => window.__driverStation.state());
+    return st.angles.tillerLeft > 20 && st.angles.tillerRight > 20 ? st : null;
+  }, 5000).catch(() => null);
+  check(`The host's page draws the guest driver's tillers where the guest pushed them (${label})`, hostSees !== null,
+    hostSees ? `${hostSees.angles.tillerLeft.toFixed(1)}° and ${hostSees.angles.tillerRight.toFixed(1)}°` : JSON.stringify(await host.page.evaluate(() => window.__driverStation.state().angles)));
   // How smoothly the guest draws it: the distance driven, frame by frame, never goes back or jumps.
   const steps = await guest.page.evaluate(() => new Promise((resolve) => {
     const out = [];
@@ -336,11 +343,23 @@ async function driveChecks(host, guest, label) {
   await waitFor('the host to hear the ask', async () => (await host.page.evaluate(() => window.__seats.swap)) === 'offered', 8000);
   await host.page.evaluate(() => window.__gameMenu.click('menu-swap'));
   await waitFor('the host in the driver\'s seat', async () => (await host.page.evaluate(() => window.__drive.driver())) === 'me', 8000);
-  await host.page.evaluate(() => window.__drive.set({ left: 1, right: 1 }));
+  await host.page.evaluate(() => window.__drive.set({ left: 1, right: 1, throttle: 1 }));
   const hostDrives = await waitFor('the guest to see the host drive', async () => {
     const g = await tank(guest);
     return g.speed > 1 ? g : null;
   }, 15000).catch(() => null);
+  // The guest gunner's page draws the host driver's levers and reads the host's tank on its gauges.
+  const guestSees = await waitFor('the guest to draw the host\'s levers', async () => {
+    const [st, gauges, h] = await Promise.all([
+      guest.page.evaluate(() => window.__driverStation.state()),
+      guest.page.evaluate(() => window.__driverStation.gauges()),
+      tank(host),
+    ]);
+    return st.angles.tillerLeft > 20 && st.angles.throttle > 35 && Math.abs(gauges.rpm - h.rpm) < 200 ? { st, gauges, h } : null;
+  }, 8000).catch(() => null);
+  check(`The guest's page draws the host driver's tillers and throttle, and its gauges read the host's tank (${label})`, guestSees !== null,
+    guestSees ? `tillers ${guestSees.st.angles.tillerLeft.toFixed(1)}°, throttle ${guestSees.st.angles.throttle.toFixed(1)}°, ${guestSees.gauges.rpm.toFixed(0)} rpm for the host's ${guestSees.h.rpm.toFixed(0)}`
+      : JSON.stringify(await guest.page.evaluate(() => ({ ...window.__driverStation.state(), gauges: window.__driverStation.gauges() }))));
   await host.page.evaluate(() => window.__drive.set(null));
   check(`The host drives from the driver's seat and the guest sees it (${label})`, hostDrives !== null,
     hostDrives ? `${hostDrives.speed.toFixed(1)} m/s` : JSON.stringify(await tank(guest)));
