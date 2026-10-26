@@ -636,12 +636,17 @@ async function mechanismBench() {
   check('Practice > Mechanism kit puts the bench in front of the player', shown, `crank knob at ${fmt(handle('crank'))}`);
   const squeeze = (value, device = 'controller-right') => iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value }] });
   // Where to put the controller so the middle of its fist, where a handle runs through it, is at `p`.
-  const gripFor = (p) => {
+  // The fist's offset from the controller is measured with the hand holding nothing (a held hand is
+  // drawn on the handle), and kept while the controller's orientation stays the same.
+  let fistOffset = [0, 0, 0];
+  const measureFist = () => {
     const fist = evalInApp('window.__ownHands.fist("right")');
     const grip = evalInApp('window.__debug.world.player.gripSpaces.right.getWorldPosition(window.__debug.world.player.position.clone()).toArray()');
-    return toOrigin([p[0] - fist[0] + grip[0], p[1] - fist[1] + grip[1], p[2] - fist[2] + grip[2]]);
+    fistOffset = [fist[0] - grip[0], fist[1] - grip[1], fist[2] - grip[2]];
   };
+  const gripFor = (p) => toOrigin([p[0] - fistOffset[0], p[1] - fistOffset[1], p[2] - fistOffset[2]]);
   const take = async (key, label) => {
+    measureFist();
     iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(handle(key)), duration: 0.4 });
     await sleep(600);
     squeeze(1);
@@ -665,11 +670,11 @@ async function mechanismBench() {
     `${turned.turns.toFixed(2)} turns, ${turned.detents} ticks`);
   await letGoOf('crank');
 
-  // The notched lever: pushed 10 cm forwards and let go, it settles into its front notch.
+  // The notched lever: pushed 12 cm forwards, past its front notch, and let go, it settles into that notch.
   await take('lever', 'the lever taken hold of');
   const leverAt = handle('lever');
-  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('lever', [0, 0.21, -0.1])), duration: 0.4 });
-  await waitFor('the lever to move', () => state('lever').angle > 15, 4000).catch(() => false);
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('lever', [0, 0.21, -0.12])), duration: 0.4 });
+  await waitFor('the lever past its front notch', () => state('lever').angle > 26, 4000).catch(() => false);
   await letGoOf('lever');
   const settled = await waitFor('the lever to settle', () => { const s = state('lever'); return Math.abs(s.angle - 25) < 0.5 && s; }, 4000).catch(() => state('lever'));
   check('The notched lever, let go past halfway, settles into the next notch with a tick',
@@ -688,6 +693,7 @@ async function mechanismBench() {
   // The twist grip: take hold, roll the wrist 30° about the upright, pull the trigger.
   iwsdk(['xr', 'set-transform'], { device: 'controller-right', orientation: { pitch: 0, yaw: 0, roll: 0 } });
   await sleep(200);
+  measureFist();
   const twistAt = gripFor(handle('twist'));
   await take('twist', 'the twist grip taken hold of');
   iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: twistAt, orientation: { pitch: 0, yaw: 30, roll: 0 }, duration: 0.4 });
