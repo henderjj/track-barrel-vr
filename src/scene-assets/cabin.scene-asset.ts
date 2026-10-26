@@ -18,6 +18,7 @@ import {
   TURRET,
   VISION_SLIT,
 } from '../sim/cabin.js';
+import { MANTLET_DEPTH, POWER_GRIP, STATION, TRUNNION } from '../sim/turret.js';
 
 /**
  * The tank, seen from inside: the hull with the driver's seat, and the
@@ -26,8 +27,8 @@ import {
  * src/sim/cabin.ts, so the systems and tests use the same numbers.
  *
  * Hull space: hull floor at y = 0, the front towards -Z. The turret is its
- * own mesh in turret space (origin at the ring's centre), so it can turn
- * (F1.8); the seats' moving controls come as their own meshes too (F1.5).
+ * own mesh in turret space (origin at the ring's centre), so it can turn,
+ * and the gun its own again inside it, so it can elevate (F1.8); the seats' moving controls come as their own meshes too (F1.5).
  * Each is merged into one draw call, vertex-coloured and flat-shaded.
  *
  * Plates are painted on the outside and ivory inside, as the real tanks'
@@ -215,24 +216,9 @@ function turretParts(): Part[] {
   ring.scale(1, 0.5, 1);
   parts.push({ geometry: ring, color: STEEL, position: [0, ringTop, 0] });
 
-  // The gun: mantlet, barrel and muzzle brake outside; the breech block beside the gunner inside.
-  const mantletDepth = 0.12;
-  parts.push(box([0.9, 0.32, mantletDepth], [0, GUN.y + 0.01, TURRET.front - mantletDepth / 2 + 0.01], PAINT));
-  // Thicker at the mantlet end (+Z once turned).
-  const barrel = new CylinderGeometry(GUN.barrelRadius * 1.15, GUN.barrelRadius, GUN.barrelLength, 10, 1);
-  barrel.rotateX(Math.PI / 2);
-  const muzzle = TURRET.front - mantletDepth - GUN.barrelLength;
-  parts.push({ geometry: barrel, color: PAINT_DARK, position: [0, GUN.y, muzzle + GUN.barrelLength / 2 + 0.02] });
-  const brake = new CylinderGeometry(0.09, 0.09, 0.26, 10, 1);
-  brake.rotateX(Math.PI / 2);
-  parts.push({ geometry: brake, color: PAINT_DARK, position: [0, GUN.y, muzzle + 0.12] });
-  const breechFront = TURRET.front + t;
-  const breechLength = GUN.breechBack - breechFront;
-  parts.push(box([2 * GUN.breechHalfWidth, 0.3, breechLength], [0, GUN.y, breechFront + breechLength / 2], STEEL));
-  // The breech's opening at its back, a darker ring standing 5 mm proud.
-  const mouth = new CylinderGeometry(0.075, 0.075, 0.03, 10, 1);
-  mouth.rotateX(Math.PI / 2);
-  parts.push({ geometry: mouth, color: RUBBER, position: [0, GUN.y, GUN.breechBack + 0.01] });
+  // The gun is its own mesh, so it can elevate (createGun).
+  // The gunner's station: a gearbox behind each wheel on a column from the basket floor, and the power grip's pedestal (F1.8).
+  parts.push(...stationParts());
 
   // The gunsight hangs from the roof at SIGHT_EYEPIECE (spike S1's, src/systems/sight-system.ts, until F1.9).
 
@@ -254,6 +240,54 @@ function turretParts(): Part[] {
   return parts;
 }
 
+/** The fixed parts of the gunner's station, in turret space: what the moving controls (src/systems/turret-system.ts) are mounted on. */
+function stationParts(): Part[] {
+  const parts: Part[] = [];
+  const floor = TURRET.basketFloor;
+  for (const key of ['elevation', 'crank'] as const) {
+    const { at, tilt } = STATION[key];
+    // The gearbox sits behind the wheel's hub, which ends inside it; its column stands on the basket floor.
+    const back = -0.045;
+    const centre: Vec3 = [at[0], at[1] - back * Math.sin(tilt), at[2] + back * Math.cos(tilt)];
+    parts.push({ geometry: new BoxGeometry(0.08, 0.08, 0.06), color: STEEL_LIGHT, position: centre, rotation: [tilt, 0, 0] });
+    parts.push(beam([centre[0], floor - 0.01, centre[2]], [centre[0], centre[1] - 0.02, centre[2]], 0.022, STEEL, 6));
+  }
+  // The power grip's pedestal: its top 15 mm under the grip's flange, as the kit's bench has it.
+  const { at } = STATION.twist;
+  const top = at[1] + POWER_GRIP.base - 0.015;
+  parts.push({ geometry: new CylinderGeometry(0.034, 0.042, top - floor + 0.01, 10, 1), color: PAINT_DARK, position: [at[0], (top + floor - 0.01) / 2, at[2]] });
+  return parts;
+}
+
+/**
+ * The gun, in gun space: its origin on the trunnions (place it at
+ * (0, TRUNNION.y, TRUNNION.z) in turret space) and elevated with
+ * `rotation.x`. The mantlet, barrel and muzzle brake are outside the
+ * turret's front plate; the breech block reaches back beside the gunner.
+ */
+function gunParts(): Part[] {
+  const t = HULL.wall;
+  const z0 = TRUNNION.z;
+  const parts: Part[] = [];
+  parts.push(box([0.9, 0.32, MANTLET_DEPTH], [0, 0.01, TURRET.front - MANTLET_DEPTH / 2 + 0.01 - z0], PAINT));
+  // Thicker at the mantlet end (+Z once turned).
+  const barrel = new CylinderGeometry(GUN.barrelRadius * 1.15, GUN.barrelRadius, GUN.barrelLength, 10, 1);
+  barrel.rotateX(Math.PI / 2);
+  const muzzle = TURRET.front - MANTLET_DEPTH - GUN.barrelLength - z0;
+  parts.push({ geometry: barrel, color: PAINT_DARK, position: [0, 0, muzzle + GUN.barrelLength / 2 + 0.02] });
+  const brake = new CylinderGeometry(0.09, 0.09, 0.26, 10, 1);
+  brake.rotateX(Math.PI / 2);
+  parts.push({ geometry: brake, color: PAINT_DARK, position: [0, 0, muzzle + 0.12] });
+  const breechFront = TURRET.front + t - z0;
+  const breechLength = GUN.breechBack - TURRET.front - t;
+  parts.push(box([2 * GUN.breechHalfWidth, 0.3, breechLength], [0, 0, breechFront + breechLength / 2], STEEL));
+  // The breech's opening at its back, a darker ring standing 5 mm proud.
+  const mouth = new CylinderGeometry(0.075, 0.075, 0.03, 10, 1);
+  mouth.rotateX(Math.PI / 2);
+  parts.push({ geometry: mouth, color: RUBBER, position: [0, 0, GUN.breechBack + 0.01 - z0] });
+  return parts;
+}
+
 const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
 
 /** The hull, with everything fixed to it, in one mesh. */
@@ -263,7 +297,14 @@ export function createHull(): Mesh {
   return mesh;
 }
 
-/** The turret and its basket in one mesh, in turret space: place it at the ring's centre, (0, 0, TURRET.z). */
+/** The gun in one mesh, in gun space: place it on the trunnions, (0, TRUNNION.y, TRUNNION.z) in turret space, and elevate it with rotation.x. */
+export function createGun(): Mesh {
+  const mesh = new Mesh(mergeParts(gunParts()), material);
+  mesh.name = 'Gun';
+  return mesh;
+}
+
+/** The turret and its basket in one mesh, in turret space (the gun apart): place it at the ring's centre, (0, 0, TURRET.z). */
 export function createTurret(): Mesh {
   const mesh = new Mesh(mergeParts(turretParts()), material);
   mesh.name = 'Turret';

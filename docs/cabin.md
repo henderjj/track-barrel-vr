@@ -14,7 +14,7 @@ The crew's place in the tank: the hull with the driver's seat, the turret with i
 
 ## Numbers
 
-Hull space: hull floor at y = 0, front towards −Z, +X to the right. The tank stays at the origin (plan decision 4), so hull space is the scene's space. Turret space is the same turned about the ring's centre (hull z = 0.2) by the turret's angle, which stays 0 until F1.8.
+Hull space: hull floor at y = 0, front towards −Z, +X to the right. The tank stays at the origin (plan decision 4), so hull space is the scene's space. Turret space is the same turned about the ring's centre (hull z = 0.2) by the turret's angle, which the gunner sets since F1.8 ([turret.md](turret.md)); a seated gunner's play space turns with it.
 
 | What | Value | Why |
 | --- | --- | --- |

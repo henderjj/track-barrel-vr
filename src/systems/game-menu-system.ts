@@ -11,6 +11,7 @@ import { body, chooseBody } from './body-height-system.js';
 import { OPEN_MENU_EVENT } from './net-system.js';
 import { PanelUi } from './panel-ui.js';
 import { drive, driveStatus, resetTank, setGear, startDriving } from './drive-system.js';
+import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
 import { seating } from './seating.js';
 import { SIGHT_BUTTONS } from './sight-system.js';
@@ -201,7 +202,8 @@ interface GameMenuDebug {
  *   (until the driver's station, F1.5) and the comfort vignette;
  * - Riding (only while riding the tank, spike S2): the ride's options;
  * - Practice: shortcuts straight to a situation to test (sit in either
- *   seat, drive the tank or put it back at its start);
+ *   seat, drive the tank or put it back at its start, lay the gun or turn
+ *   the turret forward);
  * - Back to start screen (leaves any crew) and Exit VR.
  */
 export class GameMenuSystem extends createSystem({}) {
@@ -276,6 +278,15 @@ export class GameMenuSystem extends createSystem({}) {
     });
     ui.on('menu-drive-reset', () => {
       resetTank();
+      this.render();
+    });
+    ui.on('menu-turret-go', () => {
+      this.setOpen(false);
+      stopRide();
+      startGunning();
+    });
+    ui.on('menu-turret-forward', () => {
+      turretForward();
       this.render();
     });
     ui.on('menu-swap', () => {
@@ -392,6 +403,7 @@ export class GameMenuSystem extends createSystem({}) {
       this.statusAt = time + 0.5;
       if (ride.active) this.ui?.setText('menu-ride-status', rideStatus());
       else this.ui?.setText('menu-drive-status', driveStatus());
+      this.ui?.setText('menu-turret-status', turretStatus());
     }
     const left = this.input.xr.gamepads.left;
     if (left && (left.getButtonDown(InputComponent.Y_Button) || left.getButtonDown(InputComponent.Menu))) {
@@ -443,6 +455,7 @@ export class GameMenuSystem extends createSystem({}) {
     CREW_COLORS.forEach((_, i) => this.select(`coat-${i}`, i === c.color));
     ui.show('menu-drive', !ride.active);
     ui.setText('menu-drive-status', driveStatus());
+    ui.setText('menu-turret-status', turretStatus());
     ui.show('menu-ride', ride.active);
     ui.show('menu-ride-stop', ride.active);
     ui.setText('menu-ride-status', rideStatus());
