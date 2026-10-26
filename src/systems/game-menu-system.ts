@@ -9,6 +9,7 @@ import { body, chooseBody } from './body-height-system.js';
 import { OPEN_MENU_EVENT } from './net-system.js';
 import { PanelUi } from './panel-ui.js';
 import { resetBlocks, restartGame } from './game-system.js';
+import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
 import { SIGHT_BUTTONS } from './sight-system.js';
 import { startLoadingDrill } from './loading-drill-system.js';
 import { hideLeverTest, showLeverTest } from './lever-system.js';
@@ -73,6 +74,49 @@ const CHOICE_ROWS: readonly ChoiceRow[] = [
     current: () => yesNo(body.choice.seated),
     choose: (value) => chooseBody({ height: body.choice.height, seated: value === '1' }),
   },
+  // Spike S2's options, shown only while riding (docs/spikes/s2-riding.md).
+  {
+    id: 'ride-vignette',
+    label: 'Vignette',
+    options: [
+      ['1', 'On'],
+      ['0', 'Off'],
+    ],
+    current: () => yesNo(ride.vignette),
+    choose: (value) => setRideOption('vignette', value === '1'),
+  },
+  {
+    id: 'ride-cabin',
+    label: 'Cabin',
+    options: [
+      ['open', 'Open top'],
+      ['closed', 'Closed'],
+    ],
+    current: () => ride.cabin,
+    choose: (value) => setRideOption('cabin', value as typeof ride.cabin),
+  },
+  {
+    id: 'ride-tank',
+    label: 'Driven by',
+    options: [
+      ['route', 'Crewmate'],
+      ['stick', 'Left stick'],
+      ['parked', 'Parked'],
+    ],
+    current: () => ride.tank,
+    choose: (value) => setRideOption('tank', value as typeof ride.tank),
+  },
+  {
+    id: 'ride-turret',
+    label: 'Turret',
+    options: [
+      ['scan', 'Crewmate'],
+      ['stick', 'Right stick'],
+      ['still', 'Still'],
+    ],
+    current: () => ride.turret,
+    choose: (value) => setRideOption('turret', value as typeof ride.turret),
+  },
   ...LIVE_ITEMS.map(
     (item): ChoiceRow => ({
       id: item.key,
@@ -114,12 +158,14 @@ interface GameMenuDebug {
  *   height in 5 cm steps or the player's own;
  * - Sound and view: the settings that apply straight away (LIVE_ITEMS,
  *   src/live-settings.ts), kept in this browser;
+ * - Riding (only while riding the tank, spike S2): the ride's options;
  * - Game: start again; Practice: shortcuts straight to a situation to test;
  * - Back to start screen (leaves any crew) and Exit VR.
  */
 export class GameMenuSystem extends createSystem({}) {
   private ui: PanelUi | null = null;
   private open = false;
+  private statusAt = 0;
   private selected = new Map<string, boolean>();
 
   init(): void {
@@ -180,6 +226,18 @@ export class GameMenuSystem extends createSystem({}) {
     ui.on('menu-blocks', () => {
       this.setOpen(false);
       resetBlocks();
+    });
+    ui.on('menu-ride-driver', () => {
+      this.setOpen(false);
+      startRide('driver');
+    });
+    ui.on('menu-ride-gunner', () => {
+      this.setOpen(false);
+      startRide('gunner');
+    });
+    ui.on('menu-ride-stop', () => {
+      stopRide();
+      this.render();
     });
     // Spike S1's gunsight: "Go to it" closes the menu; the others cycle a choice and show it.
     for (const button of SIGHT_BUTTONS) {
@@ -250,7 +308,12 @@ export class GameMenuSystem extends createSystem({}) {
     };
   }
 
-  update(): void {
+  update(_delta: number, time: number): void {
+    if (this.open && ride.active && time > this.statusAt) {
+      // The ride's clock and speed tick on while the menu is open.
+      this.statusAt = time + 0.5;
+      this.ui?.setText('menu-ride-status', rideStatus());
+    }
     const left = this.input.xr.gamepads.left;
     if (left && (left.getButtonDown(InputComponent.Y_Button) || left.getButtonDown(InputComponent.Menu))) {
       this.setOpen(!this.open);
@@ -298,6 +361,9 @@ export class GameMenuSystem extends createSystem({}) {
       });
     }
     CREW_COLORS.forEach((_, i) => this.select(`coat-${i}`, i === c.color));
+    ui.show('menu-ride', ride.active);
+    ui.show('menu-ride-stop', ride.active);
+    ui.setText('menu-ride-status', rideStatus());
     for (const button of SIGHT_BUTTONS) {
       ui.setText(button.id, button.label());
     }

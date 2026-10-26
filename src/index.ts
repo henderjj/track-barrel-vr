@@ -15,6 +15,7 @@ import { NetSystem } from './systems/net-system.js';
 import { OwnHandsSystem } from './systems/own-hands-system.js';
 import { PerfHudSystem } from './systems/perf-hud-system.js';
 import { PlatformSystem } from './systems/platform-system.js';
+import { RideSystem } from './systems/ride-system.js';
 import { SightSystem } from './systems/sight-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
 import { ThrowablesSystem } from './systems/throwables-system.js';
@@ -37,6 +38,8 @@ World.create(
   world.registerSystem(GameSystem);
   world.registerSystem(NetSystem);
   world.registerSystem(DeckWalkSystem);
+  // Spike S2: after the deck walk, whose thumbsticks it takes over, and before anything draws the hands on the moved rig.
+  world.registerSystem(RideSystem);
   // After NetSystem, which updates the crew presence it shows.
   world.registerSystem(CrewStatusSystem);
   // Add your game's systems here. Ones that hold a hand (handUse) go
