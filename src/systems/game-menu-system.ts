@@ -10,6 +10,7 @@ import { OPEN_MENU_EVENT } from './net-system.js';
 import { PanelUi } from './panel-ui.js';
 import { resetBlocks, restartGame } from './game-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
+import { SIGHT_BUTTONS } from './sight-system.js';
 import { startScreen } from './start-screen-system.js';
 
 /** Where the menu stands in VR when opened: ahead of the head and a little below the eyes, m. */
@@ -236,6 +237,16 @@ export class GameMenuSystem extends createSystem({}) {
       stopRide();
       this.render();
     });
+    // Spike S1's gunsight: "Go to it" closes the menu; the others cycle a choice and show it.
+    for (const button of SIGHT_BUTTONS) {
+      ui.on(button.id, () => {
+        if (button.id === 'menu-sight-go') {
+          this.setOpen(false);
+        }
+        button.press();
+        this.render();
+      });
+    }
     ui.on('menu-exit', () => {
       this.setOpen(false);
       this.world.exitXR();
@@ -339,6 +350,9 @@ export class GameMenuSystem extends createSystem({}) {
     ui.show('menu-ride', ride.active);
     ui.show('menu-ride-stop', ride.active);
     ui.setText('menu-ride-status', rideStatus());
+    for (const button of SIGHT_BUTTONS) {
+      ui.setText(button.id, button.label());
+    }
     const own = body.choice.height <= 0;
     ui.setText('height-value', heightShown(body.choice.height, ownHeight()));
     this.select('height-own', own);
