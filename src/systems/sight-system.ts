@@ -15,10 +15,10 @@ import { GpuTimer } from '../perf/gpu-timer.js';
 import {
   createSightBody,
   createSightLensGeometry,
-  createSightRange,
   createSightStand,
 } from '../scene-assets/sight.scene-asset.js';
-import { GROUND_Y, TURRET, turnAboutHead } from '../sim/cabin.js';
+import { TURRET, turnAboutHead } from '../sim/cabin.js';
+import { RANGE_TARGETS, targetFoot, targetMiddle } from '../sim/range.js';
 import {
   DRAW_MODES,
   type DrawMode,
@@ -30,12 +30,9 @@ import {
   SIGHT_EYES,
   SIGHT_SIZES,
   SIGHT_STAND,
-  SIGHT_TARGETS,
   type SightEye,
   type SightSize,
   sightOpen,
-  TARGET_BOARD,
-  targetFoot,
   TRUE_HALF_FIELD,
 } from '../sim/sight.js';
 
@@ -83,7 +80,7 @@ export function sightSummary(now: number): string {
 }
 
 /** Aim choices: straight ahead, or each target laid on its range mark. */
-const AIMS = ['ahead', ...SIGHT_TARGETS.map((t) => `${t.range}`)] as const;
+const AIMS = ['ahead', ...RANGE_TARGETS.map((t) => `${t.range}`)] as const;
 
 /** A Practice button in the game menu (public/ui/menu.uikitml): its id, its label now, and what pressing it does. */
 export interface PracticeButton {
@@ -133,8 +130,8 @@ interface SightDebug {
 /**
  * Spike S1: a magnified gunsight rendered by a second camera into a texture
  * (docs/spikes/s1-sight-render.md). The sight hangs at the gunner's
- * eyepiece (src/sim/cabin.ts) looking out at target boards 100, 250 and
- * 500 m away. Put an
+ * eyepiece (src/sim/cabin.ts) looking out at the test range's target boards
+ * 100, 250 and 500 m away (F1.7, src/sim/range.ts). Put an
  * eye within about 9 cm of its eyepiece and the camera at its objective
  * renders the scene into a 512² texture that the lens shows at 3×, with a
  * reticle and range marks; further away the lens is dark glass and nothing
@@ -188,7 +185,6 @@ export class SightSystem extends createSystem({}) {
     this.pivot.position.set(0, SIGHT_STAND.lensHeight, 0);
     this.pivot.rotation.order = 'YXZ';
     const pivotEntity = this.world.createTransformEntity(this.pivot, { parent: standEntity });
-    this.world.createTransformEntity(createSightRange());
 
     this.target = this.createTarget(sightStats.size);
     this.reticle = createReticle();
@@ -349,13 +345,16 @@ export class SightSystem extends createSystem({}) {
 
   setAim(aim: string): void {
     this.aim = AIMS.includes(aim as (typeof AIMS)[number]) ? aim : 'ahead';
-    const i = SIGHT_TARGETS.findIndex((t) => `${t.range}` === this.aim);
+    const i = RANGE_TARGETS.findIndex((t) => `${t.range}` === this.aim);
     if (i < 0) {
       this.pivot.rotation.set(0, 0, 0);
     } else {
+      // The targets stand in the world, so an aim is only laid on one with
+      // the tank parked at its start and the turret facing forward; the
+      // gunsight (F1.9) lays the gun on
+      // whatever the turret is pointed at, wherever the tank stands.
       const [x, z] = targetFoot(i);
-      const middle = GROUND_Y + TARGET_BOARD.lift + TARGET_BOARD.height / 2;
-      layOnMark([SIGHT_STAND.x, SIGHT_STAND.lensHeight, SIGHT_STAND.z], [x, middle, z], SIGHT_TARGETS[i].range, this.aimOut);
+      layOnMark([SIGHT_STAND.x, SIGHT_STAND.lensHeight, SIGHT_STAND.z], [x, targetMiddle(i), z], RANGE_TARGETS[i].range, this.aimOut);
       this.pivot.rotation.set(this.aimOut[1], this.aimOut[0], 0);
     }
     console.info(`[Sight] aim ${this.aim}`);

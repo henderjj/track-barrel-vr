@@ -17,6 +17,7 @@ import { NetSystem } from './systems/net-system.js';
 import { OwnHandsSystem } from './systems/own-hands-system.js';
 import { PerfHudSystem } from './systems/perf-hud-system.js';
 import { PlatformSystem } from './systems/platform-system.js';
+import { RangeSystem } from './systems/range-system.js';
 import { RideSystem } from './systems/ride-system.js';
 import { SeatSystem } from './systems/seat-system.js';
 import { SightSystem } from './systems/sight-system.js';
@@ -46,6 +47,8 @@ World.create(
   world.registerSystem(DriveSystem);
   // Spike S2: before anything draws the hands on the moved rig. The seat system stands aside while it rides.
   world.registerSystem(RideSystem);
+  // After both of them: the range's fog is the scene's, and the ride borrows it while it runs.
+  world.registerSystem(RangeSystem);
   // After NetSystem, which updates the crew presence it shows.
   world.registerSystem(CrewStatusSystem);
   // Add the tank's systems here. ThrowablesSystem (loose objects, kept for

@@ -9,16 +9,19 @@ import {
   MeshStandardMaterial,
   OctahedronGeometry,
 } from '@iwsdk/core';
+import { onRoad } from '../sim/range.js';
 import { CELL, cornerHeight, groundHeight, type Obstacle, OBSTACLES, TILE, wrapTile } from '../sim/terrain.js';
 import { jitter, mergeParts, type Part, rng, shade } from './lowpoly.js';
+import { allMarkerParts, allTargetParts, roadParts } from './range.scene-asset.js';
 
 /**
- * The ground the tank drives on (F1.4, docs/tank-drive.md): the height
- * field of src/sim/terrain.ts three tiles across, with its rocks, walls and
- * houses and a scatter of small stones and bushes low enough to pass under
- * the hull. It repeats every tile, so the drive system moves it by the
- * tank's position less whole tiles and a drive of any length never shows
- * its edge. A blockout until the test range (F1.7).
+ * The test range the tank drives on (F1.4 and F1.7, docs/range.md): the
+ * height field of src/sim/terrain.ts three tiles across, with its two dirt
+ * roads, its three static targets and their range markers
+ * (range.scene-asset.ts), its rocks, walls and houses, and a scatter of
+ * small stones and bushes low enough to pass under the hull. It repeats
+ * every tile, so the drive system moves it by the tank's position less
+ * whole tiles and a drive of any length never shows its edge.
  *
  * Merged into one mesh per CHUNK-metre square, so the renderer skips the
  * squares out of view or past the camera's far plane: most of the ground
@@ -151,6 +154,8 @@ export function createTerrain(): Group {
     const c = Math.min(chunks - 1, Math.max(0, Math.floor((z + edge) / CHUNK)));
     return parts[c * chunks + r];
   };
+  // The range's roads, laid up the lane and across the start.
+  for (const { part, x, z } of roadParts(edge)) chunkAt(x, z).push(part);
   const random = rng(91);
   const scatter: [x: number, z: number, size: number, stone: boolean][] = [];
   for (let i = 0; i < SCATTER_PER_TILE; i++) {
@@ -165,6 +170,9 @@ export function createTerrain(): Group {
         const z = o.z + tz * TILE;
         chunkAt(x, z).push(...obstacleParts(o, x, z, random));
       }
+      // The range's targets and markers: a copy per tile, like the obstacles.
+      for (const { parts, x, z } of allTargetParts(tx * TILE, tz * TILE)) chunkAt(x, z).push(...parts);
+      for (const { parts, x, z } of allMarkerParts(tx * TILE, tz * TILE)) chunkAt(x, z).push(...parts);
       for (const [sx, sz, size, stone] of scatter) {
         const x = sx + tx * TILE;
         const z = sz + tz * TILE;
@@ -172,6 +180,8 @@ export function createTerrain(): Group {
         const geometry = jitter(new OctahedronGeometry(size, 0), size * 0.4, random);
         const color = stone ? shade(STONE, 0.8 + random() * 0.3) : shade(LEAVES, 0.85 + random() * 0.3);
         if (Math.abs(x) > near || Math.abs(z) > near) continue;
+        // A road is swept: nothing scattered on its surface.
+        if (onRoad(x, z)) continue;
         chunkAt(x, z).push({
           geometry,
           color,
