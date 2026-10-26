@@ -47,10 +47,23 @@ import { bufferDelayMs, netLink } from './net-system.js';
 import { ride } from './ride-system.js';
 import { seating } from './seating.js';
 
-/** The drive's options and the driver's gear lever, for the menu and the tests. */
+/**
+ * The driver's controls as this page's driver's station reads them, and the
+ * drive's options, for the menu and the tests. DriverStationSystem (F1.5)
+ * writes the controls from its levers while this player sits in the
+ * driver's seat; this system drives by them.
+ */
 export const drive = {
-  /** Where the gear lever is (until the driver's station has a real one, F1.5): the menu and keys 0, 1, 2 move it. */
+  /** The gear the gear lever is in. The menu, keys 0, 1, 2 and the tests move the lever with `setGear`. */
   gear: 1 as Gear,
+  /** Where the gear lever is asked to go (the menu, keys, tests): the station puts it there unless a hand holds it. */
+  gearAsked: null as Gear | null,
+  /** The hand throttle, 0 (idle) to 1. */
+  throttle: 0,
+  /** The tillers' demands, -1 to 1; while a hand holds either (`tillersHeld`) they drive and the sticks don't. */
+  left: 0,
+  right: 0,
+  tillersHeld: false,
   /** The comfort vignette, on by default (F1.14 makes it a setting of its own). */
   vignette: true,
 };
@@ -67,6 +80,13 @@ const SIGN_SECONDS = 6;
 
 let active: DriveSystem | null = null;
 
+function copyControls(from: DriverControls, to: DriverControls): void {
+  to.left = from.left;
+  to.right = from.right;
+  to.gear = from.gear;
+  to.throttle = from.throttle;
+}
+
 /** Practice → Drive: into the driver's seat, with a sign saying how to drive. */
 export function startDriving(): void {
   seating.ask('driver');
@@ -78,9 +98,25 @@ export function resetTank(): void {
   active?.reset();
 }
 
-/** Move the gear lever (the menu, keys 0, 1 and 2). */
+/** Move the gear lever to a gear's notch (the menu, keys 0, 1 and 2, tests); a hand on it keeps it. */
 export function setGear(gear: Gear): void {
   drive.gear = gear;
+  drive.gearAsked = gear;
+}
+
+/**
+ * The driver's controls the tank is driven by as this page sees them: the
+ * host's own or its guest driver's on the host, this page's own on a guest
+ * driver, and the host's word on a guest that doesn't drive. The driver's
+ * station draws the crewmate's levers from it.
+ */
+export function shownDriverControls(): DriverControls | null {
+  return active?.shownControls ?? null;
+}
+
+/** The tank as this page draws it (the host's simulation, or the guest's copy of it), for the driver's gauges. */
+export function shownDriverState(): TankDrive | null {
+  return active?.shown ?? null;
 }
 
 /** One line on the tank for the menu: who drives, speed, gear, RPM. */
@@ -97,6 +133,8 @@ interface DriveDebug {
   state(): TankDrive;
   /** The controls the tank is driven by on the host, or this page's own on a guest driver. */
   controls(): DriverControls;
+  /** The controls as this page sees them (shownDriverControls). */
+  shownControls(): DriverControls;
   /** Who drives, as this page sees it. */
   driver(): 'me' | 'crew' | 'nobody';
   /** Drive as if from the sticks (tests): tillers and lever, or null to go back to the real ones. */
@@ -130,9 +168,11 @@ interface DriveDebug {
  * hold (crewPresence.paused, with its sign), the tillers count as let go
  * and the tank rolls to a stop.
  *
- * Until the driver's station (F1.5) the tillers are the thumbsticks (each
- * stick's forward push drives its own track) or W A S D on the flat page,
- * and the gear lever is in the menu (keys 0, 1, 2). A comfort vignette
+ * The driver's station (DriverStationSystem, F1.5) reads its tillers,
+ * gear lever and hand throttle into `drive`. While no hand holds a tiller
+ * the thumbsticks drive (each stick's forward push its own track), or
+ * W A S D on the flat page; the menu and keys 0, 1, 2 move the gear
+ * lever too. A comfort vignette
  * darkens the edge of view with the tank's motion. Spike S2's ride takes
  * over while it runs.
  */
@@ -142,6 +182,8 @@ export class DriveSystem extends createSystem({}) {
   /** What is drawn: the simulation on the host, the host's states on a guest. */
   readonly shown = createTankDrive();
   private controls = createControls();
+  /** The controls the tank is driven by, as this page sees them (see shownDriverControls). */
+  readonly shownControls = createControls();
   private remoteControls = createControls();
   private remoteAt = Number.NEGATIVE_INFINITY;
   private remoteSeq = -1;
@@ -220,10 +262,11 @@ export class DriveSystem extends createSystem({}) {
     (window as unknown as { __drive: DriveDebug }).__drive = {
       state: () => ({ ...self.shown }),
       controls: () => ({ ...self.controls }),
+      shownControls: () => ({ ...self.shownControls }),
       driver: () => self.driver(),
       set: (controls) => {
         self.override = controls === null ? null : { ...controls };
-        if (controls?.gear !== undefined) drive.gear = controls.gear;
+        if (controls?.gear !== undefined) setGear(controls.gear);
       },
       reset: () => self.reset(),
       place: (x, z, heading) => {
@@ -261,7 +304,7 @@ export class DriveSystem extends createSystem({}) {
 
   sayHowToDrive(): void {
     const vr = this.world.visibilityState.peek() !== VisibilityState.NonImmersive;
-    this.say('Driving', vr ? 'Sticks forward: tracks. Gear: menu (Y)' : 'W A S D to drive, 0 1 2: gear');
+    this.say('Driving', vr ? 'Grip the tillers and push. Gear lever: right' : 'W A S D to drive, 0 1 2: gear');
   }
 
   update(delta: number): void {
@@ -284,6 +327,7 @@ export class DriveSystem extends createSystem({}) {
       this.runHost(dt);
     } else {
       this.followHost();
+      if (seating.mine === 'driver') copyControls(this.controls, this.shownControls);
     }
     this.send(delta);
 
@@ -298,15 +342,23 @@ export class DriveSystem extends createSystem({}) {
     this.signs(delta);
   }
 
-  /** This page's own controls: the sticks in VR, keys on the flat page, or a test's. */
+  /**
+   * This page's own controls: the driver's station's tillers while a hand
+   * holds either, otherwise the sticks in VR or keys on the flat page; its
+   * gear lever and hand throttle; or a test's.
+   */
   private readLocalControls(): void {
     const c = this.controls;
     c.gear = drive.gear;
+    c.throttle = drive.throttle;
     c.left = 0;
     c.right = 0;
     // Spike S2's ride has the sticks while it runs.
     if (seating.mine !== 'driver' || ride.active) return;
-    if (this.world.visibilityState.peek() !== VisibilityState.NonImmersive) {
+    if (drive.tillersHeld) {
+      c.left = drive.left;
+      c.right = drive.right;
+    } else if (this.world.visibilityState.peek() !== VisibilityState.NonImmersive) {
       const left = this.input.xr.gamepads.left?.getAxesValues(InputComponent.Thumbstick);
       const right = this.input.xr.gamepads.right?.getAxesValues(InputComponent.Thumbstick);
       twinStickControls(left?.y ?? 0, right?.y ?? 0, c);
@@ -348,12 +400,8 @@ export class DriveSystem extends createSystem({}) {
     for (let left = dt; left > 1e-6; left -= MAX_STEP) {
       stepDrive(this.sim, source, Math.min(left, MAX_STEP));
     }
-    if (driver === 'crew') {
-      this.controls.left = source.left;
-      this.controls.right = source.right;
-      this.controls.gear = source.gear;
-      this.controls.throttle = source.throttle;
-    }
+    if (driver === 'crew') copyControls(source, this.controls);
+    copyControls(source, this.shownControls);
     copyTankDrive(this.sim, this.shown);
   }
 
@@ -376,7 +424,7 @@ export class DriveSystem extends createSystem({}) {
     this.sendAccumulator = Math.min(this.sendAccumulator - 1 / SEND_HZ, 1 / SEND_HZ);
     const now = performance.now();
     if (netLink.isHost) {
-      netLink.send(this.stateBuffer, encodeTankState(this.stateBuffer, this.seq, now, this.sim));
+      netLink.send(this.stateBuffer, encodeTankState(this.stateBuffer, this.seq, now, this.sim, this.shownControls));
     } else if (seating.mine === 'driver') {
       netLink.send(this.controlsBuffer, encodeDriverControls(this.controlsBuffer, this.seq, now, this.controls));
     } else {
@@ -387,7 +435,9 @@ export class DriveSystem extends createSystem({}) {
   }
 
   private onTankState(view: DataView): void {
-    if (netLink.isHost || !decodeTankState(view, this.header, this.incoming)) return;
+    // A guest driver keeps its own controls; anyone else draws the host's.
+    const controls = seating.mine === 'driver' ? null : this.shownControls;
+    if (netLink.isHost || !decodeTankState(view, this.header, this.incoming, controls)) return;
     this.received++;
     // Until the clocks are matched, a packet's time can't be placed.
     if (!netLink.clockSynced) return;

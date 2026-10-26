@@ -6,6 +6,7 @@ import { CalibrationSystem } from './systems/calibration-system.js';
 import { CrewBotSystem } from './systems/crew-bot-system.js';
 import { CrewStatusSystem } from './systems/crew-status-system.js';
 import { DriveSystem } from './systems/drive-system.js';
+import { DriverStationSystem } from './systems/driver-station-system.js';
 import { FrameRateSystem } from './systems/frame-rate-system.js';
 import { GameMenuSystem } from './systems/game-menu-system.js';
 import { GripSystem } from './systems/grip-system.js';
@@ -54,6 +55,8 @@ World.create(
   // grips, yokes, buttons), before the systems that read them and before
   // OwnHandsSystem draws hands on them.
   world.registerSystem(MechanismSystem);
+  // After the kit has moved its levers: it reads them into the drive (DriveSystem drives by them next frame) and draws the gauges.
+  world.registerSystem(DriverStationSystem);
   world.registerSystem(LeverSystem);
   world.registerSystem(MechanismBenchSystem);
   world.registerSystem(LoadingDrillSystem);

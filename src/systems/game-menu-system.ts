@@ -78,7 +78,7 @@ const CHOICE_ROWS: readonly ChoiceRow[] = [
     current: () => yesNo(body.choice.seated),
     choose: (value) => chooseBody({ raise: body.choice.raise, seated: value === '1' }),
   },
-  // The drive (docs/tank-drive.md): the gear lever until the driver's station has one (F1.5), and the comfort vignette.
+  // The drive (docs/tank-drive.md): the gear lever (it moves the driver's station's lever, F1.5), and the comfort vignette.
   {
     id: 'gear',
     label: 'Gear lever',
@@ -198,7 +198,7 @@ interface GameMenuDebug {
  * - Sound and view: the settings that apply straight away (LIVE_ITEMS,
  *   src/live-settings.ts), kept in this browser;
  * - Driving (not while riding): who drives and how fast, the gear lever
- *   (until the driver's station, F1.5) and the comfort vignette;
+ *   (moving the station's own, F1.5) and the comfort vignette;
  * - Riding (only while riding the tank, spike S2): the ride's options;
  * - Practice: shortcuts straight to a situation to test (sit in either
  *   seat, drive the tank or put it back at its start);

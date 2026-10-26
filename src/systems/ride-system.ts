@@ -84,7 +84,7 @@ const FOG_FAR = 230;
  * while riding: the ride brings its own blockout hull, turret and ground
  * until F1.4 moves the cabin with the tank.
  */
-const DEMO_NAMES = /^(Hull|Turret|Ground|Sight|Sight Stand|Sight Range|Sight Lens|Loading Drill|Loading Station|Loading Board|Shell \d+|Breech Block|Breech Lever)$/;
+const DEMO_NAMES = /^(Hull|Turret|Driver Station|Ground|Sight|Sight Stand|Sight Range|Sight Lens|Loading Drill|Loading Station|Loading Board|Shell \d+|Breech Block|Breech Lever)$/;
 
 let active: RideSystem | null = null;
 
