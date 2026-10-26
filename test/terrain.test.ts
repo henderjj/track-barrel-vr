@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CELL,
   cornerHeight,
+  CROSS_HALF,
   FLAT_RADIUS,
   groundHeight,
   LANE_HALF,
@@ -23,12 +24,15 @@ describe('terrain (F1.4)', () => {
     expect(wrapTile(TILE * 2 + 5)).toBeCloseTo(5);
   });
 
-  it('is flat on the start field and the lane, and rolls elsewhere', () => {
+  it("is flat on the start field and in both roads' corridors, and rolls elsewhere", () => {
     expect(groundHeight(0, 0)).toBe(0);
     // Cells with every corner on the flat are flat: about 18 m round the start, 16 m either side of the lane's middle.
     expect(groundHeight(12, -10)).toBe(0);
     for (const z of [-100, -250, -500, 333]) for (const x of [-15, 0, 15.5]) expect(groundHeight(x, z)).toBe(0);
     expect(LANE_HALF).toBeGreaterThan(CELL);
+    // The corridor across the start, for the range's second road (F1.7).
+    for (const x of [-100, -250, 333]) for (const z of [-15, 0, 15.5]) expect(groundHeight(x, z)).toBe(0);
+    expect(CROSS_HALF).toBeGreaterThan(CELL);
     let max = 0;
     for (let x = 60; x < 400; x += 7) for (let z = 0; z < 400; z += 11) max = Math.max(max, Math.abs(groundHeight(x, z)));
     expect(max).toBeGreaterThan(0.8);
@@ -60,7 +64,7 @@ describe('terrain (F1.4)', () => {
     expect(obstacleDistance(box, 0.2, 0, n)).toBeLessThan(0);
   });
 
-  it('places the same obstacles on every page, with some near the start but none on it or the lane', () => {
+  it("places the same obstacles on every page, with some near the start but none on it or either road's corridor", () => {
     expect(OBSTACLES.length).toBeGreaterThan(40);
     const near = OBSTACLES.filter((o) => Math.hypot(o.x, o.z) < 150);
     expect(new Set(near.map((o) => o.kind))).toEqual(new Set(['rock', 'wall', 'house']));
@@ -68,6 +72,7 @@ describe('terrain (F1.4)', () => {
     for (const o of OBSTACLES) {
       expect(obstacleDistance(o, 0, 0, n)).toBeGreaterThan(FLAT_RADIUS);
       for (let z = -TILE / 2; z < TILE / 2; z += 2) expect(obstacleDistance(o, 0, z, n)).toBeGreaterThan(1.8 + 1);
+      for (let x = -TILE / 2; x < TILE / 2; x += 2) expect(obstacleDistance(o, x, 0, n)).toBeGreaterThan(1.8 + 1);
     }
   });
 });

@@ -27,6 +27,8 @@ interface Tri {
   n: Vector3;
   d: number;
   colour: string;
+  /** The triangle's bounding box, [minX, minY, minZ, maxX, maxY, maxZ]: two triangles whose boxes miss each other can't overlap. */
+  box: [number, number, number, number, number, number];
 }
 
 function colourKey(geometry: BufferGeometry, indices: number[], material: string): string {
@@ -62,10 +64,33 @@ export function trianglesOf(root: Object3D, name = root.name): Tri[] {
       const len = n.length();
       if (len < 1e-10) continue;
       n.divideScalar(len);
-      out.push({ owner: `${name}${o !== root && o.name ? `/${o.name}` : ''}`, p, n, d: n.dot(p[0]), colour: colourKey(geometry, ids, materialKey) });
+      out.push({
+        owner: `${name}${o !== root && o.name ? `/${o.name}` : ''}`,
+        p,
+        n,
+        d: n.dot(p[0]),
+        colour: colourKey(geometry, ids, materialKey),
+        box: [
+          Math.min(p[0].x, p[1].x, p[2].x),
+          Math.min(p[0].y, p[1].y, p[2].y),
+          Math.min(p[0].z, p[1].z, p[2].z),
+          Math.max(p[0].x, p[1].x, p[2].x),
+          Math.max(p[0].y, p[1].y, p[2].y),
+          Math.max(p[0].z, p[1].z, p[2].z),
+        ],
+      });
     }
   });
   return out;
+}
+
+/** Whether two bounding boxes miss each other, allowing `gap` of slack in every direction. */
+function apart(a: Tri['box'], b: Tri['box'], gap: number): boolean {
+  return (
+    a[0] - gap > b[3] || b[0] - gap > a[3] ||
+    a[1] - gap > b[4] || b[1] - gap > a[4] ||
+    a[2] - gap > b[5] || b[2] - gap > a[5]
+  );
 }
 
 /** The overlap of two triangles in one plane (normal `n`): its area, m², and its middle. */
@@ -145,6 +170,10 @@ export function coplanarOverlaps(
       for (let j = i + 1; j < list.length && list[j].d - a.d <= gap; j++) {
         const b = list[j];
         if (a.colour === b.colour || a.n.dot(b.n) < 0.999) continue;
+        // Triangles whose boxes miss each other can't overlap: the cheap
+        // test first, so a mesh with thousands of faces in one plane (the
+        // range's flat ground) is still checked in a moment.
+        if (apart(a.box, b.box, gap)) continue;
         // The planes' offsets from the origin differ by more than their real separation when the
         // normals differ a little and the faces are metres from the origin (the envelope's belly):
         // measure how far b's middle is off a's plane instead.

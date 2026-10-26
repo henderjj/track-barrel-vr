@@ -11,6 +11,7 @@ import { body, chooseBody } from './body-height-system.js';
 import { OPEN_MENU_EVENT } from './net-system.js';
 import { PanelUi } from './panel-ui.js';
 import { drive, driveStatus, resetTank, setGear, startDriving } from './drive-system.js';
+import { goUpTheRange, rangeStatus } from './range-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
 import { seating } from './seating.js';
 import { SIGHT_BUTTONS } from './sight-system.js';
@@ -278,6 +279,12 @@ export class GameMenuSystem extends createSystem({}) {
       resetTank();
       this.render();
     });
+    ui.on('menu-range-up', () => {
+      // Either seat gets something out of this, so it leaves the seats alone.
+      this.setOpen(false);
+      stopRide();
+      goUpTheRange();
+    });
     ui.on('menu-swap', () => {
       // Alone, straight into the other seat; in a crew, an ask (or the answer to theirs).
       stopRide();
@@ -390,8 +397,12 @@ export class GameMenuSystem extends createSystem({}) {
     if (this.open && time > this.statusAt) {
       // The ride's clock and the tank's speed tick on while the menu is open.
       this.statusAt = time + 0.5;
-      if (ride.active) this.ui?.setText('menu-ride-status', rideStatus());
-      else this.ui?.setText('menu-drive-status', driveStatus());
+      if (ride.active) {
+        this.ui?.setText('menu-ride-status', rideStatus());
+      } else {
+        this.ui?.setText('menu-drive-status', driveStatus());
+        this.ui?.setText('menu-range-status', rangeStatus());
+      }
     }
     const left = this.input.xr.gamepads.left;
     if (left && (left.getButtonDown(InputComponent.Y_Button) || left.getButtonDown(InputComponent.Menu))) {
@@ -443,6 +454,8 @@ export class GameMenuSystem extends createSystem({}) {
     CREW_COLORS.forEach((_, i) => this.select(`coat-${i}`, i === c.color));
     ui.show('menu-drive', !ride.active);
     ui.setText('menu-drive-status', driveStatus());
+    ui.show('menu-range', !ride.active);
+    ui.setText('menu-range-status', rangeStatus());
     ui.show('menu-ride', ride.active);
     ui.show('menu-ride-stop', ride.active);
     ui.setText('menu-ride-status', rideStatus());

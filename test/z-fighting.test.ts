@@ -5,6 +5,9 @@ import * as cabin from '../src/scene-assets/cabin.scene-asset.js';
 import * as ride from '../src/scene-assets/ride.scene-asset.js';
 import * as loading from '../src/scene-assets/loading-drill.scene-asset.js';
 import { BREECH_MOUTH, LEVER_CLOSED, LEVER_PIVOT, RACK_SLOTS, SHELL_LENGTH } from '../src/sim/loading.js';
+import { mergeParts } from '../src/scene-assets/lowpoly.js';
+import { markerParts, targetParts } from '../src/scene-assets/range.scene-asset.js';
+import { MARKER_RANGES, RANGE_TARGETS } from '../src/sim/range.js';
 import * as sight from '../src/scene-assets/sight.scene-asset.js';
 import { createTerrain } from '../src/scene-assets/terrain.scene-asset.js';
 import { GROUND_Y } from '../src/sim/cabin.js';
@@ -56,7 +59,7 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
-  /** The drive's ground (F1.4) where the scene puts it, under the hull parked at the start. */
+  /** The test range's ground (F1.4, F1.7) where the scene puts it, under the hull parked at the start. */
   const ground = () => {
     const terrain = createTerrain();
     terrain.position.y = GROUND_Y;
@@ -64,11 +67,20 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     return terrain;
   };
 
-  it('on the ground, with its rocks, walls and houses, and the tank parked on it', () => {
+  it('on the range: the ground with its roads, targets, markers, rocks, walls and houses, and the tank parked on it', () => {
     expectNone([ground(), cabin.createHull()], WORLD_GAP);
   });
 
-  it("on spike S1's sight, hanging in the turret and aimed, and its range", () => {
+  it("on each of the test range's targets and markers on their own (F1.7)", () => {
+    RANGE_TARGETS.forEach((target, i) => {
+      expectNone([mesh(mergeParts(targetParts(i)), `Target ${target.range} m`)], WORLD_GAP);
+    });
+    for (const range of MARKER_RANGES) {
+      expectNone([mesh(mergeParts(markerParts(range)), `Marker ${range} m`)], WORLD_GAP);
+    }
+  });
+
+  it("on spike S1's sight, hanging in the turret and aimed", () => {
     const stand = sight.createSightStand();
     stand.position.set(SIGHT_STAND.x, 0, SIGHT_STAND.z);
     const lens = mesh(sight.createSightLensGeometry(), 'Sight Lens');
@@ -83,9 +95,6 @@ describe('no faces that flicker through each other (z-fighting)', () => {
       expectNone([stand, turret], CABIN_GAP);
       stand.remove(body);
     }
-    expectNone([sight.createSightRange()], WORLD_GAP);
-    // Its targets stand on the drive's ground with the tank at the start.
-    expectNone([ground(), sight.createSightRange()], WORLD_GAP);
   });
 
   it('on the loading station (spike S4) and its platform, with its shells in the rack and the breech open and closed', () => {

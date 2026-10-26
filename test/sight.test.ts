@@ -9,14 +9,12 @@ import {
   OPEN_DISTANCE,
   rangeMarks,
   SIGHT_STAND,
-  SIGHT_TARGETS,
   sightOpen,
   superelevation,
-  TARGET_BOARD,
-  targetFoot,
   TRUE_HALF_FIELD,
 } from '../src/sim/sight.js';
-import { GROUND_Y, SEATS, seatToHull } from '../src/sim/cabin.js';
+import { RANGE_TARGETS, targetFoot, targetMiddle } from '../src/sim/range.js';
+import { SEATS, seatToHull } from '../src/sim/cabin.js';
 
 const DEG = Math.PI / 180;
 const out: [number, number] = [0, 0];
@@ -71,25 +69,18 @@ describe('the gunsight (spike S1)', () => {
     expect(superelevation(500) * 1000).toBeCloseTo(6.81, 1);
   });
 
-  it('lays each target on its range mark', () => {
+  it("lays each of the range's targets on its range mark", () => {
     const from = [SIGHT_STAND.x, SIGHT_STAND.lensHeight, SIGHT_STAND.z] as const;
-    SIGHT_TARGETS.forEach((target, i) => {
+    // The targets are the test range's (F1.7, src/sim/range.ts); where they
+    // stand, and that all three show at once, is tested there.
+    RANGE_TARGETS.forEach((target, i) => {
       const [x, z] = targetFoot(i);
-      const middle = GROUND_Y + TARGET_BOARD.lift + TARGET_BOARD.height / 2;
+      const middle = targetMiddle(i);
       const [yaw, pitch] = layOnMark(from, [x, middle, z], target.range, [0, 0]);
       // Straight at it, then up by the superelevation.
       const [, straight] = layOnMark(from, [x, middle, z], 0, [0, 0]);
       expect(pitch - straight).toBeCloseTo(superelevation(target.range), 9);
       expect(Math.abs(yaw)).toBeLessThan(TRUE_HALF_FIELD);
-    });
-  });
-
-  it('shows all three targets at once looking straight ahead', () => {
-    SIGHT_TARGETS.forEach((_, i) => {
-      const [x, z] = targetFoot(i);
-      const middle = GROUND_Y + TARGET_BOARD.lift + TARGET_BOARD.height / 2;
-      const angle = Math.atan2(Math.hypot(x - SIGHT_STAND.x, middle - SIGHT_STAND.lensHeight), SIGHT_STAND.z - z);
-      expect(angle).toBeLessThan(TRUE_HALF_FIELD * 0.9);
     });
   });
 

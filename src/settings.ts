@@ -58,6 +58,11 @@ export interface Settings {
    * the ground's triangles, too few frames for the motion checks.
    */
   ground: boolean;
+  /**
+   * The test range's fog (F1.7, src/sim/range.ts). `fog=0` turns it off at
+   * load; the game menu's Range section turns it off at once.
+   */
+  fog: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -82,6 +87,7 @@ export const DEFAULT_SETTINGS: Settings = {
   seated: true,
   seat: 'driver',
   ground: true,
+  fog: true,
 };
 
 function num(params: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
@@ -130,6 +136,7 @@ export function parseSettings(search: string): Settings {
     seated: bool(params, 'seated', d.seated),
     seat: parseSeat(params.get('seat'), d.seat),
     ground: bool(params, 'ground', d.ground),
+    fog: bool(params, 'fog', d.fog),
   };
 }
 

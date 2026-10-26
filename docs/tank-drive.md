@@ -7,12 +7,12 @@ The tank moves. The host simulates its drive (skid steering, the engine's RPM, t
 - Whoever sits in the **driver's seat** drives. Until the driver's station has real tillers (F1.5), the tillers are the **thumbsticks**: each stick's forward push drives its own track, as a tiller does. Both forwards drive straight, one forwards turns the other way, one forwards and one back pivots on the spot, both back reverses. On a PC page without a headset, **W A S D** (or the arrow keys) drive and **0, 1, 2** move the gear lever.
 - The **gear lever** sits in the game menu's new Driving section (Neutral, Low, High) until F1.5. Low reaches 12 km/h, high 35 km/h. Moving the lever with either tiller more than 20% from centre **grinds**: the gearbox drops out of gear, nothing engages and a sign says "Gears grinding: centre both tillers to change gear". With the tillers centred the new gear engages after a third of a second.
 - The engine's **RPM** rises with how far the tillers are pushed, with a lag; the tank pulls gently at idle and harder as it revs, never faster than the comfort cap. RPM, speed and gear show in the Driving section's line (F1.5 puts them on gauges).
-- The **ground** rolls gently, with a flat start field and a flat lane running straight ahead through the start. The hull pitches and rolls with the ground under its tracks, eased and never more than 4°.
+- The **ground** rolls gently, with a flat start field and flat corridors for the test range's two roads (F1.7, [range.md](range.md)): one straight ahead through the start, one across it. The hull pitches and rolls with the ground under its tracks, eased and never more than 4°.
 - **Rocks, walls and houses** stand on the ground; a boulder, a wall and a house are within 110 m of the start, beside the lane. Driving at one, the tank slows into a firm, soft stop as it reaches it rather than stopping dead; it can always back or turn away. Passing close beside one slows it only as much as the corner needs.
 - The **comfort vignette** (spike S2's) darkens the edge of view as the tank turns, speeds up, slows or tilts, on by default; the Driving section turns it off.
 - The **gunner** rides along; their seat (and, from F1.8, the turret) moves with the hull.
 - With nobody in the driver's seat (solo as gunner, or the crewmate's seat empty), the tillers count as let go and the tank rolls to a stop and waits. While the crew is on hold (the crewmate stepped away, went quiet, is reconnecting or left), the tank rolls to a stop too, and the hold's sign says why.
-- Game menu: **Practice → Drive the tank → Drive** puts the player in the driver's seat with a sign saying how to drive; **Back to start** parks the tank where it began. Spike S1's gunsight range rides along with the tank (it is in hull space), so it shows only while the tank is parked at its start.
+- Game menu: **Practice → Drive the tank → Drive** puts the player in the driver's seat with a sign saying how to drive; **Back to start** parks the tank where it began, with the range's three targets back at 100, 250 and 500 m. (Until F1.7 the gunsight's target boards stood in hull space and rode along with the tank, so the drive system showed them only at the start; the range's targets stand in the world instead.)
 
 ## Numbers
 
@@ -28,9 +28,9 @@ The tank moves. The host simulates its drive (skid steering, the engine's RPM, t
 | Shift time | 0.35 s in the new gear with the tillers centred | Long enough to feel, short enough not to annoy |
 | Obstacle stop | no part of the outline closes on an obstacle faster than it could stop in the gap at 3 m/s² | A soft bump, not a jolt; 35 km/h stops over about 16 m |
 | Outline | 3.6 × 5.6 m (the tracks' outer faces and ends), tested at 32 points | The cabin model; the gun overhangs it (F1.8) |
-| Ground | repeats every 800 m, height field sampled every 16 m, waves up to about 2 m peak to peak, flat within about 18 m of the start and 16 m either side of the lane | The drawn edge is always 800 m or more away, on the horizon; the S1 target at 500 m stands on the lane |
+| Ground | repeats every 800 m, height field sampled every 16 m, waves up to about 2 m peak to peak, flat within about 18 m of the start and 16 m either side of each road's middle | The drawn edge is always 800 m or more away, on the horizon (and the range's fog hides it, F1.7); the targets stand on the road up the range |
 | Obstacles | 61 per tile: 41 rocks (0.8 to 2.2 m), 11 walls, 9 houses | Enough to bump into within a minute of the start |
-| Ground model | three tiles across, about 63k triangles, in 36 meshes of 400 m square; the small stones and bushes only in the middle tile and 150 m round it | Inside the 300k budget with the cabin; the renderer skips the squares out of view or beyond the 1.2 km far plane, about two thirds of them. The network test hides it (`?ground=0`): software rendering pays about 2.7 ms a frame per thousand triangles drawn, which halved the frame rate its motion checks sample |
+| Ground model | three tiles across, about 74k triangles with the range's roads, targets and markers (63k before F1.7), in 36 meshes of 400 m square; the small stones and bushes only in the middle tile and 150 m round it | Inside the 300k budget with the cabin; the renderer skips the squares out of view or beyond the 1.2 km far plane, about two thirds of them. The network test hides it (`?ground=0`): software rendering pays about 2.7 ms a frame per thousand triangles drawn, which halved the frame rate its motion checks sample |
 
 ## Sharing
 
@@ -38,7 +38,7 @@ The host runs the tank, whichever seat it sits in (plan decision 1).
 
 - **Tank state** (`PacketType.TankState` = 5), host → guest, unreliable, 45 Hz, 47 bytes: position (float32), heading, pitch, roll, speed, acceleration, turn and tilt rates, both tracks' speeds, RPM, gear, grinding and touching flags, bump count and odometer. The guest keeps the last 16 in a jitter buffer (`src/net/tank-buffer.ts`) and draws the tank as it was a little in the past (the same delay rule as the crewmate's avatar), carrying it on for up to 150 ms if a packet is late.
 - **Driver controls** (`PacketType.DriverControls` = 6), guest driver → host, unreliable, 45 Hz, 11 bytes: both tillers, the gear lever and the hand throttle. Controls older than 0.5 s count as let go.
-- **`drive-reset`**, reliable event, guest → host: Back to start, from a guest's menu.
+- **`drive-reset`**, reliable event, guest → host: Back to start, from a guest's menu. **`drive-place`** (F1.7) is the same for a Practice shortcut that parks the tank somewhere on the range.
 - Everything aboard (heads, hands, the crewmate's legs) already goes in hull space, so the tank's motion never makes the crewmate judder against the cabin, whatever the delay on the tank itself.
 - A guest driver's tillers reach the host about half a round trip later and the tank's motion comes back about half a round trip plus the buffer later: about 250 ms at 150 ms RTT. A heavy tank accelerating at 1 m/s² hides it; the headset check asks.
 - When the host leaves, the guest becomes host and carries on from the tank as it drew it.

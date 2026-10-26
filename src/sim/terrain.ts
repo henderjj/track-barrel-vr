@@ -1,11 +1,13 @@
 /**
- * The ground the tank drives on (F1.4, docs/tank-drive.md): a rolling
- * height field with a flat start field and a flat lane, and the obstacles
- * standing on it, shared by the drawn model
+ * The ground the test range stands on (F1.4 and F1.7, docs/range.md): a
+ * rolling height field with a flat start field and flat corridors for the
+ * two roads, and the obstacles standing on it, shared by the drawn model
  * (src/scene-assets/terrain.scene-asset.ts), the drive simulation
  * (src/sim/tank-drive.ts) and the tests. Engine-free and deterministic, so
- * every page and both realms build the same ground. A blockout: the test
- * range (F1.7) replaces the content, not the approach.
+ * every page and both realms build the same ground.
+ *
+ * What stands on it — the roads, the targets, the markers and the fog —
+ * is in src/sim/range.ts.
  *
  * World space: metres, +X east, -Z the tank's starting heading, y up. The
  * ground repeats every TILE metres in x and z, so a drive of any length
@@ -45,23 +47,32 @@ const FLAT_BLEND = 35;
  * half-width, rolling fully this much further out, m. Only cells with every
  * corner flat are flat, so the start field is flat out to about 18 m and
  * the lane 16 m either side of its middle. It gives a straight,
- * clear run to drive on, and the S1 sight's targets stand on it.
+ * clear run to drive on; the range's road is laid up its middle and its
+ * targets stand on it (src/sim/range.ts).
  */
 export const LANE_HALF = 17;
 const LANE_BLEND = 28;
+/**
+ * The same, across the start (z ≡ 0 each tile): the corridor the range's
+ * second road is laid in, so a crew can drive across the range as well as
+ * up it. m.
+ */
+export const CROSS_HALF = 17;
+const CROSS_BLEND = 28;
 
 const smooth = (t: number) => {
   const c = t < 0 ? 0 : t > 1 ? 1 : t;
   return c * c * (3 - 2 * c);
 };
 
-/** How much of the waves show at (x, z): 0 on the start field and the lane, 1 out in the rolling ground. */
+/** How much of the waves show at (x, z): 0 on the start field and in the roads' corridors, 1 out in the rolling ground. */
 export function roughness(x: number, z: number): number {
   const wx = wrapTile(x);
   const wz = wrapTile(z);
   const field = smooth((Math.hypot(wx, wz) - FLAT_RADIUS) / FLAT_BLEND);
   const lane = smooth((Math.abs(wx) - LANE_HALF) / LANE_BLEND);
-  return field * lane;
+  const cross = smooth((Math.abs(wz) - CROSS_HALF) / CROSS_BLEND);
+  return field * lane * cross;
 }
 
 /** The height field's sample at grid corner (ix, iz), m. Periodic over TILE. */
@@ -141,13 +152,14 @@ const ROCKS_PER_TILE = 40;
 const WALLS_PER_TILE = 10;
 const HOUSES_PER_TILE = 8;
 
-/** The obstacles in one tile, tile-local, the same on every page and in every realm. Random ones keep off the start field and the lane. */
+/** The obstacles in one tile, tile-local, the same on every page and in every realm. Random ones keep off the start field and both roads' corridors. */
 export const OBSTACLES: readonly Obstacle[] = (() => {
   const random = rng(OBSTACLE_SEED);
   const list: Obstacle[] = [...NEAR_START];
   const clear = (o: Obstacle) =>
     Math.hypot(o.x, o.z) > FLAT_RADIUS + FLAT_BLEND + o.r &&
     Math.abs(o.x) > LANE_HALF + 4 + o.r &&
+    Math.abs(o.z) > CROSS_HALF + 4 + o.r &&
     list.every((p) => Math.hypot(wrapTile(p.x - o.x), wrapTile(p.z - o.z)) > p.r + o.r + 8);
   const place = (count: number, make: () => Obstacle) => {
     for (let placed = 0, tries = 0; placed < count && tries < count * 50; tries++) {
