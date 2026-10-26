@@ -637,11 +637,11 @@ async function loadingAndFiring() {
   const onGrip = await waitFor('the power grip in the right hand', () => evalInApp(`window.__mechanisms.state(${JSON.stringify(names.twist)})`).heldBy === 'right', 4000).catch(() => false);
   trigger(true);
   const fired = await waitFor('the gun to fire', () => { const d = drill(); return !d.loaded && d.casings === 1 && d; }, 4000).catch(() => drill());
-  // The CLI's calls are slower than the recoil: read how far it went.
-  const recoiled = fired.kick;
   trigger(false);
   const landed = await waitFor('the shot to land', () => { const r = evalInApp('window.__firing.records()'); return r.length === 1 && evalInApp('window.__firing.flying()') === 0 && r[0]; }, 4000).catch(() => null);
   const after = await waitFor('the gun back in battery and the casing in the bin', () => { const d = drill(); return d.recoil === 0 && d; }, 3000).catch(() => drill());
+  // The CLI's calls are slower than the recoil (and the first look can be the frame it fired): read how far it went.
+  const recoiled = after.kick;
   check('The power grip\'s trigger fires the loaded gun: it recoils, the breech opens and the rack refills',
     onGrip && !fired.loaded && fired.lever === 0 && fired.breechShell === -1 && recoiled > 0 && after.shells[0].place === 'rack',
     `held ${onGrip}, loaded ${fired.loaded}, lever ${fired.lever.toFixed(2)}, recoil ${(100 * recoiled).toFixed(0)} cm, shell ${after.shells[0].place}`);
