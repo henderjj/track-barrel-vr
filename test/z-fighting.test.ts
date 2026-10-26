@@ -113,7 +113,7 @@ describe('no faces that flicker through each other (z-fighting)', () => {
         rig.add(tiller);
       }
       rig.updateMatrixWorld(true);
-      expectNone([rig], DECK_GAP);
+      expectNone([rig], CABIN_GAP);
     }
   });
 
