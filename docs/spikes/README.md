@@ -12,3 +12,11 @@ These notes are the early experiments (spikes) from the game this template came 
 | [s10-session-lifecycle.md](s10-session-lifecycle.md) | What happens when a headset sleeps, a tab hides, the network drops or a player leaves, and reconnecting |
 
 References in them to the ship, the gondola, the crank, the rope or fuel bricks are to the airship's code, which isn't in this template.
+
+## Track & Barrel spikes
+
+The spikes in the [plan](../plan.md#5-risks-and-spikes) for this game, numbered S1 to S4 there.
+
+| Note | What it settles |
+| --- | --- |
+| [s3-lever-feel.md](s3-lever-feel.md) | A hand-following lever with limits, springing back, with controllers and tracked hands, tried on a lane |

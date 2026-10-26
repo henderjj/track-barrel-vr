@@ -2,6 +2,7 @@ import { type BufferGeometry, Mesh, MeshLambertMaterial, type Object3D, Vector3 
 import { describe, expect, it } from 'vitest';
 import * as avatar from '../src/scene-assets/avatar.scene-asset.js';
 import * as deck from '../src/scene-assets/deck.scene-asset.js';
+import * as leverRig from '../src/scene-assets/lever-rig.scene-asset.js';
 import { coplanarOverlaps, describeOverlaps, trianglesOf } from './support/coplanar.js';
 
 /**
@@ -41,6 +42,23 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     const props: Object3D[] = [deck.createBlock(0), deck.createBlock(1)];
     for (const prop of props) {
       expectNone([prop], DECK_GAP);
+    }
+  });
+
+  it('on the lever test rig, with its tillers upright and at both limits', async () => {
+    const { Group } = await import('@iwsdk/core');
+    const { LEVER_RIG, TILLER } = await import('../src/sim/lever.js');
+    for (const angle of [0, TILLER.min, TILLER.max]) {
+      const rig = new Group();
+      rig.add(leverRig.createLeverRig());
+      for (const side of [-1, 1]) {
+        const tiller = leverRig.createTiller();
+        tiller.position.x = side * LEVER_RIG.side;
+        tiller.rotation.x = -angle;
+        rig.add(tiller);
+      }
+      rig.updateMatrixWorld(true);
+      expectNone([rig], DECK_GAP);
     }
   });
 
