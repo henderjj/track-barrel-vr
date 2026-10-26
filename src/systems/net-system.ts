@@ -21,7 +21,7 @@ import { copyCurls, createFingerCurls, type FingerCurls, setCurls } from '../sim
 import { settings } from '../settings.js';
 import { crewPresence } from '../net/crew-presence.js';
 import { handCurls, handUse } from './grip-system.js';
-import { HoldKind, LockedHand } from './hand-lock.js';
+import { HoldKind, LOCAL_HOLD_KINDS, LockedHand } from './hand-lock.js';
 import { perf } from './perf-hud-system.js';
 import { seating } from './seating.js';
 import { describeBrowser, readGpu } from '../perf/platform-report.js';
@@ -106,8 +106,16 @@ export function holdKindOf(use: string | null): number {
     case 'block': return HoldKind.Block;
     // A held shell ('shell') needs no kind yet: the drill is this player's own, so the crewmate doesn't see the shell.
     case 'breech-lever': return HoldKind.BreechLever;
+    case 'tiller-left': return HoldKind.TillerLeft;
+    case 'tiller-right': return HoldKind.TillerRight;
     default: return HoldKind.None;
   }
+}
+
+/** What the crewmate is told a hand holds: its HoldKind, unless the control is only on this page. */
+function sentHoldKind(use: string | null): number {
+  const kind = holdKindOf(use);
+  return LOCAL_HOLD_KINDS.has(kind) ? HoldKind.None : kind;
 }
 
 /**
@@ -658,7 +666,7 @@ export class NetSystem extends createSystem({}) {
         copyCurls(holding ? SCRIPTED_HOLDING : SCRIPTED_RELAXED, pose.rightFingers);
       }
       // A test pose's hands hold nothing.
-      pose.holds = test === null ? holdKindOf(handUse.left) | (holdKindOf(handUse.right) << 4) : 0;
+      pose.holds = test === null ? sentHoldKind(handUse.left) | (sentHoldKind(handUse.right) << 4) : 0;
       if (test === null || netLink.feetOverride) {
         pose.feet = netLink.feetOverride ? netLink.feetOverride(now) : netLink.feet;
       }
