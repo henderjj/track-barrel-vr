@@ -12,3 +12,11 @@ These notes are the early experiments (spikes) from the game this template came 
 | [s10-session-lifecycle.md](s10-session-lifecycle.md) | What happens when a headset sleeps, a tab hides, the network drops or a player leaves, and reconnecting |
 
 References in them to the ship, the gondola, the crank, the rope or fuel bricks are to the airship's code, which isn't in this template.
+
+## Track & Barrel VR spikes
+
+This game's own spikes (plan §5), each with a headset check at the end.
+
+| Note | Question |
+| --- | --- |
+| [s1-sight-render.md](s1-sight-render.md) | A magnified gunsight from a second camera: its cost on Quest 3 and over Link, and whether the range marks read at 3× |
