@@ -5,7 +5,7 @@ import {
   CylinderGeometry,
   IcosahedronGeometry,
   Mesh,
-  MeshLambertMaterial,
+  MeshStandardMaterial,
   TorusGeometry,
 } from '@iwsdk/core';
 import { PosedHand } from './hand.scene-asset.js';
@@ -98,7 +98,7 @@ function seatedLegParts(hipHeight: number): Part[] {
 }
 
 function partsMesh(parts: Part[], name: string): Mesh {
-  const mesh = new Mesh(mergeParts(parts), new MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+  const mesh = new Mesh(mergeParts(parts), new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
   mesh.name = name;
   return mesh;
 }

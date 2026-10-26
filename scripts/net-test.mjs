@@ -13,16 +13,13 @@
  * - when the host leaves, the other player becomes host and can be rejoined;
  * - voice (spike S5): Chromium's fake microphone (a periodic beep) reaches the
  *   crewmate, muting silences it, and the loopback route starts;
- * - throwing and catching (spike S7): the two players throw a block back
- *   and forth across the deck; catches that look caught on the catcher's
- *   side stay caught, and the thrower sees the block in the catcher's hand,
- *   on a clean link and at 150 ms RTT;
- * - host authority: a block either player throws through the hoop scores
- *   once, on the host, and both see the score; the guest's Restart restarts
- *   both;
+ * - seats (F1.1): the host sits in the driver's seat and the guest in the
+ *   gunner's; the guest asking for the other seat swaps both, decided by
+ *   the host, and each draws the crewmate's legs in the crewmate's seat, on
+ *   a clean link and at 150 ms RTT;
  * - the crew lifecycle (spike S10): stepping away, going quiet and a broken
  *   connection;
- * - the practice crewmate catches the player's throws and throws them back.
+ * - the practice crewmate sits in the seat the player leaves free.
  *
  * Add a check for each feature that two players share (see the building
  * skill in .claude/skills/): what the guest does reaches the host, and both
@@ -38,7 +35,7 @@ const LOBBY_PORT = 8787;
 const PREVIEW_PORT = 4173;
 // The IWSDK Vite plugin serves HTTPS with a local development certificate.
 const BASE = `https://localhost:${PREVIEW_PORT}/`;
-const QUIET = 'blocks=1&hud=0';
+const QUIET = 'hud=0';
 
 const results = [];
 function check(name, pass, detail) {
@@ -100,8 +97,7 @@ async function openPlayer(browser, query, initScript) {
   const errors = [];
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
-    if (process.env.ONLY_THROW && /^\[Throw/.test(m.text())) console.log(`    ${query.slice(0, 18)} ${m.text()}`);
-    if (/^\[(Net|Game|Throw|Bot)\]/.test(m.text())) console.log(`    ${m.text()}`);
+    if (/^\[(Net|Seat|Bot)\]/.test(m.text())) console.log(`    ${m.text()}`);
   });
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`${BASE}?${QUIET}&${query}`);
@@ -199,139 +195,6 @@ function peakVoiceLevel(page, ms) {
   );
 }
 
-const throwLoop = ([mine, other, seed, first, durationMs]) => {
-  let rnd = seed;
-  const random = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
-  const jitter = (p, r) => p.map((v) => v + (random() * 2 - 1) * r);
-  const T = window.__throw;
-  const N = window.__net;
-  const me = N.session.isHost ? 0 : 1;
-  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-  const FLIGHT = 0.5, SWING_MS = 250, WINDUP_MS = 300;
-  const endAt = performance.now() + durationMs;
-  const s = { phase: 'ready', since: performance.now(), hand: jitter(mine, 0.1), squeeze: false, from: null, start: null, v: null,
-    throws: 0, catches: 0, kept: 0, lost: 0, misses: 0, pickups: 0, remoteHeldSince: 0, maxHeldError: 0, heldChecks: 0, released: false, done: false };
-  window.__throwScript = s;
-  T.stats.maxHandoverOffset = 0;
-  T.stats.handoverOffsets.length = 0;
-  const set = (phase) => { s.phase = phase; s.since = performance.now(); };
-  T.setTestHand('right', (now) => {
-    const t = now - s.since;
-    let p = s.hand;
-    let squeeze = s.squeeze;
-    if (s.phase === 'windup') {
-      const k = Math.min(1, t / WINDUP_MS);
-      p = s.from.map((v, i) => v + (s.start[i] - v) * k);
-      squeeze = true;
-    } else if (s.phase === 'swing') {
-      const k = t / 1000; // keeps moving through the release, as a real arm does
-      p = s.start.map((v, i) => v + s.v[i] * k);
-      squeeze = t < SWING_MS;
-      // The hand lets go here, in the frame the game reads it. Only then may
-      // the script move on: if its own frame callback ran first and put the
-      // hand back at rest, the game would see the hand stop dead at the
-      // release and throw at two-thirds speed.
-      if (!squeeze) s.released = true;
-    }
-    return { x: p[0], y: p[1], z: p[2], squeeze };
-  });
-  if (first) {
-    T.place(0, ...s.hand);
-    s.squeeze = true;
-  }
-  const tick = () => {
-    const now = performance.now();
-    const o = T.objects()[0];
-    const held = o.heldBy === 'right';
-    const t = now - s.since;
-    if (s.phase === 'ready') {
-      if (held) {
-        set('holding');
-      } else if (o.remote && o.speed > 1.5 && !o.remoteHeld && dist(o.pos, s.hand) < 0.6) {
-        s.squeeze = true;
-        set('catching');
-      } else if (o.owner === me && !o.remote && o.speed < 0.2 && t > 1500 && now < endAt) {
-        // It fell: pick it up again.
-        s.pickups++;
-        T.place(0, ...s.hand);
-        s.squeeze = true;
-      }
-    } else if (s.phase === 'catching') {
-      if (held) {
-        s.catches++;
-        s.pendingCatch = true;
-        set('holding');
-      } else if (t > 700) {
-        s.misses++;
-        s.squeeze = false;
-        set('ready');
-      }
-    } else if (s.phase === 'holding') {
-      if (!held) {
-        // The host had it first: the hand let go.
-        if (s.pendingCatch) s.lost++;
-        s.pendingCatch = false;
-        s.squeeze = false;
-        set('ready');
-      } else {
-        if (s.pendingCatch && t > 400) {
-          s.pendingCatch = false;
-          if (!o.pending && o.owner === me) s.kept++;
-          else s.lost++;
-        }
-        if (t > 600 && now < endAt) {
-          const target = jitter(other, 0.08);
-          s.v = [0, 1, 2].map((i) => (target[i] - mine[i]) / FLIGHT + (i === 1 ? 0.5 * 9.81 * FLIGHT : 0));
-          s.start = mine.map((v, i) => v - (s.v[i] * SWING_MS) / 1000);
-          s.from = s.hand.slice();
-          set('windup');
-        }
-      }
-    } else if (s.phase === 'windup') {
-      if (t > WINDUP_MS) set('swing');
-    } else if (s.phase === 'swing') {
-      if (s.released) {
-        s.released = false;
-        s.throws++;
-        s.squeeze = false;
-        s.hand = jitter(mine, 0.1);
-        set('ready');
-      }
-    }
-    // Thrower's view: once the crewmate has held the block for half a
-    // second, it should be drawn in their drawn hand.
-    if (o.remote && o.remoteHeld) {
-      if (!s.remoteHeldSince) s.remoteHeldSince = now;
-      const r = N.remotePose();
-      if (r && now - s.remoteHeldSince > 500) {
-        s.heldChecks++;
-        const err = dist(o.pos, [r.right.px, r.right.py, r.right.pz]);
-        if (err > s.maxHeldError) {
-          s.maxHeldError = err;
-          s.worstHeld = { block: o.pos.map((v) => +v.toFixed(2)), hand: [r.right.px, r.right.py, r.right.pz].map((v) => +v.toFixed(2)), heldMs: Math.round(now - s.remoteHeldSince), phase: s.phase, epoch: o.epoch };
-        }
-      }
-    } else {
-      s.remoteHeldSince = 0;
-    }
-    if (now < endAt + 1500) requestAnimationFrame(tick);
-    else {
-      T.setTestHand('right', null);
-      s.done = true;
-    }
-  };
-  requestAnimationFrame(tick);
-};
-
-/**
- * The two players throw block 0 back and forth with scripted right hands:
- * the host stands at the near end (right), the guest by the table (left),
- * about 2.3 m apart. Each throw aims within 8 cm of
- * the other player's catch spot with a 0.5 s flight; each catcher holds
- * its hand within 10 cm of its spot and squeezes when the block, as drawn on
- * its own screen, comes within 60 cm, like a person reacting to what they
- * see. A block that falls is picked up again by its owner.
- */
 /**
  * Wait until pose packets flow both ways. A freshly loaded page connects
  * before its first frames, so on a slow runner it can be seconds before it
@@ -343,99 +206,42 @@ async function waitForPoses(pages, count = 30) {
   await waitFor('pose packets both ways', async () => (await received()).every((n, i) => n - start[i] >= count), 20000);
 }
 
-async function throwAndCatch(host, guest, seconds) {
-  const HOST_SPOT = [0.6, 1.2, 1.4];
-  const GUEST_SPOT = [-0.6, 1.3, -0.6];
-  await host.page.evaluate(throwLoop, [HOST_SPOT, GUEST_SPOT, 12345, true, seconds * 1000]);
-  await guest.page.evaluate(throwLoop, [GUEST_SPOT, HOST_SPOT, 54321, false, seconds * 1000]);
-  await waitFor('the throwing to finish', async () =>
-    (await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__throwScript.done)))).every(Boolean), (seconds + 15) * 1000);
-  const read = (p) => p.page.evaluate(() => {
-    const { done, phase, since, hand, squeeze, from, start, v, pendingCatch, remoteHeldSince, released, ...rest } = window.__throwScript;
-    return { ...rest, handoverOffset: window.__throw.stats.maxHandoverOffset, handoverOffsets: window.__throw.stats.handoverOffsets.slice(), refused: window.__throw.stats.refused };
-  });
-  return { host: await read(host), guest: await read(guest) };
-}
-
-/** Checks for one throwAndCatch run. */
-function checkThrows(label, r, maxSlide) {
-  const catches = r.host.catches + r.guest.catches;
-  const kept = r.host.kept + r.guest.kept;
-  const throws = r.host.throws + r.guest.throws;
-  const detail = `${throws} throws, ${catches} caught (host ${r.host.catches}, guest ${r.guest.catches}), ${kept} kept, ${r.host.misses + r.guest.misses} missed, ${r.host.pickups + r.guest.pickups} picked up off the deck`;
-  check(`Throws are caught (${label})`, throws >= 6 && catches >= 0.6 * throws && r.host.catches > 0 && r.guest.catches > 0, detail);
-  check(`Catches that look caught stay caught (${label})`, catches > 0 && kept >= 0.9 * catches, detail);
-  const heldError = Math.max(r.host.maxHeldError, r.guest.maxHeldError);
-  check(`The thrower sees the block in the catcher's hand (${label})`, r.host.heldChecks > 0 && r.guest.heldChecks > 0 && heldError < 0.15,
-    `largest gap ${(heldError * 100).toFixed(1)} cm`);
-  // When the catch reaches the thrower, their view of the block slides from
-  // its own flight to the catcher's hand; it should be a nudge, not a jump.
-  // Judged on the median hand-over: the worst one depends mostly on the frame
-  // rate of the cloud's software-rendered pages (15-30 fps), which sets how
-  // far a block moves between the catcher's catch checks.
-  const slides = [...r.host.handoverOffsets, ...r.guest.handoverOffsets].sort((a, b) => a - b);
-  const median = slides.length ? slides[slides.length >> 1] : Number.POSITIVE_INFINITY;
-  const worst = slides.length ? slides[slides.length - 1] : Number.NaN;
-  check(`The hand-over looks smooth to the thrower (${label})`, median < maxSlide,
-    `median slide ${(median * 100).toFixed(0)} cm (limit ${(maxSlide * 100).toFixed(0)} cm), worst ${(worst * 100).toFixed(0)} cm over ${slides.length} hand-overs`);
-}
+/**
+ * Where each seat's crewmate's hips are drawn, hull space: the seat's
+ * cushion plus hipPoint's offset (src/sim/cabin.ts), the gunner's turned
+ * with the turret (facing forward until F1.8) about its ring at z = 0.2.
+ */
+const HIPS = { driver: [-0.5, 0.63, -1.41], gunner: [0.4, 1.43, 0.16] };
 
 /**
- * Host authority: the guest throws block 0 through the hoop (a scripted
- * hand), the host counts the point and both boards show it; then the host
- * throws one, and the guest's menu Restart puts both back to nought.
+ * Seats (F1.1): the host decides. The host keeps the seat they had
+ * (`hostSeat`: the driver's for a new crew) and the guest gets the other;
+ * the guest asks for the host's seat from the game menu and the host swaps
+ * both; each draws the crewmate's legs at the crewmate's seat. Then back
+ * as they were.
  */
-/** Where block 0 lies, as the host (the authority) sees it. */
-const blockPos = () => window.__throw.objects()[0].pos;
-
-const throwThroughHoop = (p) => {
-  const T = window.__throw;
-  // Mirrors HOOP in src/sim/play-area.ts.
-  const hoop = [0, 2.0, -2.6];
-  const swing = 0.15, flight = 0.35, total = swing + flight, g = 9.81;
-  const v = [(hoop[0] - p[0]) / total, (hoop[1] - p[1] + 0.5 * g * flight * flight) / total, (hoop[2] - p[2]) / total];
-  let t0 = 0;
-  T.setTestHand('right', (now) => {
-    if (!t0) t0 = now;
-    const t = (now - t0) / 1000;
-    if (t > 2) return null;
-    if (t < 0.3) return { x: p[0], y: p[1], z: p[2], squeeze: t > 0.1 };
-    const s = Math.min(t - 0.3, 0.3);
-    return { x: p[0] + v[0] * s, y: p[1] + v[1] * s, z: p[2] + v[2] * s, squeeze: t - 0.3 < swing };
-  });
-  setTimeout(() => T.setTestHand('right', null), 2500);
-};
-
-async function scoreChecks(host, guest) {
-  const scores = () => Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__game.score)));
-  const [h0] = await scores();
-  // Both put their blocks back on the table; the guest's hand takes block 0 from there.
-  await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__game.resetBlocks())));
-  await guest.page.waitForTimeout(1500);
-  await guest.page.evaluate(throwThroughHoop, await host.page.evaluate(blockPos));
-  const guestPoint = await waitFor('the guest\'s point', async () => {
-    const s = await scores();
-    return s[0] === h0 + 1 && s[1] === h0 + 1 ? s : null;
+async function seatChecks(host, guest, label, hostSeat = 'driver') {
+  const other = { driver: 'gunner', gunner: 'driver' };
+  const ids = { driver: 'row-seat-0', gunner: 'row-seat-1' };
+  const seats = () => Promise.all([host, guest].map((p) => p.page.evaluate(() => ({
+    mine: window.__seats.mine,
+    crew: window.__seats.crew,
+    legs: window.__debug.world.scene.getObjectByName('Crew 2 Legs')?.position.toArray(),
+  }))));
+  const legsAt = (s, seat) => s.legs !== undefined && Math.hypot(...s.legs.map((v, i) => v - HIPS[seat][i])) < 0.01;
+  const seated = (hostSeat, guestSeat) => waitFor(`the host in the ${hostSeat}'s seat and the guest in the ${guestSeat}'s`, async () => {
+    const [h, g] = await seats();
+    return h.mine === hostSeat && h.crew === guestSeat && g.mine === guestSeat && g.crew === hostSeat && legsAt(h, guestSeat) && legsAt(g, hostSeat) ? [h, g] : null;
   }, 8000).catch(() => null);
-  check('A block the guest throws through the hoop scores once, on the host, and both see it',
-    guestPoint !== null, `scores ${JSON.stringify(guestPoint ?? await scores())} from ${h0}`);
-  // The block ended with the guest, who threw it: the host's hand takes it back from where it lies.
-  await host.page.waitForTimeout(2500);
-  const lying = await host.page.evaluate(blockPos);
-  await host.page.evaluate(throwThroughHoop, lying);
-  const hostPoint = await waitFor('the host\'s point', async () => {
-    const s = await scores();
-    return s[0] === h0 + 2 && s[1] === h0 + 2 ? s : null;
-  }, 8000).catch(() => null);
-  check('A block the host throws through the hoop scores, and the guest sees it',
-    hostPoint !== null, `scores ${JSON.stringify(hostPoint ?? await scores())}`);
-  await host.page.waitForTimeout(2500);
-  await guest.page.evaluate(() => window.__gameMenu.click('menu-restart'));
-  const restarted = await waitFor('the restart', async () => {
-    const s = await scores();
-    return s[0] === 0 && s[1] === 0 ? s : null;
-  }, 5000).catch(() => null);
-  check('The guest\'s Restart restarts the game for both', restarted !== null, `scores ${JSON.stringify(restarted ?? await scores())}`);
+  const start = await seated(hostSeat, other[hostSeat]);
+  check(`The host sits in the ${hostSeat}'s seat and the guest in the other, each sees the other's legs in their seat (${label})`,
+    start !== null, JSON.stringify(start ?? await seats()));
+  await guest.page.evaluate((id) => window.__gameMenu.click(id), ids[hostSeat]);
+  const swapped = await seated(other[hostSeat], hostSeat);
+  check(`The guest asking for the host's seat swaps both players (${label})`, swapped !== null, JSON.stringify(swapped ?? await seats()));
+  await guest.page.evaluate((id) => window.__gameMenu.click(id), ids[other[hostSeat]]);
+  const back = await seated(hostSeat, other[hostSeat]);
+  check(`And asking for their old seat swaps them back (${label})`, back !== null, JSON.stringify(back ?? await seats()));
 }
 
 async function lobbyChecks(browser, host, guest) {
@@ -640,14 +446,10 @@ async function lifecycleChecks(host, guest) {
 }
 
 /**
- * The practice crewmate: one scripted player (the host) and a page set to
- * play as the bot. The player rings the bell, cranks alone, hauls alone and
- * throws to the bot; the bot should make each of those two-player things work.
-
-/**
- * The practice crewmate: one scripted player (the host) and a page set to
- * play as the bot. The player throws to the bot, which catches and throws
- * back. Add a check here for each two-player job the bot learns.
+ * The practice crewmate: one player (the host) and a page set to play as
+ * the bot. The bot takes the seat the player leaves free, and moves over
+ * when the player changes seats. Add a check here for each two-player job
+ * the bot learns.
  */
 async function botChecks(browser) {
   const me = await openPlayer(browser, 'room=BOTS&name=Fay');
@@ -655,36 +457,28 @@ async function botChecks(browser) {
   const bot = await openPlayer(browser, 'room=BOTS&bot=1');
   await waitFor('the bot to join', async () => (await state(me.page)) === 'connected' && (await state(bot.page)) === 'connected');
 
-  // The player stands at the near end of the deck, facing the table.
-  const HEAD = [0, 1.6, 0.9];
-  await me.page.evaluate((head) => window.__net.setTestPose({
-    head: { px: head[0], py: head[1], pz: head[2], qx: 0, qy: 0, qz: 0, qw: 1 },
-    left: { px: 0, py: 0, pz: 0, qx: 0, qy: 0, qz: 0, qw: 1 },
-    right: { px: 0, py: 0, pz: 0, qx: 0, qy: 0, qz: 0, qw: 1 },
-    flags: 0,
-  }), HEAD);
-
-  // Throwing: the player throws to the bot's hand; the bot catches and throws back to the player's chest.
-  await me.page.waitForTimeout(2000);
-  const botHand = await me.page.evaluate(() => {
-    const r = window.__net.remotePose();
-    return r ? [r.right.px, r.right.py, r.right.pz] : null;
-  });
-  const botHead = await bot.page.evaluate(() => window.__bot.head);
-  const dx = botHead[0] - HEAD[0];
-  const dz = botHead[2] - HEAD[2];
-  const flat = Math.hypot(dx, dz);
-  const chest = [HEAD[0] + (dx / flat) * 0.3, HEAD[1] - 0.45, HEAD[2] + (dz / flat) * 0.3];
-  await me.page.evaluate(throwLoop, [chest, botHand ?? [0.45, 1.2, 0.05], 777, true, 20000]);
-  await waitFor('the throwing to finish', () => me.page.evaluate(() => window.__throwScript.done), 35000);
-  const thrown = await me.page.evaluate(() => {
-    const { throws, catches, misses, pickups } = window.__throwScript;
-    return { throws, catches, misses, pickups };
-  });
-  const botStats = await bot.page.evaluate(() => ({ ...window.__bot.stats }));
-  check('Practice crewmate: catches throws and throws them back to the player',
-    thrown.throws >= 2 && botStats.catches >= thrown.throws - 1 && botStats.throws >= 2 && thrown.catches >= botStats.throws - 1,
-    `player threw ${thrown.throws} and caught ${thrown.catches} back (${thrown.misses} missed, ${thrown.pickups} picked up); bot caught ${botStats.catches} and threw ${botStats.throws}`);
+  // The bot's head is at its seat's eye point, as drawn on the player's page, and its legs in that seat.
+  const near = (a, b, within) => a && Math.hypot(...a.map((v, i) => v - b[i])) < within;
+  const botSeat = async () => {
+    const onBot = await bot.page.evaluate(() => ({ seat: window.__bot.seat, head: window.__bot.head }));
+    const onMine = await me.page.evaluate(() => ({
+      mine: window.__seats.mine,
+      eye: window.__seats.eye(window.__seats.crew),
+      head: window.__debug.world.scene.getObjectByName('Crew 2 Head')?.position.toArray(),
+      legs: window.__debug.world.scene.getObjectByName('Crew 2 Legs')?.position.toArray(),
+    }));
+    return { ...onBot, ...onMine };
+  };
+  const sat = (playerSeat, seat) => waitFor(`the bot in the ${seat}'s seat`, async () => {
+    const b = await botSeat();
+    // The bot looks about, so its head is within a few centimetres of the eye point.
+    return b.mine === playerSeat && b.seat === seat && near(b.head, b.eye, 0.1) && near(b.legs, HIPS[seat], 0.01) ? b : null;
+  }, 10000).catch(() => null);
+  const gunning = await sat('driver', 'gunner');
+  check('Practice crewmate: sits in the gunner\'s seat while the player drives', gunning !== null, JSON.stringify(gunning ?? await botSeat()));
+  await me.page.evaluate(() => window.__gameMenu.click('row-seat-1'));
+  const driving = await sat('gunner', 'driver');
+  check('Practice crewmate: moves to the driver\'s seat when the player takes the gunner\'s', driving !== null, JSON.stringify(driving ?? await botSeat()));
 
   const errors = [...me.errors, ...bot.errors].filter((m) => !m.includes('net::ERR_') && !m.includes('Failed to load resource'));
   await me.context.close();
@@ -742,8 +536,8 @@ async function main() {
       return;
     }
     const room = 'TEST';
-    // ONLY_THROW=lag runs the quick throwing loop at about 150 ms RTT.
-    const quickLag = process.env.ONLY_THROW === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
+    // ONLY_SEATS=lag runs the quick seat checks at about 150 ms RTT.
+    const quickLag = process.env.ONLY_SEATS === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
     const a = await openPlayer(browser, `room=${room}&name=Ann${quickLag}`);
     await waitFor('Ann waiting in the lobby', async () => (await state(a.page)) === 'waiting');
     const b = await openPlayer(browser, `room=${room}&name=Bo${quickLag}`);
@@ -764,11 +558,9 @@ async function main() {
       await lifecycleChecks(a, b);
       return;
     }
-    if (process.env.ONLY_THROW) {
-      // Quick loop for tuning spike S7: just the throwing.
-      const r = await throwAndCatch(a, b, 10);
-      console.log(JSON.stringify(r, null, 1));
-      checkThrows('only', r, quickLag ? 0.25 : 0.12);
+    if (process.env.ONLY_SEATS) {
+      // Quick loop for F1.1: just the seats.
+      await seatChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
       return;
     }
 
@@ -867,7 +659,7 @@ async function main() {
     }, 10000).catch(() => null);
     check('Players swap platform reports', crews !== null, crews ? `Ann sees "${crews[0].browser} on ${crews[0].os}, mic ${crews[0].mic}"` : '');
 
-    await scoreChecks(a, b);
+    await seatChecks(a, b, 'local network');
     await lobbyChecks(browser, a, b);
 
     const motion = await measureMotion(a, b, 3);
@@ -891,10 +683,8 @@ async function main() {
     check('A player can rejoin', true);
     await waitForPoses([a2, b]);
 
-    const throwsLocal = await throwAndCatch(b, a2, 14);
-    report.throwsLocal = throwsLocal;
-    checkThrows('local network', throwsLocal, 0.12);
-    await scoreChecks(b, a2);
+    // Bo, the gunner, became host and keeps that seat; Ann comes back as the driver.
+    await seatChecks(b, a2, 'after a rejoin', 'gunner');
     await lifecycleChecks(b, a2);
     await a2.context.close();
     await b.context.close();
@@ -920,9 +710,7 @@ async function main() {
     const loopActive = await e.page.evaluate(() => window.__net.voice.loopbackActive);
     check('Voice through the loopback route', loopActive && loopVoice > 0.01, `loopback ${loopActive}, peak level ${loopVoice.toFixed(3)}`);
 
-    const throwsLagged = await throwAndCatch(d, e, 14);
-    report.throwsLagged = throwsLagged;
-    checkThrows('150 ms RTT', throwsLagged, 0.25);
+    await seatChecks(d, e, '150 ms RTT');
 
     await d.context.close();
     await e.context.close();

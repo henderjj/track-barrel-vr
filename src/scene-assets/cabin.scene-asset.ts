@@ -3,7 +3,7 @@ import {
   CylinderGeometry,
   ExtrudeGeometry,
   Mesh,
-  MeshLambertMaterial,
+  MeshStandardMaterial,
   Path,
   Shape,
   TorusGeometry,
@@ -255,7 +255,7 @@ function turretParts(): Part[] {
   return parts;
 }
 
-const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
 
 /** The hull, with everything fixed to it, in one mesh. */
 export function createHull(): Mesh {

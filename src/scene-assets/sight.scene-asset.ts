@@ -1,4 +1,4 @@
-import { BoxGeometry, CircleGeometry, CylinderGeometry, Mesh, MeshLambertMaterial, RingGeometry, TorusGeometry } from '@iwsdk/core';
+import { BoxGeometry, CircleGeometry, CylinderGeometry, Mesh, MeshStandardMaterial, RingGeometry, TorusGeometry } from '@iwsdk/core';
 import { beam, mergeParts, type Part } from './lowpoly.js';
 import { GROUND_Y } from '../sim/cabin.js';
 import { LENS_RADIUS, SIGHT_STAND, SIGHT_TARGETS, TARGET_BOARD, targetFoot } from '../sim/sight.js';
@@ -28,7 +28,7 @@ const TUBE_LENGTH = 0.33;
 /** The tube's back end is this far in front of the lens, m, so the lens sits inside the eyecup. */
 const TUBE_BACK = 0.015;
 
-const material = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
 
 /**
  * The bracket the sight hangs from, in hull space relative to the point

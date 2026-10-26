@@ -5,7 +5,7 @@ import {
   BufferGeometry,
   CylinderGeometry,
   Matrix4,
-  MeshLambertMaterial,
+  MeshStandardMaterial,
   Object3D,
   Quaternion,
   Skeleton,
@@ -306,7 +306,7 @@ export class PosedHand {
   constructor(coat: number, readonly side: 'left' | 'right') {
     this.bones = createBones(side);
     poseBones(this.bones, BIND_POSE);
-    this.mesh = new SkinnedMesh(handGeometry(coat, side), new MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+    this.mesh = new SkinnedMesh(handGeometry(coat, side), new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
     this.mesh.add(this.bones[0]);
     this.mesh.updateMatrixWorld(true);
     this.mesh.bind(new Skeleton(this.bones), new Matrix4());
