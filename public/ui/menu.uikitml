@@ -10,7 +10,8 @@
   feature, so a headset check never has to play its way there (the cabin's:
   sit in either seat; the drive's: drive, or put the tank back at its start; the turret's: lay
   the gun, or turn the turret forward; loading: load and fire as gunner; the range's: park up the range facing a target; the
-  gunsight's: go to it, or lay the gun on a target's range mark; the tank's sounds: play each short sound in turn; the periscope's: go to it, turn it ahead, its power).
+  gunsight's: go to it, or lay the gun on a target's range mark; the range run's: start or stop a run, and ready to fire on each target, parked at the start,
+  laid and loaded; the tank's sounds: play each short sound in turn; the periscope's: go to it, turn it ahead, its power).
   Calls (in a crew) sends the crewmate a call for the other seat, which shows on their sign and
   which the practice crewmate obeys (F1.13): to the driver from the gunner's seat, to the gunner
   from the driver's. You →
@@ -429,6 +430,22 @@
         <Button id="menu-range-up" class="choice" size="sm" variant="secondary">Up the range</Button>
       </div>
     </div>
+    <div class="setting">
+      <div class="label">Range run</div>
+      <div class="choices">
+        <Button id="menu-run-start" class="choice" size="sm" variant="secondary">Start</Button>
+        <Button id="menu-run-stop" class="choice" size="sm" variant="secondary">Stop</Button>
+      </div>
+    </div>
+    <div class="setting">
+      <div class="label">Ready to fire</div>
+      <div class="choices">
+        <Button id="menu-ready-0" class="choice" size="sm" variant="secondary">100 m</Button>
+        <Button id="menu-ready-1" class="choice" size="sm" variant="secondary">250 m</Button>
+        <Button id="menu-ready-2" class="choice" size="sm" variant="secondary">500 m</Button>
+      </div>
+    </div>
+    <div id="menu-run-status" class="hint">Range run</div>
     <div class="setting">
       <div class="label">Ride the tank</div>
       <div class="choices">

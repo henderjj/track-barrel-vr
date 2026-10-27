@@ -27,6 +27,10 @@
  * - loading and firing (F1.10): a guest gunner's loading reaches the host,
  *   and its shot is seen on both pages and decided by the host, on a clean
  *   link and at 150 ms RTT;
+ * - the range run (F1.11): a guest's Start runs the host's run on both
+ *   pages' clocks, the host driver's Ready to fire lays and loads the guest
+ *   gunner's gun, and the guest's hit counts on both, on a clean link and
+ *   at 150 ms RTT;
  * - the tank's sounds (F1.12): the intercom plays plain, the tank's sounds
  *   duck while someone speaks, and both pages hear the loading and the shot;
  * - the crew lifecycle (spike S10): stepping away, going quiet and a broken
@@ -591,6 +595,56 @@ async function firingChecks(host, guest, label) {
   await guest.page.evaluate(() => window.__turret.forward());
 }
 
+/**
+ * The range run (F1.11) with the guest in the gunner's seat: the guest's
+ * Start asks the host, both pages run the same run on the shared clock;
+ * the host driver's Ready to fire has the guest gunner's page lay the gun
+ * and load it; the guest's hit counts on the host and comes back; Stop
+ * from the host ends it on both.
+ */
+async function runChecks(host, guest, label) {
+  const run = (p) => p.page.evaluate(() => window.__rangeRun.state());
+  await guest.page.evaluate(() => window.__rangeRun.start());
+  const started = await waitFor('both pages to run the same run', async () => {
+    const [h, g] = await Promise.all([run(host), run(guest)]);
+    return h.phase === 'running' && g.phase === 'running' && h.id === g.id && h.id > 0 ? { h, g } : null;
+  }, 8000).catch(() => null);
+  const tank = await host.page.evaluate(() => window.__drive.state());
+  check(`The guest's Start begins a run on the host, the tank back at the start (${label})`,
+    started !== null && Math.hypot(tank.x, tank.z) < 0.5,
+    started ? `run ${started.h.id}, clocks ${started.h.clock.toFixed(2)} / ${started.g.clock.toFixed(2)} s` : JSON.stringify(await Promise.all([run(host), run(guest)])));
+  await waitFor('the clock to run', async () => (await run(host)).clock > 0.5, 8000).catch(() => null);
+  const [h1, g1] = await Promise.all([run(host), run(guest)]);
+  check(`Both pages' run clocks agree (${label})`, h1.clock > 0 && Math.abs(h1.clock - g1.clock) < 0.4,
+    `host ${h1.clock.toFixed(2)} s, guest ${g1.clock.toFixed(2)} s`);
+
+  // The host drives: its Ready to fire has the gunner's page lay and load.
+  await host.page.evaluate(() => window.__rangeRun.ready(1));
+  const ready = await waitFor('the gunner laid and loaded', async () => guest.page.evaluate(() => window.__rangeRun.pending === -1 && window.__loading.state().loaded && window.__firing.predict().target === 1), 10000).catch(() => false);
+  check(`The driver's Ready to fire has the gunner's page lay the gun on the 250 m target and load it (${label})`, ready,
+    `gunner loaded ${await guest.page.evaluate(() => window.__loading.state().loaded)}, would: ${await guest.page.evaluate(() => window.__firing.predict().line)}`);
+  await waitFor('the host to draw the gun laid', async () => {
+    const [h, g] = await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__turret.state())));
+    return Math.abs(h.yaw - g.yaw) < 1e-4 && Math.abs(h.elevation - g.elevation) < 1e-4;
+  }, 8000).catch(() => null);
+  await guest.page.evaluate(() => window.__turret.pullTrigger());
+  const counted = await waitFor('both pages to count the hit', async () => {
+    const [h, g] = await Promise.all([run(host), run(guest)]);
+    // The flags are drawn on the next frame after the run event lands: wait for that too.
+    const up = await guest.page.evaluate(() => window.__rangeRun.flags()[1]);
+    return h.targets === 1 && g.targets === 1 && g.hitAt[1] >= 0 && up ? { h, g } : null;
+  }, 10000).catch(() => null);
+  const flags = await guest.page.evaluate(() => window.__rangeRun.flags());
+  check(`The gunner's hit counts on the host and comes back: one target, its flag up, the run assisted (${label})`,
+    counted !== null && counted.h.shots === 1 && counted.g.shots === 1 && counted.h.assisted && counted.g.assisted && flags.join() === 'false,true,false',
+    counted ? `host ${counted.h.line}; guest ${counted.g.line}; flags ${flags.join(', ')}` : JSON.stringify(await Promise.all([run(host), run(guest)])));
+
+  await host.page.evaluate(() => window.__rangeRun.stop());
+  const stopped = await waitFor('the guest to see the run stop', async () => (await run(guest)).phase === 'idle', 8000).catch(() => false);
+  check(`Stop ends the run on both pages (${label})`, stopped, `guest ${(await run(guest)).line}`);
+  await guest.page.evaluate(() => { window.__loading.reset(); window.__turret.forward(); });
+}
+
 async function lobbyChecks(browser, host, guest) {
   // Coat colours: each player's pick, told on connecting and on changing.
   const colors = async () => Promise.all([host, guest].map((p) => p.page.evaluate(() => ({ mine: window.__net.color, theirs: window.__net.remoteColor }))));
@@ -942,7 +996,7 @@ async function main() {
     }
     const room = 'TEST';
     // ONLY_SEATS=lag runs the quick seat checks at about 150 ms RTT.
-    const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' || process.env.ONLY_TURRET === 'lag' || process.env.ONLY_FIRING === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
+    const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' || process.env.ONLY_TURRET === 'lag' || process.env.ONLY_FIRING === 'lag' || process.env.ONLY_RUN === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
     const a = await openPlayer(browser, `room=${room}&name=Ann${quickLag}`);
     await waitFor('Ann waiting in the lobby', async () => (await state(a.page)) === 'waiting');
     const b = await openPlayer(browser, `room=${room}&name=Bo${quickLag}`);
@@ -982,6 +1036,12 @@ async function main() {
       // Quick loop for F1.10: the turret, then loading and firing (ONLY_FIRING=lag at about 150 ms RTT).
       await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
       await firingChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+      return;
+    }
+    if (process.env.ONLY_RUN) {
+      // Quick loop for F1.11: the range run with a guest gunner (ONLY_RUN=lag at about 150 ms RTT).
+      await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+      await runChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
       return;
     }
 
@@ -1089,6 +1149,7 @@ async function main() {
     await driveChecks(a, b, 'local network');
     await turretChecks(a, b, 'local network');
     await firingChecks(a, b, 'local network');
+    await runChecks(a, b, 'local network');
     await lobbyChecks(browser, a, b);
 
     const motion = await measureMotion(a, b, 3);
@@ -1144,6 +1205,7 @@ async function main() {
     await driveChecks(d, e, '150 ms RTT');
     await turretChecks(d, e, '150 ms RTT');
     await firingChecks(d, e, '150 ms RTT');
+    await runChecks(d, e, '150 ms RTT');
 
     await d.context.close();
     await e.context.close();

@@ -723,6 +723,38 @@ export class LoadingDrill {
     return true;
   }
 
+  /**
+   * Practice (F1.11's Ready to fire): a shell rammed and the breech closed
+   * at once, as if loaded, without counting as a load. Hands let go first.
+   * Does nothing if already loaded.
+   */
+  loadNow(): void {
+    if (this.loaded) return;
+    // A shell in a hand goes back in the rack (not dropped: no fumble).
+    for (const side of SIDES) {
+      const hold = this.holds[side];
+      this.holds[side] = HOLD_NONE;
+      if (hold >= 0 && hold !== this.breechShell) this.toRack(hold);
+      else if (hold >= 0) this.shells[hold].heldBy = null;
+    }
+    if (this.breechShell < 0) {
+      let i = this.shells.findIndex((s) => s.place === 'rack');
+      if (i < 0) i = 0;
+      const s = this.shells[i];
+      s.place = 'breech';
+      s.heldBy = null;
+      s.fallSpeed = 0;
+      this.breechShell = i;
+    }
+    this.setDepth(SHELL_LENGTH);
+    this.rammed = true;
+    this.slideSpeed = 0;
+    this.forcing = false;
+    this.lever = LEVER_CLOSED;
+    this.loaded = true;
+    this.version++;
+  }
+
   /** The nose of shell `i`, turret space. */
   nose(i: number, out: Vec3): Vec3 {
     const s = this.shells[i];
