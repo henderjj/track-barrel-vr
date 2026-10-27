@@ -12,6 +12,7 @@ import { OPEN_MENU_EVENT } from './net-system.js';
 import { PanelUi } from './panel-ui.js';
 import { drive, driveStatus, resetTank, setGear, startDriving } from './drive-system.js';
 import { goUpTheRange, rangeStatus } from './range-system.js';
+import { readyToFire, runStatus, shownRun, startRun, stopRun } from './range-run-system.js';
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
 import { seating } from './seating.js';
@@ -205,7 +206,8 @@ interface GameMenuDebug {
  * - Riding (only while riding the tank, spike S2): the ride's options;
  * - Practice: shortcuts straight to a situation to test (sit in either
  *   seat, drive the tank or put it back at its start, lay the gun or turn
- *   the turret forward);
+ *   the turret forward, start or stop a range run, ready to fire on each
+ *   target);
  * - Back to start screen (leaves any crew) and Exit VR.
  */
 export class GameMenuSystem extends createSystem({}) {
@@ -288,6 +290,23 @@ export class GameMenuSystem extends createSystem({}) {
       stopRide();
       goUpTheRange();
     });
+    ui.on('menu-run-start', () => {
+      // Out of a spike's ride; the run puts the tank back at the start and leaves the seats alone.
+      this.setOpen(false);
+      stopRide();
+      startRun();
+    });
+    ui.on('menu-run-stop', () => {
+      stopRun();
+      this.render();
+    });
+    for (let i = 0; i < 3; i++) {
+      ui.on(`menu-ready-${i}`, () => {
+        this.setOpen(false);
+        stopRide();
+        readyToFire(i);
+      });
+    }
     ui.on('menu-turret-go', () => {
       this.setOpen(false);
       stopRide();
@@ -417,6 +436,7 @@ export class GameMenuSystem extends createSystem({}) {
       }
       this.ui?.setText('menu-turret-status', turretStatus());
       this.ui?.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
+      this.ui?.setText('menu-run-status', runStatus());
     }
     const left = this.input.xr.gamepads.left;
     if (left && (left.getButtonDown(InputComponent.Y_Button) || left.getButtonDown(InputComponent.Menu))) {
@@ -472,6 +492,8 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-range-status', rangeStatus());
     ui.setText('menu-turret-status', turretStatus());
     ui.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
+    ui.setText('menu-run-status', runStatus());
+    ui.setText('menu-run-start', shownRun().phase === 'running' ? 'Restart' : 'Start');
     ui.show('menu-ride', ride.active);
     ui.show('menu-ride-stop', ride.active);
     ui.setText('menu-ride-status', rideStatus());

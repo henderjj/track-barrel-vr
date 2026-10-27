@@ -54,6 +54,11 @@
  *     500 m with markers up the road, the fog is on and turns off from the
  *     menu, and Practice → Up the range parks the tank 200 m up the road
  *     facing the far target;
+ *  6i. runs the range (F1.11): Practice → Range run → Start parks the tank
+ *     at the start with a countdown sign, the clocks in both seats run,
+ *     Ready to fire on each target lays and loads the gun so the trigger
+ *     hits it, a red flag goes up by each target hit, and the third hit
+ *     stops the clock on the crew's time (marked assisted); Stop clears it;
  *  7. checks the perf CSV has rows, then re-enters XR with the frame-rate
  *     API removed, as desktop Chrome and Edge over Link may have it, and
  *     checks the game measures the refresh rate instead; IWSDK's controller
@@ -1068,6 +1073,101 @@ async function theTestRange() {
 }
 
 /**
+ * 6i. The range run (F1.11): Practice → Range run → Start puts the tank
+ *     back at the start and counts down on a sign; the clocks in both seats
+ *     say "Get ready", then the clock runs. Practice → Ready to fire → 100 m
+ *     puts a solo player in the gunner's seat with the gun laid on the 100 m
+ *     target and loaded; the trigger hits it, its flag goes up and the count
+ *     says one target. The 250 m and 500 m the same way; the third hit stops
+ *     the clock on the run's time, marked assisted (Ready to fire was used),
+ *     with a sign. Stop takes the flags down.
+ */
+async function theRangeRun() {
+  const run = () => evalInApp('window.__rangeRun.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp("(window.__seats.ask('driver'), window.__drive.place(0, -150, 0), true)");
+  await sleep(300);
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-run-start'));
+  const counting = await waitFor('the countdown', () => { const r = run(); return r.phase === 'running' && r.clock < 0 && r; }, 5000).catch(() => run());
+  const sign = evalInApp('window.__rangeRun.sign');
+  const clocks = evalInApp('window.__rangeRun.clock()');
+  const tank = evalInApp('window.__drive.state()');
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-run-countdown.png'], {});
+  check('Practice → Range run → Start parks the tank at the start and counts down on a sign and the run clock',
+    counting.phase === 'running' && counting.clock < 0 && /^Range run: [123]$/.test(sign) && clocks[0] === 'Get ready' && Math.hypot(tank.x, tank.z) < 0.5,
+    `clock ${counting.clock.toFixed(1)} s, sign "${sign}", clock board "${clocks.join(' | ')}", tank at ${tank.x.toFixed(1)}, ${tank.z.toFixed(1)}`);
+  const going = await waitFor('the clock to run', () => { const r = run(); return r.clock > 0.5 && r; }, 6000).catch(() => run());
+  const shown = evalInApp('window.__rangeRun.clock()');
+  check('After the countdown the clock runs and the clocks in both seats show it',
+    going.clock > 0.5 && /^0:0\d\.\d$/.test(shown[1]) && shown[2] === 'Targets 0/3   Shots 0',
+    `clock ${going.clock.toFixed(1)} s, board "${shown.join(' | ')}"`);
+
+  // Practice → Ready to fire → 100 m: alone, into the gunner's seat, laid and loaded.
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-ready-0'));
+  const ready = await waitFor('laid and loaded', () => evalInApp('window.__rangeRun.pending') === -1 && evalInApp('window.__loading.state().loaded') && evalInApp('window.__seats.mine') === 'gunner', 6000).catch(() => false);
+  const predicted = evalInApp('window.__firing.predict()');
+  check('Practice → Ready to fire → 100 m puts a solo player in the gunner\'s seat with the gun laid on the target and loaded',
+    ready && predicted.kind === 'target' && predicted.target === 0,
+    `seat ${evalInApp('window.__seats.mine')}, loaded ${evalInApp('window.__loading.state().loaded')}, the shot would: ${predicted.line}`);
+  const shots0 = evalInApp('window.__firing.records().length');
+  evalInApp('(window.__turret.pullTrigger(), true)');
+  const one = await waitFor('the first target counted', () => { const r = run(); return r.targets === 1 && r; }, 5000).catch(() => run());
+  const flags1 = evalInApp('window.__rangeRun.flags()');
+  check('The trigger hits the 100 m target: its flag goes up and the run counts one target and one shot',
+    one.targets === 1 && one.shots === 1 && one.hitAt[0] > 0 && flags1.join() === 'true,false,false' && one.assisted &&
+      evalInApp('window.__firing.records().length') === shots0 + 1,
+    `${one.targets} targets, ${one.shots} shots, flags ${flags1.join(', ')}, assisted ${one.assisted}`);
+  // The flag stands by the target in the world as drawn.
+  const flagAt = evalInApp('window.__rangeRun.flagAt(0)');
+  const target = evalInApp('window.__range.targets()[0]');
+  check('The hit flag stands beside the target, away from the road',
+    flagAt !== null && Math.abs(flagAt[2] - target.z) < 0.01 && flagAt[0] < target.x - 1.5,
+    `flag at ${flagAt ? fmt(flagAt) : 'none'}, target at ${target.x}, ${target.z}`);
+
+  for (const i of [1, 2]) {
+    evalInApp(`(window.__rangeRun.ready(${i}), true)`);
+    await waitFor(`laid and loaded on target ${i}`, () => evalInApp('window.__rangeRun.pending') === -1 && evalInApp('window.__loading.state().loaded'), 6000).catch(() => false);
+    await sleep(200);
+    evalInApp('(window.__turret.pullTrigger(), true)');
+    await waitFor(`target ${i} counted`, () => run().targets === i + 1, 5000).catch(() => null);
+  }
+  const done = await waitFor('the run done', () => { const r = run(); return r.phase === 'done' && r; }, 5000).catch(() => run());
+  const doneSign = evalInApp('window.__rangeRun.sign');
+  const doneClock = evalInApp('window.__rangeRun.clock()');
+  evalInApp('(window.__turret.forward(), true)');
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(evalInApp('window.__loading.layout()').rack[0].map((v, k) => v + [0, 0.45, 0][k])) });
+  await sleep(500);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-run-done.png'], {});
+  check('The third hit stops the clock on the crew\'s time, marked assisted, with a sign',
+    done.phase === 'done' && done.targets === 3 && done.shots === 3 && done.time > 0 && done.assisted && done.best < 0 &&
+      evalInApp('window.__rangeRun.flags()').every(Boolean) && /^Three targets in \d:\d\d\.\d, 3 shots/.test(doneSign) &&
+      doneClock[0] === 'Three hits (assisted)',
+    `${done.targets} targets in ${done.time.toFixed(1)} s, ${done.shots} shots, sign "${doneSign}", board "${doneClock.join(' | ')}"`);
+
+  // Look ahead again (the menu opens where the head looks), then open it: it redraws its lines as it opens.
+  const eye = evalInApp('window.__loading.layout()').eye;
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([eye[0], eye[1], eye[2] - 5]) });
+  await sleep(300);
+  await menuButtonPress();
+  const menuLine = await waitFor('the menu to say the time', () => {
+    const text = evalInApp("window.__gameMenu.text('menu-run-status')");
+    return text.startsWith('Three targets in') ? text : null;
+  }, 3000).catch(() => evalInApp("window.__gameMenu.text('menu-run-status')"));
+  check("The menu's range run line gives the run's time and shots",
+    /^Three targets in \d:\d\d\.\d, 3 shots \(assisted\)\./.test(menuLine), `"${menuLine}"`);
+  await rayClick(elementPosition('menu-panel', 'menu-run-stop'));
+  const stopped = await waitFor('the run stopped', () => { const r = run(); return r.phase === 'idle' && r; }, 4000).catch(() => run());
+  await menuButtonPress();
+  check('Stop ends the run and takes the flags down', stopped.phase === 'idle' && !evalInApp('window.__rangeRun.flags()').some(Boolean),
+    `phase ${stopped.phase}, flags ${evalInApp('window.__rangeRun.flags()').join(', ')}`);
+  evalInApp("(window.__loading.reset(), window.__turret.forward(), window.__drive.reset(), window.__seats.ask('driver'), true)");
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+}
+
+/**
  * 6f. The turret (F1.8): Practice → Lay the gun → Gunner puts the player in
  *     the gunner's seat with a sign; the power grip twisted left traverses
  *     the turret left and the gunner's play space turns with it (the head
@@ -1582,6 +1682,9 @@ async function main() {
 
   // 6h. The test range (F1.7).
   await theTestRange();
+
+  // 6i. The range run (F1.11).
+  await theRangeRun();
 
   // 7. Perf log.
   const rows = evalInApp('window.__perf.recorder.rows.length');

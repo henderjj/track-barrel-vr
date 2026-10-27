@@ -86,6 +86,16 @@ export function startLoading(): void {
   active?.start();
 }
 
+/** A range run's start (F1.11): every shell back in the rack, the breech open and the stats cleared, on the gunner's page; the seats stay. */
+export function resetLoading(): void {
+  active?.start();
+}
+
+/** Practice → Ready to fire (F1.11): a shell rammed and the breech closed at once, on the gunner's page. */
+export function loadForPractice(): void {
+  active?.loadNow();
+}
+
 /** One line for the menu: who loads, and the loads so far. */
 export function loadingStatus(): string {
   const a = active;
@@ -282,6 +292,14 @@ export class LoadingSystem extends createSystem({}) {
   start(): void {
     if (this.isOwner()) this.drill.reset();
     console.info('[Loading] Practice: load and fire');
+  }
+
+  /** Practice: loaded at once (the gunner's page does it). */
+  loadNow(): void {
+    if (!this.isOwner()) return;
+    this.drill.loadNow();
+    this.clearHandUse();
+    console.info('[Loading] Practice: loaded');
   }
 
   update(delta: number): void {

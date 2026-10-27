@@ -204,6 +204,23 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
+  it('on the range run\'s hit flags (F1.11), on their own and raised beside each target on the ground', async () => {
+    const run = await import('../src/scene-assets/range-run.scene-asset.js');
+    const { hitFlagFoot, hitFlagYaw } = await import('../src/sim/range-run.js');
+    const { groundHeight } = await import('../src/sim/terrain.js');
+    expectNone([run.createHitFlag()], WORLD_GAP);
+    const terrain = ground();
+    const flags = RANGE_TARGETS.map((_, i) => {
+      const flag = run.createHitFlag();
+      const [x, z] = hitFlagFoot(i);
+      flag.position.set(x, GROUND_Y + groundHeight(x, z), z);
+      flag.rotation.y = hitFlagYaw(i);
+      flag.updateMatrixWorld(true);
+      return flag;
+    });
+    expectNone([terrain, ...flags], WORLD_GAP);
+  });
+
   it("on spike S1's sight, hanging in the turret and aimed", () => {
     const stand = sight.createSightStand();
     stand.position.set(SIGHT_STAND.x, 0, SIGHT_STAND.z);
