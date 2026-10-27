@@ -614,7 +614,9 @@ async function runChecks(host, guest, label) {
   await guest.page.evaluate(() => window.__turret.pullTrigger());
   const counted = await waitFor('both pages to count the hit', async () => {
     const [h, g] = await Promise.all([run(host), run(guest)]);
-    return h.targets === 1 && g.targets === 1 && g.hitAt[1] >= 0 ? { h, g } : null;
+    // The flags are drawn on the next frame after the run event lands: wait for that too.
+    const up = await guest.page.evaluate(() => window.__rangeRun.flags()[1]);
+    return h.targets === 1 && g.targets === 1 && g.hitAt[1] >= 0 && up ? { h, g } : null;
   }, 10000).catch(() => null);
   const flags = await guest.page.evaluate(() => window.__rangeRun.flags());
   check(`The gunner's hit counts on the host and comes back: one target, its flag up, the run assisted (${label})`,
