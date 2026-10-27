@@ -46,7 +46,7 @@ import { groundHeight, wrapTile } from '../sim/terrain.js';
 import { tankState } from './drive-system.js';
 import { netLink } from './net-system.js';
 import { seating } from './seating.js';
-import { gunEntity, layGun, ownsTurret, turretForward, turretState } from './turret-system.js';
+import { aimTurret, gunEntity, ownsTurret, turretForward, turretState } from './turret-system.js';
 
 /** The reticle's texture, texels square: finer than the view so its marks stay crisp at 256² and 512². */
 const RETICLE_SIZE = 1024;
@@ -410,7 +410,7 @@ export class SightSystem extends createSystem({}) {
       this.status = 'Laid straight ahead';
     } else {
       const lay = layOn(tankState(), aimPoint(this.aim), this.laid);
-      layGun(lay.yaw, lay.elevation);
+      aimTurret(lay.yaw, lay.elevation);
       const range = Math.round(lay.range / 10) * 10;
       this.status = lay.limited
         ? `The ${RANGE_TARGETS[this.aim].range} m target is out of the gun's reach`

@@ -59,9 +59,13 @@ export const TURRET = {
 /** The gun, in turret space: its axis's height, its breech beside the gunner, and its barrel, m. */
 export const GUN = {
   y: 2.05,
-  /** The breech block: half its width, and how far back from the turret's front wall it reaches. */
+  /**
+   * The breech: half its width, and the turret z its back (the breech
+   * mouth) reaches, 50 cm ahead of the gunner's eyes so a seated gunner can
+   * ram a shell home (F1.10, spike S4's reach).
+   */
   breechHalfWidth: 0.14,
-  breechBack: 0.15,
+  breechBack: -0.7,
   /** From the mantlet to the muzzle. */
   barrelLength: 4.4,
   barrelRadius: 0.06,

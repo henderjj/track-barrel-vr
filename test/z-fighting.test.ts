@@ -3,8 +3,17 @@ import { describe, expect, it } from 'vitest';
 import * as avatar from '../src/scene-assets/avatar.scene-asset.js';
 import * as cabin from '../src/scene-assets/cabin.scene-asset.js';
 import * as ride from '../src/scene-assets/ride.scene-asset.js';
-import * as loading from '../src/scene-assets/loading-drill.scene-asset.js';
-import { BREECH_MOUTH, LEVER_CLOSED, LEVER_PIVOT, RACK_SLOTS, SHELL_LENGTH } from '../src/sim/loading.js';
+import * as loading from '../src/scene-assets/loading.scene-asset.js';
+import {
+  BREECH_MOUTH,
+  casingRest,
+  CASINGS_KEPT,
+  LEVER_CLOSED,
+  LEVER_PIVOT,
+  RACK_SLOTS,
+  RECOIL,
+  SHELL_LENGTH,
+} from '../src/sim/loading.js';
 import { mergeParts } from '../src/scene-assets/lowpoly.js';
 import { markerParts, targetParts } from '../src/scene-assets/range.scene-asset.js';
 import { MARKER_RANGES, RANGE_TARGETS } from '../src/sim/range.js';
@@ -60,7 +69,7 @@ function expectNone(objects: Object3D[], gap: number, ignore?: (at: Vector3, n: 
  * twisted to match (F1.8), and the gunsight's two halves on the turret and
  * the gun (F1.9), as TurretSystem and SightSystem draw them.
  */
-function turretWith(yaw: number, elevation: number, turn: number): Object3D {
+function turretWith(yaw: number, elevation: number, turn: number, load: Loading = OPEN): Object3D {
   const turret = cabin.createTurret();
   turret.position.set(0, 0, TURRET.z);
   turret.rotation.y = yaw;
@@ -68,6 +77,7 @@ function turretWith(yaw: number, elevation: number, turn: number): Object3D {
   gun.position.set(0, TRUNNION.y, TRUNNION.z);
   gun.rotation.x = elevation;
   turret.add(gun);
+  addLoading(turret, gun, load);
   gun.add(sight.createSightHead());
   const eyepiece = sight.createSightEyepiece();
   eyepiece.position.set(...EYEPIECE);
@@ -90,6 +100,44 @@ function turretWith(yaw: number, elevation: number, turn: number): Object3D {
   }
   turret.updateMatrixWorld(true);
   return turret;
+}
+
+/** How the loading is drawn (F1.10): the breech open or closed, a shell rammed in it, the gun recoiled, casings in the bin. */
+interface Loading {
+  closed: boolean;
+  rammed: boolean;
+  recoil: number;
+  casings: number;
+}
+const OPEN: Loading = { closed: false, rammed: false, recoil: 0, casings: 0 };
+
+/** The loading's moving parts as LoadingSystem draws them: the block and lever on the gun's recoiling part, the shells in the rack (or one in the breech), the casings in the bin. */
+function addLoading(turret: Object3D, gun: Object3D, load: Loading): void {
+  const recoil = gun.getObjectByName('Gun Recoil')!;
+  recoil.position.z = load.recoil;
+  const block = loading.createBreechBlock();
+  block.position.set(0, load.closed ? loading.BLOCK_CLOSED_Y : loading.BLOCK_OPEN_Y, loading.BLOCK_Z);
+  const lever = loading.createBreechLever();
+  lever.position.set(...LEVER_PIVOT);
+  lever.rotation.x = load.closed ? LEVER_CLOSED : 0;
+  recoil.add(block, lever);
+  RACK_SLOTS.forEach((slot, i) => {
+    const shell = loading.createShell(i);
+    if (load.rammed && i === 0) {
+      // Home in the breech, gun space.
+      shell.position.set(BREECH_MOUTH[0], BREECH_MOUTH[1], BREECH_MOUTH[2] - SHELL_LENGTH / 2);
+      recoil.add(shell);
+    } else {
+      shell.position.set(...slot);
+      turret.add(shell);
+    }
+  });
+  for (let n = 0; n < load.casings; n++) {
+    const casing = loading.createCasing(n);
+    casing.position.set(...casingRest(n, [0, 0, 0]));
+    casing.rotation.y = Math.PI;
+    turret.add(casing);
+  }
 }
 
 describe('no faces that flicker through each other (z-fighting)', () => {
@@ -169,28 +217,23 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
-  it('on the loading station (spike S4) and its platform, with its shells in the rack and the breech open and closed', () => {
-    for (const closed of [false, true]) {
-      const block = loading.createBreechBlock();
-      block.position.set(loading.BLOCK_X, closed ? loading.BLOCK_CLOSED_Y : loading.BLOCK_OPEN_Y, loading.BLOCK_Z);
-      const lever = loading.createBreechLever();
-      lever.position.set(...LEVER_PIVOT);
-      lever.rotation.x = closed ? LEVER_CLOSED : 0;
-      const racked = RACK_SLOTS.map((slot, i) => {
-        const shell = loading.createShell(i);
-        shell.position.set(...slot);
-        return shell;
-      });
-      // With the breech closed, one shell is rammed home in it instead of in the rack.
-      const rammed = loading.createShell(0);
-      rammed.position.set(BREECH_MOUTH[0], BREECH_MOUTH[1], BREECH_MOUTH[2] - SHELL_LENGTH / 2);
-      const shells = closed ? [rammed, ...racked.slice(1)] : racked;
-      expectNone([loading.createLoadingStation(), block, lever, ...shells], CABIN_GAP, onFloor);
+  it('in the turret with the loading drawn (F1.10): breech open and closed, a shell rammed, recoiled, casings in the bin', () => {
+    const hull = cabin.createHull();
+    const loads: Loading[] = [
+      { closed: false, rammed: false, recoil: 0, casings: 0 },
+      { closed: true, rammed: true, recoil: 0, casings: CASINGS_KEPT },
+      { closed: false, rammed: false, recoil: RECOIL.length, casings: 3 },
+    ];
+    for (const elevation of [MIN_ELEVATION, 0, MAX_ELEVATION]) {
+      for (const load of loads) {
+        expectNone([hull, turretWith(0, elevation, 0, load)], CABIN_GAP);
+      }
     }
   });
 
-  it('on a shell', () => {
+  it('on a shell and a casing', () => {
     expectNone([loading.createShell(0)], CABIN_GAP);
+    expectNone([loading.createCasing(0)], CABIN_GAP);
   });
 
   it('on the lever test rig, with its tillers upright and at both limits', async () => {

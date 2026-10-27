@@ -16,7 +16,8 @@ import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
 import { seating } from './seating.js';
 import { SIGHT_BUTTONS, sightStatus } from './sight-system.js';
-import { startLoadingDrill } from './loading-drill-system.js';
+import { firingStatus } from './firing-system.js';
+import { loadingStatus, startLoading } from './loading-system.js';
 import { hideLeverTest, showLeverTest } from './lever-system.js';
 import { hideMechanismBench, showMechanismBench } from './mechanism-bench-system.js';
 import { startScreen } from './start-screen-system.js';
@@ -333,7 +334,7 @@ export class GameMenuSystem extends createSystem({}) {
     }
     ui.on('menu-loading', () => {
       this.setOpen(false);
-      startLoadingDrill();
+      startLoading();
     });
     ui.on('menu-levers', () => {
       this.setOpen(false);
@@ -416,6 +417,7 @@ export class GameMenuSystem extends createSystem({}) {
         this.ui?.setText('menu-range-status', rangeStatus());
       }
       this.ui?.setText('menu-turret-status', turretStatus());
+      this.ui?.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
     }
     const left = this.input.xr.gamepads.left;
     if (left && (left.getButtonDown(InputComponent.Y_Button) || left.getButtonDown(InputComponent.Menu))) {
@@ -470,6 +472,7 @@ export class GameMenuSystem extends createSystem({}) {
     ui.show('menu-range', !ride.active);
     ui.setText('menu-range-status', rangeStatus());
     ui.setText('menu-turret-status', turretStatus());
+    ui.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
     ui.show('menu-ride', ride.active);
     ui.show('menu-ride-stop', ride.active);
     ui.setText('menu-ride-status', rideStatus());

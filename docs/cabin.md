@@ -10,7 +10,7 @@ The crew's place in the tank: the hull with the driver's seat, the turret with i
 - A player moves their head freely inside their seat. Leaning past the edge of the seat's head box stops the head there, as if it met the wall, the breech or the controls. A head far outside the box (the headset recentred, or the player stood up and walked across the room) puts the player back in the seat.
 - The crewmate is drawn sitting in their seat: head and hands from their poses, legs bent on their seat's cushion.
 - Game menu: **Practice → Sit in Driver / Gunner** changes seats; **You → Seat → Back in my seat** puts the player back at the eye point facing forward.
-- The spikes' Practice buttons still work. Riding (S2) hides the cabin while it shows its own blockout and puts the player back in their seat when it stops. The loading station (S4) stands beside the tank's left track on a platform level with the hull floor, until F1.10 moves loading into the turret. While a spike seats the player somewhere else, the seat system leaves the play space alone (`seating.away`); choosing a seat or Back in my seat ends that.
+- The spikes' Practice buttons still work. Riding (S2) hides the cabin while it shows its own blockout and puts the player back in their seat when it stops. Loading (S4) is in the turret since F1.10 ([loading-firing.md](loading-firing.md)). While a spike seats the player somewhere else, the seat system leaves the play space alone (`seating.away`); choosing a seat or Back in my seat ends that.
 
 ## Numbers
 
@@ -22,7 +22,7 @@ Hull space: hull floor at y = 0, front towards −Z, +X to the right. The tank s
 | Turret ring | radius 0.92 m at z 0.2 | The basket and turret walls fit inside the hull's width |
 | Turret basket floor | 0.8 m above the hull floor | Puts the gunner's eyes near the gun's height |
 | Turret roof | 2.75 m | 50 cm over the gunner's eyes |
-| Gun axis | 2.05 m, breech 15 cm back from the front wall | The breech sits at the gunner's chest |
+| Gun axis | 2.05 m, breech mouth 45 cm behind the trunnions, 70 cm back from the front wall (F1.10; 1.3 m behind them before) | The mouth is 50 cm ahead of the gunner's eyes, where a seated player rams a shell |
 | Driver's eye point | (−0.5, 1.45, −1.6), hull | Seated eye height (1.45 m, `body-height.ts`) over a 55 cm cushion |
 | Driver's head box | 35 cm left, 30 cm right, 60 cm forward, 35 cm back | Up to the slit, short of the side wall and the turret basket |
 | Gunner's eye point | (0.4, 2.25, −0.2), turret | Right of the breech |
@@ -54,7 +54,7 @@ The bot sits in the seat the player leaves free (it is a guest, so the host's `s
 - `test/cabin.test.ts`: head boxes inside the armour, headroom, the turret transform matching Three.js, the head-box fixes, seat placement, the host's seat answer.
 - `test/body-height.test.ts`: a seated player's eyes land on either seat's eye point.
 - `test/sight.test.ts`: the sight hangs where a seated gunner can lean into it, and their head stops short of the lens.
-- `test/z-fighting.test.ts`: the hull with the turret at several angles, the ground, the S1 sight inside the turret, the loading station on its platform, the seated crew avatars.
+- `test/z-fighting.test.ts`: the hull with the turret at several angles, the ground, the S1 sight inside the turret, the loading in the turret (F1.10), the seated crew avatars.
 - `npm run test:xr`: in the driver's seat on entering VR, a lean stopped at the head box, a big jump reseating, the menu changing to the gunner's seat and back, the S1 sight from the gunner's seat, back in the seat after riding. Screenshots: `artifacts/xr-driver-seat.png`, `xr-gunner-seat.png`.
 - `npm run test:net` (`ONLY_SEATS=1`, or `=lag`, for just this): the host in the driver's seat and the guest in the gunner's, the guest's ask swapping both, legs drawn in the crewmate's seat, on a clean link, after a rejoin and at 150 ms RTT; the practice crewmate in the free seat, moving over when the player changes seats.
 

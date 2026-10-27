@@ -6,7 +6,7 @@ import { decodeTurretState, encodeTurretState, TURRET_STATE_BYTES } from '../net
 import { createGun } from '../scene-assets/cabin.scene-asset.js';
 import { createTwistGrip, createWheel } from '../scene-assets/mechanism.scene-asset.js';
 import { hullToSeat, SEATS, TURRET, turnAboutHead } from '../sim/cabin.js';
-import { TwistGrip, Wheel } from '../sim/mechanism.js';
+import { MechEvent, TwistGrip, Wheel } from '../sim/mechanism.js';
 import {
   angleDelta,
   copyTurretState,
@@ -53,15 +53,6 @@ export function ownsTurret(): boolean {
   return active?.isOwner() ?? true;
 }
 
-/**
- * Turn the turret to `yaw` and the gun to `elevation` at once, on the
- * page that owns the turret (the gunsight's Practice lay, F1.9). The
- * elevation wheel goes to match unless a hand holds it.
- */
-export function layGun(yaw: number, elevation: number): void {
-  active?.layAt(yaw, elevation);
-}
-
 /** The gun's entity, inside the turret's: the gunsight's objective rides on it (F1.9). */
 export function gunEntity(): Entity | null {
   return active?.gunEntity ?? null;
@@ -76,6 +67,24 @@ export function startGunning(): void {
 /** Practice → Lay the gun → Forward: the turret and gun back to straight ahead (the gunner's page does it; the other asks). */
 export function turretForward(): void {
   active?.forward();
+}
+
+/**
+ * How many times the power grip's trigger has been pulled on this page
+ * since the last call, and reset: the gun's trigger (F1.10, LoadingSystem
+ * fires a loaded breech with it). Only the gunner's page's pulls count.
+ */
+export function takeTriggerPulls(): number {
+  const a = active;
+  if (a == null) return 0;
+  const n = a.triggerPulls;
+  a.triggerPulls = 0;
+  return n;
+}
+
+/** Lay the gun straight to a turn and elevation (rad), on the page that owns the turret: the tests, the gunsight's Practice lay (F1.9), and later the practice crewmate's aim (F1.13). */
+export function aimTurret(yaw: number, elevation: number): void {
+  active?.aim(yaw, elevation);
 }
 
 /** One line on the turret for the menu: who lays the gun, where it points. */
@@ -106,6 +115,10 @@ interface TurretDebug {
   /** Turn the crank by this many turns, as a hand would (tests). */
   crank(turns: number): void;
   forward(): void;
+  /** Turn the turret and lay the gun straight to these angles, degrees (tests; the owner's page). */
+  aim(yawDeg: number, elevationDeg: number): void;
+  /** Pull the power grip's trigger, as a hand on it would (tests). */
+  pullTrigger(): void;
   /** Each control's name in window.__mechanisms. */
   names: Record<StationControl, string>;
   /** The turret mesh's turn and the gun mesh's elevation as drawn, degrees. */
@@ -152,6 +165,8 @@ export class TurretSystem extends createSystem({}) {
   private lastCrank = 0;
   private wasOwner = true;
   private override: TurretOverride | null = null;
+  /** Trigger pulls on the power grip not yet taken (takeTriggerPulls). */
+  triggerPulls = 0;
   private turret: Object3D | null = null;
   private gun: Mesh | null = null;
   gunEntity: Entity | null = null;
@@ -207,6 +222,10 @@ export class TurretSystem extends createSystem({}) {
         if (!self.crankWheel.anyHeld) self.crankWheel.angle += turns * 2 * Math.PI;
       },
       forward: () => self.forward(),
+      aim: (yawDeg, elevationDeg) => self.aim(yawDeg * DEG, elevationDeg * DEG),
+      pullTrigger: () => {
+        if (self.isOwner()) self.triggerPulls++;
+      },
       names: { ...self.names },
       drawn: () => ({ yaw: (self.turret?.rotation.y ?? 0) / DEG, elevation: (self.gun?.rotation.x ?? 0) / DEG }),
       headInTurret: () => {
@@ -251,6 +270,10 @@ export class TurretSystem extends createSystem({}) {
         kind,
         // Spike S2's ride hides the cabin while it runs. Only the gunner's seat is in reach of them.
         active: () => !ride.active,
+        // The power grip's trigger is the gun's (F1.10).
+        moved: key === 'twist' ? (events) => {
+          if (events & MechEvent.Press && this.isOwner()) this.triggerPulls++;
+        } : undefined,
       }));
     }
   }
@@ -273,14 +296,15 @@ export class TurretSystem extends createSystem({}) {
     console.info('[Turret] forward');
   }
 
-  layAt(yaw: number, elevation: number): void {
+  /** Straight to a turn and elevation (tests): the owner's turret, and the elevation wheel to match. */
+  aim(yaw: number, elevation: number): void {
     if (!this.isOwner()) return;
     this.sim.yaw = wrapAngle(yaw);
     this.sim.rate = 0;
+    this.override = null;
     if (!this.elevationWheel.anyHeld) this.elevationWheel.angle = wheelForElevation(elevation);
     this.sim.elevation = elevationForWheel(this.elevationWheel.angle);
     copyTurretState(this.sim, this.shown);
-    console.info(`[Turret] laid at ${(yaw / DEG).toFixed(2)}°, ${(elevation / DEG).toFixed(2)}°`);
   }
 
   sayHowToLay(): void {
