@@ -86,7 +86,7 @@ export function startLoading(): void {
   active?.start();
 }
 
-/** The loading as drawn on this page (the gunner's own, or the gunner's packets): the practice crewmate reads it. */
+/** The loading as drawn on this page (the gunner's own, or the gunner's packets): the practice crewmate reads it, and the tank sounds hear the breech and the ram in it (F1.12). */
 export function loadingShown(): Readonly<LoadingSnapshot> | null {
   return active?.shown ?? null;
 }

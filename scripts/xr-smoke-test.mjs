@@ -59,7 +59,11 @@
  *     far target sits on its 300 m mark, by the sums and as the sight camera
  *     is drawn; elevating the gun tilts the sight's view but leaves the
  *     eyepiece still; leaning in shows the target;
- *  6j. turns the driver's periscope (F1.6): Practice → Periscope → Go to it
+ *  6j. listens to the tank (F1.12): the earlier steps' shifts, loading and
+ *     shot made their sounds, the engine note climbs with the revs and the
+ *     tracks rumble as it drives, Practice → Tank sounds → Play each plays
+ *     every short sound, and the menu's Tank sounds row turns them off;
+ *  6k. turns the driver's periscope (F1.6): Practice → Periscope → Go to it
  *     sits the player in the driver's seat behind its window; leaning in
  *     renders the view; both handles turn it 90° left, the view and the
  *     head on the roof with it while the window stays still; one hand
@@ -1155,7 +1159,7 @@ async function layingWithTheSight() {
 }
 
 /**
- * 6j. The driver's periscope (F1.6): Practice → Periscope → Go to it sits
+ * 6k. The driver's periscope (F1.6): Practice → Periscope → Go to it sits
  *     the player in the driver's seat just behind its window; leaning in
  *     opens it and renders a picture; both hands on the yoke's handles
  *     turn it 90° left, the view and the head on the roof turning with it
@@ -1375,6 +1379,58 @@ async function layingTheGun() {
   // Back in the driver's seat for what follows.
   evalInApp("(window.__seats.ask('driver'), true)");
   await sleep(500);
+  iwsdk(['xr', 'set-device-state'], {});
+}
+
+/**
+ * 6j. The tank's sounds (F1.12): the driving, loading and firing steps
+ *     before this one made their short sounds on the way (a gear going in,
+ *     a shell rammed, the breech slammed, the shot and its casing). Driving
+ *     raises the engine's note and the tracks rumble; Practice → Tank
+ *     sounds → Play each plays every short sound; the menu's Tank sounds row
+ *     turns them off and on. The emulator can't listen, so this checks what
+ *     the page sends to Web Audio.
+ */
+async function tankSounds() {
+  const audio = () => evalInApp('window.__audio.state()');
+  const before = audio();
+  const h = before.heard;
+  check('The earlier steps were heard: gears going in, a shell rammed, the breech closing, the shot and its casing',
+    h.clunk >= 1 && h.ram >= 1 && h.breech >= 1 && h.shot >= 1 && h.casing >= 1,
+    `${Object.entries(h).map(([id, n]) => `${id} ${n}`).join(', ')}; audio ${before.context}`);
+
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp("(window.__seats.ask('driver'), window.__drive.reset(), true)");
+  await sleep(400);
+  const idle = audio();
+  evalInApp('(window.__drive.set({ left: 1, right: 1, gear: 1, throttle: 0 }), true)');
+  const driving = await waitFor('the engine note to climb', () => { const a = audio(); return a.engineHz > 200 && a.rumble > 0.2 && a; }, 8000)
+    .catch(() => audio());
+  evalInApp('(window.__drive.set(null), window.__drive.reset(), true)');
+  check('Driving off raises the engine\'s note with the revs and the tracks rumble and clatter',
+    idle.engineHz >= 79 && idle.engineHz < 170 && idle.rumble < 0.01 && driving.engineHz > 200 && driving.rumble > 0.2 && driving.clatterHz > 3,
+    `engine ${idle.engineHz.toFixed(0)} Hz at idle, ${driving.engineHz.toFixed(0)} Hz driving; rumble ${driving.rumble.toFixed(2)}, links ${driving.clatterHz.toFixed(1)} a second`);
+
+  await menuButtonPress();
+  const heard0 = audio().heard;
+  await rayClick(elementPosition('menu-panel', 'menu-audio-play'));
+  const played = await waitFor('every short sound played', () => {
+    const now = audio().heard;
+    return Object.keys(now).every((id) => now[id] > heard0[id]) && now;
+  }, 5000).catch(() => audio().heard);
+  const line = evalInApp("window.__gameMenu.text('menu-audio-status')");
+  check('Practice → Tank sounds → Play each plays every short sound, and the menu says whether sound is on',
+    Object.keys(played).every((id) => played[id] > heard0[id]) && line.length > 0,
+    `${Object.keys(played).filter((id) => played[id] > heard0[id]).join(', ')}; "${line}"`);
+
+  await rayClick(elementPosition('menu-panel', 'row-sound-2'));
+  const off = await waitFor('the sounds off', () => { const a = audio(); return a.sound === 0 && a; }, 5000).catch(() => audio());
+  const offLit = evalInApp("window.__gameMenu.selected('row-sound-2')");
+  await rayClick(elementPosition('menu-panel', 'row-sound-0'));
+  const on = await waitFor('the sounds back on', () => { const a = audio(); return a.sound === 1 && a; }, 5000).catch(() => audio());
+  check("The menu's Tank sounds row turns the tank's sounds off and on again",
+    off.sound === 0 && offLit && on.sound === 1, `off: ${off.sound} (${off.context}), on: ${on.sound} (${on.context})`);
+  await menuButtonPress();
   iwsdk(['xr', 'set-device-state'], {});
 }
 
@@ -1778,7 +1834,11 @@ async function main() {
 
   // 6i. The gunsight (F1.9).
   await layingWithTheSight();
-  // 6j. The periscope (F1.6).
+
+  // 6j. The tank's sounds (F1.12).
+  await tankSounds();
+
+  // 6k. The periscope (F1.6).
   await theDriversPeriscope();
 
   // 7. Perf log.
