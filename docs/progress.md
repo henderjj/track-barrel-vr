@@ -22,6 +22,8 @@ The running record of where the game is and what comes next, so anyone (or any C
 
 - The driver's station (F1.5, [driver-station.md](driver-station.md)): the driver drives with their hands. Two tillers (S3's, on pedestals outside the knees) drive the tracks, a gear lever on the gearbox's hump has low (back), neutral and high (forwards) notches and grinds with a rough buzz when shifted with a tiller pushed, and a hand throttle on the left wall raises the idle and stays put. Five gauges under the slit read speed, RPM, coolant, oil pressure and fuel (coolant and fuel move slowly; nothing fails in Phase 1). The vision slit has a steel frame and a brow pad to lean into. The thumbsticks still drive while no tiller is held, and the menu's gear row moves the real lever. The other page sees the driver's levers move: the tank-state packet now carries the gauges and the controls the host drove by.
 
+- Tank audio and the intercom (F1.12, [audio.md](audio.md)): the tank is heard. A synthesised V12 note follows the RPM (80 Hz at idle to 260 Hz flat out, loping at idle), the tracks rumble and their links clatter with speed, the power traverse whines, and short sounds rendered once at load mark a gear going in, the grind, a bump, a shell rammed, the breech closing or opened by hand, the gun (with the breech flying open) and the casing bouncing in the bin. All Web Audio, no sample files. Each page plays the tank as it draws it, so both crew hear the same tank with nothing new sent. The crewmate's voice now plays plain by default, like an intercom, and the tank's sounds duck 6 dB while either player speaks. Settings → Tank sounds (On, Quiet, Off); Practice → Tank sounds → Play each. The practice crewmate's page stays silent.
+
 ## Next
 
 - Spike S3 (lever feel), then the rest of Phase 1, each feature once the ones it depends on have merged. Each feature is built in a thread of its own.
@@ -29,6 +31,7 @@ The running record of where the game is and what comes next, so anyone (or any C
 
 ## Waiting on a headset check
 
+- F1.12 tank audio and the intercom: the steps in [audio.md](audio.md#headset-check): Play each, the engine and tracks while driving, the grind and clunk, the loading and the gun, the Tank sounds setting, and the intercom's duck with a second player.
 - F1.10 loading and firing: the numbered steps in [loading-firing.md](loading-firing.md#headset-check): reaching the rack and the breech from the seat, loading with the gun elevated, firing, hitting the 100 m and 250 m targets, and ten fast loads (report the board).
 - F1.7 the test range: the steps in [range.md](range.md#headset-check): what the three targets look like from the seats and through the sight, whether the fog reads well and how the roads drive.
 - F1.8 the turret: the numbered steps in [turret.md](turret.md#headset-check): the power grip with the gunner turning with the basket, the crank's fine aim, the elevation wheel's direction and stops, and traversing while the crewmate drives.

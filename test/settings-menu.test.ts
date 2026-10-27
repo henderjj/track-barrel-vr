@@ -5,12 +5,12 @@ import { DEFAULT_SETTINGS, mergeSettings, parseSettings } from '../src/settings.
 
 describe('start-up settings', () => {
   it('saves only the choices that differ from the defaults', () => {
-    expect(menuQuery({ voice: 'spatial', shadows: '1' })).toBe('shadows=1');
-    expect(menuQuery({ voice: 'spatial', shadows: '0' })).toBe('');
+    expect(menuQuery({ voice: 'plain', shadows: '1' })).toBe('shadows=1');
+    expect(menuQuery({ voice: 'plain', shadows: '0' })).toBe('');
   });
 
   it('keeps the in-game settings saved before', () => {
-    expect(menuQuery({ voice: 'plain', shadows: '0' }, 'hud=0&shadows=1&hz=72')).toBe('hud=0&hz=72&voice=plain');
+    expect(menuQuery({ voice: 'spatial', shadows: '0' }, 'hud=0&shadows=1&hz=72')).toBe('hud=0&hz=72&voice=spatial');
   });
 
   it('lets the URL win over the saved settings', () => {
@@ -19,6 +19,11 @@ describe('start-up settings', () => {
     expect(s.hud).toBe(false);
     expect(s.voice).toBe('off');
     expect(s.room).toBe('ABCD');
+  });
+
+  it('play the intercom voice plain by default (F1.12)', () => {
+    expect(DEFAULT_SETTINGS.voice).toBe('plain');
+    expect(parseSettings('?voice=spatial').voice).toBe('spatial');
   });
 
   it('are not also in the game menu', () => {
@@ -40,5 +45,9 @@ describe('in-game settings', () => {
     expect(withSetting('voice=plain&hud=0', 'hud', '1', '1')).toBe('voice=plain');
     const s = parseSettings(mergeSettings(withSetting('', 'hz', '72', '90'), ''));
     expect(s.hz).toBe(72);
+    // Tank sounds (F1.12): quiet is kept, on is the default and dropped.
+    expect(withSetting('', 'sound', '0.5', '1')).toBe('sound=0.5');
+    expect(parseSettings('?sound=0.5').sound).toBe(0.5);
+    expect(parseSettings('?sound=3').sound).toBe(1);
   });
 });

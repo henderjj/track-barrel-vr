@@ -86,6 +86,11 @@ export function startLoading(): void {
   active?.start();
 }
 
+/** The loading as this page draws it (the gunner's own, or their packets): the tank sounds hear the breech and the ram in it (F1.12). */
+export function loadingShown(): Readonly<LoadingSnapshot> | null {
+  return active?.shown ?? null;
+}
+
 /** One line for the menu: who loads, and the loads so far. */
 export function loadingStatus(): string {
   const a = active;

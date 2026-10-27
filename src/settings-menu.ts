@@ -21,8 +21,8 @@ export const MENU_ITEMS: readonly MenuItem[] = [
     key: 'voice',
     label: "Crewmate's voice",
     options: [
+      ['plain', 'Intercom'],
       ['spatial', 'From where they stand'],
-      ['plain', 'Not positioned'],
       ['off', 'Off'],
     ],
     current: (s) => s.voice,

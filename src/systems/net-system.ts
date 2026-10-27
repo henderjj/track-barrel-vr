@@ -162,6 +162,9 @@ export const netLink = {
   events: new Map<string, (event: Record<string, unknown>) => void>(),
   /** Name of the microphone voice is using, '' before it opens. */
   micLabel: '',
+  /** RMS levels, 0 to 1, of this player's microphone and the crewmate's voice as heard: the tank sounds duck while either speaks (F1.12). */
+  micLevel: (): number => 0,
+  crewLevel: (): number => 0,
 };
 
 export function lobbyBaseUrl(): string {
@@ -317,6 +320,8 @@ export class NetSystem extends createSystem({}) {
     netLink.send = (buffer, length) => this.session.sendUnreliable(buffer, length);
     netLink.sendEvent = (event) => this.session.sendEvent(event);
     netLink.toLocal = (peerMs) => this.session.clock.toLocal(peerMs);
+    netLink.micLevel = () => this.voice.micLevel();
+    netLink.crewLevel = () => this.voice.remoteLevel();
 
     const self = this;
     this.debug = {

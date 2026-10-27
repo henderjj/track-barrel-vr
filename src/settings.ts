@@ -31,7 +31,7 @@ export interface Settings {
   netJitter: number;
   /** Simulated loss of received pose packets, 0 to 1. */
   netLoss: number;
-  /** Crewmate voice: 'spatial' (HRTF at their head), 'plain' (not positioned) or 'off'. */
+  /** Crewmate voice: 'plain' (the intercom, not positioned; the default since F1.12), 'spatial' (HRTF at their head) or 'off'. */
   voice: 'spatial' | 'plain' | 'off';
   /** Route spatial voice through a loopback peer connection so echo cancellation sees it. */
   voiceLoop: boolean;
@@ -63,6 +63,11 @@ export interface Settings {
    * load; the game menu's Range section turns it off at once.
    */
   fog: boolean;
+  /**
+   * The tank's sounds (F1.12, src/systems/tank-audio-system.ts): 1 full,
+   * 0.5 quiet, 0 off. The game menu's Sound and view section changes it at once.
+   */
+  sound: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -77,7 +82,7 @@ export const DEFAULT_SETTINGS: Settings = {
   netLag: 0,
   netJitter: 0,
   netLoss: 0,
-  voice: 'spatial',
+  voice: 'plain',
   voiceLoop: false,
   fist: 0.6,
   pinch: 2,
@@ -88,6 +93,7 @@ export const DEFAULT_SETTINGS: Settings = {
   seat: 'driver',
   ground: true,
   fog: true,
+  sound: 1,
 };
 
 function num(params: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
@@ -137,6 +143,7 @@ export function parseSettings(search: string): Settings {
     seat: parseSeat(params.get('seat'), d.seat),
     ground: bool(params, 'ground', d.ground),
     fog: bool(params, 'fog', d.fog),
+    sound: num(params, 'sound', d.sound, 0, 1),
   };
 }
 

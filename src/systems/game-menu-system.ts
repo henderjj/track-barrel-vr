@@ -18,6 +18,7 @@ import { seating } from './seating.js';
 import { SIGHT_BUTTONS } from './sight-system.js';
 import { firingStatus } from './firing-system.js';
 import { loadingStatus, startLoading } from './loading-system.js';
+import { audioStatus, playEachSound } from './tank-audio-system.js';
 import { hideLeverTest, showLeverTest } from './lever-system.js';
 import { hideMechanismBench, showMechanismBench } from './mechanism-bench-system.js';
 import { startScreen } from './start-screen-system.js';
@@ -205,7 +206,7 @@ interface GameMenuDebug {
  * - Riding (only while riding the tank, spike S2): the ride's options;
  * - Practice: shortcuts straight to a situation to test (sit in either
  *   seat, drive the tank or put it back at its start, lay the gun or turn
- *   the turret forward);
+ *   the turret forward, play each of the tank's sounds);
  * - Back to start screen (leaves any crew) and Exit VR.
  */
 export class GameMenuSystem extends createSystem({}) {
@@ -335,6 +336,11 @@ export class GameMenuSystem extends createSystem({}) {
       this.setOpen(false);
       startLoading();
     });
+    ui.on('menu-audio-play', () => {
+      // The menu stays open: the status line under it says whether sound is on.
+      playEachSound();
+      this.render();
+    });
     ui.on('menu-levers', () => {
       this.setOpen(false);
       showLeverTest();
@@ -417,6 +423,7 @@ export class GameMenuSystem extends createSystem({}) {
       }
       this.ui?.setText('menu-turret-status', turretStatus());
       this.ui?.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
+      this.ui?.setText('menu-audio-status', audioStatus());
     }
     const left = this.input.xr.gamepads.left;
     if (left && (left.getButtonDown(InputComponent.Y_Button) || left.getButtonDown(InputComponent.Menu))) {
@@ -472,6 +479,7 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-range-status', rangeStatus());
     ui.setText('menu-turret-status', turretStatus());
     ui.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
+    ui.setText('menu-audio-status', audioStatus());
     ui.show('menu-ride', ride.active);
     ui.show('menu-ride-stop', ride.active);
     ui.setText('menu-ride-status', rideStatus());
