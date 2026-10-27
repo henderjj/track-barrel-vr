@@ -889,7 +889,13 @@ async function ridingTheTank() {
     !stopped.active && stopped.demoShown && !stopped.worldShown && stopped.gap < 0.02,
     `riding ${stopped.active}, cabin ${stopped.demoShown ? 'shown' : 'hidden'}, head ${(stopped.gap * 100).toFixed(1)} cm from the seat's eye point`);
   evalInApp("(window.__ride.set('vignette', true), window.__ride.set('cabin', 'open'), window.__ride.set('tank', 'route'), window.__ride.set('turret', 'scan'), true)");
+  // The head was seated off the room's middle, so putting the headset back moves it a lean forwards and
+  // left of the driver's eyes: onto the periscope's window (F1.6), which opens and, drawn in software,
+  // slows the page to a couple of frames a second. Seat it again where the headset now is.
   iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+  evalInApp('(window.__seats.reseat(), true)');
+  await sleep(300);
 }
 
 /** Mirrors src/sim/terrain.ts and src/sim/tank-drive.ts. */
@@ -1169,15 +1175,28 @@ async function layingWithTheSight() {
 async function theDriversPeriscope() {
   const scope = (expr) => evalInApp(`window.__periscope.${expr}`);
   const squeeze = (device, value) => iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value }] });
-  // Where to put each controller so the middle of its fist, where a handle runs through it, is at `p` (as
-  // the bench's step does): the offsets are measured with the hands holding nothing, and kept while the
+  // Where to put each controller so the middle of its fist, as the mechanism kit takes it, is at `p`: the
+  // kit's fist is FIST_CENTRE (src/scene-assets/hand.scene-asset.ts, mirrored for the left hand) in the
+  // grip space, and the grip space isn't where the emulator puts the controller. So each controller is put
+  // at a known point and the kit's fist read there. The yoke measures each hand's angle round its upright,
+  // so a fist even 2 cm off the handle turns it 10° short by a quarter turn. The offsets hold while the
   // controllers' orientations stay the same.
   const fistOffset = { left: [0, 0, 0], right: [0, 0, 0] };
-  const measureFists = () => {
+  const measureFists = async (near) => {
     for (const side of ['left', 'right']) {
-      const fist = evalInApp(`window.__ownHands.fist("${side}")`);
-      const grip = evalInApp(`window.__debug.world.player.gripSpaces.${side}.getWorldPosition(window.__debug.world.player.position.clone()).toArray()`);
-      fistOffset[side] = [fist[0] - grip[0], fist[1] - grip[1], fist[2] - grip[2]];
+      iwsdk(['xr', 'set-transform'], { device: `controller-${side}`, position: toOrigin(near[side]) });
+    }
+    await sleep(400);
+    for (const side of ['left', 'right']) {
+      const fist = evalInApp(`(() => {
+        const w = window.__debug.world;
+        const space = w.player.gripSpaces.${side};
+        space.updateWorldMatrix(true, false);
+        const q = space.getWorldQuaternion(w.player.quaternion.clone());
+        return w.player.position.clone().set(${side === 'left' ? -0.016 : 0.016}, -0.019, 0.011).applyQuaternion(q)
+          .add(space.getWorldPosition(w.player.position.clone())).toArray();
+      })()`);
+      fistOffset[side] = fist.map((v, i) => v - near[side][i]);
     }
   };
   const handTo = (device, p, duration = 0.4) => {
@@ -1215,7 +1234,8 @@ async function theDriversPeriscope() {
 
   // Both hands on the yoke, turned 90° left in two steps.
   const handle = (which, deg) => scope(`handle(${which}${deg === undefined ? '' : `, ${deg}`})`);
-  measureFists();
+  const away = (p) => [p[0], p[1], p[2] + 0.1];
+  await measureFists({ left: away(handle(0)), right: away(handle(1)) });
   handTo('controller-left', handle(0));
   handTo('controller-right', handle(1));
   await sleep(600);
