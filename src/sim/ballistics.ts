@@ -290,37 +290,46 @@ export function launchAngle(distance: number, rise: number): number {
   return Math.atan2(v2 - Math.sqrt(root), g * distance);
 }
 
+/** Scratch for aimAt, so it allocates nothing. */
+const aimMuzzle: Vec3 = [0, 0, 0];
+const aimWorld: Vec3 = [0, 0, 0];
+const aimDir: Vec3 = [0, 0, 0];
+
 /**
  * How to lay the gun to hit `face`'s middle from the tank at `tank`: the
  * turret's turn and the gun's elevation (rad, as src/sim/turret.ts's), for
- * the tests and the practice crewmate (F1.13): the face's copy in the
- * tile the tank stands in (one 500 m off is nearer behind, across the
- * tile's edge, than ahead). `muzzle(yaw, elevation, out)`
- * gives the muzzle in hull space (turret.ts's muzzlePoint); it is refined a
- * few times, since the muzzle moves as the gun is laid. Not for update():
- * it allocates.
+ * the tests and the practice crewmate (F1.13), into `out`. The face's
+ * world position is compared with the tank's put back into the middle
+ * tile, as the ground is drawn. `muzzle(yaw, elevation, out)` gives the
+ * muzzle in hull space (turret.ts's muzzlePoint); it is refined a few
+ * times, since the muzzle moves as the gun is laid.
  */
 export function aimAt(
   tank: Readonly<Pick<TankDrive, 'x' | 'y' | 'z' | 'heading' | 'pitch' | 'roll'>>,
   face: Readonly<HitFace>,
   muzzle: (yaw: number, elevation: number, out: Vec3) => Vec3,
+  out: { yaw: number; elevation: number } = { yaw: 0, elevation: 0 },
 ): { yaw: number; elevation: number } {
   let yaw = 0;
   let elevation = 0;
-  const m: Vec3 = [0, 0, 0];
-  const w: Vec3 = [0, 0, 0];
+  const w = aimWorld;
+  const dir = aimDir;
   for (let k = 0; k < 4; k++) {
-    hullToWorld(tank, muzzle(yaw, elevation, m), w);
+    hullToWorld(tank, muzzle(yaw, elevation, aimMuzzle), w);
     const dx = face.x - wrapTile(w[0]);
     const dz = face.z - wrapTile(w[2]);
     const distance = Math.hypot(dx, dz);
     const angle = launchAngle(distance, face.y - w[1]);
     const c = Math.cos(angle);
-    const dir: Vec3 = [(dx / distance) * c, Math.sin(angle), (dz / distance) * c];
+    dir[0] = (dx / distance) * c;
+    dir[1] = Math.sin(angle);
+    dir[2] = (dz / distance) * c;
     worldDirToHull(tank, dir, dir);
     // barrelDirection(yaw, e) = (-cos e sin yaw, sin e, -cos e cos yaw).
     elevation = Math.asin(Math.max(-1, Math.min(1, dir[1])));
     yaw = Math.atan2(-dir[0], -dir[2]);
   }
-  return { yaw, elevation };
+  out.yaw = yaw;
+  out.elevation = elevation;
+  return out;
 }

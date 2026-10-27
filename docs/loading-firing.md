@@ -45,7 +45,7 @@ The gunner's page owns the turret (F1.8), so it does the loading too, and fires:
 
 ## The practice crewmate
 
-Not yet: the crewmate learns to load, aim and fire in F1.13, through these same rules (`window.__loading.setTestHand` drives scripted hands; `aimAt` in `src/sim/ballistics.ts` lays the gun on a target). Until then, the crewmate in the gunner's seat doesn't load.
+Since F1.13 the practice crewmate loads, lays and fires through these same rules: its right hand is a scripted hand of the loading's (`scriptLoadingHand`), it lays with `aimAt` and fires with the power grip's trigger ([crewmate.md](crewmate.md)).
 
 ## Departures from the building skill
 
