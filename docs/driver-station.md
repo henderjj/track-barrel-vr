@@ -42,7 +42,7 @@ The host runs the tank (plan decision 1); the driver's station only feeds and sh
 
 ## The practice crewmate
 
-The crewmate learns to drive in F1.13, through these same levers. Until then a player alone in the gunner's seat sits in a parked tank, and a player alone drives with the crewmate riding as gunner.
+Since F1.13 the practice crewmate drives through these same levers: its hands take the tillers and move the gear lever, on the gunner's calls or round a route ([crewmate.md](crewmate.md)).
 
 ## Departures from the building skill
 

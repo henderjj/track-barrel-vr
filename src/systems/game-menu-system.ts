@@ -21,6 +21,11 @@ import { loadingStatus, startLoading } from './loading-system.js';
 import { hideLeverTest, showLeverTest } from './lever-system.js';
 import { hideMechanismBench, showMechanismBench } from './mechanism-bench-system.js';
 import { startScreen } from './start-screen-system.js';
+import { crewCallStatus, sendCrewCall } from './crew-bot-system.js';
+import type { CrewCall } from '../sim/crew-bot.js';
+
+/** The Calls section's buttons: `call-<call>`. */
+const CALL_BUTTONS: readonly CrewCall[] = ['advance', 'halt', 'reverse', 'left', 'right', 'route', 'fire', 'hold'];
 
 /** Where the menu stands in VR when opened: ahead of the head and a little below the eyes, m. */
 const DISTANCE = 1.3;
@@ -332,6 +337,12 @@ export class GameMenuSystem extends createSystem({}) {
         this.render();
       });
     }
+    for (const call of CALL_BUTTONS) {
+      ui.on(`call-${call}`, () => {
+        sendCrewCall(call);
+        this.render();
+      });
+    }
     ui.on('menu-loading', () => {
       this.setOpen(false);
       startLoading();
@@ -418,6 +429,7 @@ export class GameMenuSystem extends createSystem({}) {
       }
       this.ui?.setText('menu-turret-status', turretStatus());
       this.ui?.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
+      this.ui?.setText('menu-calls-status', crewCallStatus());
     }
     const left = this.input.xr.gamepads.left;
     if (left && (left.getButtonDown(InputComponent.Y_Button) || left.getButtonDown(InputComponent.Menu))) {
@@ -454,6 +466,13 @@ export class GameMenuSystem extends createSystem({}) {
     const crewLine = menuCrewLine(c.state, c.room, c.crewmate, settings.bot);
     ui.show('menu-crew', crewLine !== '');
     ui.setText('menu-crew-status', crewLine);
+    // Calls go to the crewmate in the other seat: the gunner calls the driver, the driver the gunner.
+    const calls = c.state === 'connected' && !settings.bot;
+    ui.show('menu-calls', calls);
+    ui.show('row-calls-drive', seating.mine === 'gunner');
+    ui.show('row-calls-turn', seating.mine === 'gunner');
+    ui.show('row-calls-gun', seating.mine === 'driver');
+    ui.setText('menu-calls-status', crewCallStatus());
     // Mute is offered only while the microphone is open.
     const micNote = c.micError ? 'Unavailable' : !c.micOn ? 'Off (allow it on the page)' : '';
     ui.show('row-mic-note', micNote !== '');
