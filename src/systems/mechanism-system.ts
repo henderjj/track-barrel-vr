@@ -38,6 +38,27 @@ interface Entry {
 const entries: Entry[] = [];
 
 /**
+ * A hand with no headset behind it (the practice crewmate's, src/systems/crew-bot-system.ts):
+ * the middle of its fist and the direction across it, scene space, whether
+ * it squeezes and how far its trigger is pulled. The kit takes it as it
+ * takes a real hand, so it grabs, moves and lets go of controls the same way.
+ */
+export interface ScriptedHand {
+  fist: [number, number, number];
+  across: [number, number, number];
+  squeeze: boolean;
+  trigger: number;
+}
+
+/** Scripted hands in place of each real one, or null for the real hand. */
+export const scriptedHands: Record<Side, ScriptedHand | null> = { left: null, right: null };
+
+/** A control by its name (the practice crewmate works them), or null. */
+export function findControl(name: string): Control | null {
+  return entries.find((e) => e.control.name === name)?.control ?? null;
+}
+
+/**
  * Hand a control to the kit: from now on a squeeze near it takes hold of
  * it, it follows the hand and buzzes, and hands on it are drawn closed on
  * its handle (this player's and, for a kind that is sent, the crewmate's).
@@ -175,6 +196,9 @@ export class MechanismSystem extends createSystem({}) {
   private tips: [Vec3, Vec3] = [[0, 0, 0], [0, 0, 0]];
   private given: (HandInput | null)[] = [null, null];
   private tmp = new Vector3();
+  /** Each hand's squeeze this frame and whether it is a fresh one: the grip's, or a scripted hand's. */
+  private squeezed = { left: false, right: false };
+  private fresh = { left: false, right: false };
 
   init(): void {
     // Across the fist: the grip space's +X (out of the back of a right hand), made square to the fist's hole.
@@ -232,7 +256,7 @@ export class MechanismSystem extends createSystem({}) {
       for (let i = 0; i < 2; i++) {
         if (!control.mech.held[i]) continue;
         const side = SIDES[i];
-        if (!active || !grip[side].pressed || !this.present[side] || handUse[side] !== control.name) {
+        if (!active || !this.squeezed[side] || !this.present[side] || handUse[side] !== control.name) {
           control.mech.release(i as HandIndex);
           if (handUse[side] === control.name) handUse[side] = null;
         }
@@ -241,7 +265,7 @@ export class MechanismSystem extends createSystem({}) {
     // Take hold of the nearest control in reach of a fresh squeeze.
     for (let i = 0; i < 2; i++) {
       const side = SIDES[i];
-      if (!this.present[side] || !grip[side].down || handUse[side]) continue;
+      if (!this.present[side] || !this.fresh[side] || handUse[side]) continue;
       let best: Control | null = null;
       let bestDistance = Infinity;
       for (const { control } of entries) {
@@ -302,6 +326,19 @@ export class MechanismSystem extends createSystem({}) {
 
   /** This frame's fist centre, across-the-fist direction and fingertip of `side`, scene space. */
   private readHand(side: Side): void {
+    const scripted = scriptedHands[side];
+    if (scripted) {
+      this.present[side] = true;
+      this.fresh[side] = scripted.squeeze && !this.squeezed[side];
+      this.squeezed[side] = scripted.squeeze;
+      this.fist[side].set(scripted.fist[0], scripted.fist[1], scripted.fist[2]);
+      this.across[side].set(scripted.across[0], scripted.across[1], scripted.across[2]);
+      this.tip[side].copy(this.fist[side]);
+      this.pointing[side] = false;
+      return;
+    }
+    this.squeezed[side] = grip[side].pressed;
+    this.fresh[side] = grip[side].down;
     this.present[side] = this.input.xr.getPrimaryInputSource(side) !== undefined;
     if (!this.present[side]) return;
     const space = this.player.gripSpaces[side];
@@ -340,8 +377,9 @@ export class MechanismSystem extends createSystem({}) {
     } else {
       input.tip = null;
     }
-    input.trigger = grip[side].hand ? 0 : fingerInputs[side].trigger;
-    input.tracked = grip[side].hand;
+    const scripted = scriptedHands[side];
+    input.trigger = scripted ? scripted.trigger : grip[side].hand ? 0 : fingerInputs[side].trigger;
+    input.tracked = scripted ? false : grip[side].hand;
     return input;
   }
 
