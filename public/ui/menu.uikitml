@@ -10,7 +10,7 @@
   feature, so a headset check never has to play its way there (the cabin's:
   sit in either seat; the drive's: drive, or put the tank back at its start; the turret's: lay
   the gun, or turn the turret forward; loading: load and fire as gunner; the range's: park up the range facing a target; the
-  gunsight's: go to it, or lay the gun on a target's range mark).
+  gunsight's: go to it, or lay the gun on a target's range mark; the tank's sounds: play each short sound in turn).
   Calls (in a crew) sends the crewmate a call for the other seat, which shows on their sign and
   which the practice crewmate obeys (F1.13): to the driver from the gunner's seat, to the gunner
   from the driver's. You →
@@ -282,6 +282,15 @@
 
   <div class="section">
     <div class="section-title">SOUND AND VIEW</div>
+    <div id="row-sound" class="setting">
+      <div id="row-sound-label" class="label">Setting</div>
+      <div id="row-sound-choices" class="choices">
+        <Button id="row-sound-0" class="choice" size="sm" variant="secondary">Choice</Button>
+        <Button id="row-sound-1" class="choice" size="sm" variant="secondary">Choice</Button>
+        <Button id="row-sound-2" class="choice" size="sm" variant="secondary">Choice</Button>
+        <Button id="row-sound-3" class="choice" size="sm" variant="secondary">Choice</Button>
+      </div>
+    </div>
     <div id="row-hud" class="setting">
       <div id="row-hud-label" class="label">Setting</div>
       <div id="row-hud-choices" class="choices">
@@ -407,6 +416,13 @@
       </div>
     </div>
     <div id="menu-loading-status" class="hint">Loading</div>
+    <div class="setting">
+      <div class="label">Tank sounds</div>
+      <div class="choices">
+        <Button id="menu-audio-play" class="choice" size="sm" variant="secondary">Play each</Button>
+      </div>
+    </div>
+    <div id="menu-audio-status" class="hint">Sound</div>
     <div class="setting">
       <div class="label">Test range</div>
       <div class="choices">
