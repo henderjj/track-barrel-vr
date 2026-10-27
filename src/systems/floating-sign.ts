@@ -52,6 +52,8 @@ export class FloatingSign {
     this.mesh.name = name;
     this.mesh.renderOrder = 10;
     this.mesh.visible = false;
+    // Never in a ray's way: a sign floating between the player and the game menu would swallow its clicks.
+    this.mesh.raycast = () => {};
   }
 
   get visible(): boolean {

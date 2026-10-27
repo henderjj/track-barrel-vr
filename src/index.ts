@@ -19,6 +19,7 @@ import { NetSystem } from './systems/net-system.js';
 import { OwnHandsSystem } from './systems/own-hands-system.js';
 import { PerfHudSystem } from './systems/perf-hud-system.js';
 import { PlatformSystem } from './systems/platform-system.js';
+import { RangeRunSystem } from './systems/range-run-system.js';
 import { RangeSystem } from './systems/range-system.js';
 import { RideSystem } from './systems/ride-system.js';
 import { SeatSystem } from './systems/seat-system.js';
@@ -67,6 +68,8 @@ World.create(
   world.registerSystem(LoadingSystem);
   // The shell's flight, after LoadingSystem fires it.
   world.registerSystem(FiringSystem);
+  // The range run (F1.11): after FiringSystem, whose decided shots it counts on the host.
+  world.registerSystem(RangeRunSystem);
   // After the kit has moved its levers: it reads them into the drive (DriveSystem drives by them next frame) and draws the gauges.
   world.registerSystem(DriverStationSystem);
   world.registerSystem(LeverSystem);

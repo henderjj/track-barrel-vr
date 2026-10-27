@@ -22,6 +22,7 @@ import {
 } from '../sim/cabin.js';
 import { MANTLET_DEPTH, POWER_GRIP, STATION, TRUNNION } from '../sim/turret.js';
 import { binParts, boardParts, BREECH_HOLE, breechFittings, rackParts } from './loading.scene-asset.js';
+import { driverClockParts, gunnerClockParts } from './range-run.scene-asset.js';
 
 /**
  * The tank, seen from inside: the hull with the driver's seat, and the
@@ -175,6 +176,8 @@ function hullParts(): Part[] {
   const g = GEARBOX;
   parts.push(box([g.x1 - g.x0, g.top, g.z1 - g.z0], [(g.x0 + g.x1) / 2, g.top / 2, (g.z0 + g.z1) / 2], PAINT_DARK));
   parts.push(...driverStationParts());
+  // The range run's clock on the front plate, right of the slit (F1.11).
+  parts.push(...driverClockParts());
 
   // The engine compartment behind the bulkhead.
   parts.push(box([2 * outer, 1.7, 0.6], [0, bottom + 0.85, rear + 0.3], PAINT));
@@ -243,6 +246,8 @@ function turretParts(): Part[] {
   parts.push(...seatParts(gunner.cushion, gunner.floorY));
   // Loading (F1.10): the ready rack on the right wall, the casing bin under the breech and the loading board's backing.
   parts.push(...rackParts(), ...binParts(), ...boardParts());
+  // The range run's clock over the loading board (F1.11).
+  parts.push(...gunnerClockParts());
   return parts;
 }
 

@@ -157,6 +157,34 @@ describe('loading the gun (F1.10, after spike S4)', () => {
     expect(rig.drill.shells[0].centre).toEqual([...RACK_SLOTS[0]]);
   });
 
+  it("loads at once for Practice's Ready to fire (F1.11), without counting a load or a fumble, a held shell back in the rack", () => {
+    const rig = new Rig();
+    rig.move(rig.right, [RACK_SLOTS[1][0], RACK_SLOTS[1][1], RACK_SLOTS[1][2] + 0.2]);
+    rig.squeeze(rig.right, true);
+    expect(rig.drill.holds.right).toBe(1);
+    rig.drill.elevation = 0.1;
+    rig.drill.loadNow();
+    expect(rig.drill.loaded).toBe(true);
+    expect(rig.drill.rammed).toBe(true);
+    expect(rig.drill.lever).toBe(LEVER_CLOSED);
+    expect(rig.drill.depth).toBe(SHELL_LENGTH);
+    expect(rig.drill.holds.right).toBe(HOLD_NONE);
+    expect(rig.drill.shells[1].place).toBe('rack');
+    expect(rig.drill.shells[rig.drill.breechShell].place).toBe('breech');
+    expect(rig.drill.stats.loads).toBe(0);
+    expect(rig.drill.stats.fumbles).toBe(0);
+    // Steps on with the hand still squeezed (it doesn't take the shell back) and fires.
+    rig.step(5);
+    expect(rig.drill.loaded).toBe(true);
+    expect(rig.drill.fire()).toBe(true);
+    expect(rig.drill.shells.every((sh) => sh.place === 'rack')).toBe(true);
+    // Again while loaded: nothing changes.
+    rig.drill.loadNow();
+    const breech = rig.drill.breechShell;
+    rig.drill.loadNow();
+    expect(rig.drill.breechShell).toBe(breech);
+  });
+
   it('times each load from the breech opening', () => {
     const rig = new Rig();
     rig.load(0);

@@ -61,6 +61,13 @@ export interface ShotRecord {
 /** Things that want to hear of every shot, this page's or the crewmate's (LoadingSystem recoils the gun and throws the casing). */
 export const shotListeners = new Set<(own: boolean) => void>();
 
+/**
+ * The host's word on every shot, its own page's or the crewmate's: the range
+ * target it hit (an index into RANGE_TARGETS, or -1) and how long the shell
+ * flies, s. Only the host hears these (F1.11's range run counts them).
+ */
+export const decidedListeners = new Set<(target: number, flight: number) => void>();
+
 let active: FiringSystem | null = null;
 
 /** The gunner's page fires the gun: the shell leaves the muzzle as this page draws the tank and turret. LoadingSystem calls it once the breech has fired. */
@@ -249,6 +256,7 @@ export class FiringSystem extends createSystem({}) {
     const result = shot.flight;
     if (result.kind === 'target') this.hits[result.target]++;
     this.record(shot.id, result, shot.origin, shot.dir);
+    for (const listener of decidedListeners) listener(result.kind === 'target' ? result.target : -1, result.time);
     if (netLink.connected) {
       const event = {
         t: 'shot-hit',
