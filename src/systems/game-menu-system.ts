@@ -15,6 +15,7 @@ import { goUpTheRange, rangeStatus } from './range-system.js';
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
 import { seating } from './seating.js';
+import { PERISCOPE_BUTTONS, periscopeStatus } from './periscope-system.js';
 import { SIGHT_BUTTONS, sightStatus } from './sight-system.js';
 import { firingStatus } from './firing-system.js';
 import { loadingStatus, startLoading } from './loading-system.js';
@@ -321,8 +322,8 @@ export class GameMenuSystem extends createSystem({}) {
       stopRide();
       this.render();
     });
-    // The gunsight (F1.9): going to it and laying the gun close the menu (to look); the render choices cycle and show it.
-    for (const button of SIGHT_BUTTONS) {
+    // The gunsight (F1.9) and the periscope (F1.6): going to them and laying the gun close the menu (to look); the render choices cycle and show it.
+    for (const button of [...SIGHT_BUTTONS, ...PERISCOPE_BUTTONS]) {
       ui.on(button.id, () => {
         if (button.closes) {
           this.setOpen(false);
@@ -480,6 +481,10 @@ export class GameMenuSystem extends createSystem({}) {
       ui.setText(button.id, button.label());
     }
     ui.setText('menu-sight-status', sightStatus() || 'Lean in to the eyepiece to look');
+    for (const button of PERISCOPE_BUTTONS) {
+      ui.setText(button.id, button.label());
+    }
+    ui.setText('menu-periscope-status', `${periscopeStatus()}. Lean in to the window to look; turn it with both handles`);
     ui.setText('height-value', raiseShown(body.choice.raise));
     this.select('height-own', body.choice.raise === 0);
     ui.setText('menu-swap', SWAP_LABELS[seating.swap]);

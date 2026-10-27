@@ -59,6 +59,12 @@
  *     far target sits on its 300 m mark, by the sums and as the sight camera
  *     is drawn; elevating the gun tilts the sight's view but leaves the
  *     eyepiece still; leaning in shows the target;
+ *  6j. turns the driver's periscope (F1.6): Practice → Periscope → Go to it
+ *     sits the player in the driver's seat behind its window; leaning in
+ *     renders the view; both handles turn it 90° left, the view and the
+ *     head on the roof with it while the window stays still; one hand
+ *     turns it slower than the hand, with the strain felt; Ahead and the
+ *     power choice work from the menu;
  *  7. checks the perf CSV has rows, then re-enters XR with the frame-rate
  *     API removed, as desktop Chrome and Edge over Link may have it, and
  *     checks the game measures the refresh rate instead; IWSDK's controller
@@ -1149,6 +1155,97 @@ async function layingWithTheSight() {
 }
 
 /**
+ * 6j. The driver's periscope (F1.6): Practice → Periscope → Go to it sits
+ *     the player in the driver's seat just behind its window; leaning in
+ *     opens it and renders a picture; both hands on the yoke's handles
+ *     turn it 90° left, the view and the head on the roof turning with it
+ *     while the window stays put; in one hand it follows slower than the
+ *     hand with the strain felt; Ahead turns it back and Power cycles.
+ */
+async function theDriversPeriscope() {
+  const scope = (expr) => evalInApp(`window.__periscope.${expr}`);
+  const squeeze = (device, value) => iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value }] });
+  const handTo = (device, p, duration = 0.4) => iwsdk(['xr', 'animate-to'], { device, position: toOrigin(p), duration });
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+  evalInApp('(window.__periscope.turn(0), true)');
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-periscope-go'));
+  const behindLens = (head, lens) => (head[0] - lens.at[0]) * lens.facing[0] + (head[2] - lens.at[2]) * lens.facing[2];
+  const there = await waitFor('the periscope\'s window', () => {
+    const s = seated();
+    const lens = scope('lens()');
+    return s.mine === 'driver' && behindLens(s.head, lens) > 0.1 && behindLens(s.head, lens) < 0.2 ? s : null;
+  }, 5000).catch(() => seated());
+  const lens0 = scope('lens()');
+  check('Practice → Periscope → Go to it sits the player in the driver\'s seat just behind the periscope\'s window',
+    there.mine === 'driver' && behindLens(there.head, lens0) > 0.1 && behindLens(there.head, lens0) < 0.2, `${there.mine}, head ${fmt(there.head)}, window ${fmt(lens0.at)}`);
+
+  // Lean in: the window opens on the view ahead.
+  const rendersBefore = scope('state()').renders;
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(lens0.at.map((v, i) => v + lens0.facing[i] * 0.06)) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toRig(lens0.at.map((v, i) => v - lens0.facing[i] * 20)) });
+  const open = await waitFor('the periscope to open', () => {
+    const s = scope('state()');
+    return s.open && s.renders > rendersBefore + 5 ? s : null;
+  }, 10000).catch(() => scope('state()'));
+  await sleep(500);
+  const spread = scope('pictureSpread()');
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-periscope-ahead.png'], {});
+  check('Leaning in to the periscope\'s window renders the view ahead',
+    open.open && spread > 20, `open ${open.open}, ${open.renders - rendersBefore} frames, picture spread ${spread}, ${open.calls} calls, ${Math.round(open.triangles / 1000)}k triangles`);
+
+  // Both hands on the yoke, turned 90° left in two steps.
+  const handle = (which, deg) => scope(`handle(${which}${deg === undefined ? '' : `, ${deg}`})`);
+  handTo('controller-left', handle(0));
+  handTo('controller-right', handle(1));
+  await sleep(600);
+  squeeze('controller-left', 1);
+  squeeze('controller-right', 1);
+  const held = await waitFor('both hands on the yoke', () => { const s = scope('state()'); return s.heldBy === 'both' && s; }, 3000, 100).catch(() => scope('state()'));
+  check('Squeezing at the periscope\'s handles takes hold of both', held.heldBy === 'both', `held by ${held.heldBy}`);
+  const before = { lens: scope('lens()'), view: scope('view()') };
+  for (const deg of [45, 90]) {
+    handTo('controller-left', handle(0, deg));
+    handTo('controller-right', handle(1, deg));
+    await sleep(600);
+  }
+  const turned = await waitFor('the periscope turned 90° left', () => { const s = scope('state()'); return Math.abs(s.angleDeg - 90) < 3 && s; }, 5000).catch(() => scope('state()'));
+  const after = { lens: scope('lens()'), view: scope('view()'), head: scope('head()') };
+  const lensMoved = Math.hypot(...after.lens.at.map((v, i) => v - before.lens.at[i]));
+  check('Both handles turn the periscope 90° left: the view and the head on the roof look left, the window stays still',
+    Math.abs(turned.angleDeg - 90) < 3 && after.view.looking[0] < -0.98 && before.view.looking[2] < -0.98 && after.head.facing[0] < -0.98 && lensMoved < 0.002,
+    `${turned.angleDeg.toFixed(1)}° (${turned.status}), view ${fmt(before.view.looking)} to ${fmt(after.view.looking)}, head facing ${fmt(after.head.facing)}, window moved ${(lensMoved * 1000).toFixed(1)} mm`);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-periscope-left.png'], {});
+
+  // Let go with the right hand: the left alone turns it back, slower than the hand.
+  squeeze('controller-right', 0);
+  await sleep(300);
+  handTo('controller-left', handle(0, 30), 0.3);
+  const lagging = await waitFor('the yoke behind the hand', () => { const s = scope('state()'); return s.heldBy === 'left' && s.strain[0] > 5 && s; }, 3000, 100).catch(() => scope('state()'));
+  const heavy = await waitFor('the yoke back to 30°', () => { const s = scope('state()'); return Math.abs(s.angleDeg - 30) < 3 && s; }, 8000, 200).catch(() => scope('state()'));
+  check('In one hand the periscope follows slower than the hand, with the strain felt, and gets there',
+    lagging.heldBy === 'left' && lagging.strain[0] > 5 && Math.abs(heavy.angleDeg - 30) < 3,
+    `left hand ${lagging.strain[0].toFixed(1)}° ahead of it at ${lagging.angleDeg.toFixed(1)}°, then ${heavy.angleDeg.toFixed(1)}°`);
+  squeeze('controller-left', 0);
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+
+  // The menu: Ahead turns it back, Power cycles 2× → 3×.
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-periscope-ahead'));
+  await rayClick(elementPosition('menu-panel', 'menu-periscope-power'));
+  await menuButtonPress();
+  const ahead = await waitFor('the periscope ahead', () => { const s = scope('state()'); return Math.abs(s.angleDeg) < 0.01 && s; }, 4000).catch(() => scope('state()'));
+  check('Practice → Periscope → Ahead turns it straight ahead and Power steps to 3×', Math.abs(ahead.angleDeg) < 0.01 && ahead.power === 3,
+    `${ahead.angleDeg.toFixed(2)}°, power ${ahead.power}×, "${ahead.status}"`);
+  evalInApp('(window.__periscope.setPower(2), true)');
+  evalInApp('(window.__seats.reseat(), true)');
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+}
+
+/**
  * 6f. The turret (F1.8): Practice → Lay the gun → Gunner puts the player in
  *     the gunner's seat with a sign; the power grip twisted left traverses
  *     the turret left and the gunner's play space turns with it (the head
@@ -1666,6 +1763,8 @@ async function main() {
 
   // 6i. The gunsight (F1.9).
   await layingWithTheSight();
+  // 6j. The periscope (F1.6).
+  await theDriversPeriscope();
 
   // 7. Perf log.
   const rows = evalInApp('window.__perf.recorder.rows.length');

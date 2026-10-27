@@ -330,6 +330,22 @@ async function driveChecks(host, guest, label) {
   }, 5000).catch(() => null);
   check(`The host's page draws the guest driver's tillers where the guest pushed them (${label})`, hostSees !== null,
     hostSees ? `${hostSees.angles.tillerLeft.toFixed(1)}° and ${hostSees.angles.tillerRight.toFixed(1)}°` : JSON.stringify(await host.page.evaluate(() => window.__driverStation.state().angles)));
+  // The periscope (F1.6): the guest driver's page owns it; the host's page draws it turned the same way, and the host's Ahead asks the guest's page.
+  const periscope = (p) => p.page.evaluate(() => window.__periscope.state());
+  await guest.page.evaluate(() => window.__periscope.turn(60));
+  const scoped = await waitFor('the host to draw the guest\'s periscope turned', async () => {
+    const [h, g] = await Promise.all([periscope(host), periscope(guest)]);
+    return g.owner && !h.owner && Math.abs(h.angleDeg - 60) < 0.5 && Math.abs(g.angleDeg - 60) < 0.01 ? { h, g } : null;
+  }, 5000).catch(() => null);
+  check(`The host's page draws the guest driver's periscope turned where the guest turned it (${label})`, scoped !== null,
+    scoped ? `${scoped.h.angleDeg.toFixed(2)}° for the driver's ${scoped.g.angleDeg.toFixed(2)}°, ${scoped.h.received} packets` : JSON.stringify(await Promise.all([periscope(host), periscope(guest)])));
+  await host.page.evaluate(() => window.__gameMenu.click('menu-periscope-ahead'));
+  const scopeAhead = await waitFor('both periscopes ahead', async () => {
+    const [h, g] = await Promise.all([periscope(host), periscope(guest)]);
+    return Math.abs(g.angleDeg) < 0.01 && Math.abs(h.angleDeg) < 0.5 ? h : null;
+  }, 5000).catch(() => null);
+  check(`The gunner's Practice → Periscope → Ahead turns the driver's periscope ahead on both pages (${label})`, scopeAhead !== null,
+    scopeAhead ? '' : JSON.stringify(await Promise.all([periscope(host), periscope(guest)])));
   // How smoothly the guest draws it: the distance driven, frame by frame, never goes back or jumps.
   const steps = await guest.page.evaluate(() => new Promise((resolve) => {
     const out = [];

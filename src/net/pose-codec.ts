@@ -28,6 +28,8 @@ export const PacketType = {
   TurretState: 7,
   /** The breech, the lever, the shells and the load stats, from the gunner's page (F1.10, src/net/loading-codec.ts). */
   LoadingState: 8,
+  /** Which way the driver's periscope looks, from the driver's page (F1.6, src/net/periscope-codec.ts). */
+  PeriscopeState: 9,
 } as const;
 
 /** One tracked pose: position (m) and rotation quaternion. */
