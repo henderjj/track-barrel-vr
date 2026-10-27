@@ -1165,7 +1165,21 @@ async function layingWithTheSight() {
 async function theDriversPeriscope() {
   const scope = (expr) => evalInApp(`window.__periscope.${expr}`);
   const squeeze = (device, value) => iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value }] });
-  const handTo = (device, p, duration = 0.4) => iwsdk(['xr', 'animate-to'], { device, position: toOrigin(p), duration });
+  // Where to put each controller so the middle of its fist, where a handle runs through it, is at `p` (as
+  // the bench's step does): the offsets are measured with the hands holding nothing, and kept while the
+  // controllers' orientations stay the same.
+  const fistOffset = { left: [0, 0, 0], right: [0, 0, 0] };
+  const measureFists = () => {
+    for (const side of ['left', 'right']) {
+      const fist = evalInApp(`window.__ownHands.fist("${side}")`);
+      const grip = evalInApp(`window.__debug.world.player.gripSpaces.${side}.getWorldPosition(window.__debug.world.player.position.clone()).toArray()`);
+      fistOffset[side] = [fist[0] - grip[0], fist[1] - grip[1], fist[2] - grip[2]];
+    }
+  };
+  const handTo = (device, p, duration = 0.4) => {
+    const o = fistOffset[device.replace('controller-', '')];
+    iwsdk(['xr', 'animate-to'], { device, position: toOrigin([p[0] - o[0], p[1] - o[1], p[2] - o[2]]), duration });
+  };
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
   evalInApp('(window.__periscope.turn(0), true)');
@@ -1197,6 +1211,7 @@ async function theDriversPeriscope() {
 
   // Both hands on the yoke, turned 90° left in two steps.
   const handle = (which, deg) => scope(`handle(${which}${deg === undefined ? '' : `, ${deg}`})`);
+  measureFists();
   handTo('controller-left', handle(0));
   handTo('controller-right', handle(1));
   await sleep(600);
