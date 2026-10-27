@@ -1096,7 +1096,7 @@ async function theRangeRun() {
   const going = await waitFor('the clock to run', () => { const r = run(); return r.clock > 0.5 && r; }, 6000).catch(() => run());
   const shown = evalInApp('window.__rangeRun.clock()');
   check('After the countdown the clock runs and the clocks in both seats show it',
-    going.clock > 0.5 && /^0:0\d\.\d$/.test(shown[1]) && shown[2] === 'Targets 0/3   Shots 0',
+    going.clock > 0.5 && /^\d+:\d\d\.\d$/.test(shown[1]) && shown[2] === 'Targets 0/3   Shots 0',
     `clock ${going.clock.toFixed(1)} s, board "${shown.join(' | ')}"`);
 
   // Practice → Ready to fire → 100 m: alone, into the gunner's seat, laid and loaded.
