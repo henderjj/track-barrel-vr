@@ -48,6 +48,16 @@ export function turretState(): Readonly<TurretState> {
   return active?.shown ?? createTurretState();
 }
 
+/** Whether this page lays the gun: the gunner's page, or this one alone. */
+export function ownsTurret(): boolean {
+  return active?.isOwner() ?? true;
+}
+
+/** The gun's entity, inside the turret's: the gunsight's objective rides on it (F1.9). */
+export function gunEntity(): Entity | null {
+  return active?.gunEntity ?? null;
+}
+
 /** Practice → Lay the gun → Gunner: into the gunner's seat, with a sign saying how to lay the gun. */
 export function startGunning(): void {
   seating.ask('gunner');
@@ -72,7 +82,7 @@ export function takeTriggerPulls(): number {
   return n;
 }
 
-/** Lay the gun straight to a turn and elevation (rad), on the page that owns the turret: the tests, and later the practice crewmate's aim (F1.13). */
+/** Lay the gun straight to a turn and elevation (rad), on the page that owns the turret: the tests, the gunsight's Practice lay (F1.9), and later the practice crewmate's aim (F1.13). */
 export function aimTurret(yaw: number, elevation: number): void {
   active?.aim(yaw, elevation);
 }
@@ -159,6 +169,7 @@ export class TurretSystem extends createSystem({}) {
   triggerPulls = 0;
   private turret: Object3D | null = null;
   private gun: Mesh | null = null;
+  gunEntity: Entity | null = null;
   private buffer = new StateBuffer<TurretState>({
     create: createTurretState,
     copy: copyTurretState,
@@ -232,7 +243,7 @@ export class TurretSystem extends createSystem({}) {
   private build(turret: Entity): void {
     const gun = createGun();
     gun.position.set(0, TRUNNION.y, TRUNNION.z);
-    this.world.createTransformEntity(gun, { parent: turret });
+    this.gunEntity = this.world.createTransformEntity(gun, { parent: turret });
     this.gun = gun;
     const controls = {
       elevation: { mech: this.elevationWheel, part: createWheel(ELEVATION_WHEEL), kind: HoldKind.ElevationWheel },
@@ -268,7 +279,7 @@ export class TurretSystem extends createSystem({}) {
   }
 
   /** The gunner's page owns the turret; alone, this page does whichever seat it sits in. */
-  private isOwner(): boolean {
+  isOwner(): boolean {
     return !netLink.connected || seating.mine === 'gunner';
   }
 

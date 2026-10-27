@@ -22,7 +22,8 @@
  *   a clean link and at 150 ms RTT;
  * - the turret (F1.8): the gunner's page traverses and elevates at once and
  *   the driver's page draws it close behind, smoothly, on a clean link and
- *   at 150 ms RTT;
+ *   at 150 ms RTT; the gunsight's Practice lay (F1.9) from the driver's
+ *   page lays the gunner's gun on a target;
  * - loading and firing (F1.10): a guest gunner's loading reaches the host,
  *   and its shot is seen on both pages and decided by the host, on a clean
  *   link and at 150 ms RTT;
@@ -140,6 +141,23 @@ async function measureMotion(sender, receiver, seconds) {
     });
   });
   await new Promise((r) => setTimeout(r, 600)); // fill the jitter buffer
+  // Until then the receiver can still be drawing its way from the last pose
+  // onto the circle: on a slow runner with 150 ms RTT, 600 ms isn't always
+  // enough. Start once three frames in a row are on the circle (or after 3 s).
+  await receiver.page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        let onCircle = 0;
+        const end = performance.now() + 3000;
+        const frame = () => {
+          const p = window.__net.remotePose();
+          onCircle = p && Math.abs(Math.hypot(p.head.px, p.head.pz) - 0.5) < 0.01 ? onCircle + 1 : 0;
+          if (onCircle >= 3 || performance.now() > end) resolve();
+          else requestAnimationFrame(frame);
+        };
+        frame();
+      }),
+  );
   const samples = await receiver.page.evaluate(
     (ms) =>
       new Promise((resolve) => {
@@ -381,7 +399,8 @@ async function driveChecks(host, guest, label) {
  * turns its own turret at once and the host sees it turn close behind,
  * smoothly; the guest's elevation reaches the host; the host's Forward (it
  * isn't the gunner) asks the guest's page, and both see the turret back
- * straight ahead.
+ * straight ahead. The driver's Practice lay on the 250 m target (F1.9) asks
+ * the gunner's page too, and both see the gun on the target's mark.
  */
 async function turretChecks(host, guest, label) {
   const turret = (p) => p.page.evaluate(() => window.__turret.state());
@@ -434,6 +453,21 @@ async function turretChecks(host, guest, label) {
   }, 8000).catch(() => null);
   check(`The driver's Forward puts the gunner's turret straight ahead (${label})`, home !== null,
     home ? '' : JSON.stringify(await Promise.all([turret(host), turret(guest)])));
+
+  // The gunsight (F1.9): the driver's Practice lay asks the gunner's page, which lays the gun on the 250 m target; both see it on its mark.
+  const onMark = (p) => p.page.evaluate(() => window.__sight.error(1));
+  await host.page.evaluate(() => window.__gameMenu.click('menu-sight-lay-1'));
+  const sighted = await waitFor('the gun laid on the 250 m target on both pages', async () => {
+    const [h, g] = await Promise.all([onMark(host), onMark(guest)]);
+    const near = (e) => Math.abs(e.across) < 0.1 && Math.abs(e.up) < 0.1;
+    return near(h) && near(g) ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`The driver's Practice lay asks the gunner's page, which lays the gun on the 250 m target's mark, and the driver sees it laid (${label})`,
+    sighted !== null && Math.abs(sighted.g.range - 250) < 3,
+    sighted ? `gunner ${sighted.g.across.toFixed(3)}/${sighted.g.up.toFixed(3)} mil, driver ${sighted.h.across.toFixed(3)}/${sighted.h.up.toFixed(3)} mil at ${Math.round(sighted.g.range)} m`
+      : JSON.stringify(await Promise.all([onMark(host), onMark(guest), turret(guest)])));
+  await host.page.evaluate(() => window.__gameMenu.click('menu-sight-lay-ahead'));
+  await waitFor('the turret forward again', async () => Math.abs((await turret(guest)).yaw) < 1e-3, 8000).catch(() => null);
 }
 
 /**

@@ -20,8 +20,8 @@
  *  1c. raises the eyes from the menu's eye height, and stops a head that
  *     stands up out of the seat under the roof;
  *  2. checks the 90 Hz request ran and the platform report (spike S8);
- *  2c. looks through the gunsight (spike S1): it opens as the head leans in,
- *     renders a picture of the range, closes as it leans back;
+ *  2c. looks through the gunsight (spike S1, F1.9): it opens as the head
+ *     leans in, renders a picture of the range, closes as it leans back;
  *  5b. opens Practice > Lever test (spike S3) and works a tiller with a
  *     controller: it follows the hand, stops at its limit with the hand
  *     kept on it, lets go when the hand is pulled off, springs back, and
@@ -54,6 +54,11 @@
  *     500 m with markers up the road, the fog is on and turns off from the
  *     menu, and Practice → Up the range parks the tank 200 m up the road
  *     facing the far target;
+ *  6i. lays the gun with the gunsight (F1.9): from up the range, Practice →
+ *     Gunsight → Go to it and Lay on 500 m turn the turret and gun so the
+ *     far target sits on its 300 m mark, by the sums and as the sight camera
+ *     is drawn; elevating the gun tilts the sight's view but leaves the
+ *     eyepiece still; leaning in shows the target;
  *  7. checks the perf CSV has rows, then re-enters XR with the frame-rate
  *     API removed, as desktop Chrome and Edge over Link may have it, and
  *     checks the game measures the refresh rate instead; IWSDK's controller
@@ -501,15 +506,6 @@ async function sightStep() {
   check('Leaning in to the eyepiece opens the sight, which renders a picture of the range',
     open.open && open.renders > before.renders && spread > 20,
     `open ${open.open}, ${open.renders - before.renders} frames rendered, ${open.size}², ${open.calls} calls, cpu ${open.cpuMs?.toFixed(2)} ms, picture spread ${spread}`);
-
-  evalInApp("(window.__sight.setAim('500'), true)");
-  await sleep(300);
-  const aimed = evalInApp('window.__sight.lens()');
-  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(aimed.at.map((v, i) => v + aimed.facing[i] * 0.06)) });
-  iwsdk(['xr', 'look-at'], { device: 'headset', target: toRig(aimed.at.map((v, i) => v - aimed.facing[i] * 20)) });
-  await sleep(1000);
-  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-sight-500m.png'], {});
-  evalInApp("(window.__sight.setAim('ahead'), true)");
 
   iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(along(0.3)) });
   lookDown();
@@ -998,7 +994,7 @@ async function drivingTheTank() {
 }
 
 /**
- * 6g. The test range (F1.7): the three targets stand out at 100, 250 and
+ * 6h. The test range (F1.7): the three targets stand out at 100, 250 and
  *     500 m with a marker every 100 m up the road, the fog is on with the
  *     range's numbers and turns off and on from the menu's settings, and
  *     Practice → Test range → Up the range parks the tank 200 m up the road
@@ -1065,6 +1061,91 @@ async function theTestRange() {
   evalInApp('(window.__drive.reset(), true)');
   evalInApp("(window.__seats.ask('driver'), true)");
   iwsdk(['xr', 'set-device-state'], {});
+}
+
+/**
+ * 6i. The gunsight (F1.9): up the range, Practice → Gunsight → Go to it puts
+ *     the head behind the eyepiece and Lay on → 500 m lays the gun so the far
+ *     target (300 m off from there) sits on the reticle's mark for its range,
+ *     both by the sums and as the sight camera and the ground are drawn.
+ *     Elevating the gun tilts the sight's view with it while the eyepiece
+ *     stays still (an articulated sight). Leaning in renders the target.
+ */
+async function layingWithTheSight() {
+  const sight = (expr) => evalInApp(`window.__sight.${expr}`);
+  const fmtError = (e) => `${e.across.toFixed(3)} mil right, ${e.up.toFixed(3)} mil up at ${Math.round(e.range)} m`;
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-range-up'));
+  await waitFor('the tank parked up the range', () => evalInApp('window.__range.tank().nearest') === 1, 8000).catch(() => null);
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-sight-go'));
+  const lens0 = sight('lens()');
+  const behindLens = (head, lens) => (head[0] - lens.at[0]) * lens.facing[0] + (head[2] - lens.at[2]) * lens.facing[2];
+  const there = await waitFor('the eyepiece', () => {
+    const s = seated();
+    const lens = sight('lens()');
+    return s.mine === 'gunner' && behindLens(s.head, lens) > 0.1 && behindLens(s.head, lens) < 0.2 ? s : null;
+  }, 5000).catch(() => seated());
+  check('Practice → Gunsight → Go to it sits the player in the gunner\'s seat just behind the eyepiece',
+    there.mine === 'gunner', `${there.mine}, head ${fmt(there.head)}, lens ${fmt(lens0.at)}`);
+
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-sight-lay-2'));
+  const laid = await waitFor('the gun laid on the far target', () => {
+    const e = sight('error(2)');
+    return Math.abs(e.across) < 0.05 && Math.abs(e.up) < 0.05 && e;
+  }, 5000).catch(() => sight('error(2)'));
+  const drawn = sight('drawnError(2)');
+  const status = sight('state()').status;
+  const turret = evalInApp('window.__turret.state()');
+  check('Lay on → 500 m turns the turret and gun so the far target, 300 m off up the range, sits on its range mark',
+    Math.abs(laid.across) < 0.05 && Math.abs(laid.up) < 0.05 && Math.abs(laid.range - 300) < 10 && status.includes('500 m target'),
+    `${fmtError(laid)}; turret ${turret.yawDeg.toFixed(2)}°, gun ${turret.elevationDeg.toFixed(2)}°; "${status}"`);
+  check('The sight camera as drawn sees the far target on its mark too',
+    Math.abs(drawn.across) < 0.3 && Math.abs(drawn.up) < 0.3 && Math.abs(drawn.range - laid.range) < 1, fmtError(drawn));
+
+  // Elevate the gun 10° more: the sight's view tilts with it, the eyepiece stays where it was.
+  const before = { lens: sight('lens()'), view: sight('view()') };
+  evalInApp(`(window.__turret.set({ elevation: ${turret.elevationDeg + 10} }), true)`);
+  const raised = await waitFor('the gun raised', () => {
+    const t = evalInApp('window.__turret.state()');
+    return t.elevationDeg > turret.elevationDeg + 9.9 && t;
+  }, 4000).catch(() => evalInApp('window.__turret.state()'));
+  await sleep(200);
+  const after = { lens: sight('lens()'), view: sight('view()') };
+  evalInApp('(window.__turret.set(null), true)');
+  const pitch = (v) => (Math.asin(v.looking[1]) * 180) / Math.PI;
+  const lensMoved = Math.hypot(...after.lens.at.map((v, i) => v - before.lens.at[i]));
+  check('Elevating the gun tilts the sight\'s view with it, while the eyepiece stays still',
+    raised.elevationDeg > turret.elevationDeg + 9.9 && Math.abs(pitch(after.view) - pitch(before.view) - 10) < 0.5 && lensMoved < 0.002,
+    `view ${pitch(before.view).toFixed(2)}° to ${pitch(after.view).toFixed(2)}°, eyepiece moved ${(lensMoved * 1000).toFixed(1)} mm`);
+
+  // Lay again and lean in: the far target in the picture.
+  evalInApp('(window.__sight.lay(2), true)');
+  await sleep(300);
+  const lens = sight('lens()');
+  const rendersBefore = sight('state()').renders;
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(lens.at.map((v, i) => v + lens.facing[i] * 0.06)) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toRig(lens.at.map((v, i) => v - lens.facing[i] * 20)) });
+  const open = await waitFor('the sight to open', () => {
+    const s = sight('state()');
+    return s.open && s.renders > rendersBefore + 5 ? s : null;
+  }, 10000).catch(() => sight('state()'));
+  await sleep(500);
+  const spread = sight('pictureSpread()');
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-gunsight-500m.png'], {});
+  check('Leaning in to the laid sight renders the range',
+    open.open && spread > 20, `open ${open.open}, ${open.renders - rendersBefore} frames, picture spread ${spread}, ${open.calls} calls, ${Math.round(open.triangles / 1000)}k triangles`);
+
+  evalInApp("(window.__sight.lay('ahead'), true)");
+  const ahead = await waitFor('the turret ahead', () => { const t = evalInApp('window.__turret.state()'); return Math.abs(t.yaw) < 1e-6 && t; }, 4000).catch(() => evalInApp('window.__turret.state()'));
+  check('Lay on → Ahead turns the turret and gun straight ahead', Math.abs(ahead.yaw) < 1e-6 && ahead.elevation === 0, `turret ${ahead.yawDeg.toFixed(2)}°, gun ${ahead.elevationDeg.toFixed(2)}°`);
+  evalInApp('(window.__drive.reset(), true)');
+  evalInApp("(window.__seats.ask('driver'), true)");
+  iwsdk(['xr', 'set-device-state'], {});
+  await waitFor("the driver's seat again", () => seated().mine === 'driver', 5000).catch(() => null);
 }
 
 /**
@@ -1582,6 +1663,9 @@ async function main() {
 
   // 6h. The test range (F1.7).
   await theTestRange();
+
+  // 6i. The gunsight (F1.9).
+  await layingWithTheSight();
 
   // 7. Perf log.
   const rows = evalInApp('window.__perf.recorder.rows.length');
