@@ -15,7 +15,7 @@ import { goUpTheRange, rangeStatus } from './range-system.js';
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
 import { seating } from './seating.js';
-import { SIGHT_BUTTONS } from './sight-system.js';
+import { SIGHT_BUTTONS, sightStatus } from './sight-system.js';
 import { firingStatus } from './firing-system.js';
 import { loadingStatus, startLoading } from './loading-system.js';
 import { audioStatus, playEachSound } from './tank-audio-system.js';
@@ -322,11 +322,12 @@ export class GameMenuSystem extends createSystem({}) {
       stopRide();
       this.render();
     });
-    // Spike S1's gunsight: "Go to it" closes the menu; the others cycle a choice and show it.
+    // The gunsight (F1.9): going to it and laying the gun close the menu (to look); the render choices cycle and show it.
     for (const button of SIGHT_BUTTONS) {
       ui.on(button.id, () => {
-        if (button.id === 'menu-sight-go') {
+        if (button.closes) {
           this.setOpen(false);
+          stopRide();
         }
         button.press();
         this.render();
@@ -486,6 +487,7 @@ export class GameMenuSystem extends createSystem({}) {
     for (const button of SIGHT_BUTTONS) {
       ui.setText(button.id, button.label());
     }
+    ui.setText('menu-sight-status', sightStatus() || 'Lean in to the eyepiece to look');
     ui.setText('height-value', raiseShown(body.choice.raise));
     this.select('height-own', body.choice.raise === 0);
     ui.setText('menu-swap', SWAP_LABELS[seating.swap]);
