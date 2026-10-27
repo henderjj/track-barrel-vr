@@ -44,7 +44,7 @@ The gunner's page owns the turret (plan decision 2, the concept's "turret input 
 
 ## The practice crewmate
 
-Not yet: the crewmate learns to aim and fire in F1.13, through these same mechanisms. Until then, the crewmate in the gunner's seat leaves the turret where it is, and the player alone as gunner lays the gun while the tank stays parked.
+Since F1.13 the practice crewmate lays the gun through these same mechanisms: its right hand twists the power grip and its left winds the elevation wheel ([crewmate.md](crewmate.md)).
 
 ## Departures from the building skill
 
