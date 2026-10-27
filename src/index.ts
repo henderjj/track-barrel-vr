@@ -24,6 +24,7 @@ import { RangeSystem } from './systems/range-system.js';
 import { RideSystem } from './systems/ride-system.js';
 import { SeatSystem } from './systems/seat-system.js';
 import { SightSystem } from './systems/sight-system.js';
+import { TankAudioSystem } from './systems/tank-audio-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
 import { TurretSystem } from './systems/turret-system.js';
 
@@ -75,6 +76,8 @@ World.create(
   world.registerSystem(MechanismBenchSystem);
   // After the systems it drives; their scripted hands are functions of time, so a frame late costs nothing.
   world.registerSystem(CrewBotSystem);
+  // The tank's sounds (F1.12): after everything they listen to has moved this frame (the drive, the turret, the loading).
+  world.registerSystem(TankAudioSystem);
   // After the controls have moved, so hands drawn on them (grip locking) sit on them this frame.
   world.registerSystem(OwnHandsSystem);
   // Spike S1's gunsight renders its view once everything in it has moved this frame.

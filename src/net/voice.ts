@@ -5,10 +5,10 @@
  * suppression and automatic gain (Opus is WebRTC's default voice codec). The
  * crewmate's voice is played in one of three ways, chosen with `?voice=`:
  *
- * - `spatial` (default): Web Audio with an HRTF panner at the crewmate's
- *   head, so the voice comes from where they stand.
- * - `plain`: an ordinary audio element, not positioned. This is the fail plan
- *   from the development plan, kept for comparison.
+ * - `plain` (default since F1.12): an ordinary audio element, not
+ *   positioned, like a tank's intercom in the crew's headphones.
+ * - `spatial`: Web Audio with an HRTF panner at the crewmate's head, so the
+ *   voice comes from where they stand.
  * - `off`: no microphone and no playback.
  *
  * Chromium's echo canceller only "hears" audio played through WebRTC's own
@@ -48,6 +48,10 @@ export class Voice {
   private panner: PannerNode | null = null;
   private analyser: AnalyserNode | null = null;
   private levelData: Float32Array<ArrayBuffer> | null = null;
+  /** This player's microphone level, for the tank sounds' duck (F1.12). */
+  private micAnalyser: AnalyserNode | null = null;
+  private micSource: MediaStreamAudioSourceNode | null = null;
+  private micData: Float32Array<ArrayBuffer> | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   /** Keeps Chromium pulling the remote stream; muted in spatial mode (Web Audio plays it). */
   private sink: HTMLAudioElement | null = null;
@@ -111,6 +115,7 @@ export class Voice {
       this.micError = '';
       if (this.micTrack) {
         this.micTrack.enabled = !this.muted;
+        this.attachMicAnalyser(this.micTrack);
         const s = this.micTrack.getSettings();
         console.info(
           `[Voice] mic on: echoCancellation=${s.echoCancellation} noiseSuppression=${s.noiseSuppression} autoGainControl=${s.autoGainControl}`,
@@ -240,17 +245,12 @@ export class Voice {
 
   /** RMS level of the crewmate's voice, 0 to 1 (speaking indicator and tests). */
   remoteLevel(): number {
-    const a = this.analyser;
-    const data = this.levelData;
-    if (!a || !data) {
-      return 0;
-    }
-    a.getFloatTimeDomainData(data);
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-      sum += data[i] * data[i];
-    }
-    return Math.sqrt(sum / data.length);
+    return rms(this.analyser, this.levelData);
+  }
+
+  /** RMS level of this player's microphone as sent, 0 to 1 (0 while muted): the tank sounds duck while it is up (F1.12). */
+  micLevel(): number {
+    return rms(this.micAnalyser, this.micData);
   }
 
   /** True once the loopback route is playing the spatial mix. */
@@ -264,6 +264,9 @@ export class Voice {
 
   dispose(): void {
     this.stopRemote();
+    this.micSource?.disconnect();
+    this.micSource = null;
+    this.micAnalyser = null;
     this.micTrack?.stop();
     this.micTrack = null;
     void this.ctx?.close();
@@ -283,6 +286,16 @@ export class Voice {
     this.analyser.fftSize = 512;
     this.levelData = new Float32Array(this.analyser.fftSize);
     (reuseSource && this.source ? this.source : ctx.createMediaStreamSource(stream)).connect(this.analyser);
+  }
+
+  /** Listen to this player's own microphone (not played anywhere), to know when they speak. */
+  private attachMicAnalyser(track: MediaStreamTrack): void {
+    const ctx = this.context();
+    this.micSource = ctx.createMediaStreamSource(new MediaStream([track]));
+    this.micAnalyser = ctx.createAnalyser();
+    this.micAnalyser.fftSize = 512;
+    this.micData = new Float32Array(this.micAnalyser.fftSize);
+    this.micSource.connect(this.micAnalyser);
   }
 
   /** Route `node` through a local peer connection pair into an audio element (see the header comment). */
@@ -314,6 +327,19 @@ export class Voice {
     await b.setLocalDescription({ type: 'answer', sdp: stereoOpus(answer.sdp ?? '') });
     await a.setRemoteDescription(b.localDescription!);
   }
+}
+
+/** RMS level of what `analyser` hears now, 0 to 1. */
+function rms(analyser: AnalyserNode | null, data: Float32Array<ArrayBuffer> | null): number {
+  if (!analyser || !data) {
+    return 0;
+  }
+  analyser.getFloatTimeDomainData(data);
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) {
+    sum += data[i] * data[i];
+  }
+  return Math.sqrt(sum / data.length);
 }
 
 /** Add stereo and a high bitrate to the Opus format line of an SDP. */

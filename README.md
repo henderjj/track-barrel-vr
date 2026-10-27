@@ -72,7 +72,7 @@ Settings that apply at once are in the game menu. Ones read as the game loads (t
 | `room` | | Crew code to join on load, e.g. `room=KXQT` |
 | `lobby` | | Lobby URL (`wss://...`); defaults to the build's `VITE_LOBBY_URL`, else the page's own server |
 | `name` | | Your name as the crewmate sees it |
-| `voice` | spatial | Crewmate voice: `spatial` (from their head), `plain` (not positioned) or `off` |
+| `voice` | plain | Crewmate voice: `plain` (the intercom, not positioned), `spatial` (from their head) or `off` |
 | `voiceloop` | 0 | `1` routes spatial voice through a local loopback so echo cancellation can hear it |
 | `fist` | 0.6 | Tracked hands grip when the fingers' curl falls below this (1 straight, about 0.4 a fist) |
 | `pinch` | 2 | Tracked hands also grip when thumb and index tips are closer than this, cm; `0` turns it off |
@@ -81,6 +81,7 @@ Settings that apply at once are in the game menu. Ones read as the game loads (t
 | `netloss` | 0 | Testing: fraction of received packets dropped, 0 to 1 |
 | `label` | | A tag for the session written into the perf CSV |
 | `bot` | 0 | `1` makes this page the practice crewmate |
+| `sound` | 1 | The tank's sounds: `1` on, `0.5` quiet, `0` off (also the game menu's Tank sounds) |
 
 ## Testing alone: the practice crewmate
 

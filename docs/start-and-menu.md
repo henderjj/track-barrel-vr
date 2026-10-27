@@ -37,6 +37,7 @@ How it should look and work (each rule fixed something a headset playtest found 
 | You | Eye height | − and + in 5 cm steps from the seat's eye point, Eye point |
 | You | Seat | Back in my seat (eyes back at the seat's eye point, facing forward); Swap seats (in a crew it asks your crewmate, or agrees to their ask: [seat-choice.md](seat-choice.md)) |
 | You | Calibration | Calibrate again; the line below says the eye height and reach it took |
+| Sound and view | Tank sounds | On, Quiet, Off ([audio.md](audio.md)) |
 | Sound and view | Perf HUD (X) | On, Off |
 | Sound and view | Frame rate (Hz) | 72, 80, 90, 120 |
 | Sound and view | Foveation | Off, Half, Full |

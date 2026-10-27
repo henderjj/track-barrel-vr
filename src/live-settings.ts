@@ -23,6 +23,16 @@ const onOff = (s: boolean) => (s ? '1' : '0');
  * public/ui/menu.uikitml (`row-<key>`, with up to four choices).
  */
 export const LIVE_ITEMS: readonly LiveItem[] = [
+  {
+    key: 'sound',
+    label: 'Tank sounds',
+    options: [
+      ['1', 'On'],
+      ['0.5', 'Quiet'],
+      ['0', 'Off'],
+    ],
+    current: (s) => String(s.sound),
+  },
   { key: 'hud', label: 'Perf HUD (X)', options: [['1', 'On'], ['0', 'Off']], current: (s) => onOff(s.hud) },
   {
     key: 'hz',

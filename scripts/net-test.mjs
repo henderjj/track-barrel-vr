@@ -31,6 +31,8 @@
  *   pages' clocks, the host driver's Ready to fire lays and loads the guest
  *   gunner's gun, and the guest's hit counts on both, on a clean link and
  *   at 150 ms RTT;
+ * - the tank's sounds (F1.12): the intercom plays plain, the tank's sounds
+ *   duck while someone speaks, and both pages hear the loading and the shot;
  * - the crew lifecycle (spike S10): stepping away, going quiet and a broken
  *   connection;
  * - the practice crewmate sits in the seat the player leaves free; as
@@ -223,6 +225,24 @@ function peakVoiceLevel(page, ms) {
           peak = Math.max(peak, window.__net.voice.remoteLevel());
           if (performance.now() < end) setTimeout(tick, 10);
           else resolve(peak);
+        };
+        tick();
+      }),
+    ms,
+  );
+}
+
+/** The furthest the tank's sounds duck for the intercom over `ms`, dB (F1.12). */
+function deepestDuck(page, ms) {
+  return page.evaluate(
+    (duration) =>
+      new Promise((resolve) => {
+        let deepest = 0;
+        const end = performance.now() + duration;
+        const tick = () => {
+          deepest = Math.min(deepest, window.__audio.state().duckDb);
+          if (performance.now() < end) setTimeout(tick, 20);
+          else resolve(deepest);
         };
         tick();
       }),
@@ -486,6 +506,7 @@ async function firingChecks(host, guest, label) {
   const drill = (p) => p.page.evaluate(() => window.__loading.state());
   await host.page.evaluate(() => window.__drive.reset());
   await guest.page.evaluate(() => window.__loading.reset());
+  const heard0 = await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__audio.state().heard)));
   await waitFor('the guest to own the loading with every shell in the rack', async () => {
     const g = await drill(guest);
     return g.owner && !(await drill(host)).owner && g.shells.every((s) => s.place === 'rack') && g.lever === 0;
@@ -546,6 +567,15 @@ async function firingChecks(host, guest, label) {
       && shot.h.hits === before[0].hits + 1 && shot.g.hits === shot.h.hits && !shot.g.loaded && shot.g.casings > before[1].casings,
     shot ? `host "${shot.hr.line}", gunner "${shot.gr.line}", hits ${shot.h.hits}/${shot.g.hits}, casings ${shot.h.casings}/${shot.g.casings}`
       : JSON.stringify(await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__firing.records())))));
+  // F1.12: both pages hear the loading and the shot, each from the loading and the shot as it draws them.
+  const heardBy = (h, h0) => ['ram', 'breech', 'shot', 'casing'].filter((id) => h[id] > h0[id]);
+  const heard = await waitFor('both pages to hear the loading and the shot', async () => {
+    const h = await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__audio.state().heard)));
+    return heardBy(h[0], heard0[0]).length === 4 && heardBy(h[1], heard0[1]).length === 4 ? h : null;
+  }, 5000).catch(() => Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__audio.state().heard))));
+  check(`Both crew hear the shell rammed, the breech closing, the shot and the casing (${label})`,
+    heardBy(heard[0], heard0[0]).length === 4 && heardBy(heard[1], heard0[1]).length === 4,
+    `driver heard ${heardBy(heard[0], heard0[0]).join(', ') || 'nothing'}; gunner heard ${heardBy(heard[1], heard0[1]).join(', ') || 'nothing'}`);
   await guest.page.evaluate(() => window.__turret.forward());
 }
 
@@ -1069,6 +1099,11 @@ async function main() {
     // Voice: the fake microphone beeps about once a second.
     const voicePeak = await peakVoiceLevel(b.page, 2500);
     check('Crewmate voice arrives', voicePeak > 0.01, `peak level ${voicePeak.toFixed(3)}`);
+    // F1.12: the voice plays plain, like an intercom, and the tank's sounds duck about 6 dB while either player speaks.
+    const ducks = await Promise.all([a, b].map((p) => deepestDuck(p.page, 2500)));
+    const modes = await Promise.all([a, b].map((p) => p.page.evaluate(() => window.__net.voice.mode)));
+    check('The intercom plays plain by default, and the tank sounds duck while someone speaks', modes.every((m) => m === 'plain') && ducks.every((d) => d < -4),
+      `voice ${modes.join('/')}, deepest duck ${ducks.map((d) => `${d.toFixed(1)} dB`).join(' and ')}`);
     // The game menu's mute buttons: Ann mutes her microphone, then Bo turns Ann's voice off.
     await a.page.evaluate(() => window.__gameMenu.click('row-mic-1'));
     await new Promise((r) => setTimeout(r, 500));
@@ -1129,7 +1164,8 @@ async function main() {
 
     // The plan's worst playable case: about 150 ms RTT (60 ms each way plus
     // 0 to 20 ms jitter on each side, which also reorders packets) and 1% loss.
-    const lag = 'netlag=60&netjitter=20&netloss=0.01&voiceloop=1';
+    // The loopback route only serves the spatial voice (plain is the default since F1.12).
+    const lag = 'netlag=60&netjitter=20&netloss=0.01&voice=spatial&voiceloop=1';
     const d = await openPlayer(browser, `room=LAGS&name=Di&${lag}`);
     const e = await openPlayer(browser, `room=LAGS&name=Ed&${lag}`);
     await waitFor('lagged pair connected', async () => (await state(d.page)) === 'connected' && (await state(e.page)) === 'connected');
