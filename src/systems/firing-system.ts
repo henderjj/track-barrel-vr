@@ -80,6 +80,11 @@ export function lastShotLine(): string {
   return active?.records[active.records.length - 1]?.line ?? '';
 }
 
+/** The last shot's result as this page has it (on a guest, once the host's word came), or null before any. */
+export function lastShot(): Readonly<ShotRecord> | null {
+  return active?.records[active.records.length - 1] ?? null;
+}
+
 /** One line for the menu: shots, hits and the last result. */
 export function firingStatus(): string {
   const a = active;

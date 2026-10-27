@@ -1,6 +1,6 @@
 # Spike S1: magnified sight render
 
-Status: merged in #3 (2026-10-26), waiting on the headset check below. Roadmap F0.3.
+Status: merged in #3 (2026-10-26), waiting on the headset check below. Roadmap F0.3. The gunsight (F1.9, [gunsight.md](../gunsight.md)) now carries this renderer on the gun; the stand-in sight and its Aim button are gone, and Practice → Gunsight → Go to it and Lay on replace steps 2 and 3's buttons.
 
 The question from the [plan](../plan.md#5-risks-and-spikes): does a 512² second-camera view fit Quest 3's budget alongside the rest of the scene, and is it readable? Pass mark: holds 90 Hz with the sight open, and the range marks are readable at 3×.
 

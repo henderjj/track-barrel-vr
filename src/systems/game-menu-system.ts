@@ -16,12 +16,17 @@ import { readyToFire, runStatus, shownRun, startRun, stopRun } from './range-run
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
 import { seating } from './seating.js';
-import { SIGHT_BUTTONS } from './sight-system.js';
+import { SIGHT_BUTTONS, sightStatus } from './sight-system.js';
 import { firingStatus } from './firing-system.js';
 import { loadingStatus, startLoading } from './loading-system.js';
 import { hideLeverTest, showLeverTest } from './lever-system.js';
 import { hideMechanismBench, showMechanismBench } from './mechanism-bench-system.js';
 import { startScreen } from './start-screen-system.js';
+import { crewCallStatus, sendCrewCall } from './crew-bot-system.js';
+import type { CrewCall } from '../sim/crew-bot.js';
+
+/** The Calls section's buttons: `call-<call>`. */
+const CALL_BUTTONS: readonly CrewCall[] = ['advance', 'halt', 'reverse', 'left', 'right', 'route', 'fire', 'hold'];
 
 /** Where the menu stands in VR when opened: ahead of the head and a little below the eyes, m. */
 const DISTANCE = 1.3;
@@ -340,13 +345,20 @@ export class GameMenuSystem extends createSystem({}) {
       stopRide();
       this.render();
     });
-    // Spike S1's gunsight: "Go to it" closes the menu; the others cycle a choice and show it.
+    // The gunsight (F1.9): going to it and laying the gun close the menu (to look); the render choices cycle and show it.
     for (const button of SIGHT_BUTTONS) {
       ui.on(button.id, () => {
-        if (button.id === 'menu-sight-go') {
+        if (button.closes) {
           this.setOpen(false);
+          stopRide();
         }
         button.press();
+        this.render();
+      });
+    }
+    for (const call of CALL_BUTTONS) {
+      ui.on(`call-${call}`, () => {
+        sendCrewCall(call);
         this.render();
       });
     }
@@ -437,6 +449,7 @@ export class GameMenuSystem extends createSystem({}) {
       this.ui?.setText('menu-turret-status', turretStatus());
       this.ui?.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
       this.ui?.setText('menu-run-status', runStatus());
+      this.ui?.setText('menu-calls-status', crewCallStatus());
     }
     const left = this.input.xr.gamepads.left;
     if (left && (left.getButtonDown(InputComponent.Y_Button) || left.getButtonDown(InputComponent.Menu))) {
@@ -473,6 +486,13 @@ export class GameMenuSystem extends createSystem({}) {
     const crewLine = menuCrewLine(c.state, c.room, c.crewmate, settings.bot);
     ui.show('menu-crew', crewLine !== '');
     ui.setText('menu-crew-status', crewLine);
+    // Calls go to the crewmate in the other seat: the gunner calls the driver, the driver the gunner.
+    const calls = c.state === 'connected' && !settings.bot;
+    ui.show('menu-calls', calls);
+    ui.show('row-calls-drive', seating.mine === 'gunner');
+    ui.show('row-calls-turn', seating.mine === 'gunner');
+    ui.show('row-calls-gun', seating.mine === 'driver');
+    ui.setText('menu-calls-status', crewCallStatus());
     // Mute is offered only while the microphone is open.
     const micNote = c.micError ? 'Unavailable' : !c.micOn ? 'Off (allow it on the page)' : '';
     ui.show('row-mic-note', micNote !== '');
@@ -500,6 +520,7 @@ export class GameMenuSystem extends createSystem({}) {
     for (const button of SIGHT_BUTTONS) {
       ui.setText(button.id, button.label());
     }
+    ui.setText('menu-sight-status', sightStatus() || 'Lean in to the eyepiece to look');
     ui.setText('height-value', raiseShown(body.choice.raise));
     this.select('height-own', body.choice.raise === 0);
     ui.setText('menu-swap', SWAP_LABELS[seating.swap]);

@@ -41,11 +41,11 @@ The host keeps the run, as it decides hits (plan §4.6):
 
 ## The practice crewmate
 
-Not yet: F1.13 (in progress) teaches the crewmate to drive, lay and fire; once it can, it runs the range with the player through these same rules. Until then, one person can check the run alone with Ready to fire.
+The crewmate (F1.13) plays its seat in a run through the same rules as a player: gunning, its shots go through FiringSystem on the host, so its hits count; driving, it follows the gunner's calls. A run's Start puts the tank back at the start and the loading back to the rack under it as under a player. It doesn't start runs or use Ready to fire itself.
 
 ## Departures from the building skill
 
-- No practice crewmate part (F1.13 does it, per the roadmap), as for F1.8 and F1.10.
+- Nothing new taught to the practice crewmate: its gunning and driving (F1.13) already count in a run.
 - The run clocks' faces are canvases added by the system, as the loading board's is (F1.10); their backings are in the cabin's model and its z-fighting test.
 - The best time is kept for the session on the host only (not saved); per-run records and a CSV come with F1.14.
 

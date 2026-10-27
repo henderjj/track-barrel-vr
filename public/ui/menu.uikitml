@@ -9,8 +9,12 @@
   Practice holds shortcuts straight to a situation worth testing, one per
   feature, so a headset check never has to play its way there (the cabin's:
   sit in either seat; the drive's: drive, or put the tank back at its start; the turret's: lay
-  the gun, or turn the turret forward; loading: load and fire as gunner; the range's: park up the range facing a target; the range run's: start or stop a
-  run, and ready to fire on each target, parked at the start, laid and loaded). You →
+  the gun, or turn the turret forward; loading: load and fire as gunner; the range's: park up the range facing a target; the
+  gunsight's: go to it, or lay the gun on a target's range mark; the range run's: start or stop
+  a run, and ready to fire on each target, parked at the start, laid and loaded).
+  Calls (in a crew) sends the crewmate a call for the other seat, which shows on their sign and
+  which the practice crewmate obeys (F1.13): to the driver from the gunner's seat, to the gunner
+  from the driver's. You →
   Seat swaps seats (in a crew, once the
   crewmate agrees) and Calibration measures the eyes and reach again.
 -->
@@ -199,6 +203,33 @@
       <div id="row-crew-choices" class="choices">
         <Button id="row-crew-0" class="choice" size="sm" variant="secondary">On</Button>
         <Button id="row-crew-1" class="choice" size="sm" variant="secondary">Muted</Button>
+      </div>
+    </div>
+  </div>
+  <div id="menu-calls" class="section" style="display: none">
+    <div class="section-title">CALLS</div>
+    <div id="menu-calls-status" class="hint">Calls</div>
+    <div id="row-calls-drive" class="setting">
+      <div class="label">Driver</div>
+      <div class="choices">
+        <Button id="call-advance" class="choice" size="sm" variant="secondary">Advance</Button>
+        <Button id="call-halt" class="choice" size="sm" variant="secondary">Halt</Button>
+        <Button id="call-reverse" class="choice" size="sm" variant="secondary">Reverse</Button>
+      </div>
+    </div>
+    <div id="row-calls-turn" class="setting">
+      <div class="label">Driver</div>
+      <div class="choices">
+        <Button id="call-left" class="choice" size="sm" variant="secondary">Left</Button>
+        <Button id="call-right" class="choice" size="sm" variant="secondary">Right</Button>
+        <Button id="call-route" class="choice" size="sm" variant="secondary">Route</Button>
+      </div>
+    </div>
+    <div id="row-calls-gun" class="setting">
+      <div class="label">Gunner</div>
+      <div class="choices">
+        <Button id="call-fire" class="choice" size="sm" variant="secondary">Fire at will</Button>
+        <Button id="call-hold" class="choice" size="sm" variant="secondary">Hold fire</Button>
       </div>
     </div>
   </div>
@@ -408,12 +439,21 @@
       </div>
     </div>
     <div class="setting">
-      <div class="label">Gunsight (S1)</div>
+      <div class="label">Gunsight</div>
       <div class="choices">
         <Button id="menu-sight-go" class="choice" size="sm" variant="secondary">Go to it</Button>
-        <Button id="menu-sight-aim" class="choice" size="sm" variant="secondary">Aim ahead</Button>
       </div>
     </div>
+    <div class="setting">
+      <div class="label">Lay on</div>
+      <div class="choices">
+        <Button id="menu-sight-lay-ahead" class="choice" size="sm" variant="secondary">Ahead</Button>
+        <Button id="menu-sight-lay-0" class="choice" size="sm" variant="secondary">100 m</Button>
+        <Button id="menu-sight-lay-1" class="choice" size="sm" variant="secondary">250 m</Button>
+        <Button id="menu-sight-lay-2" class="choice" size="sm" variant="secondary">500 m</Button>
+      </div>
+    </div>
+    <div id="menu-sight-status" class="hint">Lean in to the eyepiece to look</div>
     <div class="setting">
       <div class="label">Sight render</div>
       <div class="choices">

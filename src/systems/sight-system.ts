@@ -4,6 +4,7 @@ import {
   LinearFilter,
   Matrix4,
   Mesh,
+  type Object3D,
   PerspectiveCamera,
   Quaternion,
   ShaderMaterial,
@@ -12,39 +13,47 @@ import {
   WebGLRenderTarget,
 } from '@iwsdk/core';
 import { GpuTimer } from '../perf/gpu-timer.js';
+import { createSightEyepiece, createSightHead, createSightLensGeometry } from '../scene-assets/sight.scene-asset.js';
+import { turnAboutHead } from '../sim/cabin.js';
 import {
-  createSightBody,
-  createSightLensGeometry,
-  createSightStand,
-} from '../scene-assets/sight.scene-asset.js';
-import { TURRET, turnAboutHead } from '../sim/cabin.js';
-import { RANGE_TARGETS, targetFoot, targetMiddle } from '../sim/range.js';
+  type AimPoint,
+  createLay,
+  createSightError,
+  EYEPIECE,
+  layOn,
+  onRangeAhead,
+  OBJECTIVE,
+  type SightError,
+  sightError,
+} from '../sim/gunsight.js';
+import { RANGE_TARGETS, targetFace } from '../sim/range.js';
 import {
   DRAW_MODES,
   type DrawMode,
   eyeMask,
   HALF_IPD,
-  layOnMark,
   MAGNIFICATION,
   rangeMarks,
   SIGHT_EYES,
   SIGHT_SIZES,
-  SIGHT_STAND,
   type SightEye,
   type SightSize,
   sightOpen,
+  superelevation,
   TRUE_HALF_FIELD,
 } from '../sim/sight.js';
-
+import { groundHeight, wrapTile } from '../sim/terrain.js';
+import { tankState } from './drive-system.js';
+import { netLink } from './net-system.js';
 import { seating } from './seating.js';
+import { aimTurret, gunEntity, ownsTurret, turretForward, turretState } from './turret-system.js';
+
 /** The reticle's texture, texels square: finer than the view so its marks stay crisp at 256² and 512². */
 const RETICLE_SIZE = 1024;
-/** The sight camera's near and far planes, m: nothing closer than the muzzle, and the range's far edge. */
+/** The sight camera's near and far planes, m: past the muzzle brake's reach beside it, and beyond the fog. */
 const NEAR = 0.5;
 const FAR = 1500;
-/** Where the sight camera sits in sight space: at the objective. */
-const OBJECTIVE_Z = -0.36;
-/** How far behind the lens "Go to the sight" puts the head, m: lean in 6 cm and it opens. */
+/** How far behind the lens "Go to it" puts the head, m: lean in 6 cm and it opens. */
 const APPROACH = 0.15;
 /** Log the sight's cost this often while it renders, ms. */
 const LOG_EVERY = 10000;
@@ -79,28 +88,31 @@ export function sightSummary(now: number): string {
   return `sight ${s.size}² ${s.eye} cpu ${s.cpuMs.toFixed(2)} gpu ${gpu} ms ${s.calls} calls ${(s.triangles / 1000).toFixed(0)}k`;
 }
 
-/** Aim choices: straight ahead, or each target laid on its range mark. */
-const AIMS = ['ahead', ...RANGE_TARGETS.map((t) => `${t.range}`)] as const;
+/** What Practice can lay the gun on: straight ahead, or one of the range's targets (by its index in RANGE_TARGETS). */
+export type SightAim = 'ahead' | number;
 
-/** A Practice button in the game menu (public/ui/menu.uikitml): its id, its label now, and what pressing it does. */
+/** A Practice button in the game menu (public/ui/menu.uikitml): its id, its label now, what pressing it does, and whether it closes the menu. */
 export interface PracticeButton {
   id: string;
   label: () => string;
   press: () => void;
+  closes?: boolean;
 }
 
 let active: SightSystem | null = null;
 
 const next = <T>(list: readonly T[], value: T): T => list[(list.indexOf(value) + 1) % list.length];
 
-/** The game menu's Practice buttons for the sight (spike S1). */
+/** One line for the menu: what the gun was last laid on from here, and which mark to read. */
+export function sightStatus(): string {
+  return active?.status ?? '';
+}
+
+/** The game menu's Practice buttons for the gunsight. */
 export const SIGHT_BUTTONS: readonly PracticeButton[] = [
-  { id: 'menu-sight-go', label: () => 'Go to it', press: () => active?.goTo() },
-  {
-    id: 'menu-sight-aim',
-    label: () => (active?.aim === 'ahead' || !active ? 'Aim ahead' : `Aim ${active.aim} m`),
-    press: () => active?.setAim(next(AIMS, active.aim)),
-  },
+  { id: 'menu-sight-go', label: () => 'Go to it', press: () => active?.goTo(), closes: true },
+  { id: 'menu-sight-lay-ahead', label: () => 'Ahead', press: () => active?.lay('ahead'), closes: true },
+  ...RANGE_TARGETS.map((t, i): PracticeButton => ({ id: `menu-sight-lay-${i}`, label: () => `${t.range} m`, press: () => active?.lay(i), closes: true })),
   {
     id: 'menu-sight-draw',
     label: () => ({ auto: 'Draw: near', always: 'Draw: always', off: 'Draw: off' })[sightStats.mode],
@@ -115,39 +127,51 @@ export const SIGHT_BUTTONS: readonly PracticeButton[] = [
 ];
 
 interface SightDebug {
-  state(): typeof sightStats & { aim: string };
+  state(): typeof sightStats & { aim: SightAim; status: string };
   goTo(): void;
   setMode(mode: DrawMode): void;
   setSize(size: SightSize): void;
   setEye(eye: SightEye): void;
-  setAim(aim: string): void;
+  /** Lay the gun ahead, or on target `i` (its index in RANGE_TARGETS) from wherever the tank stands. */
+  lay(aim: SightAim): void;
+  /** Where target `i` sits from the mark for its range by the sums (the tank and turret as drawn), mils right and up, and its range. */
+  error(i: number): SightError;
+  /** The same, measured from the sight camera as it is drawn and the target as the ground draws it. */
+  drawnError(i: number): SightError;
   /** The lens's middle and the way it faces (towards the eye), world space. */
   lens(): { at: number[]; facing: number[] };
+  /** The sight camera's position and the way it looks, world space. */
+  view(): { at: number[]; looking: number[] };
   /** Spread of the rendered picture's brightness in a few texels (0 for a blank picture). */
   pictureSpread(): number;
 }
 
 /**
- * Spike S1: a magnified gunsight rendered by a second camera into a texture
- * (docs/spikes/s1-sight-render.md). The sight hangs at the gunner's
- * eyepiece (src/sim/cabin.ts) looking out at the test range's target boards
- * 100, 250 and 500 m away (F1.7, src/sim/range.ts). Put an
- * eye within about 9 cm of its eyepiece and the camera at its objective
- * renders the scene into a 512² texture that the lens shows at 3×, with a
- * reticle and range marks; further away the lens is dark glass and nothing
- * extra is drawn.
+ * The gunsight (F1.9, docs/gunsight.md), built on spike S1's renderer
+ * (docs/spikes/s1-sight-render.md). An articulated sight: the eyepiece is
+ * fixed in the turret where the seated gunner leans in to it, and the
+ * objective rides on the gun beside the bore, so the sight looks wherever
+ * the gun points while the eye stays put. Put an eye within about 9 cm of
+ * the eyepiece and a camera at the objective renders the scene into a 512²
+ * texture that the lens shows at 3×, with a reticle and range marks;
+ * further away the lens is dark glass and nothing extra is drawn.
  *
  * The lens's shader turns each eye's ray into a true angle (src/sim/sight.ts)
  * so the picture sits at infinity for both eyes; it can be shown to one eye
- * only, the other seeing dark glass, as the plan first proposed. Practice
- * buttons in the game menu go to the sight, aim it, and change when it
- * draws, the texture size and the eyes, to compare frame times on a headset;
- * the perf HUD shows the sight's own cost.
+ * only. Practice buttons go to the sight, lay the gun on each of the
+ * range's targets from wherever the tank stands (on the page that owns the
+ * turret; the other page asks it), and change when the sight draws, its
+ * texture size and its eyes; the perf HUD shows its own cost. Nothing about
+ * the sight goes over the network: each page draws its own view, and the
+ * gun it follows is the turret's.
  */
 export class SightSystem extends createSystem({}) {
-  aim = 'ahead';
-  private pivot!: Mesh;
+  aim: SightAim = 'ahead';
+  status = '';
+  private eyepiece: Mesh | null = null;
   private lens!: Mesh;
+  private gun: Object3D | null = null;
+  private ground: Object3D | null = null;
   private material!: ShaderMaterial;
   private camera3 = new PerspectiveCamera((2 * TRUE_HALF_FIELD * 180) / Math.PI, 1, NEAR, FAR);
   private target!: WebGLRenderTarget;
@@ -163,8 +187,8 @@ export class SightSystem extends createSystem({}) {
   private local = new Vector3();
   private worldToLens = new Matrix4();
   private forward = new Vector3();
-  private aimOut: [number, number] = [0, 0];
   private turned: [number, number] = [0, 0];
+  private laid = createLay();
   private pixels = new Uint8Array(4 * 9);
   /** "Go to it" is waiting for the seat system to sit the player in the gunner's seat (the placement count it waits to pass), or -1. */
   private approachAfter = -1;
@@ -174,17 +198,6 @@ export class SightSystem extends createSystem({}) {
     this.cleanupFuncs.push(() => {
       if (active === this) active = null;
     });
-
-    // It hangs from the turret's roof and turns with the turret (F1.8), until F1.9 puts the gunsight on the gun.
-    const stand = createSightStand();
-    const turret = this.world.getSceneEntity('turret');
-    if (turret) stand.position.set(SIGHT_STAND.x, 0, SIGHT_STAND.z - TURRET.z);
-    else stand.position.set(SIGHT_STAND.x, 0, SIGHT_STAND.z);
-    const standEntity = this.world.createTransformEntity(stand, turret ? { parent: turret } : undefined);
-    this.pivot = createSightBody();
-    this.pivot.position.set(0, SIGHT_STAND.lensHeight, 0);
-    this.pivot.rotation.order = 'YXZ';
-    const pivotEntity = this.world.createTransformEntity(this.pivot, { parent: standEntity });
 
     this.target = this.createTarget(sightStats.size);
     this.reticle = createReticle();
@@ -197,10 +210,29 @@ export class SightSystem extends createSystem({}) {
       const xr = renderer.xr;
       uniforms.uView.value = !xr.isPresenting ? -1 : camera === xr.getCamera().cameras[1] ? 1 : 0;
     };
-    this.world.createTransformEntity(this.lens, { parent: pivotEntity });
 
-    this.camera3.position.set(0, 0, OBJECTIVE_Z);
-    this.pivot.add(this.camera3);
+    // The eyepiece half is fixed in the turret; the objective half and the camera ride on the gun (TurretSystem makes it, before this).
+    const turret = this.world.getSceneEntity('turret');
+    const gun = gunEntity();
+    if (turret == null || gun == null) {
+      console.warn('[Sight] no turret or gun in the scene: the gunsight is missing');
+    } else {
+      this.eyepiece = createSightEyepiece();
+      this.eyepiece.position.set(EYEPIECE[0], EYEPIECE[1], EYEPIECE[2]);
+      const eyepieceEntity = this.world.createTransformEntity(this.eyepiece, { parent: turret });
+      this.world.createTransformEntity(this.lens, { parent: eyepieceEntity });
+      this.world.createTransformEntity(createSightHead(), { parent: gun });
+      this.gun = gun.object3D ?? null;
+      this.camera3.position.set(OBJECTIVE[0], OBJECTIVE[1], OBJECTIVE[2]);
+      this.gun?.add(this.camera3);
+    }
+    this.ground = this.world.getSceneEntity('ground')?.object3D ?? null;
+
+    netLink.events.set('sight-lay', (event) => {
+      const aim = (event as { aim?: unknown }).aim;
+      if (ownsTurret() && (aim === 'ahead' || (typeof aim === 'number' && RANGE_TARGETS[aim] != null))) this.lay(aim);
+    });
+    this.cleanupFuncs.push(() => netLink.events.delete('sight-lay'));
 
     const gl = this.renderer.getContext();
     if (typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext) {
@@ -216,16 +248,28 @@ export class SightSystem extends createSystem({}) {
     this.setEye(sightStats.eye);
 
     (window as unknown as { __sight: SightDebug }).__sight = {
-      state: () => ({ ...sightStats, aim: this.aim }),
+      state: () => ({ ...sightStats, aim: this.aim, status: this.status }),
       goTo: () => this.goTo(),
       setMode: (mode) => this.setMode(mode),
       setSize: (size) => this.setSize(size),
       setEye: (eye) => this.setEye(eye),
-      setAim: (aim) => this.setAim(aim),
+      lay: (aim) => this.lay(aim),
+      error: (i) => {
+        const t = turretState();
+        return sightError(tankState(), t.yaw, t.elevation, aimPoint(i), createSightError());
+      },
+      drawnError: (i) => this.drawnError(i),
       lens: () => {
         this.lens.getWorldPosition(this.lensAt);
         this.lens.getWorldQuaternion(this.lensQuat);
         return { at: this.lensAt.toArray(), facing: new Vector3(0, 0, 1).applyQuaternion(this.lensQuat).toArray() };
+      },
+      view: () => {
+        this.camera3.updateWorldMatrix(true, false);
+        return {
+          at: new Vector3().setFromMatrixPosition(this.camera3.matrixWorld).toArray(),
+          looking: this.camera3.getWorldDirection(new Vector3()).toArray(),
+        };
       },
       pictureSpread: () => this.pictureSpread(),
     };
@@ -240,8 +284,9 @@ export class SightSystem extends createSystem({}) {
     if (this.gpu && !Number.isNaN(this.gpu.ms)) {
       sightStats.gpuMs = Number.isNaN(sightStats.gpuMs) ? this.gpu.ms : sightStats.gpuMs * 0.9 + this.gpu.ms * 0.1;
     }
+    if (this.eyepiece == null) return;
 
-    this.pivot.updateWorldMatrix(true, true);
+    this.lens.updateWorldMatrix(true, false);
     this.lens.getWorldPosition(this.lensAt);
     this.worldToLens.copy(this.lens.matrixWorld).invert();
     this.material.uniforms.uWorldToLens.value.copy(this.worldToLens);
@@ -285,6 +330,9 @@ export class SightSystem extends createSystem({}) {
     // With XR on, render() would swap our camera for the headset's.
     renderer.xr.enabled = false;
     this.lens.visible = false;
+    // The barrel runs alongside the objective: leave the gun out of its own sight's picture.
+    const gun = this.gun;
+    if (gun) gun.visible = false;
     renderer.setRenderTarget(this.target);
     const start = performance.now();
     this.gpu?.begin();
@@ -294,6 +342,7 @@ export class SightSystem extends createSystem({}) {
     renderer.setRenderTarget(previous);
     renderer.xr.enabled = xrEnabled;
     this.lens.visible = true;
+    if (gun) gun.visible = true;
 
     // The first render compiles the scene's shaders for the texture, so start averaging from the second.
     sightStats.cpuMs = sightStats.renders < 2 ? cpu : sightStats.cpuMs * 0.9 + cpu * 0.1;
@@ -331,33 +380,63 @@ export class SightSystem extends createSystem({}) {
     player.head.getWorldQuaternion(this.headQuat);
     this.forward.set(0, 0, -1).applyQuaternion(this.headQuat);
     const headYaw = Math.atan2(-this.forward.x, -this.forward.z);
-    const turn = this.pivot.rotation.y + seating.turretYaw - headYaw;
+    // The eyepiece faces straight back down the turret.
+    const yaw = seating.turretYaw;
+    const turn = yaw - headYaw;
     turnAboutHead(player.position.x, player.position.z, this.head.x, this.head.z, turn, this.turned);
     player.rotateY(turn);
     player.position.x = this.turned[0];
     player.position.z = this.turned[1];
     this.lens.getWorldPosition(this.lensAt);
-    const yaw = this.pivot.rotation.y + seating.turretYaw;
     player.position.x += this.lensAt.x + Math.sin(yaw) * APPROACH - this.head.x;
     player.position.z += this.lensAt.z + Math.cos(yaw) * APPROACH - this.head.z;
     console.info('[Sight] player moved to the eyepiece');
   }
 
-  setAim(aim: string): void {
-    this.aim = AIMS.includes(aim as (typeof AIMS)[number]) ? aim : 'ahead';
-    const i = RANGE_TARGETS.findIndex((t) => `${t.range}` === this.aim);
-    if (i < 0) {
-      this.pivot.rotation.set(0, 0, 0);
-    } else {
-      // The targets stand in the world, so an aim is only laid on one with
-      // the tank parked at its start and the turret facing forward; the
-      // gunsight (F1.9) lays the gun on
-      // whatever the turret is pointed at, wherever the tank stands.
-      const [x, z] = targetFoot(i);
-      layOnMark([SIGHT_STAND.x, SIGHT_STAND.lensHeight, SIGHT_STAND.z], [x, targetMiddle(i), z], RANGE_TARGETS[i].range, this.aimOut);
-      this.pivot.rotation.set(this.aimOut[1], this.aimOut[0], 0);
+  /**
+   * Practice: lay the gun straight ahead, or on target `aim` so it sits on
+   * the reticle's mark for its range, from wherever the tank stands now.
+   * The page that owns the turret lays it; the other asks that one.
+   */
+  lay(aim: SightAim): void {
+    this.aim = aim === 'ahead' || RANGE_TARGETS[aim] == null ? 'ahead' : aim;
+    if (!ownsTurret()) {
+      netLink.sendEvent({ t: 'sight-lay', aim: this.aim } as { t: string });
+      this.status = 'Asked the gunner to lay';
+      return;
     }
-    console.info(`[Sight] aim ${this.aim}`);
+    if (this.aim === 'ahead') {
+      turretForward();
+      this.status = 'Laid straight ahead';
+    } else {
+      const lay = layOn(tankState(), aimPoint(this.aim), this.laid);
+      aimTurret(lay.yaw, lay.elevation);
+      const range = Math.round(lay.range / 10) * 10;
+      this.status = lay.limited
+        ? `The ${RANGE_TARGETS[this.aim].range} m target is out of the gun's reach`
+        : `Laid on the ${RANGE_TARGETS[this.aim].range} m target, ${range} m off: read the ${range} m mark`;
+    }
+    console.info(`[Sight] ${this.status}`);
+  }
+
+  /** Target `i` as the ground draws it and the sight camera sees it, against the mark for its range. */
+  private drawnError(i: number): SightError {
+    const out = createSightError();
+    const ground = this.ground;
+    if (ground == null) return out;
+    const s = tankState();
+    const p = onRangeAhead(s, aimPoint(i), { x: 0, above: 0, z: 0 });
+    // The ground's own space is world space less whole tiles round the tank (DriveSystem).
+    const x = wrapTile(s.x) + p.x - s.x;
+    const z = wrapTile(s.z) + p.z - s.z;
+    ground.updateWorldMatrix(true, false);
+    this.camera3.updateWorldMatrix(true, false);
+    const at = ground.localToWorld(new Vector3(x, groundHeight(p.x, p.z) + p.above, z));
+    const seen = this.camera3.worldToLocal(at);
+    out.range = seen.length();
+    out.across = Math.atan2(seen.x, -seen.z) * 1000;
+    out.up = (Math.atan2(seen.y, Math.hypot(seen.x, seen.z)) + superelevation(out.range)) * 1000;
+    return out;
   }
 
   setMode(mode: DrawMode): void {
@@ -401,6 +480,12 @@ export class SightSystem extends createSystem({}) {
     }
     return max - min;
   }
+}
+
+/** The middle of target `i`'s face, to lay on. */
+function aimPoint(i: number): AimPoint {
+  const face = targetFace(i);
+  return { x: face.x, above: face.y, z: face.z };
 }
 
 /** The reticle: an aiming chevron, lead marks either side and the range marks below, black on clear. */

@@ -96,6 +96,20 @@ export function loadForPractice(): void {
   active?.loadNow();
 }
 
+/** The loading as drawn on this page (the gunner's own, or the gunner's packets): the practice crewmate reads it. */
+export function loadingShown(): Readonly<LoadingSnapshot> | null {
+  return active?.shown ?? null;
+}
+
+/**
+ * Give one of the loading's hands a script in place of the real hand (the
+ * practice crewmate's, the tests'), or null to give it back. Only the page
+ * that does the loading reads it.
+ */
+export function scriptLoadingHand(side: Side, hand: DrillTestHandFn | null): void {
+  active?.scriptHand(side, hand);
+}
+
 /** One line for the menu: who loads, and the loads so far. */
 export function loadingStatus(): string {
   const a = active;
@@ -232,9 +246,7 @@ export class LoadingSystem extends createSystem({}) {
       stats: self.drill.stats,
       start: () => self.start(),
       reset: () => self.drill.reset(),
-      setTestHand: (side: Side, hand: DrillTestHandFn | null) => {
-        self.testHands[side] = hand;
-      },
+      setTestHand: (side: Side, hand: DrillTestHandFn | null) => self.scriptHand(side, hand),
       /** Where the breech mouth and the lever's pivot are, hull space, with the gun as drawn; the lever's sizes; the seated eye point. */
       layout: () => {
         const e = turretState().elevation;
@@ -281,6 +293,10 @@ export class LoadingSystem extends createSystem({}) {
       recoil.add(this.block, this.lever, this.flash);
     }
     this.createBoard(turret);
+  }
+
+  scriptHand(side: Side, hand: DrillTestHandFn | null): void {
+    this.testHands[side] = hand;
   }
 
   /** The gunner's page loads, as it owns the turret; alone, this page does whichever seat it sits in. */

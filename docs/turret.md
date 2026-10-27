@@ -11,7 +11,7 @@ The turret turns and the gun elevates. The gunner lays the gun with three contro
 - **Power traverse runs off the engine**, Tiger-style: at full twist the turret turns 6°/s with the engine at idle and up to 24°/s at top RPM. With the tank parked, the driver's hand throttle (F1.5) raises the idle and so the traverse. The turret speeds up and slows down at no more than 40°/s², so it never lurches.
 - The **basket turns the gunner with it**: their head and hands stay put relative to the seat, the breech and the controls; the hull, the driver and the world turn past. The comfort vignette counts the turret's turn as well as the hull's for the gunner.
 - The **gun** elevates on trunnions in the turret's front plate, so its breech dips beside the gunner as the muzzle rises.
-- Spike S1's sight hangs from the turret roof and now turns with the turret (it still doesn't elevate with the gun: F1.9 puts the real gunsight on the gun).
+- The gunsight (F1.9, [gunsight.md](gunsight.md)) turns with the turret and looks along the gun as it elevates; its eyepiece stays still in the turret.
 - The **driver** sees the turret and gun move, the gunner's hands on the controls, and the crank and grip turning under them.
 - Game menu: **Practice → Lay the gun → Gunner** puts the player in the gunner's seat with a sign saying how to lay the gun; **Forward** turns the turret and the gun straight ahead (either player can press it). The line under it says who lays the gun and where it points.
 
@@ -44,7 +44,7 @@ The gunner's page owns the turret (plan decision 2, the concept's "turret input 
 
 ## The practice crewmate
 
-Not yet: the crewmate learns to aim and fire in F1.13, through these same mechanisms. Until then, the crewmate in the gunner's seat leaves the turret where it is, and the player alone as gunner lays the gun while the tank stays parked.
+Since F1.13 the practice crewmate lays the gun through these same mechanisms: its right hand twists the power grip and its left winds the elevation wheel ([crewmate.md](crewmate.md)).
 
 ## Departures from the building skill
 

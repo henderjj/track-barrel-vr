@@ -22,7 +22,8 @@
  *   a clean link and at 150 ms RTT;
  * - the turret (F1.8): the gunner's page traverses and elevates at once and
  *   the driver's page draws it close behind, smoothly, on a clean link and
- *   at 150 ms RTT;
+ *   at 150 ms RTT; the gunsight's Practice lay (F1.9) from the driver's
+ *   page lays the gunner's gun on a target;
  * - loading and firing (F1.10): a guest gunner's loading reaches the host,
  *   and its shot is seen on both pages and decided by the host, on a clean
  *   link and at 150 ms RTT;
@@ -32,7 +33,9 @@
  *   at 150 ms RTT;
  * - the crew lifecycle (spike S10): stepping away, going quiet and a broken
  *   connection;
- * - the practice crewmate sits in the seat the player leaves free.
+ * - the practice crewmate sits in the seat the player leaves free; as
+ *   gunner it loads, lays and hits the nearest target, and as driver it
+ *   follows the player's calls through the tillers (F1.13).
  *
  * Add a check for each feature that two players share (see the building
  * skill in .claude/skills/): what the guest does reaches the host, and both
@@ -142,6 +145,23 @@ async function measureMotion(sender, receiver, seconds) {
     });
   });
   await new Promise((r) => setTimeout(r, 600)); // fill the jitter buffer
+  // Until then the receiver can still be drawing its way from the last pose
+  // onto the circle: on a slow runner with 150 ms RTT, 600 ms isn't always
+  // enough. Start once three frames in a row are on the circle (or after 3 s).
+  await receiver.page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        let onCircle = 0;
+        const end = performance.now() + 3000;
+        const frame = () => {
+          const p = window.__net.remotePose();
+          onCircle = p && Math.abs(Math.hypot(p.head.px, p.head.pz) - 0.5) < 0.01 ? onCircle + 1 : 0;
+          if (onCircle >= 3 || performance.now() > end) resolve();
+          else requestAnimationFrame(frame);
+        };
+        frame();
+      }),
+  );
   const samples = await receiver.page.evaluate(
     (ms) =>
       new Promise((resolve) => {
@@ -383,7 +403,8 @@ async function driveChecks(host, guest, label) {
  * turns its own turret at once and the host sees it turn close behind,
  * smoothly; the guest's elevation reaches the host; the host's Forward (it
  * isn't the gunner) asks the guest's page, and both see the turret back
- * straight ahead.
+ * straight ahead. The driver's Practice lay on the 250 m target (F1.9) asks
+ * the gunner's page too, and both see the gun on the target's mark.
  */
 async function turretChecks(host, guest, label) {
   const turret = (p) => p.page.evaluate(() => window.__turret.state());
@@ -436,6 +457,21 @@ async function turretChecks(host, guest, label) {
   }, 8000).catch(() => null);
   check(`The driver's Forward puts the gunner's turret straight ahead (${label})`, home !== null,
     home ? '' : JSON.stringify(await Promise.all([turret(host), turret(guest)])));
+
+  // The gunsight (F1.9): the driver's Practice lay asks the gunner's page, which lays the gun on the 250 m target; both see it on its mark.
+  const onMark = (p) => p.page.evaluate(() => window.__sight.error(1));
+  await host.page.evaluate(() => window.__gameMenu.click('menu-sight-lay-1'));
+  const sighted = await waitFor('the gun laid on the 250 m target on both pages', async () => {
+    const [h, g] = await Promise.all([onMark(host), onMark(guest)]);
+    const near = (e) => Math.abs(e.across) < 0.1 && Math.abs(e.up) < 0.1;
+    return near(h) && near(g) ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`The driver's Practice lay asks the gunner's page, which lays the gun on the 250 m target's mark, and the driver sees it laid (${label})`,
+    sighted !== null && Math.abs(sighted.g.range - 250) < 3,
+    sighted ? `gunner ${sighted.g.across.toFixed(3)}/${sighted.g.up.toFixed(3)} mil, driver ${sighted.h.across.toFixed(3)}/${sighted.h.up.toFixed(3)} mil at ${Math.round(sighted.g.range)} m`
+      : JSON.stringify(await Promise.all([onMark(host), onMark(guest), turret(guest)])));
+  await host.page.evaluate(() => window.__gameMenu.click('menu-sight-lay-ahead'));
+  await waitFor('the turret forward again', async () => Math.abs((await turret(guest)).yaw) < 1e-3, 8000).catch(() => null);
 }
 
 /**
@@ -792,9 +828,68 @@ async function botChecks(browser) {
   }, 10000).catch(() => null);
   const gunning = await sat('driver', 'gunner');
   check('Practice crewmate: sits in the gunner\'s seat while the player drives', gunning !== null, JSON.stringify(gunning ?? await botSeat()));
+
+  // F1.13: as gunner the bot loads, lays on the nearest target (the 100 m tank, from the start) and fires
+  // from the halt; the player sees its hands on the shell, the breech lever, the power grip and the
+  // elevation wheel (their HoldKinds in its pose packets), the shot decided by the player's page (the
+  // host), and its calls on the sign.
+  const holdsSeen = new Set();
+  const crewHolds = async () => {
+    const holds = await me.page.evaluate(() => window.__net.remotePose()?.holds ?? 0);
+    holdsSeen.add(holds & 15);
+    holdsSeen.add(holds >> 4);
+  };
+  const fired = await waitFor('the bot to hit a target', async () => {
+    await crewHolds();
+    const records = await me.page.evaluate(() => window.__firing.records());
+    return records.find((r) => r.id % 2 === 1 && r.kind === 'target') ?? null;
+  }, 120000).catch(() => null);
+  const bot1 = await bot.page.evaluate(() => ({ ...window.__bot.gunning, status: window.__bot.status, holding: window.__bot.holding() }));
+  check('Practice crewmate: as gunner it loads, lays on the nearest target and hits it, the host deciding',
+    fired !== null && fired.target === 0 && bot1.loads >= 1,
+    fired ? `"${fired.line}", bot ${JSON.stringify(bot1)}` : JSON.stringify({ bot: bot1, mine: await me.page.evaluate(() => window.__firing.records()) }));
+  // HoldKinds: 7 elevation wheel, 9 shell, 10 breech lever, 12 power grip.
+  const seenAll = [7, 9, 10, 12].every((k) => holdsSeen.has(k));
+  check('Practice crewmate: the player sees its hands on the elevation wheel, a shell, the breech lever and the power grip',
+    seenAll, `hold kinds seen ${[...holdsSeen].sort((a, b) => a - b).join(', ')}`);
+  const heard = await waitFor('the bot\'s call on the player\'s sign', async () => {
+    const c = await me.page.evaluate(() => ({ heard: window.__crewCalls.lastHeard, sign: window.__crewCalls.sign, crewmate: window.__crewCalls.crewmate }));
+    return (c.heard === 'on-the-way' || c.heard === 'target') && c.crewmate !== '' ? c : null;
+  }, 8000).catch(() => null);
+  check('Practice crewmate: calls "On the way!" and "Target!", and tells the player\'s menu what it is doing', heard !== null,
+    JSON.stringify(heard ?? await me.page.evaluate(() => ({ heard: window.__crewCalls.lastHeard, crewmate: window.__crewCalls.crewmate }))));
+
   await me.page.evaluate(() => window.__gameMenu.click('row-seat-1'));
   const driving = await sat('gunner', 'driver');
   check('Practice crewmate: moves to the driver\'s seat when the player takes the gunner\'s', driving !== null, JSON.stringify(driving ?? await botSeat()));
+
+  // F1.13: as driver it works the tillers on the player's calls: Advance drives the player's (the
+  // host's) tank, the player's page drawing the bot's hands on the tillers; Halt stops it; Left turns it 45°.
+  const tank = () => me.page.evaluate(() => window.__drive.state());
+  await me.page.evaluate(() => window.__drive.reset());
+  await waitFor('the tank parked', async () => Math.hypot((await tank()).x, (await tank()).z) < 0.01, 8000).catch(() => null);
+  await me.page.evaluate(() => window.__gameMenu.click('call-advance'));
+  const advancing = await waitFor('the bot to drive the tank forwards', async () => {
+    await crewHolds();
+    const [t, st] = await Promise.all([tank(), me.page.evaluate(() => window.__driverStation.state())]);
+    return t.speed > 1.5 && t.z < -2 && st.angles.tillerLeft > 15 && st.angles.tillerRight > 15 ? { t, st } : null;
+  }, 40000).catch(() => null);
+  check('Practice crewmate: "Driver, advance" — it takes both tillers and drives the tank forwards',
+    advancing !== null && holdsSeen.has(2) && holdsSeen.has(3),
+    advancing ? `${advancing.t.speed.toFixed(1)} m/s at z ${advancing.t.z.toFixed(1)}, tillers drawn at ${advancing.st.angles.tillerLeft.toFixed(0)}° and ${advancing.st.angles.tillerRight.toFixed(0)}°, holds ${[...holdsSeen].join(', ')}`
+      : JSON.stringify({ tank: await tank(), bot: await bot.page.evaluate(() => ({ ...window.__bot.driving, holding: window.__bot.holding() })) }));
+  await me.page.evaluate(() => window.__gameMenu.click('call-halt'));
+  const halted = await waitFor('the bot to halt', async () => ((await tank()).speed === 0 ? tank() : null), 20000).catch(() => null);
+  check('Practice crewmate: "Driver, halt" — it centres the tillers and the tank stops', halted !== null, JSON.stringify(halted ?? await tank()));
+  const heading = (await tank()).heading;
+  await me.page.evaluate(() => window.__gameMenu.click('call-left'));
+  const turned = await waitFor('the bot to turn left', async () => {
+    const t = await tank();
+    return Math.abs(t.heading - heading - Math.PI / 4) < 3 * Math.PI / 180 && t.yawRate === 0 ? t : null;
+  }, 30000).catch(() => null);
+  check('Practice crewmate: "Driver, left" — at a halt it pivots 45° left', turned !== null,
+    `heading ${(((turned ?? await tank()).heading - heading) * 180 / Math.PI).toFixed(1)}° from ${(heading * 180 / Math.PI).toFixed(1)}°`);
+  await me.page.evaluate(() => window.__drive.reset());
 
   const errors = [...me.errors, ...bot.errors].filter((m) => !m.includes('net::ERR_') && !m.includes('Failed to load resource'));
   await me.context.close();
