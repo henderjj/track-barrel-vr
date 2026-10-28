@@ -30,7 +30,7 @@ Every feature of the game, by phase, with where it stands. The approach behind e
 | 4 Training and tutorials | Simplified systems and five training stages | 7 | 0 |
 | 5 Content and replay | Tiers, scenarios, scoring, ghosts, replays | 11 | 0 |
 
-**Current focus:** Phase 1, with Phase 0's spikes waiting on their headset checks.
+**Current focus:** every Phase 1 feature is built; next is the Phase 1 play test (the headset checks, and the stats CSV from F1.14 answering the concept's §14 questions), then Phase 2.
 
 ## Phase 0: Groundwork
 
@@ -62,7 +62,7 @@ Ends when a crew can drive the range, find and hit three static targets, and the
 | F1.11 | Range run: run timer, three-target count, restart, Practice shortcuts (parked at a target, loaded and aimed) | Headset check | F1.7, F1.10 | #26 | [range-run.md](range-run.md): `src/sim/range-run.ts` and `RangeRunSystem`; the host keeps the run (`run`, `run-ask`, `range-ready` events); run clocks in both seats, a red flag by each target hit; Practice → Range run (Start, Stop) and Ready to fire (100, 250, 500 m) |
 | F1.12 | Tank audio and intercom: engine by RPM, tracks, clunks and grinds, gun, breech, casings; voice ducking; plain intercom voice by default | Headset check | F1.5, F1.10 | #25 | [audio.md](audio.md): synthesised in `src/sim/tank-audio.ts`, played by `TankAudioSystem` from the tank as each page draws it (nothing new sent); voice ducks the tank 6 dB; plain voice by default; Settings → Tank sounds; Practice → Tank sounds → Play each |
 | F1.13 | Practice crewmate in both seats: drives a route or follows calls; aims at and fires on the nearest target | Headset check | F1.5, F1.10 | #23 | [crewmate.md](crewmate.md): its scripted hands work the tillers, gear lever, shells, breech, power grip and elevation wheel through the kit; drives the route or follows the menu's new Calls (`crew-call` event, shown on the other player's sign); loads, lays on the nearest target not yet hit and fires from a halt |
-| F1.14 | Comfort and play-test stats: motion vignette, reduced bumps, per-run CSV (time to three hits, grinds, fumbles per control, time per role) | Building | F1.11 | #33 | [comfort-stats.md](comfort-stats.md): Comfort and stats menu section: Vignette (Off/Light/Normal/Strong), Bumps (reduced if either player asks, `comfort` event), I feel queasy, Save CSV; `src/sim/play-stats.ts` and `PlayStatsSystem` write a row per range run with the crewmate's numbers (`run-stats` event); answers the concept's §14 questions |
+| F1.14 | Comfort and play-test stats: motion vignette, reduced bumps, per-run CSV (time to three hits, grinds, fumbles per control, time per role) | Headset check | F1.11 | #33 | [comfort-stats.md](comfort-stats.md): Comfort and stats menu section: Vignette (Off/Light/Normal/Strong), Bumps (reduced if either player asks, `comfort` event), I feel queasy, Save CSV; `src/sim/play-stats.ts` and `PlayStatsSystem` write a row per range run with the crewmate's numbers (`run-stats` event); answers the concept's §14 questions |
 
 ## Phase 2: Communication aids
 
