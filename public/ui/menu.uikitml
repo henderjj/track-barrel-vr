@@ -12,6 +12,8 @@
   the gun, or turn the turret forward; loading: load and fire as gunner; the range's: park up the range facing a target; the
   gunsight's: go to it, or lay the gun on a target's range mark; the range run's: start or stop a run, and ready to fire on each target, parked at the start,
   laid and loaded; the tank's sounds: play each short sound in turn; the periscope's: go to it, turn it ahead, its power).
+  Comfort and stats (F1.14) sets the vignette's strength and reduced bumps, marks a moment
+  the player feels queasy, and saves or clears the play-test stats CSV.
   Calls (in a crew) sends the crewmate a call for the other seat, which shows on their sign and
   which the practice crewmate obeys (F1.13): to the driver from the gunner's seat, to the gunner
   from the driver's. You →
@@ -282,6 +284,41 @@
   </div>
 
   <div class="section">
+    <div class="section-title">COMFORT AND STATS</div>
+    <div id="row-vignette" class="setting">
+      <div id="row-vignette-label" class="label">Setting</div>
+      <div id="row-vignette-choices" class="choices">
+        <Button id="row-vignette-0" class="choice" size="sm" variant="secondary">Choice</Button>
+        <Button id="row-vignette-1" class="choice" size="sm" variant="secondary">Choice</Button>
+        <Button id="row-vignette-2" class="choice" size="sm" variant="secondary">Choice</Button>
+        <Button id="row-vignette-3" class="choice" size="sm" variant="secondary">Choice</Button>
+      </div>
+    </div>
+    <div id="row-bumps" class="setting">
+      <div id="row-bumps-label" class="label">Setting</div>
+      <div id="row-bumps-choices" class="choices">
+        <Button id="row-bumps-0" class="choice" size="sm" variant="secondary">Choice</Button>
+        <Button id="row-bumps-1" class="choice" size="sm" variant="secondary">Choice</Button>
+        <Button id="row-bumps-2" class="choice" size="sm" variant="secondary">Choice</Button>
+        <Button id="row-bumps-3" class="choice" size="sm" variant="secondary">Choice</Button>
+      </div>
+    </div>
+    <div class="setting">
+      <div class="label">How I feel</div>
+      <div class="choices">
+        <Button id="menu-queasy" class="choice" size="sm" variant="secondary">I feel queasy</Button>
+      </div>
+    </div>
+    <div class="setting">
+      <div class="label">Play-test stats</div>
+      <div class="choices">
+        <Button id="menu-stats-save" class="choice" size="sm" variant="secondary">Save CSV</Button>
+        <Button id="menu-stats-clear" class="choice" size="sm" variant="secondary">Clear</Button>
+      </div>
+    </div>
+    <div id="menu-stats-status" class="hint">No runs recorded yet: start a range run.</div>
+  </div>
+  <div class="section">
     <div class="section-title">SOUND AND VIEW</div>
     <div id="row-sound" class="setting">
       <div id="row-sound-label" class="label">Setting</div>
@@ -338,13 +375,6 @@
         <Button id="row-gear-0" class="choice" size="sm" variant="secondary">Neutral</Button>
         <Button id="row-gear-1" class="choice" size="sm" variant="secondary">Low</Button>
         <Button id="row-gear-2" class="choice" size="sm" variant="secondary">High</Button>
-      </div>
-    </div>
-    <div id="row-drive-vignette" class="setting">
-      <div id="row-drive-vignette-label" class="label">Vignette</div>
-      <div class="choices">
-        <Button id="row-drive-vignette-0" class="choice" size="sm" variant="secondary">On</Button>
-        <Button id="row-drive-vignette-1" class="choice" size="sm" variant="secondary">Off</Button>
       </div>
     </div>
   </div>

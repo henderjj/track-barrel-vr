@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_ACCEL, MAX_REVERSE, MAX_SPEED, MAX_TILT, MAX_YAW_ACCEL, MAX_YAW_RATE } from '../src/sim/comfort.js';
+import { crewBumps, groundFeel, MAX_ACCEL, MAX_REVERSE, MAX_SPEED, MAX_TILT, MAX_YAW_ACCEL, MAX_YAW_RATE, REDUCED_BUMPS } from '../src/sim/comfort.js';
 import { GROUND_Y } from '../src/sim/cabin.js';
 import {
   angleDelta,
@@ -13,6 +13,7 @@ import {
   GEARS,
   HIGH,
   IDLE_RPM,
+  settle,
   keyControls,
   lerpTankDrive,
   LOW,
@@ -26,7 +27,7 @@ import {
   TRACK_GAUGE,
   twinStickControls,
 } from '../src/sim/tank-drive.js';
-import { type Obstacle, obstacleDistance, OBSTACLES, wrapTile } from '../src/sim/terrain.js';
+import { groundHeight, type Obstacle, obstacleDistance, OBSTACLES, wrapTile } from '../src/sim/terrain.js';
 
 const DT = 1 / 60;
 const DEG = Math.PI / 180;
@@ -179,6 +180,39 @@ describe('tank drive (F1.4)', () => {
       });
       expect(maxTilt).toBeGreaterThan(0.5 * DEG);
       expect(maxTilt).toBeLessThanOrEqual(MAX_TILT + 1e-9);
+    });
+
+    it('with reduced bumps (F1.14) takes less of the tilt, more gently, along the same path', () => {
+      const full = createTankDrive(150, 150, Math.PI / 2);
+      const reduced = settle(createTankDrive(150, 150, Math.PI / 2), REDUCED_BUMPS);
+      const c = controls(1, 1, LOW);
+      let fullTilt = 0;
+      let reducedTilt = 0;
+      let fullRate = 0;
+      let reducedRate = 0;
+      for (let t = 0; t < 60; t += DT) {
+        stepDrive(full, c, DT, NONE);
+        stepDrive(reduced, c, DT, NONE, REDUCED_BUMPS);
+        fullTilt = Math.max(fullTilt, Math.abs(full.pitch), Math.abs(full.roll));
+        reducedTilt = Math.max(reducedTilt, Math.abs(reduced.pitch), Math.abs(reduced.roll));
+        fullRate = Math.max(fullRate, Math.abs(full.pitchRate) + Math.abs(full.rollRate));
+        reducedRate = Math.max(reducedRate, Math.abs(reduced.pitchRate) + Math.abs(reduced.rollRate));
+      }
+      expect(reducedTilt).toBeLessThanOrEqual(REDUCED_BUMPS.tilt * MAX_TILT + 1e-9);
+      expect(reducedTilt).toBeLessThan(fullTilt * 0.6);
+      expect(reducedRate).toBeLessThan(fullRate * 0.5);
+      // Bumps only change how the hull sways: it goes where it would have gone.
+      expect(Math.hypot(reduced.x - full.x, reduced.z - full.z)).toBeLessThan(1e-6);
+      // Its tracks stay near the ground under it.
+      expect(Math.abs(reduced.y - (groundHeight(reduced.x, reduced.z) + CLEARANCE))).toBeLessThan(0.15);
+    });
+
+    it('rides reduced if either player asks', () => {
+      expect(crewBumps('full', null)).toBe('full');
+      expect(crewBumps('full', 'full')).toBe('full');
+      expect(crewBumps('reduced', null)).toBe('reduced');
+      expect(crewBumps('full', 'reduced')).toBe('reduced');
+      expect(groundFeel('reduced')).toBe(REDUCED_BUMPS);
     });
   });
 

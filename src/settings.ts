@@ -1,5 +1,6 @@
 import { clampEyeRaise } from './sim/body-height.js';
 import { parseSeat, type SeatId } from './sim/cabin.js';
+import { type Bumps, parseBumps, VIGNETTE_STRENGTHS } from './sim/comfort.js';
 
 /**
  * Runtime settings, read once when the page loads: first the ones saved from
@@ -68,6 +69,18 @@ export interface Settings {
    * 0.5 quiet, 0 off. The game menu's Sound and view section changes it at once.
    */
   sound: number;
+  /**
+   * How dark the comfort vignette gets at its strongest while the tank
+   * moves (F1.14, src/sim/comfort.ts): 0 off, 0.3 light, 0.5 normal (the
+   * default), 0.8 strong. The game menu's Comfort section changes it at once.
+   */
+  vignette: number;
+  /**
+   * Reduced bumps (F1.14): 'reduced' asks for the hull to take less of the
+   * ground's tilt, more slowly; the tank rides reduced if either player
+   * asks. 'full' (the default) is every bump within the comfort caps.
+   */
+  bumps: Bumps;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -94,6 +107,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ground: true,
   fog: true,
   sound: 1,
+  vignette: VIGNETTE_STRENGTHS.normal,
+  bumps: 'full',
 };
 
 function num(params: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
@@ -144,6 +159,8 @@ export function parseSettings(search: string): Settings {
     ground: bool(params, 'ground', d.ground),
     fog: bool(params, 'fog', d.fog),
     sound: num(params, 'sound', d.sound, 0, 1),
+    vignette: num(params, 'vignette', d.vignette, 0, 1),
+    bumps: parseBumps(params.get('bumps'), d.bumps),
   };
 }
 
