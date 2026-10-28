@@ -1,16 +1,14 @@
 import {
   CanvasTexture,
   createSystem,
-  LinearFilter,
-  Matrix4,
   Mesh,
   type Object3D,
   PerspectiveCamera,
   Quaternion,
-  ShaderMaterial,
+  type ShaderMaterial,
   SRGBColorSpace,
   Vector3,
-  WebGLRenderTarget,
+  type WebGLRenderTarget,
 } from '@iwsdk/core';
 import { GpuTimer } from '../perf/gpu-timer.js';
 import { createSightEyepiece, createSightHead, createSightLensGeometry } from '../scene-assets/sight.scene-asset.js';
@@ -31,21 +29,19 @@ import {
   DRAW_MODES,
   type DrawMode,
   eyeMask,
-  HALF_IPD,
   MAGNIFICATION,
   rangeMarks,
   SIGHT_EYES,
   SIGHT_SIZES,
   type SightEye,
   type SightSize,
-  lensSetback,
-  sightOpen,
   superelevation,
   TRUE_HALF_FIELD,
 } from '../sim/sight.js';
 import { groundHeight, wrapTile } from '../sim/terrain.js';
 import { tankState } from './drive-system.js';
 import { netLink } from './net-system.js';
+import { createLensMaterial, createScopeTarget, LensPlacer, renderScope, watchLensView } from './scope-lens.js';
 import { seating } from './seating.js';
 import { aimTurret, gunEntity, ownsTurret, turretForward, turretState } from './turret-system.js';
 
@@ -181,13 +177,9 @@ export class SightSystem extends createSystem({}) {
   private lastLog = 0;
   private head = new Vector3();
   private headQuat = new Quaternion();
-  private right = new Vector3();
-  /** Each eye in eyepiece space (the lens's resting place at the origin, +Z towards the eye). */
-  private eyes = [new Vector3(), new Vector3()] as const;
-  private worldToEyepiece = new Matrix4();
   private lensAt = new Vector3();
   private lensQuat = new Quaternion();
-  private worldToLens = new Matrix4();
+  private placer: LensPlacer | null = null;
   private forward = new Vector3();
   private turned: [number, number] = [0, 0];
   private laid = createLay();
@@ -201,17 +193,18 @@ export class SightSystem extends createSystem({}) {
       if (active === this) active = null;
     });
 
-    this.target = this.createTarget(sightStats.size);
+    this.target = createScopeTarget(sightStats.size, sightStats.size);
     this.reticle = createReticle();
-    this.material = createLensMaterial(this.target, this.reticle);
+    this.material = createLensMaterial(this.target, {
+      magnification: MAGNIFICATION,
+      halfFieldX: TRUE_HALF_FIELD,
+      halfFieldY: TRUE_HALF_FIELD,
+      reticle: this.reticle,
+      stop: 'round',
+    });
     this.lens = new Mesh(createSightLensGeometry(), this.material);
     this.lens.name = 'Sight Lens';
-    const uniforms = this.material.uniforms;
-    // Which eye is being drawn, where each eye is drawn in a pass of its own (no multiview).
-    this.lens.onBeforeRender = (renderer, _scene, camera) => {
-      const xr = renderer.xr;
-      uniforms.uView.value = !xr.isPresenting ? -1 : camera === xr.getCamera().cameras[1] ? 1 : 0;
-    };
+    watchLensView(this.lens, this.material);
 
     // The eyepiece half is fixed in the turret; the objective half and the camera ride on the gun (TurretSystem makes it, before this).
     const turret = this.world.getSceneEntity('turret');
@@ -223,6 +216,7 @@ export class SightSystem extends createSystem({}) {
       this.eyepiece.position.set(EYEPIECE[0], EYEPIECE[1], EYEPIECE[2]);
       const eyepieceEntity = this.world.createTransformEntity(this.eyepiece, { parent: turret });
       this.world.createTransformEntity(this.lens, { parent: eyepieceEntity });
+      this.placer = new LensPlacer(this.lens, this.material);
       this.world.createTransformEntity(createSightHead(), { parent: gun });
       this.gun = gun.object3D ?? null;
       this.camera3.position.set(OBJECTIVE[0], OBJECTIVE[1], OBJECTIVE[2]);
@@ -262,10 +256,9 @@ export class SightSystem extends createSystem({}) {
       },
       drawnError: (i) => this.drawnError(i),
       lens: () => {
-        const at = new Vector3();
-        this.lens.parent?.getWorldPosition(at);
+        const at = this.placer?.restAt(new Vector3()) ?? this.lens.getWorldPosition(new Vector3());
         this.lens.getWorldQuaternion(this.lensQuat);
-        return { at: at.toArray(), facing: new Vector3(0, 0, 1).applyQuaternion(this.lensQuat).toArray(), setback: -this.lens.position.z };
+        return { at: at.toArray(), facing: new Vector3(0, 0, 1).applyQuaternion(this.lensQuat).toArray(), setback: this.placer?.setback ?? 0 };
       },
       view: () => {
         this.camera3.updateWorldMatrix(true, false);
@@ -287,15 +280,13 @@ export class SightSystem extends createSystem({}) {
     if (this.gpu && !Number.isNaN(this.gpu.ms)) {
       sightStats.gpuMs = Number.isNaN(sightStats.gpuMs) ? this.gpu.ms : sightStats.gpuMs * 0.9 + this.gpu.ms * 0.1;
     }
-    if (this.eyepiece == null) return;
+    if (this.eyepiece == null || this.placer == null) return;
 
-    this.eyepiece.updateWorldMatrix(true, false);
-    this.worldToEyepiece.copy(this.eyepiece.matrixWorld).invert();
-    this.placeEyes();
-    this.placeLens();
+    const eyes = this.material.uniforms.uEyes.value as number;
+    this.placer.update(this.player.head, eyes);
 
     const was = sightStats.open;
-    const open = sightStats.mode === 'always' || (sightStats.mode === 'auto' && this.eyeAtEyepiece(was));
+    const open = sightStats.mode === 'always' || (sightStats.mode === 'auto' && this.placer.eyesAt(eyes, was));
     sightStats.open = open;
     this.material.uniforms.uOpen.value = open ? 1 : 0;
     if (open !== was) {
@@ -306,69 +297,10 @@ export class SightSystem extends createSystem({}) {
     }
   }
 
-  /** Where each eye is, in eyepiece space, from the head pose. */
-  private placeEyes(): void {
-    const head = this.player.head;
-    head.getWorldPosition(this.head);
-    head.getWorldQuaternion(this.headQuat);
-    this.right.set(1, 0, 0).applyQuaternion(this.headQuat);
-    this.eyes.forEach((eye, i) => {
-      eye.copy(this.head).addScaledVector(this.right, (i === 0 ? -1 : 1) * HALF_IPD).applyMatrix4(this.worldToEyepiece);
-    });
-  }
-
-  /**
-   * Keep the lens beyond the headset's near plane: with an eye pressed to
-   * the eyepiece it moves back inside it (src/sim/sight.ts, lensSetback),
-   * drawn over the eyepiece it is then behind. The picture is at infinity,
-   * so it looks the same.
-   */
-  private placeLens(): void {
-    const mask = this.material.uniforms.uEyes.value as number;
-    let nearest = Infinity;
-    this.eyes.forEach((eye, i) => {
-      if ((mask & (1 << i)) !== 0 && Math.hypot(eye.x, eye.y) < 0.1) nearest = Math.min(nearest, eye.z);
-    });
-    const setback = lensSetback(nearest);
-    this.lens.position.z = -setback;
-    this.material.depthTest = setback === 0;
-    this.lens.renderOrder = setback === 0 ? 0 : 10;
-    this.lens.updateWorldMatrix(false, false);
-    this.lens.getWorldPosition(this.lensAt);
-    this.worldToLens.copy(this.lens.matrixWorld).invert();
-    this.material.uniforms.uWorldToLens.value.copy(this.worldToLens);
-  }
-
-  /** Whether one of the eyes the sight shows to is at the eyepiece, with the lens's hysteresis. */
-  private eyeAtEyepiece(wasOpen: boolean): boolean {
-    const mask = this.material.uniforms.uEyes.value as number;
-    let open = false;
-    this.eyes.forEach((eye, i) => {
-      if ((mask & (1 << i)) !== 0) open ||= sightOpen(wasOpen, eye.length(), eye.z);
-    });
-    return open;
-  }
-
   private renderSight(): void {
     const renderer = this.renderer;
-    const xrEnabled = renderer.xr.enabled;
-    const previous = renderer.getRenderTarget();
-    // With XR on, render() would swap our camera for the headset's.
-    renderer.xr.enabled = false;
-    this.lens.visible = false;
     // The barrel runs alongside the objective: leave the gun out of its own sight's picture.
-    const gun = this.gun;
-    if (gun) gun.visible = false;
-    renderer.setRenderTarget(this.target);
-    const start = performance.now();
-    this.gpu?.begin();
-    renderer.render(this.world.scene, this.camera3);
-    this.gpu?.end();
-    const cpu = performance.now() - start;
-    renderer.setRenderTarget(previous);
-    renderer.xr.enabled = xrEnabled;
-    this.lens.visible = true;
-    if (gun) gun.visible = true;
+    const cpu = renderScope(renderer, this.world.scene, this.camera3, this.target, [this.lens, this.gun], this.gpu);
 
     // The first render compiles the scene's shaders for the texture, so start averaging from the second.
     sightStats.cpuMs = sightStats.renders < 2 ? cpu : sightStats.cpuMs * 0.9 + cpu * 0.1;
@@ -413,7 +345,7 @@ export class SightSystem extends createSystem({}) {
     player.rotateY(turn);
     player.position.x = this.turned[0];
     player.position.z = this.turned[1];
-    this.lens.getWorldPosition(this.lensAt);
+    this.placer?.restAt(this.lensAt) ?? this.lens.getWorldPosition(this.lensAt);
     player.position.x += this.lensAt.x + Math.sin(yaw) * APPROACH - this.head.x;
     player.position.z += this.lensAt.z + Math.cos(yaw) * APPROACH - this.head.z;
     console.info('[Sight] player moved to the eyepiece');
@@ -482,13 +414,6 @@ export class SightSystem extends createSystem({}) {
   setEye(eye: SightEye): void {
     sightStats.eye = SIGHT_EYES.includes(eye) ? eye : 'both';
     this.material.uniforms.uEyes.value = eyeMask(sightStats.eye);
-  }
-
-  private createTarget(size: number): WebGLRenderTarget {
-    const target = new WebGLRenderTarget(size, size, { samples: 4, minFilter: LinearFilter, magFilter: LinearFilter });
-    target.texture.colorSpace = SRGBColorSpace;
-    target.texture.generateMipmaps = false;
-    return target;
   }
 
   /** For the tests: how much the brightness varies over nine texels across the picture's middle (0 for a blank one). */
@@ -577,68 +502,4 @@ function chevron(ctx: CanvasRenderingContext2D, x: number, y: number, size: numb
   ctx.lineTo(x, y);
   ctx.lineTo(x + size, y + size);
   ctx.stroke();
-}
-
-/**
- * The lens: shows the sight camera's picture as an image at infinity
- * (src/sim/sight.ts, fieldPoint, does the same sums), the reticle over it,
- * a soft field stop at the edge, and dark glass while the sight is closed
- * or for an eye it isn't shown to.
- */
-function createLensMaterial(target: WebGLRenderTarget, reticle: CanvasTexture): ShaderMaterial {
-  return new ShaderMaterial({
-    name: 'SightLens',
-    uniforms: {
-      uScene: { value: target.texture },
-      uReticle: { value: reticle },
-      uWorldToLens: { value: new Matrix4() },
-      uMagnification: { value: MAGNIFICATION },
-      uTanHalfField: { value: Math.tan(TRUE_HALF_FIELD) },
-      uOpen: { value: 0 },
-      uEyes: { value: 3 },
-      uView: { value: -1 },
-    },
-    vertexShader: /* glsl */ `
-      uniform mat4 uWorldToLens;
-      varying vec3 vRay;
-      void main() {
-        // This view's eye, from its view matrix (one per eye under multiview).
-        vec3 eye = -transpose(mat3(viewMatrix)) * viewMatrix[3].xyz;
-        vec3 eyeLocal = (uWorldToLens * vec4(eye, 1.0)).xyz;
-        vRay = position - eyeLocal;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      uniform sampler2D uScene;
-      uniform sampler2D uReticle;
-      uniform float uMagnification;
-      uniform float uTanHalfField;
-      uniform float uOpen;
-      uniform int uEyes;
-      uniform int uView;
-      varying vec3 vRay;
-      void main() {
-        vec3 d = normalize(vRay);
-        float apparent = acos(clamp(-d.z, -1.0, 1.0));
-        float across = length(d.xy);
-        vec2 dir = across > 1e-6 ? d.xy / across : vec2(0.0);
-        vec2 p = dir * tan(min(apparent / uMagnification, 1.5)) / uTanHalfField;
-        vec2 uv = p * 0.5 + 0.5;
-        vec3 scene = texture2D(uScene, uv).rgb;
-        float ink = texture2D(uReticle, uv).a;
-        vec3 picture = mix(scene, vec3(0.01), ink) * smoothstep(1.0, 0.94, length(p));
-        #ifdef VIEW_ID
-          int view = int(VIEW_ID);
-        #else
-          int view = uView;
-        #endif
-        bool shown = uOpen > 0.5 && (view < 0 || (uEyes & (1 << view)) != 0);
-        vec3 glass = vec3(0.012, 0.02, 0.026) + 0.04 * pow(1.0 - abs(d.z), 3.0);
-        gl_FragColor = vec4(shown ? picture : glass, 1.0);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-      }
-    `,
-  });
 }

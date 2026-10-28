@@ -11,7 +11,7 @@
   sit in either seat; the drive's: drive, or put the tank back at its start; the turret's: lay
   the gun, or turn the turret forward; loading: load and fire as gunner; the range's: park up the range facing a target; the
   gunsight's: go to it, or lay the gun on a target's range mark; the range run's: start or stop a run, and ready to fire on each target, parked at the start,
-  laid and loaded; the tank's sounds: play each short sound in turn).
+  laid and loaded; the tank's sounds: play each short sound in turn; the periscope's: go to it, turn it ahead, its power).
   Calls (in a crew) sends the crewmate a call for the other seat, which shows on their sign and
   which the practice crewmate obeys (F1.13): to the driver from the gunner's seat, to the gunner
   from the driver's. You →
@@ -478,6 +478,15 @@
         <Button id="menu-sight-eye" class="choice" size="sm" variant="secondary">Both eyes</Button>
       </div>
     </div>
+    <div class="setting">
+      <div class="label">Periscope</div>
+      <div class="choices">
+        <Button id="menu-periscope-go" class="choice" size="sm" variant="secondary">Go to it</Button>
+        <Button id="menu-periscope-ahead" class="choice" size="sm" variant="secondary">Ahead</Button>
+        <Button id="menu-periscope-power" class="choice" size="sm" variant="secondary">Power 2×</Button>
+      </div>
+    </div>
+    <div id="menu-periscope-status" class="hint">Lean in to the window to look; turn it with both handles</div>
     <div class="setting">
       <div class="label">Lever test</div>
       <div class="choices">
