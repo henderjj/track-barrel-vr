@@ -17,7 +17,7 @@ The same rules hold for every control, so once a player has used one they know t
 - **Let go**, a sprung control (a tiller, a twist grip) goes back to its middle; a notched lever (a gear lever) drops into the notch it is nearest; a wheel, a friction lever (a hand throttle) or a yoke stays where it was left.
 - **Buttons** are pressed by a fingertip (with the index finger off the trigger) or by a squeeze of the fist at the cap, which holds the button in while it lasts. A push button is on while it is in; a switch turns on with one press and off with the next.
 
-**Practice > Mechanism kit > In front of me** in the game menu (Y on the left controller) puts a bench in front of the player with one of each: from left to right a notched lever, a crank, a handwheel with stops, a twist grip with a trigger, a push button (red) and a switch (green), with a yoke on a column behind and a board reading each one out. **Put away** takes it away; **In front of me** again moves it to where the player is now and puts every control back at its start.
+**Test rigs > Mechanism kit > In front of me** in the game menu (Y on the left controller) puts a bench in front of the player with one of each: from left to right a notched lever, a crank, a handwheel with stops, a twist grip with a trigger, a push button (red) and a switch (green), with a yoke on a column behind and a board reading each one out. **Put away** takes it away; **In front of me** again moves it to where the player is now and puts every control back at its start.
 
 ## The mechanisms
 
@@ -108,7 +108,7 @@ Because the bench is a one-player test rig: no practice crewmate part and no net
 - `test/mechanism.test.ts`: each mechanism follows the hand without jumping, stops at its limits with the strain measured and one tick per hit, ignores movement that doesn't turn it, ticks at detents and marks, holds for a lost hand, springs back, settles into notches or stays put; the crank over three turns and back; the rim's hand kept where it closed, at the stop too; two hands on a rim; the crewmate's hand on the nearest point; the twist grip's trigger with its hysteresis; the yoke fast in two hands and slow in one; buttons by fingertip and squeeze, and the switch; tracked-hand jitter steadied; the bench's handles in seated reach and far enough apart that a squeeze takes the one meant.
 - `test/lever.test.ts`: spike S3's tillers in seated reach, and the lane.
 - `test/z-fighting.test.ts`: the bench with every control at its ends and in between; S3's rig with its tillers upright and at both limits.
-- `npm run test:xr`, step 5c: Practice > Mechanism kit puts the bench in front of the player; a crank followed round a full turn with its ticks; the notched lever let go past halfway settling into its notch; the yoke in one hand following slower than the hand with the strain felt; the twist grip twisting with the wrist and firing with the trigger; a squeeze pressing the button and turning the switch on. Screenshot: `artifacts/xr-mechanism-bench.png`. Step 5b (spike S3's tillers) and 6a (a tiller with a pinching tracked hand) now run on the kit.
+- `npm run test:xr`, step 5c: Test rigs > Mechanism kit puts the bench in front of the player; a crank followed round a full turn with its ticks; the notched lever let go past halfway settling into its notch; the yoke in one hand following slower than the hand with the strain felt; the twist grip twisting with the wrist and firing with the trigger; a squeeze pressing the button and turning the switch on. Screenshot: `artifacts/xr-mechanism-bench.png`. Step 5b (spike S3's tillers) and 6a (a tiller with a pinching tracked hand) now run on the kit.
 
 `window.__mechanisms` gives `names()`, `state(name)` (who holds it, its readings in degrees, and counts of limits, detents and presses), `handle(name, which)`, `gap(name, point)` and `toScene(name, point)`; `window.__bench` gives `shown`, `show()`, `hide()`, `lines()`, `pulls` and each control's `names`.
 
@@ -120,7 +120,7 @@ HoldKind 2–5 the driver's controls (F1.5: 2 left tiller, 3 right tiller, 4 gea
 
 After the deploy, open the game in the headset with the cache cleared (on Quest, close and reopen the tab). Play solo, sit down, and open the game menu (Y).
 
-1. **Practice > Mechanism kit > In front of me.** A bench appears in front of you with a board above it. Everything is within reach without leaning far, and nothing flickers.
+1. **Test rigs > Mechanism kit > In front of me.** A bench appears in front of you with a board above it. Everything is within reach without leaning far, and nothing flickers.
 2. **Notched lever** (far left). Take hold: your glove closes on it with a buzz. Push it forwards: it ticks at the middle and at the front notch, and stops at its end with a firm buzz while your glove stays on the handle. Let go a little past halfway: it drops into the front notch. The board says which notch.
 3. **Crank.** Take the knob and wind it round several times, both ways: it keeps up with your hand and ticks each quarter turn. The board counts turns.
 4. **Handwheel.** Take the rim with one hand, then with both, and turn it: it follows. Wind it to its stop at two turns: it stops with a buzz and your gloves stay on the rim.
@@ -128,7 +128,7 @@ After the deploy, open the game in the headset with the cache cleared (on Quest,
 6. **Yoke.** Take both handles and swing it round: it keeps up. Let go with one hand and swing it: it follows slower, with a light buzz while your hand is ahead of it.
 7. **Button and switch.** Press the red button with a fingertip (finger off the trigger), then with a squeeze: it goes in and lights while held. Press the green switch: it stays in and lit; press again: it goes off.
 8. **Tracked hands.** Put the controllers down and repeat 2, 3 and 7 with your hands (a fist or a pinch to take hold, a fingertip for the button).
-9. **Practice > Lever test**: spike S3's tillers work as before (they are built from the kit now).
+9. **Test rigs > Lever test**: spike S3's tillers work as before (they are built from the kit now).
 10. **Put away**: the bench goes. Perf HUD (X): frames stay within budget with the bench out.
 
 Report, for each control: whether it followed your hand without lag or jumps, whether the stops and ticks were felt, and anything that took the wrong control when you squeezed.

@@ -1,6 +1,6 @@
 # Spike S1: magnified sight render
 
-Status: merged in #3 (2026-10-26), waiting on the headset check below. Roadmap F0.3. The gunsight (F1.9, [gunsight.md](../gunsight.md)) now carries this renderer on the gun; the stand-in sight and its Aim button are gone, and Practice → Gunsight → Go to it and Lay on replace steps 2 and 3's buttons.
+Status: merged in #3 (2026-10-26), waiting on the headset check below. Roadmap F0.3. The gunsight (F1.9, [gunsight.md](../gunsight.md)) now carries this renderer on the gun; the stand-in sight and its Aim button are gone, and Sights → Gunsight → Go to it and Lay on replace steps 2 and 3's buttons.
 
 The question from the [plan](../plan.md#5-risks-and-spikes): does a 512² second-camera view fit Quest 3's budget alongside the rest of the scene, and is it readable? Pass mark: holds 90 Hz with the sight open, and the range marks are readable at 3×.
 
@@ -19,8 +19,8 @@ The code: `src/sim/sight.ts` (the sums, unit-tested in `test/sight.test.ts`), `s
 ### Measuring it
 
 - **Perf HUD** (X on the left controller, H on a PC page): a new bottom line shows the sight while it renders, for example `sight 512² both cpu 0.42 gpu 1.10 ms 14 calls 25k`: the texture, the eyes it shows to, the main-thread time of its render call, its GPU time, and its draw calls and triangles. The GPU time comes from WebGL's timer queries where the browser offers them and shows `-` where it doesn't. The fps, frame time and draw-call numbers above it are the whole frame as before, and the console logs a `[Sight]` line every 10 s while it renders.
-- **Practice → Gunsight (S1)** in the game menu (Y): **Go to it** puts your head 15 cm behind the eyepiece facing along the sight; **Aim** steps the sight from straight ahead to each target laid on its range mark (100, 250, 500 m), so you can see whether a mark sits on its target.
-- **Practice → Sight render**: **Draw** steps between *near* (only with an eye at the eyepiece, the real behaviour), *always* (every frame, wherever you are, to compare fps with and without it) and *off*; the size steps between 256², 512² and 1024²; the eye steps between both, left and right.
+- **Sights → Gunsight (S1)** in the game menu (Y): **Go to it** puts your head 15 cm behind the eyepiece facing along the sight; **Aim** steps the sight from straight ahead to each target laid on its range mark (100, 250, 500 m), so you can see whether a mark sits on its target.
+- **Sights → Sight render**: **Draw** steps between *near* (only with an eye at the eyepiece, the real behaviour), *always* (every frame, wherever you are, to compare fps with and without it) and *off*; the size steps between 256², 512² and 1024²; the eye steps between both, left and right.
 - `window.__sight` for the tests: state and stats, go to it, aim, draw mode, size, eyes, and a check that the picture has something in it.
 
 ### Results in the cloud
@@ -43,8 +43,8 @@ The cloud's software renderer can't say anything about Quest 3 frame times (it t
 
 Clear the cache first (Ctrl+Shift+R on a PC, or reload the page in the Quest Browser). Turn the perf HUD on with X if it's off.
 
-1. **Cost from anywhere.** In the game menu (Y) open Practice → Sight render and set **Draw: always**. Stand still on the deck looking at the hoop. Note the HUD's fps / Hz, the frame `p95` and the bottom `sight` line. Press **Draw** until it says **Draw: off** and note the fps and `p95` again. Repeat with the size at **1024²** and at **256²**.
-2. **Looking through it.** Set **Draw: near** again and press Practice → Gunsight → **Go to it**. Lean towards the eyepiece (the rubber ring on the sight on the post) until the lens lights up, about 9 cm away. Say whether the picture looks right: three boards (one, two and five orange squares), steady as you move your head a little, not doubled, and whether it's comfortable with both eyes open.
+1. **Cost from anywhere.** In the game menu (Y) open Sights → Sight render and set **Draw: always**. Stand still on the deck looking at the hoop. Note the HUD's fps / Hz, the frame `p95` and the bottom `sight` line. Press **Draw** until it says **Draw: off** and note the fps and `p95` again. Repeat with the size at **1024²** and at **256²**.
+2. **Looking through it.** Set **Draw: near** again and press Sights → Gunsight → **Go to it**. Lean towards the eyepiece (the rubber ring on the sight on the post) until the lens lights up, about 9 cm away. Say whether the picture looks right: three boards (one, two and five orange squares), steady as you move your head a little, not doubled, and whether it's comfortable with both eyes open.
 3. **Range marks.** Through the sight, can you read the range numbers (2, 4, 6, 8, 10) and tell the short 100 m marks apart? Press **Aim** to step through 100 m, 250 m and 500 m (the menu needs to be open; close it again to look), and say whether the board sits on the right mark each time (250 m is halfway between the 2 and the short mark below it). Try each size (256², 512², 1024²) and say which is the smallest that reads well.
 4. **One eye.** Press the eye button for **Right eye**, then **Left eye**, and say whether one eye feels better or worse than both.
 5. **The HUD.** With the sight open at 512², send a photo or the numbers of the HUD: fps / Hz, `p95`, `cpu`, `calls`, and the `sight` line (its `gpu` number may show `-` if the browser hides GPU timers).

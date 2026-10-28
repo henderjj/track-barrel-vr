@@ -46,7 +46,7 @@ After 10 minutes in VR riding, a sign asks how the rider feels. The menu's Ridin
 | `src/sim/ride.ts` | Sizes, caps, the ground, route and scan, the tank and turret steps, the vignette level, where each seat puts the rig |
 | `src/scene-assets/ride.scene-asset.ts` | The blockout: hull, closed roof, turret basket, open and closed turret, ground, trees |
 | `src/systems/ride-system.ts` | Moves the world, turns the turret, seats the rider, the vignette and signs; `window.__ride` |
-| `src/systems/game-menu-system.ts`, `public/ui/menu.uikitml` | Practice → Ride the tank, and the Riding section |
+| `src/systems/game-menu-system.ts`, `public/ui/menu.uikitml` | Test rigs → Ride the tank, and the Riding section |
 | `test/ride.test.ts`, `test/z-fighting.test.ts` | The caps, the ground repeating, seating, the vignette; no flickering faces in the hull, turret or ground |
 | `scripts/xr-smoke-test.mjs` step 6b | Rides as driver and gunner in the emulator |
 
@@ -56,12 +56,12 @@ What carries into Phase 1: the world-moves approach and the tile-wrapped ground 
 
 On Quest 3 (and over Link if you can), after the deploy, with the cache cleared (Ctrl+Shift+R). Sit in a chair. Ride 10 minutes in each of the four combinations if you can, with a break between, and stop at once if you feel unwell.
 
-1. Play solo. Open the menu (Y), choose **Seated** under You, then **Practice → Ride the tank → As driver**. You should be in the driver's seat at the front left of an open-topped hull, looking along it, with the hull's front edge and the ground ahead in view. A sign says "Riding as driver".
+1. Play solo. Open the menu (Y), choose **Seated** under You, then **Test rigs → Ride the tank → As driver**. You should be in the driver's seat at the front left of an open-topped hull, looking along it, with the hull's front edge and the ground ahead in view. A sign says "Riding as driver".
 2. Ride the crewmate's route with the **vignette on** for 10 minutes. The tank idles, drives off gently, turns, speeds up to 35 km/h, stops and pivots on the spot. The edge of your view should darken as it turns or changes speed. The ground should never jolt; trees in the way sink before they reach you. At 10 minutes a sign asks how you feel. Note it: fine, slight unease, or discomfort, and when in the route.
 3. Open the menu: the **Riding** section says "Riding as driver for 10:…". Set **Vignette → Off** and ride another 10 minutes. Note how it compares.
 4. Set **Cabin → Closed**. You should see out only through the slit in front of you. Note whether the slit view feels better or worse than the open top.
 5. Set **Driven by → Left stick** and drive yourself for a few minutes: forward, back, turn, pivot. Note whether it feels better than being driven.
-6. **Practice → As gunner.** You sit left of the gun in the turret basket. Set **Cabin → Open top**, vignette on, and ride 10 minutes with the crewmate driving and scanning. The basket, gun and seat turn with you; the hull and the world turn past, as fast as 24°/s plus the hull's turn. Then 10 minutes with the vignette off.
+6. **Test rigs → Ride the tank → As gunner.** You sit left of the gun in the turret basket. Set **Cabin → Open top**, vignette on, and ride 10 minutes with the crewmate driving and scanning. The basket, gun and seat turn with you; the hull and the world turn past, as fast as 24°/s plus the hull's turn. Then 10 minutes with the vignette off.
 7. Set **Cabin → Closed** as gunner: only the hull's inside turns round you. Note how that feels.
 8. Set **Turret → Right stick** and traverse yourself. Note whether it is better than being turned.
 9. Press **X** for the perf HUD while riding as gunner with the open top: report the frame time and draw calls it shows.

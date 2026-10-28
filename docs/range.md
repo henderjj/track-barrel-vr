@@ -131,7 +131,7 @@ On a Quest 3 after the deploy, with the cache cleared (Ctrl+Shift+R), seated
 1. Enter VR alone as the **gunner**. Look out through the turret. Report
    whether you can see three target boards up the range, and at what you
    would guess their ranges to be before you check.
-2. Lean into the **eyepiece** (Practice → Gunsight (S1) → Go to it if the
+2. Lean into the **eyepiece** (Sights → Gunsight (S1) → Go to it if the
    lean is awkward). Report whether you can tell the three targets apart
    through the sight at 3×, whether you can count the orange blocks on each,
    and whether the 500 m one is findable in the haze or too faint.
