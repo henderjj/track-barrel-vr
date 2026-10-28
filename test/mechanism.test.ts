@@ -212,7 +212,30 @@ describe('the wheel and the crank', () => {
     expect(crank.angle).toBe(left);
   });
 
-  it('takes hold of a fist too near the axle to read, and turns once it can be read', () => {
+  it('turns smoothly with the hand going round a circle off the axle, never stopping or jumping', () => {
+    // A hand circling 4 cm off the crank's axle passes 4 cm from it, too near to read its angle there.
+    for (const [ox, oy] of [[0.04, 0], [0, 0.04], [-0.03, -0.03]]) {
+      const crank = new Wheel(CRANK);
+      const r = CRANK.radius;
+      const at = (deg: number) => hand(ox - r * Math.sin(deg * DEG), oy + r * Math.cos(deg * DEG), 0.04);
+      expect(crank.grab(1, at(0))).toBe(true);
+      let before = crank.angle;
+      let biggest = 0;
+      // Two turns anticlockwise in two seconds: it moves on every frame, by no more than a few degrees.
+      for (let i = 1; i <= 180; i++) {
+        crank.update(DT, right(at(i * 4)));
+        const step = crank.angle - before;
+        before = crank.angle;
+        expect(step).toBeGreaterThan(0);
+        biggest = Math.max(biggest, step);
+      }
+      expect(biggest / DEG).toBeLessThan(15);
+      expect(crank.turns).toBeGreaterThan(1.9);
+      expect(crank.turns).toBeLessThan(2.1);
+    }
+  });
+
+  it('takes hold of a fist too near the axle to read as if it were on the knob, and turns from there', () => {
     const crank = new Wheel(CRANK);
     expect(crank.grab(1, wheelHand(0, 0.03, 0.04))).toBe(true);
     crank.update(DT, right(wheelHand(0, 0.03, 0.04)));
