@@ -5,6 +5,9 @@ import {
   eyeMask,
   fieldPoint,
   layOnMark,
+  LENS_MIN_GAP,
+  LENS_RADIUS,
+  lensSetback,
   MAGNIFICATION,
   OPEN_DISTANCE,
   rangeMarks,
@@ -54,7 +57,20 @@ describe('the gunsight (spike S1)', () => {
     expect(sightOpen(true, 0.1, 0.1)).toBe(true);
     expect(sightOpen(true, 0.13, 0.13)).toBe(false);
     // In front of the sight, however close, it stays shut.
-    expect(sightOpen(false, 0.05, -0.02)).toBe(false);
+    expect(sightOpen(false, 0.05, -0.04)).toBe(false);
+    // An eye pressed into the eyecup, just past the lens's resting place, still sees through it.
+    expect(sightOpen(true, 0.02, -0.01)).toBe(true);
+  });
+
+  it("keeps the lens beyond the headset's 5 cm near plane, however close the eye, and still shows the whole field", () => {
+    expect(lensSetback(0.15)).toBe(0);
+    expect(lensSetback(LENS_MIN_GAP)).toBe(0);
+    for (const behind of [0.06, 0.04, 0.01, -0.02]) {
+      expect(behind + lensSetback(behind)).toBeCloseTo(LENS_MIN_GAP, 9);
+    }
+    expect(LENS_MIN_GAP).toBeGreaterThan(0.05 + 0.01);
+    // The lens's edge, seen from LENS_MIN_GAP, is beyond the field's edge (about 18°).
+    expect(Math.atan(LENS_RADIUS / LENS_MIN_GAP)).toBeGreaterThan(apparentHalfField());
   });
 
   it('marks ranges from 100 to 1000 m below the middle, further down for further, inside the field', () => {

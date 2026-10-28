@@ -528,6 +528,23 @@ async function sightStep() {
     open.open && open.renders > before.renders && spread > 20,
     `open ${open.open}, ${open.renders - before.renders} frames rendered, ${open.size}², ${open.calls} calls, cpu ${open.cpuMs?.toFixed(2)} ms, picture spread ${spread}`);
 
+  // Pressed right up to the eyecup (3 cm, inside the headset's 5 cm near
+  // plane): the lens moves back into the eyepiece, 7 cm from the eye, and
+  // the picture stays (it used to vanish, clipped by the near plane).
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(along(0.03)) });
+  lookDown();
+  const pressed = await waitFor('the lens to move back', () => {
+    const l = evalInApp('window.__sight.lens()');
+    return l.setback > 0.02 ? l : null;
+  }, 5000).catch(() => evalInApp('window.__sight.lens()'));
+  const pressedState = evalInApp('window.__sight.state()');
+  // The cabin's head box may hold the head a little short of where the headset was put.
+  const pressedHead = behindLens(seated().head);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-sight-close.png'], {});
+  check('With the eye pressed to the eyecup the lens moves back past the near plane and the sight stays open',
+    pressedState.open && pressed.setback > 0.02 && Math.abs(pressedHead + pressed.setback - 0.07) < 0.005,
+    `open ${pressedState.open}, head ${(pressedHead * 100).toFixed(1)} cm behind the eyecup, lens ${(pressed.setback * 100).toFixed(1)} cm back`);
+
   iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(along(0.3)) });
   lookDown();
   const shut = await waitFor('the sight to close', () => {
@@ -546,9 +563,14 @@ async function sightStep() {
   check('"Draw: always" renders the sight from anywhere, to measure its cost',
     always.open && always.renders > later.renders, `${always.renders - later.renders} frames rendered from 30 cm away`);
 
+  // Drawn in software the page can lag a frame or two behind the button
+  // press, so wait for the menu to open and for the size to change.
   await menuButtonPress();
+  await waitFor('the game menu open', () => evalInApp('window.__gameMenu.open'), 5000).catch(() => null);
   await rayClick(elementPosition('menu-panel', 'menu-sight-size'));
-  const sized = evalInApp("({ size: window.__sight.state().size, label: window.__gameMenu.text('menu-sight-size') })");
+  const sizeNow = () => evalInApp("({ size: window.__sight.state().size, label: window.__gameMenu.text('menu-sight-size') })");
+  const sized = await waitFor('the sight size to change', () => { const s = sizeNow(); return s.size !== 512 && s; }, 5000)
+    .catch(() => sizeNow());
   await menuButtonPress();
   evalInApp('(window.__sight.setSize(512), true)');
   check("The game menu's Practice button changes the sight's texture size",
