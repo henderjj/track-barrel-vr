@@ -18,6 +18,7 @@ import { MechanismSystem } from './systems/mechanism-system.js';
 import { NetSystem } from './systems/net-system.js';
 import { OwnHandsSystem } from './systems/own-hands-system.js';
 import { PerfHudSystem } from './systems/perf-hud-system.js';
+import { PeriscopeSystem } from './systems/periscope-system.js';
 import { PlatformSystem } from './systems/platform-system.js';
 import { RangeRunSystem } from './systems/range-run-system.js';
 import { RangeSystem } from './systems/range-system.js';
@@ -82,6 +83,8 @@ World.create(
   world.registerSystem(OwnHandsSystem);
   // Spike S1's gunsight renders its view once everything in it has moved this frame.
   world.registerSystem(SightSystem);
+  // The driver's periscope (F1.6): its yoke is a kit control, and like the gunsight it renders once everything in its view has moved.
+  world.registerSystem(PeriscopeSystem);
   // After NetSystem, which may have joined a crew from the page's link.
   world.registerSystem(StartScreenSystem);
   world.registerSystem(GameMenuSystem);
