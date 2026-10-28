@@ -1357,14 +1357,16 @@ async function theDriversPeriscope() {
     `${turned.angleDeg.toFixed(1)}° (${turned.status}), view ${fmt(before.view.looking)} to ${fmt(after.view.looking)}, head facing ${fmt(after.head.facing)}, window moved ${(lensMoved * 1000).toFixed(1)} mm`);
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-periscope-left.png'], {});
 
-  // Let go with the right hand: the left alone turns it back, slower than the hand.
+  // Let go with the right hand: the left alone turns it back, slower than the hand. A third of the way back,
+  // as CI's software-drawn page runs a few frames a second and the kit steps at most 0.1 s a frame, so
+  // 30°/s comes out nearer 10°/s there.
   squeeze('controller-right', 0);
   await sleep(300);
-  handTo('controller-left', handle(0, 30), 0.3);
+  handTo('controller-left', handle(0, 60), 0.3);
   const lagging = await waitFor('the yoke behind the hand', () => { const s = scope('state()'); return s.heldBy === 'left' && s.strain[0] > 5 && s; }, 3000, 100).catch(() => scope('state()'));
-  const heavy = await waitFor('the yoke back to 30°', () => { const s = scope('state()'); return Math.abs(s.angleDeg - 30) < 3 && s; }, 8000, 200).catch(() => scope('state()'));
+  const heavy = await waitFor('the yoke back to 60°', () => { const s = scope('state()'); return Math.abs(s.angleDeg - 60) < 3 && s; }, 15000, 300).catch(() => scope('state()'));
   check('In one hand the periscope follows slower than the hand, with the strain felt, and gets there',
-    lagging.heldBy === 'left' && lagging.strain[0] > 5 && Math.abs(heavy.angleDeg - 30) < 3,
+    lagging.heldBy === 'left' && lagging.strain[0] > 5 && Math.abs(heavy.angleDeg - 60) < 3,
     `left hand ${lagging.strain[0].toFixed(1)}° ahead of it at ${lagging.angleDeg.toFixed(1)}°, then ${heavy.angleDeg.toFixed(1)}°`);
   squeeze('controller-left', 0);
   iwsdk(['xr', 'set-device-state'], {});
