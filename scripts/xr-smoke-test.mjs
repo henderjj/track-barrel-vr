@@ -557,9 +557,14 @@ async function sightStep() {
   check('"Draw: always" renders the sight from anywhere, to measure its cost',
     always.open && always.renders > later.renders, `${always.renders - later.renders} frames rendered from 30 cm away`);
 
+  // Drawn in software the page can lag a frame or two behind the button
+  // press, so wait for the menu to open and for the size to change.
   await menuButtonPress();
+  await waitFor('the game menu open', () => evalInApp('window.__gameMenu.open'), 5000).catch(() => null);
   await rayClick(elementPosition('menu-panel', 'menu-sight-size'));
-  const sized = evalInApp("({ size: window.__sight.state().size, label: window.__gameMenu.text('menu-sight-size') })");
+  const sizeNow = () => evalInApp("({ size: window.__sight.state().size, label: window.__gameMenu.text('menu-sight-size') })");
+  const sized = await waitFor('the sight size to change', () => { const s = sizeNow(); return s.size !== 512 && s; }, 5000)
+    .catch(() => sizeNow());
   await menuButtonPress();
   evalInApp('(window.__sight.setSize(512), true)');
   check("The game menu's Practice button changes the sight's texture size",
