@@ -10,6 +10,7 @@ import {
   Ducker,
   engineVoice,
   MIX,
+  renderEngineCycle,
   renderNoiseLoop,
   renderSound,
   SOUND_IDS,
@@ -67,9 +68,8 @@ interface AudioDebug {
  * The tank's sounds (F1.12, docs/audio.md), synthesised with Web Audio and
  * the rules in src/sim/tank-audio.ts, no sample files:
  *
- * - an engine note from the RPM (a sawtooth at the V12's firing rate with a
- *   square an octave down, through a low-pass that opens with the revs, and
- *   a lope at idle), the tracks' rumble and the links' clatter from their
+ * - the engine from the RPM (a V12 diesel's lumpy firing beat, 30 Hz at
+ *   idle to 62 Hz flat out, muffled by the hull), the tracks' rumble and the links' clatter from their
  *   speed, and the power traverse's whine from the turret's turn;
  * - short sounds rendered once at load: gears going in and grinding, the
  *   hull bumping, a shell rammed, the breech slamming shut or opened by
@@ -92,12 +92,9 @@ export class TankAudioSystem extends createSystem({}) {
   private master!: GainNode;
   private duck!: GainNode;
   private buffers = {} as Record<SoundId, AudioBuffer>;
-  private engineSaw!: OscillatorNode;
-  private engineSub!: OscillatorNode;
+  private engineCycle!: AudioBufferSourceNode;
   private engineFilter!: BiquadFilterNode;
   private engineAmp!: GainNode;
-  private lope!: OscillatorNode;
-  private lopeDepth!: GainNode;
   private rumbleFilter!: BiquadFilterNode;
   private rumbleAmp!: GainNode;
   private clatterBeat!: OscillatorNode;
@@ -186,20 +183,12 @@ export class TankAudioSystem extends createSystem({}) {
     this.duck = new GainNode(ctx, { gain: 1 });
     this.duck.connect(this.master);
 
-    // The engine: its note and an octave below, through a low-pass, loping at idle.
+    // The engine: the diesel's firing cycle, played faster as it revs, muffled by the hull.
     engineVoice(800, this.engine);
-    this.engineSaw = new OscillatorNode(ctx, { type: 'sawtooth', frequency: this.engine.freq });
-    this.engineSub = new OscillatorNode(ctx, { type: 'square', frequency: this.engine.freq / 2 });
-    const subLevel = new GainNode(ctx, { gain: 0.5 });
-    this.engineFilter = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: this.engine.cutoff, Q: 2 });
+    this.engineCycle = this.loop(renderEngineCycle(rate));
+    this.engineFilter = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: this.engine.cutoff, Q: 0.9 });
     this.engineAmp = new GainNode(ctx, { gain: MIX.engine * this.engine.gain });
-    const loping = new GainNode(ctx, { gain: 1 });
-    this.lope = new OscillatorNode(ctx, { type: 'sine', frequency: this.engine.lopeHz });
-    this.lopeDepth = new GainNode(ctx, { gain: this.engine.lopeDepth });
-    this.lope.connect(this.lopeDepth).connect(loping.gain);
-    this.engineSaw.connect(this.engineFilter);
-    this.engineSub.connect(subLevel).connect(this.engineFilter);
-    this.engineFilter.connect(this.engineAmp).connect(loping).connect(this.duck);
+    this.engineCycle.connect(this.engineFilter).connect(this.engineAmp).connect(this.duck);
 
     // The tracks: brown noise under a low-pass, and white noise through a band-pass beating at the links' rate.
     const rumble = this.loop(renderNoiseLoop('brown', rate, 2));
@@ -225,7 +214,7 @@ export class TankAudioSystem extends createSystem({}) {
     this.grindAmp = new GainNode(ctx, { gain: 0 });
     grind.connect(this.grindAmp).connect(this.duck);
 
-    for (const osc of [this.engineSaw, this.engineSub, this.lope, this.clatterBeat, this.whine]) osc.start();
+    for (const osc of [this.clatterBeat, this.whine]) osc.start();
   }
 
   /** A buffer playing round and round from now. */
@@ -278,12 +267,9 @@ export class TankAudioSystem extends createSystem({}) {
     this.paramClock = 0;
     const t = ctx.currentTime;
     const e = this.engine;
-    this.engineSaw.frequency.setTargetAtTime(e.freq, t, GLIDE);
-    this.engineSub.frequency.setTargetAtTime(e.freq / 2, t, GLIDE);
+    this.engineCycle.playbackRate.setTargetAtTime(e.rate, t, GLIDE);
     this.engineFilter.frequency.setTargetAtTime(e.cutoff, t, GLIDE);
     this.engineAmp.gain.setTargetAtTime(MIX.engine * e.gain, t, GLIDE);
-    this.lope.frequency.setTargetAtTime(e.lopeHz, t, GLIDE);
-    this.lopeDepth.gain.setTargetAtTime(e.lopeDepth, t, GLIDE);
     const k = this.tracks;
     this.rumbleFilter.frequency.setTargetAtTime(k.rumbleCutoff, t, GLIDE);
     this.rumbleAmp.gain.setTargetAtTime(MIX.rumble * k.rumble, t, GLIDE);

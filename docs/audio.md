@@ -6,7 +6,7 @@ Everything is synthesised with Web Audio at load: no sample files, nothing from 
 
 ## What players hear
 
-- **The engine**, all the time: a low V12 note that rises from 80 Hz at idle to 260 Hz flat out, muffled at idle and opening up and growing louder with the revs, with a lope at idle that smooths out as it revs. The hand throttle raises it.
+- **The engine**, all the time: a big V12 diesel heard through the hull, a deep lumpy beat of firings rather than a note. It quickens from 30 firings a second at idle to 62 flat out (a narrower spread than the RPM gauge's, as a heavy diesel sounds) and grows louder and harder-edged under load. The hand throttle raises it. (The first version was a sawtooth note from 80 to 260 Hz; the first headset listen said it sounded like an 8-bit racing car.)
 - **The tracks**, while the tank moves (a pivot turn too): a low rumble that deepens and opens up with speed, and the links' clatter, one tick per 15 cm of track, so at walking pace you hear each link and at speed they blur into the rumble.
 - **The power traverse**: a thin electric whine rising with the turret's turn.
 - **The gearbox**: a heavy clunk as a gear goes in, and a rasping grind for as long as the gears grind (shifting with a tiller pushed, docs/driver-station.md).
@@ -21,13 +21,12 @@ All in `src/sim/tank-audio.ts`.
 
 | What | Value |
 | --- | --- |
-| Engine note | RPM / 60 × 6 Hz (a V12 fires six times a turn): 80 Hz at 800 rpm, 260 Hz at 2600 rpm; a square an octave down under a sawtooth |
-| Engine filter | low-pass 260 Hz at idle to 1660 Hz at top RPM, Q 2 |
-| Engine lope | once a cam turn (RPM / 120 Hz), depth 0.3 at idle to 0 at top RPM |
+| Engine beat | 30 Hz at idle (800 rpm) to 62 Hz at top (2600 rpm), linear in the revs: one rendered cycle of 12 firings (`renderEngineCycle`), each a dull thump of the block, a chuff of exhaust and a short knock, with its timing (±6%) and strength (±20%) varied so the beat is lumpy, played faster as it revs |
+| Engine filter | low-pass 380 Hz at idle to 900 Hz at top RPM, Q 0.9: the hull muffles it |
 | Track rumble | brown noise, low-pass 90 to 590 Hz, level (speed / top speed)^0.7 |
 | Link clatter | white noise through a 1.1 kHz band-pass, one tick per 15 cm of track, up to 45 a second |
 | Traverse whine | triangle, 180 to 880 Hz with the turret's rate up to 24°/s |
-| Mix peaks | gun 0.95, clunk 0.55, breech 0.5, bump 0.5, ram 0.35, rumble 0.3, grind 0.3, casing 0.28, latch 0.25, engine 0.16, clatter 0.1, whine 0.03 |
+| Mix peaks | gun 0.95, clunk 0.55, breech 0.5, bump 0.5, ram 0.35, engine 0.32, rumble 0.3, grind 0.3, casing 0.28, latch 0.25, clatter 0.1, whine 0.03 |
 | Duck | −6 dB while a voice's RMS level is at or above 0.01; attack 0.05 s, hold 0.35 s, release 0.4 s |
 | Short sounds | clunk 0.45 s, grind 0.5 s loop (30 tooth beats), shot 2.2 s, breech 0.6 s, latch 0.35 s, casing 1.1 s (four bounces), ram 0.35 s, bump 0.7 s |
 
@@ -61,9 +60,9 @@ Its PC page makes no sound (it would only echo the headset's tank through the PC
 
 ## Tests
 
-- `test/tank-audio.test.ts`: the engine, track and whine numbers; the duck's attack, hold, release and quiet-room threshold; every cue (and none on the first frame, no clunk into neutral or while grinding, no latch after a shot); every short sound's length, peak and fade to silence, rendered the same twice; the grind's seamless loop; the casing's bounces; the noise loops.
+- `test/tank-audio.test.ts`: the engine, track and whine numbers; the diesel cycle (seamless, a pulse per firing, uneven); the duck's attack, hold, release and quiet-room threshold; every cue (and none on the first frame, no clunk into neutral or while grinding, no latch after a shot); every short sound's length, peak and fade to silence, rendered the same twice; the grind's seamless loop; the casing's bounces; the noise loops.
 - `test/settings-menu.test.ts`: plain is the voice default; Tank sounds is saved and parsed.
-- `npm run test:xr` step 6i: the earlier steps' shifts, loading and shot were heard; driving raises the engine note and the tracks rumble; Practice → Tank sounds → Play each plays every short sound; the Tank sounds row turns them off and on.
+- `npm run test:xr` step 6i: the earlier steps' shifts, loading and shot were heard; driving quickens the diesel's beat and the tracks rumble; Practice → Tank sounds → Play each plays every short sound; the Tank sounds row turns them off and on.
 - `npm run test:net`: the voice is plain and both pages' tank sounds duck while the fake microphones beep; both pages hear the guest gunner's ram, breech, shot and casing, on a clean link and at 150 ms RTT.
 
 The emulator can't listen: the browser tests check what the page asks Web Audio to play. How it sounds is for the headset check.
@@ -73,7 +72,7 @@ The emulator can't listen: the browser tests check what the page asks Web Audio 
 On a Quest 3 after the deploy, with the cache cleared, seated. Wear the headset's own speakers (or headphones) at a comfortable volume. Report what sounds wrong, too quiet or too loud, not only what works.
 
 1. Enter VR alone. Game menu (Y) → **Practice → Tank sounds → Play each**. You hear, a second apart: a gear clunk, a second of grinding, a shell thunk, the breech slam, the gun (crack, boom, rumble, then the casing bouncing), a lighter clack and a deep thud. The line under the button says "Sound on". Say which sound is least convincing.
-2. **Practice → Drive the tank**. At idle the engine lopes quietly. Drive off: the note climbs and opens up, the tracks rumble and you can hear the links tick at low speed, blurring as you speed up. Pivot on the spot: the tracks still rumble. Raise the hand throttle: the idle rises.
+2. **Practice → Drive the tank**. At idle the engine is a slow, deep, uneven diesel thrum. Drive off: the beat quickens (no higher than about double) and hardens, the tracks rumble and you can hear the links tick at low speed, blurring as you speed up. Pivot on the spot: the tracks still rumble. Raise the hand throttle: the idle rises.
 3. Shift with a tiller pushed: the grind rasps until you let the tiller go, then the gear clunks in. Drive gently into a rock or a wall: a thud.
 4. **Practice → Load and fire**. Ram a shell (thunk), close the breech (slam), fire (crack and boom, the breech flying open, the casing ringing in the bin by your left leg). Open the breech by hand once without firing: a lighter clack. Turn the turret with the power grip: a thin whine that rises with the speed.
 5. **Settings → Sound and view → Tank sounds**: Quiet halves it, Off silences it at once, On brings it back. Leave it on.
