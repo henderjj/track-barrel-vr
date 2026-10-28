@@ -23,7 +23,7 @@ Every feature of the game, by phase, with where it stands. The approach behind e
 
 | Phase | Goal | Features | Done |
 | --- | --- | --- | --- |
-| 0 Groundwork | Rename, plan, spikes | 6 | 2 |
+| 0 Groundwork | Rename, plan, spikes | 6 | 3 |
 | 1 Core controls prototype | Prove the tank's controls work in VR co-op | 14 | 0 |
 | 2 Communication aids | Hatches and diegetic signals, compared against voice only | 7 | 0 |
 | 3 Combat and damage | Enemies, ammunition types, damage and repairs | 9 | 0 |
@@ -38,7 +38,7 @@ Every feature of the game, by phase, with where it stands. The approach behind e
 | --- | --- | --- | --- | --- | --- |
 | F0.1 | Concept, implementation plan and this roadmap in the repository | Done | | #1 | `docs/concept.md`, `docs/plan.md`, `docs/roadmap.md` |
 | F0.2 | Rename the template to Track & Barrel VR | Done | | #2 | `package.json` name, page title, `coop-vr.` storage keys, README, lobby Worker name |
-| F0.3 | Spike S1: magnified sight render on Quest 3 | Headset check | F0.2 | #3 | Second camera into a 512² texture shown at infinity through the lens, reticle with range marks; [spike note](spikes/s1-sight-render.md) with the headset check |
+| F0.3 | Spike S1: magnified sight render on Quest 3 | Done | F0.2 | #3 | Second camera into a 512² texture shown at infinity through the lens, reticle with range marks; [spike note](spikes/s1-sight-render.md) with the headset check |
 | F0.4 | Spike S2: riding the tank | Headset check | F0.2 | #7 | [spikes/s2-riding.md](spikes/s2-riding.md): Practice → Ride the tank as driver or gunner; world moves round the hull; gunner's space turns with the turret; open or closed cabin; vignette on or off |
 | F0.5 | Spike S3: lever feel | Headset check | F0.2 | #4 | Two test tillers and a lane board (Practice > Lever test); headset check in [spikes/s3-lever-feel.md](spikes/s3-lever-feel.md) |
 | F0.6 | Spike S4: loading a shell | Headset check | F0.2 | #6 | Grab, swing, ram, close, seated; time and fumbles. [spikes/s4-loading.md](spikes/s4-loading.md); Practice → Sit at the breech |
@@ -120,6 +120,8 @@ Ends when a crew can drive the range, find and hit three static targets, and the
 
 ## Ideas (no phase yet)
 
+- A gun elevation scale on the gun mount (a pointer against a scale in mils, like the gunner's quadrant WWII tanks carried). For direct fire the reticle already shows where the barrel points, so it only matters for indirect fire or ranging by elevation. Related: F2.3 (turret position dial) and F2.4 (hull direction in the sight) are the indicators real crews used most.
+- A German-style range drum as a realism option: the gunner sets the range on a knob and aims with the chevron itself, instead of the fixed range marks (the British and American style the sight has now).
 - An optional third player (concept open question). Not planned: the lobby and presence code assume two.
 
 ## Out of scope (from the concept)

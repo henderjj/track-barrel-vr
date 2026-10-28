@@ -516,6 +516,23 @@ async function sightStep() {
     open.open && open.renders > before.renders && spread > 20,
     `open ${open.open}, ${open.renders - before.renders} frames rendered, ${open.size}², ${open.calls} calls, cpu ${open.cpuMs?.toFixed(2)} ms, picture spread ${spread}`);
 
+  // Pressed right up to the eyecup (3 cm, inside the headset's 5 cm near
+  // plane): the lens moves back into the eyepiece, 7 cm from the eye, and
+  // the picture stays (it used to vanish, clipped by the near plane).
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(along(0.03)) });
+  lookDown();
+  const pressed = await waitFor('the lens to move back', () => {
+    const l = evalInApp('window.__sight.lens()');
+    return l.setback > 0.02 ? l : null;
+  }, 5000).catch(() => evalInApp('window.__sight.lens()'));
+  const pressedState = evalInApp('window.__sight.state()');
+  // The cabin's head box may hold the head a little short of where the headset was put.
+  const pressedHead = behindLens(seated().head);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-sight-close.png'], {});
+  check('With the eye pressed to the eyecup the lens moves back past the near plane and the sight stays open',
+    pressedState.open && pressed.setback > 0.02 && Math.abs(pressedHead + pressed.setback - 0.07) < 0.005,
+    `open ${pressedState.open}, head ${(pressedHead * 100).toFixed(1)} cm behind the eyecup, lens ${(pressed.setback * 100).toFixed(1)} cm back`);
+
   iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(along(0.3)) });
   lookDown();
   const shut = await waitFor('the sight to close', () => {

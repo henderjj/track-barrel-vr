@@ -38,6 +38,7 @@ import {
   SIGHT_SIZES,
   type SightEye,
   type SightSize,
+  lensSetback,
   sightOpen,
   superelevation,
   TRUE_HALF_FIELD,
@@ -138,8 +139,8 @@ interface SightDebug {
   error(i: number): SightError;
   /** The same, measured from the sight camera as it is drawn and the target as the ground draws it. */
   drawnError(i: number): SightError;
-  /** The lens's middle and the way it faces (towards the eye), world space. */
-  lens(): { at: number[]; facing: number[] };
+  /** Where the lens rests (the eyepiece) and the way it faces (towards the eye), world space, and how far it has moved back inside, m. */
+  lens(): { at: number[]; facing: number[]; setback: number };
   /** The sight camera's position and the way it looks, world space. */
   view(): { at: number[]; looking: number[] };
   /** Spread of the rendered picture's brightness in a few texels (0 for a blank picture). */
@@ -181,10 +182,11 @@ export class SightSystem extends createSystem({}) {
   private head = new Vector3();
   private headQuat = new Quaternion();
   private right = new Vector3();
-  private eye = new Vector3();
+  /** Each eye in eyepiece space (the lens's resting place at the origin, +Z towards the eye). */
+  private eyes = [new Vector3(), new Vector3()] as const;
+  private worldToEyepiece = new Matrix4();
   private lensAt = new Vector3();
   private lensQuat = new Quaternion();
-  private local = new Vector3();
   private worldToLens = new Matrix4();
   private forward = new Vector3();
   private turned: [number, number] = [0, 0];
@@ -260,9 +262,10 @@ export class SightSystem extends createSystem({}) {
       },
       drawnError: (i) => this.drawnError(i),
       lens: () => {
-        this.lens.getWorldPosition(this.lensAt);
+        const at = new Vector3();
+        this.lens.parent?.getWorldPosition(at);
         this.lens.getWorldQuaternion(this.lensQuat);
-        return { at: this.lensAt.toArray(), facing: new Vector3(0, 0, 1).applyQuaternion(this.lensQuat).toArray() };
+        return { at: at.toArray(), facing: new Vector3(0, 0, 1).applyQuaternion(this.lensQuat).toArray(), setback: -this.lens.position.z };
       },
       view: () => {
         this.camera3.updateWorldMatrix(true, false);
@@ -286,10 +289,10 @@ export class SightSystem extends createSystem({}) {
     }
     if (this.eyepiece == null) return;
 
-    this.lens.updateWorldMatrix(true, false);
-    this.lens.getWorldPosition(this.lensAt);
-    this.worldToLens.copy(this.lens.matrixWorld).invert();
-    this.material.uniforms.uWorldToLens.value.copy(this.worldToLens);
+    this.eyepiece.updateWorldMatrix(true, false);
+    this.worldToEyepiece.copy(this.eyepiece.matrixWorld).invert();
+    this.placeEyes();
+    this.placeLens();
 
     const was = sightStats.open;
     const open = sightStats.mode === 'always' || (sightStats.mode === 'auto' && this.eyeAtEyepiece(was));
@@ -303,23 +306,46 @@ export class SightSystem extends createSystem({}) {
     }
   }
 
-  /** Whether one of the eyes the sight shows to is at the eyepiece, with the lens's hysteresis. */
-  private eyeAtEyepiece(wasOpen: boolean): boolean {
+  /** Where each eye is, in eyepiece space, from the head pose. */
+  private placeEyes(): void {
     const head = this.player.head;
     head.getWorldPosition(this.head);
     head.getWorldQuaternion(this.headQuat);
     this.right.set(1, 0, 0).applyQuaternion(this.headQuat);
+    this.eyes.forEach((eye, i) => {
+      eye.copy(this.head).addScaledVector(this.right, (i === 0 ? -1 : 1) * HALF_IPD).applyMatrix4(this.worldToEyepiece);
+    });
+  }
+
+  /**
+   * Keep the lens beyond the headset's near plane: with an eye pressed to
+   * the eyepiece it moves back inside it (src/sim/sight.ts, lensSetback),
+   * drawn over the eyepiece it is then behind. The picture is at infinity,
+   * so it looks the same.
+   */
+  private placeLens(): void {
+    const mask = this.material.uniforms.uEyes.value as number;
+    let nearest = Infinity;
+    this.eyes.forEach((eye, i) => {
+      if ((mask & (1 << i)) !== 0 && Math.hypot(eye.x, eye.y) < 0.1) nearest = Math.min(nearest, eye.z);
+    });
+    const setback = lensSetback(nearest);
+    this.lens.position.z = -setback;
+    this.material.depthTest = setback === 0;
+    this.lens.renderOrder = setback === 0 ? 0 : 10;
+    this.lens.updateWorldMatrix(false, false);
+    this.lens.getWorldPosition(this.lensAt);
+    this.worldToLens.copy(this.lens.matrixWorld).invert();
+    this.material.uniforms.uWorldToLens.value.copy(this.worldToLens);
+  }
+
+  /** Whether one of the eyes the sight shows to is at the eyepiece, with the lens's hysteresis. */
+  private eyeAtEyepiece(wasOpen: boolean): boolean {
     const mask = this.material.uniforms.uEyes.value as number;
     let open = false;
-    for (const [bit, side] of [[1, -1], [2, 1]] as const) {
-      if ((mask & bit) === 0) {
-        continue;
-      }
-      this.eye.copy(this.head).addScaledVector(this.right, side * HALF_IPD);
-      const distance = this.eye.distanceTo(this.lensAt);
-      this.local.copy(this.eye).applyMatrix4(this.worldToLens);
-      open ||= sightOpen(wasOpen, distance, this.local.z);
-    }
+    this.eyes.forEach((eye, i) => {
+      if ((mask & (1 << i)) !== 0) open ||= sightOpen(wasOpen, eye.length(), eye.z);
+    });
     return open;
   }
 

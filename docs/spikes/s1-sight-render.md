@@ -1,6 +1,6 @@
 # Spike S1: magnified sight render
 
-Status: merged in #3 (2026-10-26), waiting on the headset check below. Roadmap F0.3. The gunsight (F1.9, [gunsight.md](../gunsight.md)) now carries this renderer on the gun; the stand-in sight and its Aim button are gone, and Practice → Gunsight → Go to it and Lay on replace steps 2 and 3's buttons.
+Status: passed. On 2026-10-27 John's Quest 3 held 90 fps at 90 Hz with the sight open at every texture size (256², 512² and 1024²), and the range marks read clearly at 3× (results below). Roadmap F0.3. The gunsight (F1.9, [gunsight.md](../gunsight.md)) now carries this renderer on the gun; the stand-in sight and its Aim button are gone, and Practice → Gunsight → Go to it and Lay on replace steps 2 and 3's buttons.
 
 The question from the [plan](../plan.md#5-risks-and-spikes): does a 512² second-camera view fit Quest 3's budget alongside the rest of the scene, and is it readable? Pass mark: holds 90 Hz with the sight open, and the range marks are readable at 3×.
 
@@ -38,6 +38,15 @@ The cloud's software renderer can't say anything about Quest 3 frame times (it t
 - **Multiview and program switches.** The main view is drawn with multiview on the Quest; the sight's texture isn't. three.js keeps a compiled shader of each kind for every material and swaps between them each frame, which costs main-thread time per object. If the HUD's `cpu` for the sight is much more than its share of the draw calls, this is why, and the fix is a smaller scene for the sight (layers, or culling the cabin).
 - **Draw calls double.** The sight draws the whole scene again: the HUD's sight `calls` plus the frame's `calls` is the real total against the 150 limit.
 - **The cabin and range don't exist yet.** This measures the sight against the starter's deck, three boards and the plain. F1.9 re-measures once the cabin (F1.1) and test range (F1.7) are in.
+
+## Headset results
+
+### 2026-10-27, Quest 3 (John)
+
+- **Frame rate: pass.** 90 fps at 90 Hz with the sight open at 256², 512² and 1024², by then at the gunner's eyepiece in the turret with the cabin and range around it (F1.9). The sight's size can be chosen for how it reads; 512² stays the default.
+- **Range marks: pass.** They look clear. John asked for an example of what they should look like: [images/reticle-guide.png](../images/reticle-guide.png) (also in the gunsight note) shows the reticle enlarged and a 500 m target laid on its mark.
+- **Too close, the picture vanished.** Pressing the eye right up to the eyepiece made the lens go blank. The headset doesn't draw anything closer than its 5 cm near plane, and the seat's head box lets the head get to about 4 cm from the lens, so the lens was clipped away and the eye saw past it. Fixed: the lens now moves back inside the eyepiece to stay 7 cm from the nearer eye, drawn over the eyepiece's own parts (`lensSetback` in `src/sim/sight.ts`). The picture is at infinity, so it looks the same, and at 7 cm the lens still shows the whole field. An eye up to 3 cm into the eyecup keeps the sight open.
+- Not reported: one eye against both (step 4), PC over Link (step 6). Neither blocks the pass.
 
 ## Headset check (Quest 3, then PC over Link)
 
