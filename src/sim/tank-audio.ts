@@ -25,7 +25,7 @@ export type SoundId = (typeof SOUND_IDS)[number];
  * these peaks.
  */
 export const MIX = {
-  engine: 0.16,
+  engine: 0.32,
   rumble: 0.3,
   clatter: 0.1,
   whine: 0.03,
@@ -39,8 +39,17 @@ export const MIX = {
   bump: 0.5,
 } as const;
 
-/** The engine is a V12: it fires six times a turn, so its note is RPM / 60 × 6 Hz (80 Hz at idle, 260 Hz flat out). */
-export const FIRINGS_PER_TURN = 6;
+/**
+ * The engine is a big V12 diesel heard through the hull: a deep, lumpy
+ * firing beat rather than a note. Its beat runs from ENGINE_IDLE_HZ at idle
+ * to ENGINE_TOP_HZ flat out, a narrower spread than the RPM's, as a heavy
+ * diesel's sounds. The beat is one rendered cycle of firings
+ * (`renderEngineCycle`) played faster as it revs.
+ */
+export const ENGINE_IDLE_HZ = 30;
+export const ENGINE_TOP_HZ = 62;
+/** Firings in the rendered cycle: two turns of the V12, each firing a little different, so it loops lumpy rather than as a pure tone. */
+export const ENGINE_CYCLE_FIRINGS = 12;
 /** The track links are this far apart, m: the clatter's rate is the track speed over this. */
 export const LINK_PITCH = 0.15;
 /** The clatter's rate tops out here, Hz (above it the links blur into the rumble). */
@@ -65,21 +74,20 @@ export const dbToGain = (db: number): number => 10 ** (db / 20);
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-/** The engine's sound at an RPM: its note, how open its filter is, how loud, and the idle's lope. */
+/** The engine's sound at an RPM: its firing beat, how fast the rendered cycle plays, how open its filter is and how loud. */
 export interface EngineVoice {
-  /** The firing note, Hz; a square an octave down gives it weight. */
+  /** The firing beat, Hz. */
   freq: number;
-  /** The low-pass filter's cutoff, Hz: muffled at idle, opening up with the revs. */
+  /** The rendered cycle's playback rate (1 at idle). */
+  rate: number;
+  /** The low-pass filter's cutoff, Hz: muffled by the hull at idle, a little harder-edged under load. */
   cutoff: number;
   /** 0 to 1, before MIX.engine. */
   gain: number;
-  /** The lope's rate, Hz (once a cam turn) and depth, 0 to 1: strong at idle, gone at full revs. */
-  lopeHz: number;
-  lopeDepth: number;
 }
 
 export function createEngineVoice(): EngineVoice {
-  return { freq: 0, cutoff: 0, gain: 0, lopeHz: 0, lopeDepth: 0 };
+  return { freq: 0, rate: 1, cutoff: 0, gain: 0 };
 }
 
 /** How far the revs are from idle to top, 0 to 1. */
@@ -89,11 +97,10 @@ export function revs(rpm: number): number {
 
 export function engineVoice(rpm: number, out: EngineVoice): EngineVoice {
   const r = revs(rpm);
-  out.freq = (Math.max(0, rpm) / 60) * FIRINGS_PER_TURN;
-  out.cutoff = 260 + 1400 * r;
-  out.gain = 0.55 + 0.45 * r;
-  out.lopeHz = Math.max(0, rpm) / 120;
-  out.lopeDepth = 0.3 * (1 - r);
+  out.freq = ENGINE_IDLE_HZ + (ENGINE_TOP_HZ - ENGINE_IDLE_HZ) * r;
+  out.rate = out.freq / ENGINE_IDLE_HZ;
+  out.cutoff = 380 + 520 * r;
+  out.gain = 0.65 + 0.35 * r;
   return out;
 }
 
@@ -369,6 +376,37 @@ export function renderSound(id: SoundId, rate: number): Float32Array<ArrayBuffer
   }
   normalise(out, MIX[id]);
   return id === 'grind' ? out : fadeOut(out, rate, 0.03);
+}
+
+/**
+ * The diesel's firing cycle at idle, peaking at 1, looping seamlessly:
+ * ENGINE_CYCLE_FIRINGS firings at ENGINE_IDLE_HZ, each a dull thump of the
+ * block, a chuff of exhaust and a short hard knock, with its timing and
+ * strength varied a little so the beat is lumpy. Played faster as the
+ * engine revs. Deterministic.
+ */
+export function renderEngineCycle(rate: number): Float32Array<ArrayBuffer> {
+  const n = Math.round((ENGINE_CYCLE_FIRINGS / ENGINE_IDLE_HZ) * rate);
+  // Render with a tail, then fold the tail onto the start so the last firing rings into the first.
+  const tail = Math.round(0.12 * rate);
+  const work = new Float32Array(n + tail);
+  const random = rng(201);
+  const period = 1 / ENGINE_IDLE_HZ;
+  for (let k = 0; k < ENGINE_CYCLE_FIRINGS; k++) {
+    const at = (k + (random() - 0.5) * 0.12) * period + 0.004;
+    const a = 0.8 + random() * 0.4;
+    thump(work, rate, at, 120, 70, a, 0.012);
+    partial(work, rate, at, 190 * (0.95 + random() * 0.1), 0.35 * a, 0.007);
+    noise(work, rate, at, 0.9 * a, 0.018, 260, random);
+    noise(work, rate, at + 0.001, 0.28 * a * (0.6 + random() * 0.8), 0.0025, 3200, random);
+  }
+  const out = new Float32Array(n);
+  for (let i = 0; i < work.length; i++) out[i % n] += work[i];
+  let mean = 0;
+  for (let i = 0; i < n; i++) mean += out[i];
+  mean /= n;
+  for (let i = 0; i < n; i++) out[i] -= mean;
+  return normalise(out, 1);
 }
 
 /**

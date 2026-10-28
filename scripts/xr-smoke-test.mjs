@@ -1526,11 +1526,11 @@ async function tankSounds() {
   await sleep(400);
   const idle = audio();
   evalInApp('(window.__drive.set({ left: 1, right: 1, gear: 1, throttle: 0 }), true)');
-  const driving = await waitFor('the engine note to climb', () => { const a = audio(); return a.engineHz > 200 && a.rumble > 0.2 && a; }, 8000)
+  const driving = await waitFor('the engine note to climb', () => { const a = audio(); return a.engineHz > 52 && a.rumble > 0.2 && a; }, 8000)
     .catch(() => audio());
   evalInApp('(window.__drive.set(null), window.__drive.reset(), true)');
-  check('Driving off raises the engine\'s note with the revs and the tracks rumble and clatter',
-    idle.engineHz >= 79 && idle.engineHz < 170 && idle.rumble < 0.01 && driving.engineHz > 200 && driving.rumble > 0.2 && driving.clatterHz > 3,
+  check('Driving off quickens the diesel\'s beat (30 to 62 Hz) and the tracks rumble and clatter',
+    idle.engineHz >= 29 && idle.engineHz < 50 && idle.rumble < 0.01 && driving.engineHz > 52 && driving.engineHz <= 62 && driving.rumble > 0.2 && driving.clatterHz > 3,
     `engine ${idle.engineHz.toFixed(0)} Hz at idle, ${driving.engineHz.toFixed(0)} Hz driving; rumble ${driving.rumble.toFixed(2)}, links ${driving.clatterHz.toFixed(1)} a second`);
 
   await menuButtonPress();

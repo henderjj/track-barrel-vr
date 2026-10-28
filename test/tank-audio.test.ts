@@ -11,9 +11,13 @@ import {
   Ducker,
   dbToGain,
   engineVoice,
+  ENGINE_CYCLE_FIRINGS,
+  ENGINE_IDLE_HZ,
+  ENGINE_TOP_HZ,
   GRIND_TEETH_HZ,
   MAX_CLATTER_HZ,
   MIX,
+  renderEngineCycle,
   renderNoiseLoop,
   renderSound,
   SOUND_IDS,
@@ -35,19 +39,43 @@ const rmsOf = (a: Float32Array, from: number, to: number) => {
 };
 
 describe('the engine', () => {
-  it('sings at the V12 firing rate, opening up and growing louder with the revs', () => {
+  it('beats low like a heavy diesel, over a narrow range, growing louder and harder with the revs', () => {
     const idle = engineVoice(IDLE_RPM, createEngineVoice());
     const top = engineVoice(MAX_RPM, createEngineVoice());
-    expect(idle.freq).toBeCloseTo(80);
-    expect(top.freq).toBeCloseTo(260);
-    expect(top.cutoff).toBeGreaterThan(idle.cutoff * 3);
+    expect(idle.freq).toBe(ENGINE_IDLE_HZ);
+    expect(top.freq).toBe(ENGINE_TOP_HZ);
+    expect(top.freq).toBeLessThan(70);
+    // Far less spread than the RPM's 3.25 times.
+    expect(top.freq / idle.freq).toBeLessThan(2.2);
+    expect(idle.rate).toBe(1);
+    expect(top.rate).toBeCloseTo(ENGINE_TOP_HZ / ENGINE_IDLE_HZ);
+    expect(top.cutoff).toBeGreaterThan(idle.cutoff);
+    expect(top.cutoff).toBeLessThan(1000);
     expect(top.gain).toBeGreaterThan(idle.gain);
     expect(top.gain).toBeLessThanOrEqual(1);
   });
 
-  it('lopes at idle and runs smooth flat out', () => {
-    expect(engineVoice(IDLE_RPM, createEngineVoice()).lopeDepth).toBeGreaterThan(0.2);
-    expect(engineVoice(MAX_RPM, createEngineVoice()).lopeDepth).toBe(0);
+  it('renders a lumpy firing cycle that loops without a click', () => {
+    const c = renderEngineCycle(RATE);
+    expect(c.length).toBe(Math.round((ENGINE_CYCLE_FIRINGS / ENGINE_IDLE_HZ) * RATE));
+    expect(peak(c)).toBeCloseTo(1, 5);
+    expect(c).toEqual(renderEngineCycle(RATE));
+    expect(Math.abs(c.reduce((a, v) => a + v, 0) / c.length)).toBeLessThan(1e-6);
+    // The join is no bigger a step than the cycle takes anywhere else.
+    let biggest = 0;
+    for (let i = 1; i < c.length; i++) biggest = Math.max(biggest, Math.abs(c[i] - c[i - 1]));
+    expect(Math.abs(c[0] - c[c.length - 1])).toBeLessThanOrEqual(biggest);
+    // Each firing is a pulse: loudest just after it, quiet before the next.
+    const period = Math.round(RATE / ENGINE_IDLE_HZ);
+    const strength: number[] = [];
+    for (let k = 0; k < ENGINE_CYCLE_FIRINGS; k++) {
+      const start = k * period;
+      const third = Math.round(period / 3);
+      strength.push(rmsOf(c, start, start + third));
+      expect(rmsOf(c, start, start + third)).toBeGreaterThan(rmsOf(c, start + 2 * third, start + period) * 1.5);
+    }
+    // Not every firing the same: the beat is lumpy, not a pure tone.
+    expect(Math.max(...strength) / Math.min(...strength)).toBeGreaterThan(1.1);
   });
 });
 
