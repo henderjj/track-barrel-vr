@@ -145,6 +145,24 @@ class HandAngle {
     this.last = angle;
     return this.filter.filter(this.unwrapped, dt);
   }
+
+  /**
+   * Round a wheel's axle: the hand is at (x, y) in wheel space now, `dt`
+   * after the last; its steadied, unwrapped angle. The angle moves on by how
+   * far the hand went round as seen from where it was, never more than
+   * `near` from the axle, so a hand that cuts in close to the axle (a crank
+   * turned in a circle a little off its axle) turns it less there, instead
+   * of stopping it and then jumping on, or back.
+   */
+  stepAround(x: number, y: number, near: number, dt: number): number {
+    const c = Math.cos(this.unwrapped);
+    const s = Math.sin(this.unwrapped);
+    // The hand's offset along the way round (anticlockwise) and out from the axle, at the angle it was at.
+    const along = -x * c - y * s;
+    const out = y * c - x * s;
+    this.unwrapped += Math.atan2(along, out > near ? out : near);
+    return this.filter.filter(this.unwrapped, dt);
+  }
 }
 
 /** Ticks as an angle passes marks every `every` radians, each felt again only once the angle has moved off it. */
@@ -439,6 +457,9 @@ export interface WheelSpec {
   perTurn: number;
 }
 
+/** Nearer a wheel's axle than this share of its radius, a hand turns it less the nearer it is (`HandAngle.stepAround`). */
+const NEAR_AXLE = 0.5;
+
 /** The angle round a wheel's axle of a point at (x, y) in wheel space: 0 at the top, positive anticlockwise seen from the front, or NaN near the axle. */
 export function wheelAngleOf(x: number, y: number): number {
   if (x * x + y * y < MIN_HAND_RADIUS * MIN_HAND_RADIUS) {
@@ -454,7 +475,9 @@ export function wheelAngleOf(x: number, y: number): number {
  * with the crank's knob at the top.
  *
  * A held wheel follows the hand's angle round the axle, unwrapped so it can
- * turn many times, keeping the difference there was at taking hold. Two
+ * turn many times, keeping the difference there was at taking hold. Each
+ * frame's turn is read from where the hand was, so a hand going round a
+ * little off the axle (as hands turning a crank do) still turns it smoothly. Two
  * hands on a rim turn it by the mean of where each would take it. It stops
  * at its limits like a lever; a wheel let go stays where it is.
  */
@@ -502,20 +525,12 @@ export class Wheel extends Mechanism {
       return false;
     }
     this.held[side] = true;
-    // A fist too near the axle to read its angle (on a small crank) takes hold, and turns it once it can be read.
-    this.offset[side] = Number.NaN;
-    this.begin(side, hand);
-    return true;
-  }
-
-  /** Start following `hand` from where it is, if its angle round the axle can be read. */
-  private begin(side: HandIndex, hand: HandInput): void {
-    const a = wheelAngleOf(hand.fist[0], hand.fist[1]);
-    if (Number.isNaN(a)) {
-      return;
-    }
+    // A fist too near the axle to read its angle (on a small crank) is taken to be on the knob, and turns it from there.
+    let a = wheelAngleOf(hand.fist[0], hand.fist[1]);
+    if (Number.isNaN(a)) a = this.angle;
     this.offset[side] = this.angle - this.hands[side].start(a, hand.tracked);
     this.spot[side] = this.spec.grip === 'crank' ? 0 : wrap(a - this.angle);
+    return true;
   }
 
   update(dt: number, hands: readonly (HandInput | null)[]): number {
@@ -526,15 +541,9 @@ export class Wheel extends Mechanism {
     for (let i = 0; i < 2; i++) {
       if (!this.held[i]) continue;
       const hand = hands[i];
-      if (Number.isNaN(this.offset[i])) {
-        if (hand) this.begin(i as HandIndex, hand);
-        continue;
-      }
-      const smooth = this.hands[i].step(hand ? wheelAngleOf(hand.fist[0], hand.fist[1]) : Number.NaN, dt);
-      if (!Number.isNaN(smooth)) {
-        sum += smooth + this.offset[i];
-        count++;
-      }
+      if (!hand) continue;
+      sum += this.hands[i].stepAround(hand.fist[0], hand.fist[1], NEAR_AXLE * this.spec.radius, dt) + this.offset[i];
+      count++;
     }
     let overshoot = 0;
     if (count > 0) {
