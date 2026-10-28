@@ -23,8 +23,9 @@ import {
   TANK_STATE_BYTES,
   type TankHeader,
 } from '../net/tank-codec.js';
+import { onSettingChange } from '../live-settings.js';
 import { settings } from '../settings.js';
-import { vignetteLevel } from '../sim/comfort.js';
+import { type Bumps, crewBumps, groundFeel, parseBumps, vignetteLevel } from '../sim/comfort.js';
 import {
   angleDelta,
   copyTankDrive,
@@ -65,8 +66,6 @@ export const drive = {
   left: 0,
   right: 0,
   tillersHeld: false,
-  /** The comfort vignette, on by default (F1.14 makes it a setting of its own). */
-  vignette: true,
 };
 
 const SEND_HZ = 45;
@@ -74,8 +73,6 @@ const SEND_HZ = 45;
 const MAX_STEP = 1 / 60;
 /** A guest driver's controls older than this are treated as let go, ms. */
 const CONTROLS_STALE_MS = 500;
-/** How dark the vignette gets at its strongest (as spike S2's). */
-const VIGNETTE_STRENGTH = 0.5;
 /** How long a sign stays up, s. */
 const SIGN_SECONDS = 6;
 
@@ -148,6 +145,11 @@ export function engineRpm(): number {
   return active?.shown.rpm ?? IDLE_RPM;
 }
 
+/** The bumps the tank rides on (F1.14): reduced if either player asked for it in their Comfort settings. */
+export function tankBumps(): Bumps {
+  return active?.bumps ?? settings.bumps;
+}
+
 /** The tank as drawn on this page (the host's simulation, or the guest's copy of it): where a shot leaves from (F1.10) and the gunsight's view (F1.9). */
 export function tankState(): Readonly<TankDrive> {
   return active?.shown ?? createTankDrive();
@@ -179,6 +181,9 @@ interface DriveDebug {
   /** Where a world-space point is drawn, in hull space. */
   drawnAt(x: number, y: number, z: number): number[];
   readonly vignetteAlpha: number;
+  /** The bumps the tank rides on, and the crewmate's ask (null alone or before it is heard). */
+  readonly bumps: Bumps;
+  readonly crewBumps: Bumps | null;
   readonly sign: string;
   /** Tank packets sent and received. */
   readonly sent: number;
@@ -205,9 +210,11 @@ interface DriveDebug {
  * gear lever and hand throttle into `drive`. While no hand holds a tiller
  * the thumbsticks drive (each stick's forward push its own track), or
  * W A S D on the flat page; the menu and keys 0, 1, 2 move the gear
- * lever too. A comfort vignette
- * darkens the edge of view with the tank's motion. Spike S2's ride takes
- * over while it runs.
+ * lever too. A comfort vignette darkens the edge of view with the tank's
+ * motion, as dark as this player's Vignette setting allows (F1.14). The
+ * host follows the ground with reduced bumps if either player's Bumps
+ * setting asks (each page tells the other with a reliable `comfort`
+ * event). Spike S2's ride takes over while it runs.
  *
  * Everything the tank drives past — the range's roads, targets, markers and
  * obstacles (F1.7, src/sim/range.ts) — is part of the ground this moves, so
@@ -235,6 +242,9 @@ export class DriveSystem extends createSystem({}) {
   private sent = 0;
   private received = 0;
   private wasHost = true;
+  private wasConnected = false;
+  /** The crewmate's Bumps setting, once heard. */
+  private theirBumps: Bumps | null = null;
   private ground: Object3D | null = null;
   private vignette!: Mesh<CylinderGeometry, ShaderMaterial>;
   private sign!: FloatingSign;
@@ -264,6 +274,9 @@ export class DriveSystem extends createSystem({}) {
     netLink.handlers.set(PacketType.DriverControls, (view) => this.onDriverControls(view));
     netLink.events.set('drive-reset', () => {
       if (netLink.isHost) this.reset();
+    });
+    netLink.events.set('comfort', (data) => {
+      this.theirBumps = parseBumps((data as { bumps?: unknown }).bumps);
     });
     netLink.events.set('drive-place', (data) => {
       const { x, z, heading } = data as { x?: unknown; z?: unknown; heading?: unknown };
@@ -295,6 +308,10 @@ export class DriveSystem extends createSystem({}) {
       () => netLink.handlers.delete(PacketType.DriverControls),
       () => netLink.events.delete('drive-reset'),
       () => netLink.events.delete('drive-place'),
+      () => netLink.events.delete('comfort'),
+      onSettingChange((key) => {
+        if (key === 'bumps') this.tellBumps();
+      }),
       () => window.removeEventListener('keydown', onKeyDown),
       () => window.removeEventListener('keyup', onKeyUp),
       () => window.removeEventListener('blur', onBlur),
@@ -314,11 +331,25 @@ export class DriveSystem extends createSystem({}) {
       place: (x, z, heading) => self.park(x, z, heading),
       drawnAt: (x, y, z) => (self.ground ? self.ground.localToWorld(new Vector3(x, y, z)).toArray() : []),
       get vignetteAlpha() { return self.vignette.material.uniforms.uAlpha.value as number; },
+      get bumps() { return self.bumps; },
+      get crewBumps() { return self.theirBumps; },
       get sign() { return self.sign.visible ? self.signText : ''; },
       get sent() { return self.sent; },
       get received() { return self.received; },
       get lateFrames() { return self.buffer.late; },
     };
+  }
+
+  /** The bumps the tank rides on: reduced if either player asks. */
+  get bumps(): Bumps {
+    return crewBumps(settings.bumps, netLink.connected ? this.theirBumps : null);
+  }
+
+  /** Tell the crewmate this player's Bumps setting. */
+  private tellBumps(): void {
+    if (!netLink.connected) return;
+    const event = { t: 'comfort', bumps: settings.bumps };
+    netLink.sendEvent(event);
   }
 
   /** Who sits in the driver's seat, as this page sees it. */
@@ -331,7 +362,7 @@ export class DriveSystem extends createSystem({}) {
   park(x: number, z: number, heading: number): void {
     if (!netLink.isHost) return;
     Object.assign(this.sim, createTankDrive(x, z, heading), { gear: this.sim.gear });
-    settle(this.sim);
+    settle(this.sim, groundFeel(this.bumps));
     copyTankDrive(this.sim, this.shown);
   }
 
@@ -365,6 +396,11 @@ export class DriveSystem extends createSystem({}) {
       this.remoteSeq = -1;
     }
     this.wasHost = isHost;
+    if (netLink.connected !== this.wasConnected) {
+      this.wasConnected = netLink.connected;
+      if (netLink.connected) this.tellBumps();
+      else this.theirBumps = null;
+    }
 
     this.readLocalControls();
     if (isHost) {
@@ -440,8 +476,9 @@ export class DriveSystem extends createSystem({}) {
       source.left = 0;
       source.right = 0;
     }
+    const feel = groundFeel(this.bumps);
     for (let left = dt; left > 1e-6; left -= MAX_STEP) {
-      stepDrive(this.sim, source, Math.min(left, MAX_STEP));
+      stepDrive(this.sim, source, Math.min(left, MAX_STEP), undefined, feel);
     }
     if (driver === 'crew') copyControls(source, this.controls);
     copyControls(source, this.shownControls);
@@ -511,11 +548,11 @@ export class DriveSystem extends createSystem({}) {
   private shade(dt: number): void {
     const alpha = this.vignette.material.uniforms.uAlpha;
     let target = 0;
-    if (drive.vignette && this.world.session != null) {
+    if (settings.vignette > 0 && this.world.session != null) {
       const s = this.shown;
       // The gunner's view turns with the turret too.
       const turn = s.yawRate + (seating.mine === 'gunner' ? seating.turretRate : 0);
-      target = vignetteLevel(turn, s.accel, Math.abs(s.pitchRate) + Math.abs(s.rollRate), s.speed) * VIGNETTE_STRENGTH;
+      target = vignetteLevel(turn, s.accel, Math.abs(s.pitchRate) + Math.abs(s.rollRate), s.speed) * settings.vignette;
     }
     alpha.value += (target - alpha.value) * Math.min(1, dt * 6);
     this.vignette.visible = alpha.value > 0.002;
