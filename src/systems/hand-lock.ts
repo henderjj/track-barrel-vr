@@ -33,8 +33,10 @@ export const HoldKind = {
   HandThrottle: 5,
   /** A shell in the hand (LoadingSystem, F1.10): drawn in the hand, so the hand isn't locked. */
   Shell: 9,
-  /** The breech lever's handle (LoadingSystem, F1.10). 8 is kept for Phase 1's periscope. */
+  /** The breech lever's handle (LoadingSystem, F1.10). */
   BreechLever: 10,
+  /** Either handle of the driver's periscope's yoke (PeriscopeSystem, F1.6). */
+  Periscope: 8,
   /** The gunner's manual traverse crank and elevation handwheel (TurretSystem, F1.8). */
   TraverseCrank: 6,
   ElevationWheel: 7,

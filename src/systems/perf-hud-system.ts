@@ -18,6 +18,7 @@ import { budgetHz, frameRateInfo } from './frame-rate-system.js';
 import { hapticsSummary } from './haptics.js';
 import { poseName } from '../sim/hand-pose.js';
 import { fingerInputs, grip, handCurls, handGrips, Touch } from './grip-system.js';
+import { periscopeSummary } from './periscope-system.js';
 import { saveStatsCsv } from './play-stats-system.js';
 import { sightSummary } from './sight-system.js';
 
@@ -276,10 +277,10 @@ export class PerfHudSystem extends createSystem({}) {
       this.drawFingers('L', 'left', graphTop + graphH + 212);
       this.drawFingers('R', 'right', graphTop + graphH + 236);
     }
-    // Spike S1: the gunsight's own cost while it renders.
+    // Spike S1: the gunsight's own cost while it renders (or the periscope's, F1.6).
     this.ctx.font = '17px monospace';
     this.ctx.fillStyle = '#cbd5e1';
-    this.ctx.fillText(sightSummary(performance.now()), 10, graphTop + graphH + 262);
+    this.ctx.fillText(scopeSummary(performance.now()), 10, graphTop + graphH + 262);
     this.texture.needsUpdate = true;
   }
 
@@ -304,7 +305,7 @@ export class PerfHudSystem extends createSystem({}) {
       `${s.fps.toFixed(1)} fps  frame ${s.frameAvg.toFixed(1)}/${s.frameP95.toFixed(1)} ms\n` +
       `cpu ${s.cpuAvg.toFixed(2)} ms  calls ${s.drawCalls}  tris ${(s.triangles / 1000).toFixed(0)}k\n` +
       `rtt ${Number.isNaN(s.rttMs) ? '-' : s.rttMs.toFixed(0) + ' ms'}\n` +
-      `${sightSummary(performance.now())}  [H] hide  `;
+      `${scopeSummary(performance.now())}  [H] hide  `;
   }
 }
 
@@ -334,4 +335,9 @@ function toggleHud(): void {
   if (item) {
     changeSetting(item, settings.hud ? '0' : '1');
   }
+}
+
+/** The periscope's cost while it renders, otherwise the gunsight's line. */
+function scopeSummary(now: number): string {
+  return periscopeSummary(now) ?? sightSummary(now);
 }

@@ -60,7 +60,7 @@ Nothing new goes over the unreliable channel.
 
 - `test/play-stats.test.ts`: fumble groups, seat and talk time, rows for a done, stopped and restarted run, nothing counted during the countdown or while paused, the crewmate's numbers matched either way round, the CSV's columns, storage round trip.
 - `test/tank-drive.test.ts`: reduced bumps take less tilt, more gently, along the same path with the tracks on the ground; either player asking gives reduced.
-- `npm run test:xr` (step 6l): Vignette → Strong darkens beyond Normal's limit while the tank pulls away and Off leaves the view clear; Bumps → Reduced; in a run, a squeeze 14 cm wide of the gear lever is a fumble against it, a grind is counted, I feel queasy marks the run time, Stop writes the row and the menu line and CSV show it.
+- `npm run test:xr` (step 6m): Vignette → Strong darkens beyond Normal's limit while the tank pulls away and Off leaves the view clear; Bumps → Reduced; in a run, a squeeze 14 cm wide of the gear lever is a fumble against it, a grind is counted, I feel queasy marks the run time, Stop writes the row and the menu line and CSV show it.
 - `npm run test:net` (`statsChecks`, also under `ONLY_RUN`): after a shared run each page has the stopped run's row with the crewmate's seat times; the guest's Reduced bumps make the host's tank ride reduced, and Full puts it back.
 
 `window.__stats` gives `rows()`, `csv()`, `tally()` (the run on now), `visit()`, `counting`, `line`, `queasy()`, `clear()`, `fumble(control, how)`, `sent` and `received`. `window.__drive` adds `bumps` and `crewBumps`.

@@ -189,6 +189,26 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
+  it("on the driver's periscope (F1.6): its eyepiece and window fixed in the hull, its yoke, shaft and head turned every way", async () => {
+    const periscope = await import('../src/scene-assets/periscope.scene-asset.js');
+    const { AXIS, LENS, YOKE_Y } = await import('../src/sim/periscope.js');
+    const hull = cabin.createHull();
+    for (const angle of [0, 0.4, Math.PI / 4, Math.PI / 2, 2.2, Math.PI, -1.1]) {
+      const mount = new Group();
+      mount.position.set(AXIS[0], YOKE_Y, AXIS[1]);
+      mount.add(periscope.createPeriscopeBody());
+      const window = mesh(periscope.createPeriscopeWindowGeometry(), 'Periscope Window');
+      window.position.set(0, LENS[1] - YOKE_Y, LENS[2] - AXIS[1]);
+      mount.add(window);
+      const turning = periscope.createPeriscopeTurning();
+      turning.rotation.y = angle;
+      mount.add(turning);
+      mount.updateMatrixWorld(true);
+      // With the turret turned so the gun passes over the head.
+      expectNone([hull, turretWith(0.32, 0, 0), mount], CABIN_GAP);
+    }
+  });
+
   /** The test range's ground (F1.4, F1.7) where the scene puts it, under the hull parked at the start. */
   const ground = () => {
     const terrain = createTerrain();
