@@ -9,7 +9,7 @@ The tank moves. The host simulates its drive (skid steering, the engine's RPM, t
 - The engine's **RPM** rises with how far the tillers are pushed, with a lag; the tank pulls gently at idle and harder as it revs, never faster than the comfort cap. RPM, speed and gear show in the Driving section's line and, since F1.5, on the driver's gauges.
 - The **ground** rolls gently, with a flat start field and flat corridors for the test range's two roads (F1.7, [range.md](range.md)): one straight ahead through the start, one across it. The hull pitches and rolls with the ground under its tracks, eased and never more than 4°.
 - **Rocks, walls and houses** stand on the ground; a boulder, a wall and a house are within 110 m of the start, beside the lane. Driving at one, the tank slows into a firm, soft stop as it reaches it rather than stopping dead; it can always back or turn away. Passing close beside one slows it only as much as the corner needs.
-- The **comfort vignette** (spike S2's) darkens the edge of view as the tank turns, speeds up, slows or tilts, on by default; the Driving section turns it off.
+- The **comfort vignette** (spike S2's) darkens the edge of view as the tank turns, speeds up, slows or tilts, on by default; the menu's Comfort and stats section sets how dark it gets, or turns it off (F1.14, [comfort-stats.md](comfort-stats.md)).
 - The **gunner** rides along; their seat (and, from F1.8, the turret) moves with the hull.
 - With nobody in the driver's seat (solo as gunner, or the crewmate's seat empty), the tillers count as let go and the tank rolls to a stop and waits. While the crew is on hold (the crewmate stepped away, went quiet, is reconnecting or left), the tank rolls to a stop too, and the hold's sign says why.
 - Game menu: **Practice → Drive the tank → Drive** puts the player in the driver's seat with a sign saying how to drive; **Back to start** parks the tank where it began, with the range's three targets back at 100, 250 and 500 m. (Until F1.7 the gunsight's target boards stood in hull space and rode along with the tank, so the drive system showed them only at the start; the range's targets stand in the world instead.)
@@ -56,7 +56,7 @@ Not yet: the crewmate learns to drive in F1.13. Until then, a player alone in th
 - `npm run test:xr` (step 6d): Practice → Drive, both sticks forwards drive and the ground moves round the hull, the vignette darkens, one stick turns, the lever grinds and then shifts, an obstacle stops the tank without overlap, Back to start. Screenshot: `artifacts/xr-drive.png`.
 - `npm run test:net` (`ONLY_DRIVE=1`, or `=lag`, for just this): the guest in the driver's seat drives the host's tank and both see it move and stop the same, on a clean link and at 150 ms RTT; the host driving, the guest sees it.
 
-`window.__drive` gives `state()`, `controls()`, `driver()`, `set(controls)`, `reset()`, `place(x, z, heading)`, `drawnAt(x, y, z)`, `vignetteAlpha`, `sightRangeShown`, `sign`, `sent`, `received` and `lateFrames`.
+`window.__drive` gives `state()`, `controls()`, `driver()`, `set(controls)`, `reset()`, `place(x, z, heading)`, `drawnAt(x, y, z)`, `vignetteAlpha`, `bumps`, `crewBumps`, `sightRangeShown`, `sign`, `sent`, `received` and `lateFrames`.
 
 ## Headset check
 
@@ -69,6 +69,6 @@ On a Quest 3 after the deploy, with the cache cleared (Ctrl+Shift+R), seated (me
 5. While driving, pick **Low** in the menu with a stick still pushed: the sign says the gears grind and the tank slows. Let go of the sticks: the gear goes in.
 6. Drive off the lane onto the rolling ground: the hull tilts gently with it, never sharply. Note whether the tilt is comfortable.
 7. Drive into the boulder ahead on the left of the lane (about 45 m out), then the wall to the right (70 m) or the house (110 m, left). The tank slows into a stop as it reaches each, without a jolt, and backs away. Note whether the stop feels like a bump or like the tank braking by itself.
-8. Turn the **vignette off** in the Driving section and drive for a few minutes; note how it compares.
+8. Turn the **vignette off** in the Comfort and stats section and drive for a few minutes; note how it compares.
 9. With a second headset (or `?bot=1` on a PC page for the crewmate in the gunner's seat), drive as the guest: both of you see the tank move the same, and your sticks feel responsive enough. Then swap seats from the menu and ride as gunner while the other drives.
 10. Press **X** for the perf HUD while driving on the rolling ground: report the frame time and draw calls it shows.

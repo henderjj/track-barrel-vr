@@ -629,6 +629,39 @@ async function runChecks(host, guest, label) {
   await guest.page.evaluate(() => { window.__loading.reset(); window.__turret.forward(); });
 }
 
+/**
+ * Comfort and stats (F1.14), after runChecks' run: each page wrote the
+ * stopped run's row and got the crewmate's seat times for it (the
+ * `run-stats` event), and the guest's Bumps → Reduced makes the host's
+ * tank ride on reduced bumps (the `comfort` event).
+ */
+async function statsChecks(host, guest, label) {
+  const lastRun = (p) => p.page.evaluate(() => window.__stats.rows().filter((r) => r.kind === 'run').at(-1) ?? null);
+  const rows = await waitFor("both pages' rows with the crewmate's numbers", async () => {
+    const [h, g] = await Promise.all([lastRun(host), lastRun(guest)]);
+    return h && g && h.run === g.run && h.crew && g.crew ? { h, g } : null;
+  }, 8000).catch(() => null);
+  const both = rows ?? { h: await lastRun(host), g: await lastRun(guest) };
+  const say = (r) => (r ? `run ${r.run} ${r.result}, ${r.shots} shots, driver ${r.driver.toFixed(1)} s, gunner ${r.gunner.toFixed(1)} s, crewmate ${r.crewmate}` +
+    (r.crew ? ` (driver ${r.crew.driver.toFixed(1)} s, gunner ${r.crew.gunner.toFixed(1)} s)` : ' (no crew numbers)') : 'no row');
+  check(`Each page writes the stopped run's row with its own and the crewmate's seat times (${label})`,
+    rows !== null && rows.h.result === 'stopped' && rows.g.result === 'stopped' && rows.h.shots === 1 && rows.g.shots === 1 &&
+      rows.h.crewmate === 'player' && rows.g.crewmate === 'player' && rows.h.driver > 0.5 && rows.g.gunner > 0.5 &&
+      rows.h.crew.gunner > 0.5 && rows.g.crew.driver > 0.5,
+    `host ${say(both.h)}; guest ${say(both.g)}`);
+
+  const bumps = (p) => p.page.evaluate(() => ({ bumps: window.__drive.bumps, crew: window.__drive.crewBumps }));
+  await guest.page.evaluate(() => window.__gameMenu.click('row-bumps-1'));
+  const reduced = await waitFor('the host to ride on reduced bumps', async () => {
+    const [h, g] = await Promise.all([bumps(host), bumps(guest)]);
+    return h.bumps === 'reduced' && h.crew === 'reduced' && g.bumps === 'reduced' ? { h, g } : null;
+  }, 5000).catch(() => null);
+  await guest.page.evaluate(() => window.__gameMenu.click('row-bumps-0'));
+  const full = await waitFor('the host back on full bumps', async () => (await bumps(host)).bumps === 'full', 5000).catch(() => false);
+  check(`The guest's Bumps → Reduced makes the host's tank ride on reduced bumps, and Full puts it back (${label})`, reduced !== null && full,
+    `host ${JSON.stringify(reduced?.h ?? await bumps(host))}, then ${full ? 'full' : 'still reduced'}`);
+}
+
 async function lobbyChecks(browser, host, guest) {
   // Coat colours: each player's pick, told on connecting and on changing.
   const colors = async () => Promise.all([host, guest].map((p) => p.page.evaluate(() => ({ mine: window.__net.color, theirs: window.__net.remoteColor }))));
@@ -1023,9 +1056,10 @@ async function main() {
       return;
     }
     if (process.env.ONLY_RUN) {
-      // Quick loop for F1.11: the range run with a guest gunner (ONLY_RUN=lag at about 150 ms RTT).
+      // Quick loop for F1.11 and F1.14: the range run with a guest gunner, then its stats rows and bumps (ONLY_RUN=lag at about 150 ms RTT).
       await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
       await runChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+      await statsChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
       return;
     }
 
@@ -1134,6 +1168,7 @@ async function main() {
     await turretChecks(a, b, 'local network');
     await firingChecks(a, b, 'local network');
     await runChecks(a, b, 'local network');
+    await statsChecks(a, b, 'local network');
     await lobbyChecks(browser, a, b);
 
     const motion = await measureMotion(a, b, 3);
@@ -1190,6 +1225,7 @@ async function main() {
     await turretChecks(d, e, '150 ms RTT');
     await firingChecks(d, e, '150 ms RTT');
     await runChecks(d, e, '150 ms RTT');
+    await statsChecks(d, e, '150 ms RTT');
 
     await d.context.close();
     await e.context.close();

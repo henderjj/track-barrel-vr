@@ -11,6 +11,7 @@ import { body, chooseBody } from './body-height-system.js';
 import { OPEN_MENU_EVENT } from './net-system.js';
 import { PanelUi } from './panel-ui.js';
 import { drive, driveStatus, resetTank, setGear, startDriving } from './drive-system.js';
+import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-system.js';
 import { goUpTheRange, rangeStatus } from './range-system.js';
 import { readyToFire, runStatus, shownRun, startRun, stopRun } from './range-run-system.js';
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
@@ -88,25 +89,13 @@ const CHOICE_ROWS: readonly ChoiceRow[] = [
     current: () => yesNo(body.choice.seated),
     choose: (value) => chooseBody({ raise: body.choice.raise, seated: value === '1' }),
   },
-  // The drive (docs/tank-drive.md): the gear lever (it moves the driver's station's lever, F1.5), and the comfort vignette.
+  // The drive (docs/tank-drive.md): the gear lever (it moves the driver's station's lever, F1.5). The vignette is a Comfort setting (F1.14).
   {
     id: 'gear',
     label: 'Gear lever',
     options: GEARS.map((gear, i) => [`${i}`, gear.name] as const),
     current: () => `${drive.gear}`,
     choose: (value) => setGear(Number(value) as Gear),
-  },
-  {
-    id: 'drive-vignette',
-    label: 'Vignette',
-    options: [
-      ['1', 'On'],
-      ['0', 'Off'],
-    ],
-    current: () => yesNo(drive.vignette),
-    choose: (value) => {
-      drive.vignette = value === '1';
-    },
   },
   // Spike S2's options, shown only while riding (docs/spikes/s2-riding.md).
   {
@@ -205,10 +194,13 @@ interface GameMenuDebug {
  *   5 cm steps either side of the seat's eye point, back in their seat
  *   (facing forward, with their eyes where the seat puts them), swap seats
  *   (in a crew, once the crewmate agrees) and calibrate again;
+ * - Comfort and stats (F1.14): the vignette's strength and reduced bumps
+ *   (live settings), I feel queasy (a row in the play-test stats), and
+ *   saving or clearing the stats CSV;
  * - Sound and view: the settings that apply straight away (LIVE_ITEMS,
  *   src/live-settings.ts), kept in this browser;
- * - Driving (not while riding): who drives and how fast, the gear lever
- *   (moving the station's own, F1.5) and the comfort vignette;
+ * - Driving (not while riding): who drives and how fast, and the gear lever
+ *   (moving the station's own, F1.5);
  * - Riding (only while riding the tank, spike S2): the ride's options;
  * - Practice: shortcuts straight to a situation to test (sit in either
  *   seat, drive the tank or put it back at its start, lay the gun or turn
@@ -388,6 +380,19 @@ export class GameMenuSystem extends createSystem({}) {
       this.setOpen(false);
       hideMechanismBench();
     });
+    // Comfort and stats (F1.14): the menu stays open, its line says what happened.
+    ui.on('menu-queasy', () => {
+      markQueasy();
+      this.render();
+    });
+    ui.on('menu-stats-save', () => {
+      saveStatsCsv();
+      this.render();
+    });
+    ui.on('menu-stats-clear', () => {
+      clearStats();
+      this.render();
+    });
     ui.on('menu-exit', () => {
       this.setOpen(false);
       this.world.exitXR();
@@ -455,6 +460,7 @@ export class GameMenuSystem extends createSystem({}) {
       this.ui?.setText('menu-turret-status', turretStatus());
       this.ui?.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
       this.ui?.setText('menu-run-status', runStatus());
+      this.ui?.setText('menu-stats-status', statsStatus());
       this.ui?.setText('menu-audio-status', audioStatus());
       this.ui?.setText('menu-calls-status', crewCallStatus());
     }
@@ -521,6 +527,7 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
     ui.setText('menu-run-status', runStatus());
     ui.setText('menu-run-start', shownRun().phase === 'running' ? 'Restart' : 'Start');
+    ui.setText('menu-stats-status', statsStatus());
     ui.setText('menu-audio-status', audioStatus());
     ui.show('menu-ride', ride.active);
     ui.show('menu-ride-stop', ride.active);

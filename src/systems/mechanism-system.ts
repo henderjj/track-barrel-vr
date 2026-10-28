@@ -1,7 +1,9 @@
 import { createSystem, Matrix4, type Object3D, Quaternion, Vector3 } from '@iwsdk/core';
 import { FIST_AXIS, FIST_CENTRE, INDEX_TIP } from '../scene-assets/hand.scene-asset.js';
 import { type HandIndex, type HandInput, MechEvent, type Mechanism, type Vec3 } from '../sim/mechanism.js';
-import { fingerInputs, grip, handCurls, handUse } from './grip-system.js';
+import { MISS_REACH } from '../sim/play-stats.js';
+import { reportFumble, squeezeNear } from './fumbles.js';
+import { fingerInputs, forcedRelease, grip, handCurls, handUse } from './grip-system.js';
 import { controlHoldKinds, HoldKind, type LockResolver, lockResolvers } from './hand-lock.js';
 import { buzz } from './haptics.js';
 
@@ -257,6 +259,8 @@ export class MechanismSystem extends createSystem({}) {
         if (!control.mech.held[i]) continue;
         const side = SIDES[i];
         if (!active || !this.squeezed[side] || !this.present[side] || handUse[side] !== control.name) {
+          // Pulled off it because the real hand strayed from the handle (grip locking): a fumble (F1.14).
+          if (!this.squeezed[side] && forcedRelease[side] && !scriptedHands[side]) reportFumble(control.name, 'slip');
           control.mech.release(i as HandIndex);
           if (handUse[side] === control.name) handUse[side] = null;
         }
@@ -265,9 +269,13 @@ export class MechanismSystem extends createSystem({}) {
     // Take hold of the nearest control in reach of a fresh squeeze.
     for (let i = 0; i < 2; i++) {
       const side = SIDES[i];
+      squeezeNear[side] = null;
       if (!this.present[side] || !this.fresh[side] || handUse[side]) continue;
       let best: Control | null = null;
       let bestDistance = Infinity;
+      // The nearest control just out of reach, for the play-test stats' misses (F1.14).
+      let near: Control | null = null;
+      let nearDistance = Infinity;
       for (const { control } of entries) {
         if (!control.active()) continue;
         const input = this.localHand(control, i as HandIndex);
@@ -276,10 +284,16 @@ export class MechanismSystem extends createSystem({}) {
           best = control;
           bestDistance = d;
         }
+        if (d < control.mech.reachRadius * MISS_REACH && d < nearDistance) {
+          near = control;
+          nearDistance = d;
+        }
       }
       if (best && best.mech.grab(i as HandIndex, this.localHand(best, i as HandIndex))) {
         handUse[side] = best.name;
         this.pulse(side, 0.4, 20);
+      } else {
+        squeezeNear[side] = near?.name ?? '';
       }
     }
     // Move each control with its hands, and feel it.

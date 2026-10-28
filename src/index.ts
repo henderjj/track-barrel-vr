@@ -19,6 +19,7 @@ import { NetSystem } from './systems/net-system.js';
 import { OwnHandsSystem } from './systems/own-hands-system.js';
 import { PerfHudSystem } from './systems/perf-hud-system.js';
 import { PlatformSystem } from './systems/platform-system.js';
+import { PlayStatsSystem } from './systems/play-stats-system.js';
 import { RangeRunSystem } from './systems/range-run-system.js';
 import { RangeSystem } from './systems/range-system.js';
 import { RideSystem } from './systems/ride-system.js';
@@ -78,6 +79,8 @@ World.create(
   world.registerSystem(CrewBotSystem);
   // The tank's sounds (F1.12): after everything they listen to has moved this frame (the drive, the turret, the loading).
   world.registerSystem(TankAudioSystem);
+  // The play-test stats (F1.14): after every system that holds a hand (a squeeze the loading took a shell with is no miss) and after the range run it watches.
+  world.registerSystem(PlayStatsSystem);
   // After the controls have moved, so hands drawn on them (grip locking) sit on them this frame.
   world.registerSystem(OwnHandsSystem);
   // Spike S1's gunsight renders its view once everything in it has moved this frame.

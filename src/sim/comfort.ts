@@ -54,3 +54,42 @@ export function vignetteLevel(turnRate: number, accel: number, tiltRate: number,
     1,
   );
 }
+
+/**
+ * How dark the vignette gets at its strongest, by the player's Vignette
+ * setting (F1.14): off, light, normal (spike S2's) and strong. Each page
+ * sets its own; the vignette only darkens that player's view.
+ */
+export const VIGNETTE_STRENGTHS = { off: 0, light: 0.3, normal: 0.5, strong: 0.8 } as const;
+
+/** How the hull follows the ground: the share of the ground's tilt it takes, and how quickly it eases into its tilt and height, s. */
+export interface GroundFeel {
+  tilt: number;
+  tiltSeconds: number;
+  heightSeconds: number;
+}
+
+/** Every bump the ground gives, within the caps above. */
+export const FULL_BUMPS: GroundFeel = { tilt: 1, tiltSeconds: TILT_SECONDS, heightSeconds: HEIGHT_SECONDS };
+/**
+ * Reduced bumps (F1.14): the hull takes 40% of the ground's tilt (1.6° at
+ * most) and eases into it over 1.2 s, and rises and falls over 0.3 s, so a
+ * mound is a slow sway instead of a pitch. Both players ride the same tank,
+ * so either asking for it gives it to both.
+ */
+export const REDUCED_BUMPS: GroundFeel = { tilt: 0.4, tiltSeconds: 1.2, heightSeconds: 0.3 };
+
+export type Bumps = 'full' | 'reduced';
+
+export function parseBumps(raw: unknown, fallback: Bumps = 'full'): Bumps {
+  return raw === 'full' || raw === 'reduced' ? raw : fallback;
+}
+
+/** The bumps a crew's tank rides on: reduced if either player asks for it. */
+export function crewBumps(mine: Bumps, theirs: Bumps | null): Bumps {
+  return mine === 'reduced' || theirs === 'reduced' ? 'reduced' : 'full';
+}
+
+export function groundFeel(bumps: Bumps): GroundFeel {
+  return bumps === 'reduced' ? REDUCED_BUMPS : FULL_BUMPS;
+}

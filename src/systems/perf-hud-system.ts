@@ -18,6 +18,7 @@ import { budgetHz, frameRateInfo } from './frame-rate-system.js';
 import { hapticsSummary } from './haptics.js';
 import { poseName } from '../sim/hand-pose.js';
 import { fingerInputs, grip, handCurls, handGrips, Touch } from './grip-system.js';
+import { saveStatsCsv } from './play-stats-system.js';
 import { sightSummary } from './sight-system.js';
 
 /** Shared recorder: the network layer writes `rttMs`, tests read `csv()`. */
@@ -104,7 +105,16 @@ export class PerfHudSystem extends createSystem({}) {
       event.preventDefault();
       downloadCsv(perf.csv());
     };
-    this.overlay.append(this.overlayText, link);
+    // The play-test stats (F1.14), one row per range run.
+    const stats = document.createElement('a');
+    stats.textContent = 'Stats';
+    stats.href = '#';
+    stats.style.cssText = 'color:#93c5fd;margin-left:8px';
+    stats.onclick = (event) => {
+      event.preventDefault();
+      saveStatsCsv();
+    };
+    this.overlay.append(this.overlayText, link, stats);
     document.body.appendChild(this.overlay);
     this.cleanupFuncs.push(() => this.overlay?.remove());
 
