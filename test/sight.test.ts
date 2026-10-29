@@ -104,8 +104,9 @@ describe('the gunsight (spike S1)', () => {
     const gunner = SEATS.gunner;
     const eye = seatToHull(gunner, 0, gunner.eye, [0, 0, 0]);
     const lean = Math.hypot(SIGHT_STAND.x - eye[0], SIGHT_STAND.lensHeight - eye[1], SIGHT_STAND.z - eye[2]);
-    expect(lean).toBeGreaterThan(0.2);
-    expect(lean).toBeLessThan(0.35);
+    // A short lean: 18 cm since the Sherman interior (docs/interior.md), so the hands stay on the wheels.
+    expect(lean).toBeGreaterThan(0.15);
+    expect(lean).toBeLessThan(0.25);
     const nearest = seatToHull(gunner, 0, [gunner.eye[0], gunner.eye[1], gunner.eye[2] - gunner.headBox[2]], [0, 0, 0]);
     expect(nearest[2] - SIGHT_STAND.z).toBeGreaterThan(0);
     expect(nearest[2] - SIGHT_STAND.z).toBeLessThan(OPEN_DISTANCE);

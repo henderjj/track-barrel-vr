@@ -17,7 +17,7 @@ import { HIGH, LOW } from '../sim/tank-drive.js';
  * The driver's station (F1.5, docs/driver-station.md), the parts that
  * don't move: the tillers' pedestals, the gear lever's gate on the
  * gearbox's hump, the hand throttle's quadrant on the left wall, the
- * instrument panel's housing under the slit, and the slit's frame and brow
+ * instrument box on the left wall above it, and the slit's frame and brow
  * pad. They are merged into the hull's mesh (cabin.scene-asset.ts). The
  * levers are the mechanism kit's (`createLever`, mechanism.scene-asset.ts)
  * and the needles are drawn here; DriverStationSystem places and turns them
@@ -76,23 +76,21 @@ export function driverStationParts(): Part[] {
   parts.push(box([qRight - wall, q.height, q.depth], [(qRight + wall) / 2, qTop - q.height / 2, tz], OLIVE_DARK));
   parts.push(box([0.03, PROUD * 2, q.depth - 0.04], [tx, qTop, tz], FRAME));
 
-  // The instrument panel's housing, its face FACE_GAP behind the dials' face.
+  // The instrument box, its face FACE_GAP behind the dials' face, tilted and turned as the panel is.
   const housing: [number, number, number] = [0, 0, 0];
   const depth = 0.05;
   panelToHull([0, 0, -FACE_GAP - depth / 2], housing);
-  parts.push({
-    geometry: new BoxGeometry(PANEL.width + 0.03, PANEL.height + 0.03, depth),
-    color: STEEL_LIGHT,
-    position: housing,
-    rotation: [-PANEL.tilt, 0, 0],
-  });
+  const geometry = new BoxGeometry(PANEL.width + 0.03, PANEL.height + 0.03, depth);
+  geometry.rotateX(-PANEL.tilt);
+  geometry.rotateY(PANEL.yaw);
+  parts.push({ geometry, color: STEEL_LIGHT, position: housing });
 
   // The vision slit's frame: four bars round the opening, back from its edges, and a brow pad over it.
   const s = VISION_SLIT;
   const f = SLIT_FRAME;
-  const back = HULL.front - 0.005;
-  const zMid = (back + HULL.front + f.depth) / 2;
-  const zLen = HULL.front + f.depth - back;
+  const back = s.z - 0.005;
+  const zMid = (back + s.z + f.depth) / 2;
+  const zLen = s.z + f.depth - back;
   const halfW = s.width / 2 + f.inset;
   const halfH = s.height / 2 + f.inset;
   parts.push(box([2 * (halfW + f.bar), f.bar, zLen], [s.x, s.y + halfH + f.bar / 2, zMid], STEEL));

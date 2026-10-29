@@ -22,6 +22,7 @@ import {
   gearOfLever,
   needleAngle,
   PANEL,
+  TOP_ROW,
   throttleAngle,
   throttleOf,
   tillerAngle,
@@ -144,7 +145,7 @@ export class DriverStationSystem extends createSystem({}) {
 
     const panel = new Group();
     panel.position.set(...PANEL.centre);
-    panel.rotation.x = -PANEL.tilt;
+    panel.rotation.set(-PANEL.tilt, PANEL.yaw, 0, 'YXZ');
     panel.add(this.createFace());
     const at: [number, number] = [0, 0];
     for (let i = 0; i < DIALS.length; i++) {
@@ -311,10 +312,18 @@ export class DriverStationSystem extends createSystem({}) {
       ctx.font = `bold ${Math.round(r * 0.22)}px sans-serif`;
       ctx.fillText(dial.label, cx, cy + r * 0.62);
     }
+    // The gear plate, in the bottom row's third place.
+    dialCentre(TOP_ROW + 2, at);
+    const gx = FACE_PX_W / 2 + at[0] * px;
+    const gy = FACE_PX_H / 2 - at[1] * px;
+    const line = PANEL.dialRadius * px * 0.42;
     ctx.fillStyle = '#c9c0a0';
-    ctx.font = `bold ${Math.round(FACE_PX_H * 0.09)}px sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillText('GEAR LEVER  back LOW · middle N · forwards HIGH  (tillers centred)', FACE_PX_W / 2, FACE_PX_H * 0.93, FACE_PX_W - 24);
+    ctx.textBaseline = 'middle';
+    ['GEAR LEVER', 'back  LOW', 'middle  N', 'fwd  HIGH', '(tillers centred)'].forEach((text, i) => {
+      ctx.font = `bold ${Math.round(line * (i === 0 ? 0.95 : i === 4 ? 0.7 : 0.9))}px sans-serif`;
+      ctx.fillText(text, gx, gy + (i - 2) * line * 1.1, PANEL.dialSpacing * px - 8);
+    });
     const texture = new CanvasTexture(canvas);
     texture.colorSpace = SRGBColorSpace;
     const face = new Mesh(new PlaneGeometry(PANEL.width, PANEL.height), new MeshBasicMaterial({ map: texture, toneMapped: false }));

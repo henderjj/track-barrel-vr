@@ -7,12 +7,15 @@ import {
   Path,
   Shape,
   TorusGeometry,
+  Vector2,
   type Vector3,
 } from '@iwsdk/core';
 import { driverStationParts } from './driver-station.scene-asset.js';
 import { beam, mergeParts, type Part } from './lowpoly.js';
 import { GEARBOX } from '../sim/driver-station.js';
 import {
+  DRIVER_HATCH,
+  GLACIS,
   GROUND_Y,
   GUN,
   HULL,
@@ -110,8 +113,6 @@ function rectangle(path: Path, x0: number, z0: number, x1: number, z1: number): 
   return path;
 }
 
-/** The driver's hatch in the hull roof, over their eyes (x0, z0, x1, z1), m. */
-const DRIVER_HATCH = [SEATS.driver.eye[0] - 0.25, SEATS.driver.eye[2] - 0.25, SEATS.driver.eye[0] + 0.25, SEATS.driver.eye[2] + 0.25] as const;
 /** The gunner's hatch in the turret roof, in turret space, over their seat (x0, z0, x1, z1), m. */
 const GUNNER_HATCH = [SEATS.gunner.eye[0] - 0.27, SEATS.gunner.eye[2] - 0.17, SEATS.gunner.eye[0] + 0.27, SEATS.gunner.eye[2] + 0.37] as const;
 /** How high a hatch lid stands when open, m. */
@@ -125,6 +126,68 @@ function seatParts(cushion: Vec3, floorY: number): Part[] {
     box([0.44, 0.5, 0.07], [x, top + 0.25 - 0.02, z + 0.245], LEATHER),
     box([0.06, top - 0.08 - floorY + 0.01, 0.06], [x, (top - 0.08 + floorY) / 2, z + 0.05], STEEL),
   ];
+}
+
+/**
+ * The hull's outline seen from the side, (z, y) points, the inside's or
+ * the armour's outside `out` m beyond it: up the nose, along the glacis and
+ * up the hood's face (src/sim/cabin.ts, GLACIS). The outside's bends are
+ * where the offset faces meet.
+ */
+function frontProfile(out: number, bottom: number, top: number): [number, number][] {
+  const { noseTop, hoodBottom, face } = GLACIS;
+  const front = HULL.front;
+  if (out === 0) return [[front, bottom], [front, noseTop], [face, hoodBottom], [face, top]];
+  // The glacis's outward normal (z, y): forwards and up.
+  const len = Math.hypot(face - front, hoodBottom - noseTop);
+  const nz = -(hoodBottom - noseTop) / len;
+  const ny = (face - front) / len;
+  // Where the glacis moved out by `out` meets an upright moved out by `out` at z0 - out.
+  const meet = (z0: number, y0: number): [number, number] => {
+    const z = z0 - out;
+    // Along the glacis from (z0 + out nz, y0 + out ny) to z.
+    const k = (z - (z0 + out * nz)) / (face - front);
+    return [z, y0 + out * ny + k * (hoodBottom - noseTop)];
+  };
+  return [[front - out, bottom], meet(front, noseTop), meet(face, hoodBottom), [face - out, top]];
+}
+
+/** A solid from a (z, y) outline, `width` across in x from `x0`, coloured per triangle. */
+function sideways(outline: [number, number][], x0: number, width: number, color: Part['color']): Part {
+  // The shape's x is -z, so turning it a quarter about +Y lays the extrusion along +X.
+  const shape = new Shape(outline.map(([z, y]) => new Vector2(-z, y)));
+  const geometry = new ExtrudeGeometry(shape, { depth: width, bevelEnabled: false });
+  geometry.rotateY(Math.PI / 2);
+  geometry.translate(x0, 0, 0);
+  return { geometry, color };
+}
+
+/** The nose plate and the glacis: ivory on their inside faces, painted elsewhere. */
+function frontArmour(bottom: number): Part {
+  const t = HULL.wall;
+  const w = HULL.halfWidth;
+  const inner = frontProfile(0, bottom, GLACIS.hoodBottom);
+  const outer = frontProfile(t, bottom, GLACIS.hoodBottom);
+  // Inside up to the glacis's top, out along the hood face's bottom to the outside, and back down it.
+  const outline: [number, number][] = [inner[0], inner[1], inner[2], [GLACIS.face - t, GLACIS.hoodBottom], outer[2], outer[1], outer[0]];
+  const { noseTop, hoodBottom, face } = GLACIS;
+  const len = Math.hypot(face - HULL.front, hoodBottom - noseTop);
+  return sideways(outline, -w, 2 * w, (_tri, c) => {
+    if (Math.abs(c.x) > w - 0.001) return PAINT;
+    if (c.y <= noseTop && Math.abs(c.z - HULL.front) < 0.001) return IVORY;
+    // On the glacis's inner face: no distance from the line through the nose's top and the hood's bottom.
+    const off = ((c.z - HULL.front) * (hoodBottom - noseTop) - (c.y - noseTop) * (face - HULL.front)) / len;
+    return Math.abs(off) < 0.001 && c.y > noseTop ? IVORY : PAINT;
+  });
+}
+
+/** A side wall, cut to the front's slope: ivory on the face towards the cabin. */
+function sideWall(side: -1 | 1, bottom: number, top: number): Part {
+  const t = HULL.wall;
+  const w = HULL.halfWidth;
+  const front = frontProfile(t, bottom, top);
+  const outline: [number, number][] = [...front, [HULL.rear + t, top], [HULL.rear + t, bottom]];
+  return sideways(outline, side < 0 ? -w - t : w, t, (_tri, c) => (Math.abs(Math.abs(c.x) - w) < 0.001 ? IVORY : PAINT));
 }
 
 /** Everything fixed to the hull, as seen from inside: plates, floor, the driver's seat, dash and slit, tracks. */
@@ -144,31 +207,33 @@ function hullParts(): Part[] {
   const parts: Part[] = [
     // Floor plate.
     box([2 * w, 0.1, HULL.rear - HULL.front], [0, -0.05, (HULL.rear + HULL.front) / 2], FLOOR),
-    // Side walls, running the hull's full length; the front plate and the bulkhead fit between them.
-    plate([t, height, length], [-w - t / 2, midY, midZ], inside),
-    plate([t, height, length], [w + t / 2, midY, midZ], inside),
+    // Side walls, running the hull's full length and cut to the front's slope; the front and the bulkhead fit between them.
+    sideWall(-1, bottom, top),
+    sideWall(1, bottom, top),
     // The bulkhead in front of the engine.
     plate([2 * w, height, t], [0, midY, HULL.rear + t / 2], inside),
+    // The nose and the glacis, up to the hood's face.
+    frontArmour(bottom),
   ];
-  // The front plate, round the vision slit.
+  // The hood's face, round the vision slit.
   const s = VISION_SLIT;
   const slitBottom = s.y - s.height / 2;
   const slitTop = s.y + s.height / 2;
-  const fz = HULL.front - t / 2;
+  const fz = s.z - t / 2;
   parts.push(
-    plate([2 * w, slitBottom - bottom, t], [0, (slitBottom + bottom) / 2, fz], inside),
+    plate([2 * w, slitBottom - GLACIS.hoodBottom, t], [0, (slitBottom + GLACIS.hoodBottom) / 2, fz], inside),
     plate([2 * w, top - slitTop, t], [0, (top + slitTop) / 2, fz], inside),
     plate([s.x - s.width / 2 + w, s.height, t], [(s.x - s.width / 2 - w) / 2, s.y, fz], inside),
     plate([w - (s.x + s.width / 2), s.height, t], [(s.x + s.width / 2 + w) / 2, s.y, fz], inside),
   );
   // The roof, with the turret ring and the driver's hatch cut out.
-  const outline = rectangle(new Shape(), -outer, front, outer, rear) as Shape;
+  const outline = rectangle(new Shape(), -outer, GLACIS.face - t, outer, rear) as Shape;
   outline.holes.push(new Path().absarc(0, TURRET.z, TURRET.ringRadius, 0, Math.PI * 2, true));
   const [hx0, hz0, hx1, hz1] = DRIVER_HATCH;
   outline.holes.push(rectangle(new Path(), hx0, hz1, hx1, hz0));
   parts.push(roof(outline, top, t));
-  // The driver's hatch lid, standing open behind the hole.
-  parts.push(box([hx1 - hx0, LID, 0.05], [(hx0 + hx1) / 2, top + LID / 2, hz1 + 0.03], PAINT_DARK));
+  // The driver's hatch lid, standing open in front of the hole, where the turret's overhang can't sweep into it.
+  parts.push(box([hx1 - hx0, LID, 0.05], [(hx0 + hx1) / 2, top + LID / 2, hz0 - 0.03], PAINT_DARK));
 
   // The driver's place: seat, the gearbox's hump beside their legs, and the station's fixed parts (F1.5).
   const driver = SEATS.driver;
@@ -176,7 +241,7 @@ function hullParts(): Part[] {
   const g = GEARBOX;
   parts.push(box([g.x1 - g.x0, g.top, g.z1 - g.z0], [(g.x0 + g.x1) / 2, g.top / 2, (g.z0 + g.z1) / 2], PAINT_DARK));
   parts.push(...driverStationParts());
-  // The range run's clock on the front plate, right of the slit (F1.11).
+  // The range run's clock on the hood's face, left of the slit (F1.11).
   parts.push(...driverClockParts());
 
   // The engine compartment behind the bulkhead.
