@@ -54,6 +54,7 @@ import {
 } from '../sim/loading.js';
 import { MANTLET_DEPTH, TRUNNION } from '../sim/turret.js';
 import { fireShell, lastShotLine, shotListeners } from './firing-system.js';
+import { reportFumble } from './fumbles.js';
 import { grip, handUse } from './grip-system.js';
 import { HoldKind, lockResolvers } from './hand-lock.js';
 import { buzz } from './haptics.js';
@@ -497,9 +498,11 @@ export class LoadingSystem extends createSystem({}) {
         case 'blocked':
           this.pulse(side, 1, 120);
           console.info('[Loading] fumble: the breech closed on a shell not rammed home');
+          reportFumble(LEVER_USE, 'blocked');
           break;
         case 'dropped':
           console.info('[Loading] fumble: shell dropped');
+          reportFumble(SHELL_USE, 'drop');
           break;
         case 'loaded': {
           const st = drill.stats;

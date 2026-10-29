@@ -15,14 +15,14 @@
  */
 
 import {
-  HEIGHT_SECONDS,
+  FULL_BUMPS,
+  type GroundFeel,
   MAX_ACCEL,
   MAX_REVERSE,
   MAX_SPEED,
   MAX_TILT,
   MAX_YAW_ACCEL,
   MAX_YAW_RATE,
-  TILT_SECONDS,
 } from './comfort.js';
 import { GROUND_Y } from './cabin.js';
 import { groundHeight, type Obstacle, obstacleDistance, OBSTACLES, wrapTile } from './terrain.js';
@@ -157,11 +157,11 @@ export function createTankDrive(x = 0, z = 0, heading = 0): TankDrive {
   return s;
 }
 
-/** Put the tank straight onto the ground under it, at rest (a reset, or a test placing it). */
-export function settle(s: TankDrive): TankDrive {
+/** Put the tank straight onto the ground under it, at rest (a reset, or a test placing it), taking `feel`'s share of its tilt. */
+export function settle(s: TankDrive, feel: GroundFeel = FULL_BUMPS): TankDrive {
   const g = groundUnder(s.x, s.z, s.heading, sample);
-  s.pitch = clamp(g.pitch, -MAX_TILT, MAX_TILT);
-  s.roll = clamp(g.roll, -MAX_TILT, MAX_TILT);
+  s.pitch = clamp(g.pitch, -MAX_TILT, MAX_TILT) * feel.tilt;
+  s.roll = clamp(g.roll, -MAX_TILT, MAX_TILT) * feel.tilt;
   s.y = g.height + CLEARANCE;
   s.speed = s.accel = s.yawRate = s.pitchRate = s.rollRate = s.leftTrack = s.rightTrack = 0;
   return s;
@@ -223,9 +223,16 @@ export function targetRpm(c: DriverControls): number {
 /**
  * Advance the tank by `dt` seconds under controls `c`: the gearbox, the
  * RPM, the tracks' speeds within the comfort caps, soft stops at
- * obstacles, and the hull following the ground under its tracks.
+ * obstacles, and the hull following the ground under its tracks as `feel`
+ * says (all of it, or reduced bumps, src/sim/comfort.ts).
  */
-export function stepDrive(s: TankDrive, c: DriverControls, dt: number, obstacles: readonly Obstacle[] = OBSTACLES): TankDrive {
+export function stepDrive(
+  s: TankDrive,
+  c: DriverControls,
+  dt: number,
+  obstacles: readonly Obstacle[] = OBSTACLES,
+  feel: GroundFeel = FULL_BUMPS,
+): TankDrive {
   if (dt <= 0) return s;
   stepGearbox(s, c, dt);
   s.rpm += (targetRpm(c) - s.rpm) * (1 - Math.exp(-dt / RPM_SECONDS));
@@ -266,14 +273,14 @@ export function stepDrive(s: TankDrive, c: DriverControls, dt: number, obstacles
 
   // Follow the ground: pitch and roll eased and capped, height eased faster.
   const g = groundUnder(s.x, s.z, s.heading, sample);
-  const ease = 1 - Math.exp(-dt / TILT_SECONDS);
-  const pitch = s.pitch + (clamp(g.pitch, -MAX_TILT, MAX_TILT) - s.pitch) * ease;
-  const roll = s.roll + (clamp(g.roll, -MAX_TILT, MAX_TILT) - s.roll) * ease;
+  const ease = 1 - Math.exp(-dt / feel.tiltSeconds);
+  const pitch = s.pitch + (clamp(g.pitch, -MAX_TILT, MAX_TILT) * feel.tilt - s.pitch) * ease;
+  const roll = s.roll + (clamp(g.roll, -MAX_TILT, MAX_TILT) * feel.tilt - s.roll) * ease;
   s.pitchRate = (pitch - s.pitch) / dt;
   s.rollRate = (roll - s.roll) / dt;
   s.pitch = pitch;
   s.roll = roll;
-  s.y += (g.height + CLEARANCE - s.y) * (1 - Math.exp(-dt / HEIGHT_SECONDS));
+  s.y += (g.height + CLEARANCE - s.y) * (1 - Math.exp(-dt / feel.heightSeconds));
   stepEngineGauges(s, dt);
   return s;
 }

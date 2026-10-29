@@ -75,6 +75,12 @@
  *     head on the roof with it while the window stays still; one hand
  *     turns it slower than the hand, with the strain felt; Ahead and the
  *     power choice work from the menu;
+ *  6m. comfort and stats (F1.14): the menu's Vignette row makes the
+ *     vignette strong or turns it off, Bumps → Reduced makes the tank ride
+ *     on reduced bumps, and during a range run a squeeze that misses the
+ *     gear lever is a fumble against it, a grind is counted, I feel queasy
+ *     marks the moment, and stopping the run writes its row to the stats
+ *     CSV;
  *  7. checks the perf CSV has rows, then re-enters XR with the frame-rate
  *     API removed, as desktop Chrome and Edge over Link may have it, and
  *     checks the game measures the refresh rate instead; IWSDK's controller
@@ -523,6 +529,23 @@ async function sightStep() {
     open.open && open.renders > before.renders && spread > 20,
     `open ${open.open}, ${open.renders - before.renders} frames rendered, ${open.size}², ${open.calls} calls, cpu ${open.cpuMs?.toFixed(2)} ms, picture spread ${spread}`);
 
+  // Pressed right up to the eyecup (3 cm, inside the headset's 5 cm near
+  // plane): the lens moves back into the eyepiece, 7 cm from the eye, and
+  // the picture stays (it used to vanish, clipped by the near plane).
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(along(0.03)) });
+  lookDown();
+  const pressed = await waitFor('the lens to move back', () => {
+    const l = evalInApp('window.__sight.lens()');
+    return l.setback > 0.02 ? l : null;
+  }, 5000).catch(() => evalInApp('window.__sight.lens()'));
+  const pressedState = evalInApp('window.__sight.state()');
+  // The cabin's head box may hold the head a little short of where the headset was put.
+  const pressedHead = behindLens(seated().head);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-sight-close.png'], {});
+  check('With the eye pressed to the eyecup the lens moves back past the near plane and the sight stays open',
+    pressedState.open && pressed.setback > 0.02 && Math.abs(pressedHead + pressed.setback - 0.07) < 0.005,
+    `open ${pressedState.open}, head ${(pressedHead * 100).toFixed(1)} cm behind the eyecup, lens ${(pressed.setback * 100).toFixed(1)} cm back`);
+
   iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(along(0.3)) });
   lookDown();
   const shut = await waitFor('the sight to close', () => {
@@ -541,9 +564,14 @@ async function sightStep() {
   check('"Draw: always" renders the sight from anywhere, to measure its cost',
     always.open && always.renders > later.renders, `${always.renders - later.renders} frames rendered from 30 cm away`);
 
+  // Drawn in software the page can lag a frame or two behind the button
+  // press, so wait for the menu to open and for the size to change.
   await menuButtonPress();
+  await waitFor('the game menu open', () => evalInApp('window.__gameMenu.open'), 5000).catch(() => null);
   await rayClick(elementPosition('menu-panel', 'menu-sight-size'));
-  const sized = evalInApp("({ size: window.__sight.state().size, label: window.__gameMenu.text('menu-sight-size') })");
+  const sizeNow = () => evalInApp("({ size: window.__sight.state().size, label: window.__gameMenu.text('menu-sight-size') })");
+  const sized = await waitFor('the sight size to change', () => { const s = sizeNow(); return s.size !== 512 && s; }, 5000)
+    .catch(() => sizeNow());
   await menuButtonPress();
   evalInApp('(window.__sight.setSize(512), true)');
   check("The game menu's Practice button changes the sight's texture size",
@@ -1083,6 +1111,96 @@ async function theTestRange() {
   evalInApp('(window.__drive.reset(), true)');
   evalInApp("(window.__seats.ask('driver'), true)");
   iwsdk(['xr', 'set-device-state'], {});
+}
+
+/**
+ * 6m. Comfort and stats (F1.14): in the driver's seat, Comfort and stats →
+ *     Vignette → Strong darkens the view more than Normal can while the
+ *     tank pulls away, and Off leaves it clear; Bumps → Reduced makes the
+ *     tank ride on reduced bumps. A range run then counts what the player
+ *     does while its clock runs: a squeeze 14 cm wide of the gear lever
+ *     takes hold of nothing and is a fumble against it, shifting with the
+ *     tillers pushed grinds, I feel queasy writes a mark with the run's
+ *     time; Stop writes the run's row, and the menu and the CSV show it.
+ */
+async function comfortAndStats() {
+  const station = () => evalInApp('window.__driverStation.state()');
+  const tally = () => evalInApp('window.__stats.tally()');
+  const GEAR = 1; // FUMBLE_GROUPS' 'gear', src/sim/play-stats.ts
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp("(window.__seats.ask('driver'), window.__drive.set(null), window.__drive.reset(), window.__stats.clear(), true)");
+  await waitFor('the driver\'s seat', () => station().usable, 5000).catch(() => false);
+  await sleep(300);
+
+  // The vignette's strength.
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'row-vignette-3'));
+  const strong = evalInApp("window.__gameMenu.selected('row-vignette-3')");
+  evalInApp('(window.__drive.set({ left: 1, right: 1 }), true)');
+  const dark = await waitFor('the strong vignette', () => { const a = evalInApp('window.__drive.vignetteAlpha'); return a > 0.55 && a; }, 6000).catch(() => evalInApp('window.__drive.vignetteAlpha'));
+  check('Comfort → Vignette → Strong darkens the view further than Normal can while the tank pulls away',
+    strong && dark > 0.55, `selected ${strong}, alpha ${dark.toFixed(2)} (normal tops out at 0.5)`);
+  await rayClick(elementPosition('menu-panel', 'row-vignette-0'));
+  const clear = await waitFor('the vignette to go', () => { const a = evalInApp('window.__drive.vignetteAlpha'); return a < 0.01 && { a, speed: evalInApp('window.__drive.state().speed') }; }, 4000)
+    .catch(() => ({ a: evalInApp('window.__drive.vignetteAlpha'), speed: evalInApp('window.__drive.state().speed') }));
+  check('Vignette → Off leaves the view clear while the tank still drives', clear.a < 0.01 && clear.speed > 1,
+    `alpha ${clear.a.toFixed(3)} at ${clear.speed.toFixed(1)} m/s`);
+  await rayClick(elementPosition('menu-panel', 'row-vignette-2'));
+  // Reduced bumps.
+  await rayClick(elementPosition('menu-panel', 'row-bumps-1'));
+  const bumps = await waitFor('reduced bumps', () => evalInApp('window.__drive.bumps') === 'reduced', 3000).catch(() => false);
+  check('Comfort → Bumps → Reduced makes the tank ride on reduced bumps', bumps && evalInApp("window.__gameMenu.selected('row-bumps-1')"),
+    `the tank rides on ${evalInApp('window.__drive.bumps')} bumps`);
+  await menuButtonPress();
+  evalInApp('(window.__drive.set(null), true)');
+
+  // A range run, in the driver's seat.
+  evalInApp('(window.__rangeRun.start(), true)');
+  await waitFor('the run\'s clock to run', () => evalInApp('window.__stats.counting'), 8000).catch(() => false);
+  // A squeeze 14 cm wide of the gear lever's handle: out of reach, so nothing is taken hold of.
+  const handle = evalInApp("window.__driverStation.handle('gear')");
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin([handle[0] + 0.14, handle[1], handle[2]]), duration: 0.3 });
+  await sleep(600);
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 1 }] });
+  const missed = await waitFor('the miss counted', () => { const t = tally(); return t.fumbles[GEAR] > 0 && t; }, 3000, 100).catch(() => tally());
+  const holding = evalInApp('window.__mechanisms.holding().right');
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 0 }] });
+  check('During a run, a squeeze that misses the gear lever is a fumble against it',
+    missed.fumbles[GEAR] === 1 && holding === null, `fumbles ${JSON.stringify(missed.fumbles)}, right hand holding ${holding}`);
+  // Shifting with the tillers pushed grinds.
+  evalInApp('(window.__drive.set({ left: 0.6, right: 0.6, gear: 2 }), true)');
+  const ground = await waitFor('a grind counted', () => { const t = tally(); return t.grinds > 0 && t; }, 4000).catch(() => tally());
+  evalInApp('(window.__drive.set({ left: 0, right: 0, gear: 1 }), true)');
+  check('A grind during the run is counted', ground.grinds >= 1, `${ground.grinds} grinds`);
+  evalInApp('(window.__drive.set(null), true)');
+  // I feel queasy, from the menu.
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+  await menuButtonPress();
+  await rayClick(elementPosition('menu-panel', 'menu-queasy'));
+  const marks = evalInApp("window.__stats.rows().filter((r) => r.kind === 'queasy')");
+  const run = evalInApp('window.__rangeRun.state()');
+  check('I feel queasy marks the moment in the stats with the run and its clock',
+    marks.length === 1 && marks[0].run === run.id && marks[0].time > 0 && marks[0].seat === 'driver',
+    JSON.stringify(marks.map((m) => ({ run: m.run, time: m.time, seat: m.seat }))));
+  await rayClick(elementPosition('menu-panel', 'menu-run-stop'));
+  const row = await waitFor('the run\'s row', () => evalInApp("window.__stats.rows().find((r) => r.kind === 'run') ?? null"), 4000).catch(() => null);
+  const line = await waitFor('the menu line', () => { const t = evalInApp("window.__gameMenu.text('menu-stats-status')"); return t.startsWith('Last: run') && t; }, 3000)
+    .catch(() => evalInApp("window.__gameMenu.text('menu-stats-status')"));
+  const csv = evalInApp('window.__stats.csv()').trim().split('\n');
+  check('Stopping the run writes its row: stopped, the miss, the grind, the queasy mark and time in the driver\'s seat',
+    row !== null && row.run === run.id && row.result === 'stopped' && row.fumbles[GEAR] === 1 && row.grinds >= 1 && row.queasy === 1 && row.driver > 1 &&
+      row.bumps === 'reduced',
+    row ? `run ${row.run} ${row.result} at ${row.time.toFixed(1)} s, gear fumbles ${row.fumbles[GEAR]}, grinds ${row.grinds}, queasy ${row.queasy}, driver ${row.driver.toFixed(1)} s, bumps ${row.bumps}` : 'no row');
+  check("The menu's stats line and the CSV show it",
+    /^Last: run \d+ stopped at \d:\d\d\.\d, 0 shots, \d+ grinds?, 1 fumble \(most: gear\)/.test(line) && csv[0].startsWith('kind,run,at,seat') &&
+      csv.filter((l) => l.startsWith('run,')).length === 1 && csv.at(-1).startsWith('visit,'),
+    `"${line}"; CSV ${csv.length - 1} rows`);
+  await rayClick(elementPosition('menu-panel', 'row-bumps-0'));
+  await menuButtonPress();
+  evalInApp('(window.__stats.clear(), window.__drive.set(null), window.__drive.reset(), true)');
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
 }
 
 /**
@@ -1972,9 +2090,11 @@ async function main() {
   await tankSounds();
   // 6k. The range run (F1.11).
   await theRangeRun();
-
   // 6l. The periscope (F1.6).
   await theDriversPeriscope();
+
+  // 6m. Comfort and stats (F1.14).
+  await comfortAndStats();
 
   // 7. Perf log.
   const rows = evalInApp('window.__perf.recorder.rows.length');

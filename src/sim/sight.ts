@@ -31,6 +31,16 @@ export const OPEN_DISTANCE = 0.09;
 export const CLOSE_DISTANCE = 0.12;
 /** Half the distance between the eyes, m: each eye sits this far either side of the head pose. */
 export const HALF_IPD = 0.032;
+/**
+ * The lens is never drawn closer to an eye than this, m. The headset's near
+ * plane (`render.near`, 5 cm) clips anything closer, so an eye pressed to the
+ * eyepiece used to look straight past the lens and see nothing. The picture
+ * is at infinity, so moving the lens deeper into the eyepiece changes only
+ * how much of the field the eye can see, and at 7 cm it still sees all of it.
+ */
+export const LENS_MIN_GAP = 0.07;
+/** An eye may go this far past the eyecup into the eyepiece, m, and still see through it. */
+export const INTO_EYEPIECE = 0.03;
 
 /** Texture sizes to compare in the spike, texels square; 512 is the plan's. */
 export const SIGHT_SIZES = [256, 512, 1024] as const;
@@ -135,12 +145,23 @@ export function apparentHalfField(magnification = MAGNIFICATION, halfField = TRU
  * Whether the sight is open for an eye `distance` m from the lens, `behind`
  * m behind its face (positive on the eye's side), given whether it was open
  * last frame: it opens within OPEN_DISTANCE and closes beyond CLOSE_DISTANCE.
+ * An eye in front of the lens is shut out, unless it is only just inside
+ * the eyepiece (INTO_EYEPIECE).
  */
 export function sightOpen(wasOpen: boolean, distance: number, behind: number): boolean {
-  if (behind <= 0) {
+  if (behind <= -INTO_EYEPIECE) {
     return false;
   }
   return distance < (wasOpen ? CLOSE_DISTANCE : OPEN_DISTANCE);
+}
+
+/**
+ * How far to move the lens back into the eyepiece, m, for the nearest eye
+ * `behind` m behind the lens's resting place: enough to keep it LENS_MIN_GAP
+ * from that eye, and nothing while the eye is further away.
+ */
+export function lensSetback(behind: number): number {
+  return Math.min(LENS_MIN_GAP + INTO_EYEPIECE, Math.max(0, LENS_MIN_GAP - behind));
 }
 
 /**

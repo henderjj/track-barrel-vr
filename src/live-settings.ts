@@ -33,6 +33,27 @@ export const LIVE_ITEMS: readonly LiveItem[] = [
     ],
     current: (s) => String(s.sound),
   },
+  // Comfort (F1.14): shown in the menu's Comfort and stats section.
+  {
+    key: 'vignette',
+    label: 'Vignette',
+    options: [
+      ['0', 'Off'],
+      ['0.3', 'Light'],
+      ['0.5', 'Normal'],
+      ['0.8', 'Strong'],
+    ],
+    current: (s) => String(s.vignette),
+  },
+  {
+    key: 'bumps',
+    label: 'Bumps',
+    options: [
+      ['full', 'Full'],
+      ['reduced', 'Reduced'],
+    ],
+    current: (s) => s.bumps,
+  },
   { key: 'hud', label: 'Perf HUD (X)', options: [['1', 'On'], ['0', 'Off']], current: (s) => onOff(s.hud) },
   {
     key: 'hz',
