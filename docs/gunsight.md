@@ -10,7 +10,7 @@ The gunner looks through a magnified sight on the gun and lays the reticle's ran
 - **Laying on a target**: put the range mark for the target's distance on it (the 300 m mark on a target 300 m away) and the gun points high by just the drop of an armour-piercing shell at 600 m/s over that distance. The bore is parallel to the sight and 32 cm to its left; F1.10 fires along it.
 - From outside, a small hood with the objective's glass sits on the mantlet's face right of the barrel and rises and falls with the gun.
 - The **driver** sees the sight and the gun move as the gunner lays it, from the turret's packets.
-- Game menu, Practice:
+- Game menu, Sights:
   - **Gunsight → Go to it** puts the player in the gunner's seat with their head 15 cm behind the eyepiece, looking along the sight.
   - **Lay on → Ahead / 100 m / 250 m / 500 m** lays the gun at once so that target sits on the reticle's mark for its distance from wherever the tank stands (parked at the start, up the range, turned away, on a slope), and closes the menu so you can look. The line under it says which target was laid on, how far off it is and which mark to read, or that the gun can't reach it. Either player can press it: the gunner's page lays the gun.
   - **Sight render** keeps the spike's draw, size and eye choices for the frame-rate comparison.
@@ -45,7 +45,7 @@ Everything: the sight is the gunner's own. With the practice crewmate driving, t
 
 - **No practice crewmate part.** F1.13 teaches the crewmate to aim and fire through the same mechanisms; until then the crewmate in the gunner's seat doesn't look through the sight.
 - **No new HoldKind or packet**: nothing is held and nothing new streams.
-- **Both eyes** see the picture by default, as in the spike, not one eye as the plan first proposed; the eye choice stays in Practice → Sight render for the comparison.
+- **Both eyes** see the picture by default, as in the spike, not one eye as the plan first proposed; the eye choice stays in Sights → Sight render for the comparison.
 - The plan put the whole sight "on the gun". An eyepiece on the gun 67 cm behind the trunnions would rise 23 cm at full elevation and drop 12 cm at full depression, far outside the gunner's head box; the articulated sight keeps it still, as real ones did.
 
 ## Tests
@@ -53,7 +53,7 @@ Everything: the sight is the gunner's own. With the practice crewmate driving, t
 - `test/gunsight.test.ts`: world points into hull space match the drive's placing of the ground; the objective matches the turret and gun as Three.js draws them; the knuckle on the trunnions' line inside the front plate; the arm clear of the breech, the wheel and the gunner's head; each target laid on its mark from the start, within the gun's reach; laid from up the range (the far target for 300 m), from past the near target (the turret turned right round) and on a slope; the gun's limits reported; the error in mils right and up; the copy of a target on the range ahead.
 - `test/sight.test.ts` (spike S1) still covers the lens, the field, the opening and the marks.
 - `test/z-fighting.test.ts`: both halves of the sight in every turret pose already tested, and through the gun's whole elevation.
-- `npm run test:xr` step 2c: leaning in opens the sight and renders the range, leaning back closes it. Step 6i: up the range, Practice → Gunsight → Go to it, then Lay on → 500 m lays the far target on its mark 300 m off, by the sums and as the sight camera and the ground are drawn; raising the gun 10° tilts the view 10° and leaves the eyepiece still; leaning in renders the target (`artifacts/xr-gunsight-500m.png`); Ahead turns the turret back.
+- `npm run test:xr` step 2c: leaning in opens the sight and renders the range, leaning back closes it. Step 6i: up the range, Sights → Gunsight → Go to it, then Lay on → 500 m lays the far target on its mark 300 m off, by the sums and as the sight camera and the ground are drawn; raising the gun 10° tilts the view 10° and leaves the eyepiece still; leaning in renders the target (`artifacts/xr-gunsight-500m.png`); Ahead turns the turret back.
 - `npm run test:net` (in the turret checks, `ONLY_TURRET=1`): the driver's Practice lay on the 250 m target lays the gunner's gun on its mark on both pages, on a clean link and at 150 ms RTT.
 
 `window.__sight` gives `state()` (the spike's stats, the last aim and the menu line), `goTo()`, `lay('ahead' | i)`, `error(i)` and `drawnError(i)` (target `i` from its mark, mils right and up, and its range: by the sums, and from the sight camera and the ground as drawn), `lens()`, `view()`, `pictureSpread()`, and the spike's `setMode`, `setSize` and `setEye`.
@@ -70,9 +70,9 @@ Real WWII sights worked the same way for direct fire: the sight is linked to the
 
 On a Quest 3 after the deploy, with the cache cleared, seated (menu → You → Seated). Turn the perf HUD on with X.
 
-1. Game menu (Y) → **Practice → Gunsight → Go to it**. You are in the gunner's seat looking at the eyepiece's rubber cup a short lean ahead. Look round it: the arm runs forward to a knuckle at the front plate, right of the breech and well above the elevation wheel. Nothing flickers, and your hands on the wheel and crank don't hit it.
+1. Game menu (Y) → **Sights → Gunsight → Go to it**. You are in the gunner's seat looking at the eyepiece's rubber cup a short lean ahead. Look round it: the arm runs forward to a knuckle at the front plate, right of the breech and well above the elevation wheel. Nothing flickers, and your hands on the wheel and crank don't hit it.
 2. Lean in until the lens lights up. You should see the range at 3× with the reticle: three targets (one, two and five orange blocks). Say whether it is comfortable with both eyes open and steady as you move your head a little.
-3. **Lay on → 500 m**. The line under the buttons says the target is 500 m off and to read the 500 m mark (the short mark between the 4 and the 6). Lean in: the target's middle should sit on that mark. Then **250 m** (halfway between the 2 and the short mark below it) and **100 m** (the short mark above the 2). Say whether each sits right, and whether the marks and numbers are readable.
+3. **Sights → Lay on → 500 m**. The line under the buttons says the target is 500 m off and to read the 500 m mark (the short mark between the 4 and the 6). Lean in: the target's middle should sit on that mark. Then **250 m** (halfway between the 2 and the short mark below it) and **100 m** (the short mark above the 2). Say whether each sits right, and whether the marks and numbers are readable.
 4. With the sight to your eye, wind the **elevation wheel**: the picture tilts and the eyepiece stays where your eye is. Traverse with the power grip: the picture swings smoothly with the basket. Note whether either is uncomfortable.
 5. **Practice → Test range → Up the range**, then **Lay on → 500 m**: the line says about 300 m; the target sits on the 300 m mark (the short one between the 2 and the 4). Then **250 m**: the gun target 50 m ahead on the right.
 6. With the practice crewmate (`?bot=1`) or a second headset driving, look through the sight on the move: the picture moves with the hull. Report the HUD's fps and the `sight` line (cpu, calls, triangles) with the sight open on the range, at 512².
