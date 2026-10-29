@@ -2,6 +2,7 @@ import { PhysicsSystem, World } from '@iwsdk/core';
 import projectOptions from 'virtual:iwsdk-project';
 import { preferHighPerformanceGpu } from './gpu-preference.js';
 import { BodyHeightSystem } from './systems/body-height-system.js';
+import { CabinLightSystem } from './systems/cabin-light-system.js';
 import { CalibrationSystem } from './systems/calibration-system.js';
 import { CrewBotSystem } from './systems/crew-bot-system.js';
 import { CrewStatusSystem } from './systems/crew-status-system.js';
@@ -66,6 +67,8 @@ World.create(
   world.registerSystem(MechanismSystem);
   // The turret (F1.8): after the kit has moved its controls, before OwnHandsSystem draws hands on them. It turns a seated gunner's play space with the turret.
   world.registerSystem(TurretSystem);
+  // The cabin's lighting (docs/interior.md): turns the turret's light with it, after TurretSystem sets its angle.
+  world.registerSystem(CabinLightSystem);
   // Loading and firing (F1.10): after the turret (the gun's elevation, the power grip's trigger), before the throwables and the hands drawn on the lever.
   world.registerSystem(LoadingSystem);
   // The shell's flight, after LoadingSystem fires it.

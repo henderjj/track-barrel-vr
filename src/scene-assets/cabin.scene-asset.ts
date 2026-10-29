@@ -1,6 +1,8 @@
 import {
   BoxGeometry,
   CylinderGeometry,
+  MeshBasicMaterial,
+  SphereGeometry,
   ExtrudeGeometry,
   Mesh,
   MeshStandardMaterial,
@@ -24,8 +26,10 @@ import {
   VISION_SLIT,
 } from '../sim/cabin.js';
 import { MANTLET_DEPTH, POWER_GRIP, STATION, TRUNNION } from '../sim/turret.js';
+import { DOME_LAMPS } from '../sim/interior.js';
 import { binParts, boardParts, BREECH_HOLE, breechFittings, rackParts } from './loading.scene-asset.js';
 import { driverClockParts, gunnerClockParts } from './range-run.scene-asset.js';
+import { litInside } from './cabin-light.js';
 
 /**
  * The tank, seen from inside: the hull with the driver's seat, and the
@@ -243,6 +247,8 @@ function hullParts(): Part[] {
   parts.push(...driverStationParts());
   // The range run's clock on the hood's face, left of the slit (F1.11).
   parts.push(...driverClockParts());
+  // The rest of a Sherman's front compartment (docs/interior.md).
+  parts.push(...hullDetailParts());
 
   // The engine compartment behind the bulkhead.
   parts.push(box([2 * outer, 1.7, 0.6], [0, bottom + 0.85, rear + 0.3], PAINT));
@@ -259,6 +265,112 @@ function hullParts(): Part[] {
   }
   return parts;
 }
+
+const RED = 0xa8281c;
+const BRASS = 0xb08a3c;
+const OLIVE = 0x5d5f45;
+const RADIO = 0x55594a;
+
+/** A dome lamp's housing (steel, on the roof's underside at `roofY`) over the light's point, in its frame. */
+function lampHousing(at: Vec3, roofY: number): Part[] {
+  return [{ geometry: new CylinderGeometry(0.055, 0.06, roofY - at[1] + 0.005, 10, 1), color: STEEL_LIGHT, position: [at[0], (roofY + at[1]) / 2, at[2]] }];
+}
+
+/**
+ * The hull's front compartment past the driver's station, as on an M4A4
+ * (TM 9-754, figure 9): the final drive's housing in the nose between the
+ * seats with ribs across it, the assistant driver's seat and the bow
+ * machine gun in the glacis in front of it, two fire extinguishers on the
+ * right, the 75 mm rounds in the left sponson's rack behind the driver,
+ * cable conduits along both walls, and the dome lamp's housing.
+ */
+function hullDetailParts(): Part[] {
+  const parts: Part[] = [];
+  const w = HULL.halfWidth;
+  // The final drive's housing: in front of the gear lever's furthest reach, ribbed on top.
+  const g = GEARBOX;
+  const housing = { z0: HULL.front - 0.01, z1: -2.24, top: 0.7 };
+  parts.push(box([g.x1 - g.x0 + 0.04, housing.top, housing.z1 - housing.z0], [(g.x0 + g.x1) / 2, housing.top / 2, (housing.z0 + housing.z1) / 2], PAINT_DARK));
+  for (let i = 0; i < 4; i++) {
+    const z = housing.z0 + 0.03 + i * 0.04;
+    parts.push(box([g.x1 - g.x0 + 0.01, 0.02, 0.015], [(g.x0 + g.x1) / 2, housing.top + 0.005, z], STEEL));
+  }
+  // The assistant driver's seat, the driver's mirrored.
+  const [cx, cy, cz] = SEATS.driver.cushion;
+  parts.push(...seatParts([-cx, cy, cz], SEATS.driver.floorY));
+  // The bow machine gun's ball in the glacis ahead of that seat, the gun's body and grips inside, its barrel out.
+  const ballY = 1.16;
+  const ballZ = frontAtGlacis(ballY) - HULL.wall / 2;
+  parts.push({ geometry: new SphereGeometry(0.085, 10, 6), color: PAINT_DARK, position: [-cx, ballY, ballZ] });
+  parts.push(box([0.07, 0.09, 0.4], [-cx, ballY - 0.01, ballZ + 0.24], STEEL));
+  parts.push(box([0.11, 0.03, 0.03], [-cx, ballY - 0.06, ballZ + 0.38], RUBBER));
+  const barrel = new CylinderGeometry(0.018, 0.018, 0.3, 8, 1);
+  barrel.rotateX(Math.PI / 2);
+  parts.push({ geometry: barrel, color: STEEL, position: [-cx, ballY, ballZ - 0.2] });
+  // Two fire extinguishers standing on the floor by the right wall, behind the assistant driver.
+  for (const z of [-0.98, -0.82]) {
+    parts.push({ geometry: new CylinderGeometry(0.065, 0.065, 0.5, 10, 1), color: RED, position: [w - 0.09, 0.25, z] });
+    parts.push({ geometry: new CylinderGeometry(0.02, 0.03, 0.08, 8, 1), color: STEEL_LIGHT, position: [w - 0.09, 0.53, z] });
+  }
+  parts.push(box([0.03, 0.04, 0.3], [w - 0.02, 0.4, -0.9], STEEL));
+  // The left sponson's ready rounds behind the driver: a rack on the wall, six rounds lying fore and aft, their brass bases towards the back.
+  const rack = { x: -w + 0.1, y: 0.95, z0: -1.12, z1: -0.62 };
+  parts.push(box([0.2, 0.42, 0.03], [rack.x, rack.y, rack.z0 - 0.015], OLIVE));
+  parts.push(box([0.2, 0.42, 0.03], [rack.x, rack.y, rack.z1 + 0.035], OLIVE));
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 2; col++) {
+      const round = new CylinderGeometry(0.04, 0.04, rack.z1 - rack.z0 + 0.04, 8, 1);
+      round.rotateX(Math.PI / 2);
+      parts.push({ geometry: round, color: BRASS, position: [rack.x - 0.05 + col * 0.1, rack.y - 0.12 + row * 0.12, (rack.z0 + rack.z1) / 2 + 0.02] });
+    }
+  }
+  // Cable conduits along both walls, standing 3 cm off them on their brackets.
+  for (const side of [-1, 1]) {
+    parts.push(beam([side * (w - 0.03), 1.62, GLACIS.face + 0.02], [side * (w - 0.03), 1.62, HULL.rear - 0.02], 0.012, STEEL, 6));
+    for (let z = -1.6; z < HULL.rear; z += 0.7) parts.push(box([0.05, 0.02, 0.02], [side * (w - 0.02), 1.62, z], STEEL));
+  }
+  // The dome lamp's housing.
+  for (const lamp of DOME_LAMPS) if (lamp.frame === 'hull') parts.push(...lampHousing(lamp.at, HULL.roof));
+  return parts;
+}
+
+/** The glacis's inner face at height `y` (between the nose's top and the hood's bottom), hull z. */
+function frontAtGlacis(y: number): number {
+  const { noseTop, hoodBottom, face } = GLACIS;
+  return HULL.front + ((y - noseTop) / (hoodBottom - noseTop)) * (face - HULL.front);
+}
+
+/** The turret's bustle: the radio set on a shelf against the rear wall, its dials towards the crew, and the dome lamp's housing; turret space. */
+function turretDetailParts(): Part[] {
+  const parts: Part[] = [];
+  const back = TURRET.rear - HULL.wall + 0.01;
+  const radio = { width: 0.56, height: 0.32, depth: 0.26, y: 2.18 };
+  const front = back - radio.depth;
+  parts.push(box([radio.width, radio.height, radio.depth], [0, radio.y, back - radio.depth / 2], RADIO));
+  parts.push(box([radio.width + 0.1, 0.03, radio.depth + 0.04], [0, radio.y - radio.height / 2 - 0.015, back - radio.depth / 2 - 0.01], STEEL));
+  // Its dials and knobs, standing proud of the front.
+  for (let i = 0; i < 3; i++) {
+    const knob = new CylinderGeometry(0.025, 0.025, 0.03, 10, 1);
+    knob.rotateX(Math.PI / 2);
+    parts.push({ geometry: knob, color: RUBBER, position: [-0.17 + i * 0.17, radio.y - 0.06, front - 0.015] });
+  }
+  parts.push(box([0.4, 0.09, 0.01], [0, radio.y + 0.07, front - 0.004], IVORY));
+  for (const lamp of DOME_LAMPS) if (lamp.frame === 'turret') parts.push(...lampHousing(lamp.at, TURRET.roof));
+  return parts;
+}
+
+/** The dome lamps' glowing lenses, each just under its housing, in the frame `frame` (a separate mesh: they glow). */
+function createLampLenses(frame: 'hull' | 'turret'): Mesh {
+  const parts: Part[] = DOME_LAMPS.filter((l) => l.frame === frame).map((l): Part => ({
+    geometry: new CylinderGeometry(0.04, 0.03, 0.03, 10, 1),
+    color: 0xffd9a0,
+    position: [l.at[0], l.at[1] - 0.012, l.at[2]],
+  }));
+  const mesh = new Mesh(mergeParts(parts), lampMaterial);
+  mesh.name = 'Dome Lamp';
+  return mesh;
+}
+const lampMaterial = new MeshBasicMaterial({ vertexColors: true, toneMapped: false });
 
 /** Everything fixed to the turret, in turret space: walls, roof and hatch, gun and breech, basket, the gunner's seat and sight. */
 function turretParts(): Part[] {
@@ -313,6 +425,8 @@ function turretParts(): Part[] {
   parts.push(...rackParts(), ...binParts(), ...boardParts());
   // The range run's clock over the loading board (F1.11).
   parts.push(...gunnerClockParts());
+  // The radio in the turret's bustle and the dome lamp's housing (docs/interior.md).
+  parts.push(...turretDetailParts());
   return parts;
 }
 
@@ -382,12 +496,13 @@ function gunRecoilParts(): Part[] {
   return parts;
 }
 
-const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
 
 /** The hull, with everything fixed to it, in one mesh. */
 export function createHull(): Mesh {
   const mesh = new Mesh(mergeParts(hullParts()), material);
   mesh.name = 'Hull';
+  mesh.add(createLampLenses('hull'));
   return mesh;
 }
 
@@ -410,5 +525,6 @@ export function createGun(): Mesh {
 export function createTurret(): Mesh {
   const mesh = new Mesh(mergeParts(turretParts()), material);
   mesh.name = 'Turret';
+  mesh.add(createLampLenses('turret'));
   return mesh;
 }

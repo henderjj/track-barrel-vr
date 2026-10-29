@@ -3,6 +3,7 @@ import { TURRET, VISION_SLIT } from '../sim/cabin.js';
 import { HIT_FLAG } from '../sim/range-run.js';
 import { BOARD } from './loading.scene-asset.js';
 import { mergeParts, type Part } from './lowpoly.js';
+import { litInside } from './cabin-light.js';
 
 /**
  * The range run's models (F1.11, docs/range-run.md): the run clock's
@@ -82,7 +83,7 @@ export function gunnerClockParts(): Part[] {
   return [part, box([wallX - bx, 0.03, 0.03], [(bx + wallX) / 2, c.y, bz], BRACKET)];
 }
 
-const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
 
 /**
  * A hit flag: a pale pole from the ground (its foot at the origin) with a

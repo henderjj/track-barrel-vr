@@ -3,6 +3,7 @@ import { beam, mergeParts, type Part } from './lowpoly.js';
 import { TURRET } from '../sim/cabin.js';
 import { EYEPIECE, HOOD, KNUCKLE, MANTLET_FACE, OBJECTIVE } from '../sim/gunsight.js';
 import { LENS_RADIUS } from '../sim/sight.js';
+import { litInside } from './cabin-light.js';
 
 /**
  * The gunsight (F1.9, docs/gunsight.md), an articulated sight in two
@@ -29,7 +30,7 @@ const RISER = { width: 0.07, depth: 0.06, back: 0.01 } as const;
 /** The roof bracket's post, this far in front of the lens, m (ahead of the gunner's forehead and outside the hatch). */
 const BRACKET_Z = -0.25;
 
-const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
 
 /**
  * The eyepiece half, in sight space (the lens's middle at the origin,

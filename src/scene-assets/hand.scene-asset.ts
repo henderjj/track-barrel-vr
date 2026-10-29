@@ -14,6 +14,7 @@ import {
 } from '@iwsdk/core';
 import type { FingerCurls } from '../sim/hand-pose.js';
 import { mergeParts, type Part, shade } from './lowpoly.js';
+import { litInside } from './cabin-light.js';
 
 /**
  * Low-poly gloved hands that take a pose (Phase 3 step 0, see docs/hands.md):
@@ -318,7 +319,7 @@ export class PosedHand {
   constructor(coat: number, readonly side: 'left' | 'right') {
     this.bones = createBones(side);
     poseBones(this.bones, BIND_POSE);
-    this.mesh = new SkinnedMesh(handGeometry(coat, side), new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
+    this.mesh = new SkinnedMesh(handGeometry(coat, side), litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 })));
     this.mesh.add(this.bones[0]);
     this.mesh.updateMatrixWorld(true);
     this.mesh.bind(new Skeleton(this.bones), new Matrix4());

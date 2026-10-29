@@ -12,6 +12,7 @@ import {
   SHELL_LENGTH,
   SHELL_RADIUS,
 } from '../sim/loading.js';
+import { litInside } from './cabin-light.js';
 
 /**
  * Loading and firing's models (F1.10, docs/loading-firing.md): the ready
@@ -152,7 +153,7 @@ export function breechFittings(halfWidth: number): Part[] {
   ];
 }
 
-const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
 
 /**
  * A shell, centred on its middle with its nose to -Z: a brass case with a
