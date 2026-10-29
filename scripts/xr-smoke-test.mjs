@@ -496,15 +496,16 @@ async function seatStep() {
   await sleep(500);
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-driver-seat.png'], {});
 
-  // Lean 80 cm forward in the room: the head box reaches 60 cm ahead of the eye point (src/sim/cabin.ts).
-  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([eye[0], eye[1], eye[2] - 0.8]) });
+  // Lean 30 cm forward in the room: the head box reaches 10 cm ahead of the eye point, stopping the eyes 20 cm short of the slit
+  // (src/sim/cabin.ts). One jump of more than RESEAT_DISTANCE past the edge would reseat instead.
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([eye[0], eye[1], eye[2] - 0.3]) });
   const leant = await waitFor('the lean to stop', () => {
     const s = seated();
     return s.fixes.push > start.fixes.push ? s : null;
   }, 5000).catch(() => seated());
   check('Leaning past the head box stops the head at its edge',
-    leant.fixes.push > start.fixes.push && Math.abs(leant.head[2] - (eye[2] - 0.6)) < 0.01 && Math.abs(leant.head[0] - eye[0]) < 0.01,
-    `head at ${fmt(leant.head)}, edge at z ${(eye[2] - 0.6).toFixed(3)}`);
+    leant.fixes.push > start.fixes.push && Math.abs(leant.head[2] - (eye[2] - 0.1)) < 0.01 && Math.abs(leant.head[0] - eye[0]) < 0.01,
+    `head at ${fmt(leant.head)}, edge at z ${(eye[2] - 0.1).toFixed(3)}`);
 
   // A recentre: the head jumps 1.5 m sideways in the room.
   const now = iwsdk(['xr', 'get-transform'], { device: 'headset' }).result.position;
