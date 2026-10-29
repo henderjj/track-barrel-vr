@@ -1,4 +1,4 @@
-import { createSystem, Group, Matrix4, Mesh, type Object3D, PerspectiveCamera, Quaternion, type ShaderMaterial, Vector3, type WebGLRenderTarget } from '@iwsdk/core';
+import { createSystem, Group, Mesh, type Object3D, PerspectiveCamera, Quaternion, type ShaderMaterial, Vector3, type WebGLRenderTarget } from '@iwsdk/core';
 import { decodePeriscopeState, encodePeriscopeState, PERISCOPE_STATE_BYTES } from '../net/periscope-codec.js';
 import { PacketType } from '../net/pose-codec.js';
 import type { TankHeader } from '../net/tank-codec.js';
@@ -32,7 +32,7 @@ import { ride } from './ride-system.js';
 import {
   createLensMaterial,
   createScopeTarget,
-  eyesAtLens,
+  LensPlacer,
   renderScope,
   setLensMagnification,
   watchLensView,
@@ -147,7 +147,7 @@ export class PeriscopeSystem extends createSystem({}) {
   private camera3 = new PerspectiveCamera(2 * HALF_FIELD_Y / DEG, Math.tan(HALF_FIELD_X) / Math.tan(HALF_FIELD_Y), NEAR, FAR);
   private gpu: GpuTimer | null = null;
   private lensAt = new Vector3();
-  private worldToLens = new Matrix4();
+  private placer!: LensPlacer;
   private head = new Vector3();
   private headQuat = new Quaternion();
   private forward = new Vector3();
@@ -189,6 +189,7 @@ export class PeriscopeSystem extends createSystem({}) {
     this.lens.position.set(0, LENS[1] - YOKE_Y, LENS[2] - AXIS[1]);
     watchLensView(this.lens, this.material);
     this.mount.add(this.lens);
+    this.placer = new LensPlacer(this.lens, this.material);
     this.world.createTransformEntity(this.mount);
 
     this.cleanupFuncs.push(addControl({
@@ -299,12 +300,9 @@ export class PeriscopeSystem extends createSystem({}) {
     if (this.gpu && !Number.isNaN(this.gpu.ms)) {
       periscopeStats.gpuMs = Number.isNaN(periscopeStats.gpuMs) ? this.gpu.ms : periscopeStats.gpuMs * 0.9 + this.gpu.ms * 0.1;
     }
-    this.lens.updateWorldMatrix(true, false);
-    this.lens.getWorldPosition(this.lensAt);
-    this.worldToLens.copy(this.lens.matrixWorld).invert();
-    this.material.uniforms.uWorldToLens.value.copy(this.worldToLens);
+    this.placer.update(this.player.head, 3);
     const was = periscopeStats.open;
-    const open = !ride.active && eyesAtLens(this.player.head, this.lensAt, this.worldToLens, 3, was);
+    const open = !ride.active && this.placer.eyesAt(3, was);
     periscopeStats.open = open;
     this.material.uniforms.uOpen.value = open ? 1 : 0;
     if (open !== was) console.info(`[Periscope] ${open ? 'open' : 'closed'}`);
@@ -368,7 +366,7 @@ export class PeriscopeSystem extends createSystem({}) {
     player.rotateY(turn);
     player.position.x = this.turned[0];
     player.position.z = this.turned[1];
-    this.lens.getWorldPosition(this.lensAt);
+    this.placer.restAt(this.lensAt);
     player.position.x += this.lensAt.x - this.head.x;
     player.position.z += this.lensAt.z + APPROACH - this.head.z;
     console.info('[Periscope] player moved to the eyepiece');

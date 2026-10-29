@@ -15,7 +15,7 @@ import {
   type WebGLRenderer,
 } from '@iwsdk/core';
 import type { GpuTimer } from '../perf/gpu-timer.js';
-import { HALF_IPD, sightOpen } from '../sim/sight.js';
+import { HALF_IPD, lensSetback, sightOpen } from '../sim/sight.js';
 
 /**
  * A magnified lens that shows a second camera's picture as an image at
@@ -64,33 +64,84 @@ export function watchLensView(lens: Mesh, material: ShaderMaterial): void {
   };
 }
 
-// Scratch for eyesAtLens, made once.
+// Scratch for LensPlacer, made once.
 const headAt = new Vector3();
 const headQuat = new Quaternion();
 const right = new Vector3();
-const eye = new Vector3();
-const local = new Vector3();
+const restInverse = new Matrix4();
 
 /**
- * Whether one of the eyes in `mask` (1 left, 2 right) is at the lens, with
- * its hysteresis (src/sim/sight.ts, sightOpen): `lensAt` is the lens's
- * middle and `worldToLens` its inverse world matrix.
+ * Places a lens each frame for the eyes looking into it, and says whether
+ * one of them is at it. The headset draws nothing closer than its 5 cm
+ * near plane, and a seat's head box can let the head get closer than that
+ * to the lens, which then vanished: the eye looked straight past it. So
+ * with an eye close, the lens moves back along its axis to stay
+ * LENS_MIN_GAP from the nearer eye (src/sim/sight.ts, lensSetback), drawn
+ * over the eyepiece parts it is then behind. Its picture is at infinity, so
+ * it looks the same.
  */
-export function eyesAtLens(head: Object3D, lensAt: Vector3, worldToLens: Matrix4, mask: number, wasOpen: boolean): boolean {
-  head.getWorldPosition(headAt);
-  head.getWorldQuaternion(headQuat);
-  right.set(1, 0, 0).applyQuaternion(headQuat);
-  let open = false;
-  for (const [bit, side] of [[1, -1], [2, 1]] as const) {
-    if ((mask & bit) === 0) {
-      continue;
-    }
-    eye.copy(headAt).addScaledVector(right, side * HALF_IPD);
-    const distance = eye.distanceTo(lensAt);
-    local.copy(eye).applyMatrix4(worldToLens);
-    open ||= sightOpen(wasOpen, distance, local.z);
+export class LensPlacer {
+  /** The lens's middle and its inverse world matrix, as placed this frame. */
+  readonly lensAt = new Vector3();
+  readonly worldToLens = new Matrix4();
+  /** How far the lens has moved back from where it rests, m. */
+  setback = 0;
+  private readonly rest: Vector3;
+  /** Each eye (left, right) in the frame of the lens at rest: +Z towards the eye. */
+  private readonly eyes = [new Vector3(), new Vector3()] as const;
+
+  /** `lens` rests where it is now in its parent. */
+  constructor(
+    private readonly lens: Mesh,
+    private readonly material: ShaderMaterial,
+  ) {
+    this.rest = lens.position.clone();
   }
-  return open;
+
+  /** Find the eyes from `head`, move the lens back from the nearer of those in `mask` (1 left, 2 right) if need be, and tell the shader. */
+  update(head: Object3D, mask: number): void {
+    const lens = this.lens;
+    lens.position.copy(this.rest);
+    lens.updateWorldMatrix(true, false);
+    restInverse.copy(lens.matrixWorld).invert();
+    head.getWorldPosition(headAt);
+    head.getWorldQuaternion(headQuat);
+    right.set(1, 0, 0).applyQuaternion(headQuat);
+    let nearest = Infinity;
+    this.eyes.forEach((eye, i) => {
+      eye.copy(headAt).addScaledVector(right, (i === 0 ? -1 : 1) * HALF_IPD).applyMatrix4(restInverse);
+      if ((mask & (1 << i)) !== 0 && Math.hypot(eye.x, eye.y) < 0.1) nearest = Math.min(nearest, eye.z);
+    });
+    this.setback = lensSetback(nearest);
+    if (this.setback > 0) {
+      lens.translateZ(-this.setback);
+      lens.updateWorldMatrix(false, false);
+    }
+    this.material.depthTest = this.setback === 0;
+    lens.renderOrder = this.setback === 0 ? 0 : 10;
+    lens.getWorldPosition(this.lensAt);
+    this.worldToLens.copy(lens.matrixWorld).invert();
+    this.material.uniforms.uWorldToLens.value.copy(this.worldToLens);
+  }
+
+  /**
+   * Whether one of the eyes in `mask` is at the lens, measured from where it
+   * rests, with its hysteresis (src/sim/sight.ts, sightOpen). Call after `update`.
+   */
+  eyesAt(mask: number, wasOpen: boolean): boolean {
+    let open = false;
+    this.eyes.forEach((eye, i) => {
+      if ((mask & (1 << i)) !== 0) open ||= sightOpen(wasOpen, eye.length(), eye.z);
+    });
+    return open;
+  }
+
+  /** Where the lens rests, world space. */
+  restAt(out: Vector3): Vector3 {
+    const parent = this.lens.parent;
+    out.copy(this.rest);
+    return parent ? parent.localToWorld(out) : out;
+  }
 }
 
 /**

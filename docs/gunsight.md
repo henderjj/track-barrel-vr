@@ -58,6 +58,14 @@ Everything: the sight is the gunner's own. With the practice crewmate driving, t
 
 `window.__sight` gives `state()` (the spike's stats, the last aim and the menu line), `goTo()`, `lay('ahead' | i)`, `error(i)` and `drawnError(i)` (target `i` from its mark, mils right and up, and its range: by the sums, and from the sight camera and the ground as drawn), `lens()`, `view()`, `pictureSpread()`, and the spike's `setMode`, `setSize` and `setEye`.
 
+## Reading the reticle
+
+![The reticle enlarged, and a 500 m target laid on its mark](images/reticle-guide.png)
+
+The point of the big chevron is where the gun points. The numbered marks below it are hundreds of metres (2, 4, 6, 8, 10) and the short marks between them the odd hundreds. Put the mark for the target's range on the target's middle; the gun then points high by the shell's drop. The small chevrons, every 4 mils, are for aiming ahead of a target moving across the view.
+
+Real WWII sights worked the same way for direct fire: the sight is linked to the gun, so the reticle itself shows where the barrel points and there was no separate elevation readout to aim with. British and American telescopes had fixed range lines like these; German ones had a range drum, where the gunner dialled in the range and aimed with the main chevron. Separate indicators were for other jobs: a turret position dial (often a 12-hour clock) so the commander could call "target, two o'clock", which is F2.3 for the driver here, and a gunner's quadrant or elevation scale for indirect fire. Both are on the roadmap ([Ideas](roadmap.md#ideas-no-phase-yet) has the elevation scale and the range drum).
+
 ## Headset check
 
 On a Quest 3 after the deploy, with the cache cleared, seated (menu → You → Seated). Turn the perf HUD on with X.

@@ -1,7 +1,6 @@
 import {
   CanvasTexture,
   createSystem,
-  Matrix4,
   Mesh,
   type Object3D,
   PerspectiveCamera,
@@ -42,7 +41,7 @@ import {
 import { groundHeight, wrapTile } from '../sim/terrain.js';
 import { tankState } from './drive-system.js';
 import { netLink } from './net-system.js';
-import { createLensMaterial, createScopeTarget, eyesAtLens, renderScope, watchLensView } from './scope-lens.js';
+import { createLensMaterial, createScopeTarget, LensPlacer, renderScope, watchLensView } from './scope-lens.js';
 import { seating } from './seating.js';
 import { aimTurret, gunEntity, ownsTurret, turretForward, turretState } from './turret-system.js';
 
@@ -136,8 +135,8 @@ interface SightDebug {
   error(i: number): SightError;
   /** The same, measured from the sight camera as it is drawn and the target as the ground draws it. */
   drawnError(i: number): SightError;
-  /** The lens's middle and the way it faces (towards the eye), world space. */
-  lens(): { at: number[]; facing: number[] };
+  /** Where the lens rests (the eyepiece) and the way it faces (towards the eye), world space, and how far it has moved back inside, m. */
+  lens(): { at: number[]; facing: number[]; setback: number };
   /** The sight camera's position and the way it looks, world space. */
   view(): { at: number[]; looking: number[] };
   /** Spread of the rendered picture's brightness in a few texels (0 for a blank picture). */
@@ -180,7 +179,7 @@ export class SightSystem extends createSystem({}) {
   private headQuat = new Quaternion();
   private lensAt = new Vector3();
   private lensQuat = new Quaternion();
-  private worldToLens = new Matrix4();
+  private placer: LensPlacer | null = null;
   private forward = new Vector3();
   private turned: [number, number] = [0, 0];
   private laid = createLay();
@@ -217,6 +216,7 @@ export class SightSystem extends createSystem({}) {
       this.eyepiece.position.set(EYEPIECE[0], EYEPIECE[1], EYEPIECE[2]);
       const eyepieceEntity = this.world.createTransformEntity(this.eyepiece, { parent: turret });
       this.world.createTransformEntity(this.lens, { parent: eyepieceEntity });
+      this.placer = new LensPlacer(this.lens, this.material);
       this.world.createTransformEntity(createSightHead(), { parent: gun });
       this.gun = gun.object3D ?? null;
       this.camera3.position.set(OBJECTIVE[0], OBJECTIVE[1], OBJECTIVE[2]);
@@ -256,9 +256,9 @@ export class SightSystem extends createSystem({}) {
       },
       drawnError: (i) => this.drawnError(i),
       lens: () => {
-        this.lens.getWorldPosition(this.lensAt);
+        const at = this.placer?.restAt(new Vector3()) ?? this.lens.getWorldPosition(new Vector3());
         this.lens.getWorldQuaternion(this.lensQuat);
-        return { at: this.lensAt.toArray(), facing: new Vector3(0, 0, 1).applyQuaternion(this.lensQuat).toArray() };
+        return { at: at.toArray(), facing: new Vector3(0, 0, 1).applyQuaternion(this.lensQuat).toArray(), setback: this.placer?.setback ?? 0 };
       },
       view: () => {
         this.camera3.updateWorldMatrix(true, false);
@@ -280,15 +280,13 @@ export class SightSystem extends createSystem({}) {
     if (this.gpu && !Number.isNaN(this.gpu.ms)) {
       sightStats.gpuMs = Number.isNaN(sightStats.gpuMs) ? this.gpu.ms : sightStats.gpuMs * 0.9 + this.gpu.ms * 0.1;
     }
-    if (this.eyepiece == null) return;
+    if (this.eyepiece == null || this.placer == null) return;
 
-    this.lens.updateWorldMatrix(true, false);
-    this.lens.getWorldPosition(this.lensAt);
-    this.worldToLens.copy(this.lens.matrixWorld).invert();
-    this.material.uniforms.uWorldToLens.value.copy(this.worldToLens);
+    const eyes = this.material.uniforms.uEyes.value as number;
+    this.placer.update(this.player.head, eyes);
 
     const was = sightStats.open;
-    const open = sightStats.mode === 'always' || (sightStats.mode === 'auto' && this.eyeAtEyepiece(was));
+    const open = sightStats.mode === 'always' || (sightStats.mode === 'auto' && this.placer.eyesAt(eyes, was));
     sightStats.open = open;
     this.material.uniforms.uOpen.value = open ? 1 : 0;
     if (open !== was) {
@@ -297,11 +295,6 @@ export class SightSystem extends createSystem({}) {
     if (open) {
       this.renderSight();
     }
-  }
-
-  /** Whether one of the eyes the sight shows to is at the eyepiece, with the lens's hysteresis. */
-  private eyeAtEyepiece(wasOpen: boolean): boolean {
-    return eyesAtLens(this.player.head, this.lensAt, this.worldToLens, this.material.uniforms.uEyes.value as number, wasOpen);
   }
 
   private renderSight(): void {
@@ -352,7 +345,7 @@ export class SightSystem extends createSystem({}) {
     player.rotateY(turn);
     player.position.x = this.turned[0];
     player.position.z = this.turned[1];
-    this.lens.getWorldPosition(this.lensAt);
+    this.placer?.restAt(this.lensAt) ?? this.lens.getWorldPosition(this.lensAt);
     player.position.x += this.lensAt.x + Math.sin(yaw) * APPROACH - this.head.x;
     player.position.z += this.lensAt.z + Math.cos(yaw) * APPROACH - this.head.z;
     console.info('[Sight] player moved to the eyepiece');
