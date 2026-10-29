@@ -131,6 +131,7 @@ function iwsdk(args, input) {
   const argv = [CLI, ...args];
   if (input !== undefined) argv.push('--input-json', JSON.stringify(input));
   let stdout;
+  let stderr = '';
   if (worker) {
     const reply = ask({ kind: 'cli', argv: argv.slice(1) });
     if (reply.error) throw new Error(`iwsdk ${args.join(' ')}: ${reply.error}`);
@@ -144,12 +145,13 @@ function iwsdk(args, input) {
     });
   } catch (error) {
     stdout = error.stdout ?? '';
+    stderr = error.stderr ?? '';
   }
   let parsed;
   try {
     parsed = JSON.parse(stdout);
   } catch {
-    throw new Error(`iwsdk ${args.join(' ')}: unparseable output\n${stdout}`);
+    throw new Error(`iwsdk ${args.join(' ')}: unparseable output\n${stdout}${stderr ? `\nstderr: ${stderr.slice(-2000)}` : ''}`);
   }
   if (!parsed.ok) {
     throw new Error(`iwsdk ${args.join(' ')} failed: ${JSON.stringify(parsed.error)}`);
@@ -1851,7 +1853,14 @@ async function main() {
   await ensureRuntime();
   const startedAt = Date.now();
 
-  iwsdk(['browser', 'reload'], {});
+  try {
+    iwsdk(['browser', 'reload'], {});
+  } catch (error) {
+    // On CI the first reload after start-up has died with no output; wait for the browser's bridge again and retry once.
+    console.log(`Reload failed, retrying once: ${error.message}`);
+    await waitFor('managed browser', () => iwsdk(['dev', 'status']).state?.browserCommandReady === true, 180000, 2000);
+    iwsdk(['browser', 'reload'], {});
+  }
   if (process.env.THROTTLE) {
     // Slow the page's CPU, to see how the checks fare on a slow CI runner.
     const file = 'artifacts/.throttle.mjs';
