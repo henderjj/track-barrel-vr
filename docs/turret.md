@@ -24,9 +24,9 @@ The turret turns and the gun elevates. The gunner lays the gun with three contro
 | Power grip | ±40° twist, 4° deadband, springs back at 12/s | The kit bench's twist grip, felt in F1.3 |
 | Manual crank | 2° of turret a turn; 8 cm radius, 6 cm knob; a tick each quarter turn | Fine aim: a degree is half a turn |
 | Elevation | −10° to +20°, 3° a handwheel turn (10 turns end to end); 11 cm rim; a tick each eighth | Plan §4.4. At 500 m the shell drops about 0.4°, a bit over an eighth of a turn |
-| Elevation wheel | turret (0.29, 1.78, −0.56), tilted back 20° | Left hand, 47 cm below the eyes and 36 cm ahead; its rim clears the breech at every elevation |
-| Traverse crank | turret (0.60, 1.74, −0.55), tilted back 20° | Right hand, 51 cm below the eyes and 35 cm ahead |
-| Power grip | turret (0.72, 1.50, −0.42), upright; handle 1.535–1.645 m | Right hand, low beside the seat's front edge, 22 cm ahead |
+| Elevation wheel | turret (0.29, 1.85, −0.6), tilted back 20° | Left hand, 40 cm below the eyes and 40 cm ahead, under the sight ([interior.md](interior.md)); its rim clears the breech at every elevation |
+| Traverse crank | turret (0.58, 1.81, −0.59), tilted back 20° | Right hand, 44 cm below the eyes and 39 cm ahead |
+| Power grip | turret (0.71, 1.58, −0.45), upright; handle 1.615–1.725 m | Right hand, beside the seat's front edge, 25 cm ahead (8 cm higher since [interior.md](interior.md)) |
 | Gun trunnions | the turret's front plate, at the gun's height (2.05 m) | The mantlet stays at the plate as it elevates; the breech's mouth is 0.45 m behind them and 0.5 m ahead of the gunner's eyes (1.3 m behind them until F1.10 moved it forward for loading) |
 
 Every handle is between knee and chest height, 20 to 65 cm ahead of a seated gunner's eyes, and far enough from the others that a squeeze takes the one meant (`test/turret.test.ts`).

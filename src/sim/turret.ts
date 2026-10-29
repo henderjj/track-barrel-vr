@@ -51,12 +51,15 @@ export interface StationMount {
  * breech facing the gun (eyes at SEATS.gunner.eye); the elevation
  * handwheel is under the breech's right edge for the left hand, the
  * traverse crank right of it for the right hand, and the power traverse
- * grip lower down at the right, beside the seat's front edge.
+ * grip lower down at the right, beside the seat's front edge. As on the
+ * Sherman (TM 9-754, figure 13) both wheels sit close under the sight: with
+ * the eye at the eyepiece the hands are on them 37 to 40 cm below it and a
+ * forearm ahead (docs/interior.md).
  */
 export const STATION = {
-  elevation: { at: [0.29, 1.78, -0.56], tilt: -20 * DEG },
-  crank: { at: [0.6, 1.74, -0.55], tilt: -20 * DEG },
-  twist: { at: [0.72, 1.5, -0.42], tilt: 0 },
+  elevation: { at: [0.29, 1.85, -0.6], tilt: -20 * DEG },
+  crank: { at: [0.58, 1.81, -0.59], tilt: -20 * DEG },
+  twist: { at: [0.71, 1.58, -0.45], tilt: 0 },
 } as const satisfies Record<string, StationMount>;
 export type StationControl = keyof typeof STATION;
 export const STATION_CONTROLS = Object.keys(STATION) as StationControl[];

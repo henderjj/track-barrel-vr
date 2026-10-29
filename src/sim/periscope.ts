@@ -21,8 +21,13 @@ import type { YokeSpec } from './mechanism.js';
 
 const DEG = Math.PI / 180;
 
-/** The upright it turns about, hull x and z, m: 22 cm left of the driver's eyes and 37 cm ahead, left of the vision slit. */
-export const AXIS = [SEATS.driver.eye[0] - 0.22, SEATS.driver.eye[2] - 0.37] as const;
+/**
+ * The upright it turns about, hull x and z, m: 26 cm right of the driver's
+ * eyes and 20 cm ahead, right of the vision slit and just behind the hood's
+ * face, so the driver leans right a little to look in, hands still on the
+ * tillers (docs/interior.md). The instrument box has the left.
+ */
+export const AXIS = [SEATS.driver.eye[0] + 0.26, SEATS.driver.eye[2] - 0.2] as const;
 
 /** The yoke's middle, hull y, m: 27 cm under the driver's eyes, under the shoulders and low enough to read the gauges over. */
 export const YOKE_Y = SEATS.driver.eye[1] - 0.27;
@@ -51,7 +56,7 @@ export const WINDOW = { width: 0.14, height: 0.05 } as const;
 /** The window's glass stands this far proud of the box's back face, m. */
 export const WINDOW_PROUD = 0.004;
 
-/** The window's middle in hull space, m: 30 cm ahead of the driver's eyes and 22 cm to their left. */
+/** The window's middle in hull space, m: 15 cm ahead of the driver's eyes and 26 cm to their right. */
 export const LENS: readonly [number, number, number] = [AXIS[0], EYEPIECE_BOX.y, AXIS[1] + EYEPIECE_BOX.depth / 2 + WINDOW_PROUD];
 
 /** The head on the roof: its bottom (inside the roof plate) and top, hull y, and its width and depth, m. */

@@ -3,6 +3,7 @@ import { beam, mergeParts, type Part } from './lowpoly.js';
 import { GRIP_RADIUS } from './mechanism.scene-asset.js';
 import { HULL } from '../sim/cabin.js';
 import { EYEPIECE_BOX, HEAD, PERISCOPE_YOKE, SHAFT_RADIUS, WINDOW, YOKE_Y } from '../sim/periscope.js';
+import { litInside } from './cabin-light.js';
 
 /**
  * The driver's periscope (F1.6, docs/periscope.md), in periscope space (the
@@ -22,7 +23,7 @@ const GLASS = 0x1a2630;
 /** The hub's pointer, showing which way the head looks. */
 const MARK = 0xd8b030;
 
-const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
 
 /** The rubber surround round the window: how wide its bars are and how far they stand out from the box's back face, m. */
 const SURROUND = { bar: 0.015, depth: 0.012 } as const;

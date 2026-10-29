@@ -10,6 +10,7 @@ import {
 } from '@iwsdk/core';
 import { PosedHand } from './hand.scene-asset.js';
 import { beam, mergeParts, type Part, shade } from './lowpoly.js';
+import { litInside } from './cabin-light.js';
 
 /**
  * Stylised crew avatar: an aviator in a leather flying cap and goggles, a
@@ -98,7 +99,7 @@ function seatedLegParts(hipHeight: number): Part[] {
 }
 
 function partsMesh(parts: Part[], name: string): Mesh {
-  const mesh = new Mesh(mergeParts(parts), new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
+  const mesh = new Mesh(mergeParts(parts), litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 })));
   mesh.name = name;
   return mesh;
 }

@@ -1,8 +1,9 @@
 import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial } from '@iwsdk/core';
-import { HULL, TURRET, VISION_SLIT } from '../sim/cabin.js';
+import { TURRET, VISION_SLIT } from '../sim/cabin.js';
 import { HIT_FLAG } from '../sim/range-run.js';
 import { BOARD } from './loading.scene-asset.js';
 import { mergeParts, type Part } from './lowpoly.js';
+import { litInside } from './cabin-light.js';
 
 /**
  * The range run's models (F1.11, docs/range-run.md): the run clock's
@@ -19,7 +20,7 @@ const FLAG_RED = 0xc8281e;
 
 /**
  * A run clock: its face's middle, size and turn about +Y (its face looks
- * along its own +Z), m. The driver's is on the front plate right of the
+ * along its own +Z), m. The driver's is on the hood's face left of the
  * vision slit, in hull space; the gunner's hangs over the loading board on
  * the turret's right wall, turned the same way, in turret space.
  */
@@ -40,9 +41,9 @@ const SUNK = 0.005;
 
 export const RUN_CLOCKS: Readonly<Record<'driver' | 'gunner', RunClockPlace>> = {
   driver: {
-    x: VISION_SLIT.x + 0.37,
+    x: VISION_SLIT.x - 0.37,
     y: VISION_SLIT.y,
-    z: HULL.front + BACKING_DEPTH - SUNK + FACE_GAP,
+    z: VISION_SLIT.z + BACKING_DEPTH - SUNK + FACE_GAP,
     width: 0.22,
     height: 0.11,
     yaw: 0,
@@ -69,7 +70,7 @@ function backing(c: RunClockPlace): [Part, number, number] {
   return [box([c.width + 0.02, c.height + 0.02, BACKING_DEPTH], [bx, c.y, bz], BACKING, [0, c.yaw, 0]), bx, bz];
 }
 
-/** The driver's run clock's backing on the front plate, hull space. */
+/** The driver's run clock's backing on the hood's face, hull space. */
 export function driverClockParts(): Part[] {
   return [backing(RUN_CLOCKS.driver)[0]];
 }
@@ -82,7 +83,7 @@ export function gunnerClockParts(): Part[] {
   return [part, box([wallX - bx, 0.03, 0.03], [(bx + wallX) / 2, c.y, bz], BRACKET)];
 }
 
-const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
 
 /**
  * A hit flag: a pale pole from the ground (its foot at the origin) with a

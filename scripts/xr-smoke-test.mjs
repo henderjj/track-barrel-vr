@@ -131,6 +131,7 @@ function iwsdk(args, input) {
   const argv = [CLI, ...args];
   if (input !== undefined) argv.push('--input-json', JSON.stringify(input));
   let stdout;
+  let stderr = '';
   if (worker) {
     const reply = ask({ kind: 'cli', argv: argv.slice(1) });
     if (reply.error) throw new Error(`iwsdk ${args.join(' ')}: ${reply.error}`);
@@ -144,12 +145,13 @@ function iwsdk(args, input) {
     });
   } catch (error) {
     stdout = error.stdout ?? '';
+    stderr = error.stderr ?? '';
   }
   let parsed;
   try {
     parsed = JSON.parse(stdout);
   } catch {
-    throw new Error(`iwsdk ${args.join(' ')}: unparseable output\n${stdout}`);
+    throw new Error(`iwsdk ${args.join(' ')}: unparseable output\n${stdout}${stderr ? `\nstderr: ${stderr.slice(-2000)}` : ''}`);
   }
   if (!parsed.ok) {
     throw new Error(`iwsdk ${args.join(' ')} failed: ${JSON.stringify(parsed.error)}`);
@@ -496,15 +498,16 @@ async function seatStep() {
   await sleep(500);
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-driver-seat.png'], {});
 
-  // Lean 80 cm forward in the room: the head box reaches 60 cm ahead of the eye point (src/sim/cabin.ts).
-  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([eye[0], eye[1], eye[2] - 0.8]) });
+  // Lean 30 cm forward in the room: the head box reaches 10 cm ahead of the eye point, stopping the eyes 20 cm short of the slit
+  // (src/sim/cabin.ts). One jump of more than RESEAT_DISTANCE past the edge would reseat instead.
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([eye[0], eye[1], eye[2] - 0.3]) });
   const leant = await waitFor('the lean to stop', () => {
     const s = seated();
     return s.fixes.push > start.fixes.push ? s : null;
   }, 5000).catch(() => seated());
   check('Leaning past the head box stops the head at its edge',
-    leant.fixes.push > start.fixes.push && Math.abs(leant.head[2] - (eye[2] - 0.6)) < 0.01 && Math.abs(leant.head[0] - eye[0]) < 0.01,
-    `head at ${fmt(leant.head)}, edge at z ${(eye[2] - 0.6).toFixed(3)}`);
+    leant.fixes.push > start.fixes.push && Math.abs(leant.head[2] - (eye[2] - 0.1)) < 0.01 && Math.abs(leant.head[0] - eye[0]) < 0.01,
+    `head at ${fmt(leant.head)}, edge at z ${(eye[2] - 0.1).toFixed(3)}`);
 
   // A recentre: the head jumps 1.5 m sideways in the room.
   const now = iwsdk(['xr', 'get-transform'], { device: 'headset' }).result.position;
@@ -1850,7 +1853,14 @@ async function main() {
   await ensureRuntime();
   const startedAt = Date.now();
 
-  iwsdk(['browser', 'reload'], {});
+  try {
+    iwsdk(['browser', 'reload'], {});
+  } catch (error) {
+    // On CI the first reload after start-up has died with no output; wait for the browser's bridge again and retry once.
+    console.log(`Reload failed, retrying once: ${error.message}`);
+    await waitFor('managed browser', () => iwsdk(['dev', 'status']).state?.browserCommandReady === true, 180000, 2000);
+    iwsdk(['browser', 'reload'], {});
+  }
   if (process.env.THROTTLE) {
     // Slow the page's CPU, to see how the checks fare on a slow CI runner.
     const file = 'artifacts/.throttle.mjs';

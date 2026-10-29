@@ -4,7 +4,7 @@ import { PacketType } from '../src/net/pose-codec.js';
 import type { TankHeader } from '../src/net/tank-codec.js';
 import { GRIP_RADIUS } from '../src/scene-assets/mechanism.scene-asset.js';
 import { rigOffset, targetEyeHeight } from '../src/sim/body-height.js';
-import { HULL, SEATS, TURRET, VISION_SLIT } from '../src/sim/cabin.js';
+import { DRIVER_HATCH, frontAt, GLACIS, HULL, SEATS, TURRET, VISION_SLIT } from '../src/sim/cabin.js';
 import { DIALS, dialCentre, DRIVER_CONTROL_IDS, DRIVER_CONTROLS, PANEL, panelToHull } from '../src/sim/driver-station.js';
 import { type HandInput, Lever, type Vec3, Yoke } from '../src/sim/mechanism.js';
 import {
@@ -107,14 +107,15 @@ describe('the periscope (F1.6)', () => {
         const label = `${dir < 0 ? 'left' : 'right'} handle at ${(angle / DEG).toFixed(0)}°`;
         expect(y - raised, label).toBeGreaterThan(0.45);
         expect(y - raised, label).toBeLessThan(1.4);
-        // Ahead of the chest, and within an arm's length of the nearer shoulder (20 cm under the eyes, 18 cm to the side).
-        expect(EYE[2] - z, label).toBeGreaterThan(0.18);
+        // Ahead of the chest (which is behind the eyes), and within an arm's length of the nearer shoulder (20 cm under the eyes, 18 cm to the side).
+        // Since the Sherman interior (docs/interior.md) it stands 20 cm ahead of the eyes, so a handle turned back comes 10 cm closer than before.
+        expect(EYE[2] - z, label).toBeGreaterThan(0.07);
         const shoulder = EYE[0] + (x < EYE[0] ? -0.18 : 0.18);
         expect(Math.hypot(x - shoulder, y - (EYE[1] - 0.2), z - EYE[2]), label).toBeLessThan(0.75);
         // Clear of the face, and inside the hull clear of its walls and the front plate.
         expect(dist([x, y, z], EYE), label).toBeGreaterThan(0.25);
         expect(Math.abs(x) + PERISCOPE_YOKE.outer - (PERISCOPE_YOKE.inner + PERISCOPE_YOKE.outer) / 2, label).toBeLessThan(HULL.halfWidth - 0.05);
-        expect(z, label).toBeGreaterThan(HULL.front + 0.1);
+        expect(z, label).toBeGreaterThan(frontAt(y) + 0.1);
       }
     }
   });
@@ -152,15 +153,15 @@ describe('the periscope (F1.6)', () => {
   it('leaves the vision slit clear from the seat and when leaning in to it', () => {
     const lo = [AXIS[0] - EYEPIECE_BOX.width / 2, EYEPIECE_BOX.y - EYEPIECE_BOX.height / 2, AXIS[1] - EYEPIECE_BOX.depth / 2];
     const hi = [AXIS[0] + EYEPIECE_BOX.width / 2, EYEPIECE_BOX.y + EYEPIECE_BOX.height / 2, AXIS[1] + EYEPIECE_BOX.depth / 2 + 0.012];
-    const corners = [-1, 1].flatMap((sx) => [-1, 1].map((sy) => [VISION_SLIT.x + (sx * VISION_SLIT.width) / 2, VISION_SLIT.y + (sy * VISION_SLIT.height) / 2, HULL.front]));
+    const corners = [-1, 1].flatMap((sx) => [-1, 1].map((sy) => [VISION_SLIT.x + (sx * VISION_SLIT.width) / 2, VISION_SLIT.y + (sy * VISION_SLIT.height) / 2, VISION_SLIT.z]));
     for (const z of [EYE[2], EYE[2] - SEATS.driver.headBox[2]]) {
       for (const side of [-1, 1]) {
         const eye = [EYE[0] + side * HALF_IPD, EYE[1], z];
         for (const c of corners) expect(segmentHitsBox(eye, c, lo, hi), `eye ${eye.map((v) => v.toFixed(2))} to ${c.map((v) => v.toFixed(2))}`).toBe(false);
       }
     }
-    // Leaning straight in to the slit, the head (8 cm either side of the eyes) passes the eyepiece.
-    expect(VISION_SLIT.x - 0.08).toBeGreaterThan(hi[0] + 0.02);
+    // Leaning straight in to the slit, the head (8 cm either side of the eyes) passes the eyepiece, which is to its right.
+    expect(VISION_SLIT.x + 0.08).toBeLessThan(lo[0] - 0.02);
   });
 
   it('can read the gauges past the yoke and its shaft, however it is turned', () => {
@@ -191,14 +192,14 @@ describe('the periscope (F1.6)', () => {
     expect(CAMERA_Y).toBeLessThan(HEAD.top);
     // Under the barrel with the gun level, as it sweeps over the hull (the lid 1 cm over the head's top).
     expect(HEAD.top + 0.01).toBeLessThan(BARREL_UNDERSIDE);
-    // The driver's hatch is 50 cm square over their eyes (cabin.scene-asset.ts): the shaft and the head go through the roof ahead of it.
+    // The driver's hatch is 50 cm square over their head (DRIVER_HATCH): the shaft and the head go through the roof ahead of it.
     const reach = Math.hypot(HEAD.width / 2, HEAD.depth / 2);
-    expect(AXIS[1] + reach).toBeLessThan(EYE[2] - 0.25);
+    expect(AXIS[1] + reach).toBeLessThan(DRIVER_HATCH[1]);
     // Clear of the turret's walls however it turns (their corners are 1.63 m from the ring's middle).
     expect(Math.hypot(AXIS[0], AXIS[1] - TURRET.z) - reach).toBeGreaterThan(Math.hypot(TURRET.halfWidth, TURRET.front) + 0.1);
     // Inside the hull's sides and front.
     expect(Math.abs(AXIS[0]) + reach).toBeLessThan(HULL.halfWidth);
-    expect(AXIS[1] - reach).toBeGreaterThan(HULL.front);
+    expect(AXIS[1] - reach).toBeGreaterThan(GLACIS.face - HULL.wall);
   });
 
   it('looks the way the yoke turns: ahead at 0, left for a positive turn, a little down', () => {
