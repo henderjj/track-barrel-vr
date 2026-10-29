@@ -61,11 +61,17 @@ export const STATION = {
 export type StationControl = keyof typeof STATION;
 export const STATION_CONTROLS = Object.keys(STATION) as StationControl[];
 
-/** The elevation handwheel: gripped on the rim, one hand or both; clockwise (as the gunner sees it) raises the gun, and it stops at the gun's limits. */
+/**
+ * The elevation handwheel, turned by its handle like a crank (as on a Tiger
+ * or a T-34): clockwise (as the gunner sees it) raises the gun, and it
+ * stops at the gun's limits. A trigger bar along the handle fires the gun,
+ * so the gunner can fire while laying it, as on the Tiger I.
+ */
 export const ELEVATION_WHEEL: WheelSpec = {
-  radius: 0.11,
-  grip: 'rim',
-  knobLength: 0,
+  radius: 0.08,
+  grip: 'crank',
+  knobLength: 0.06,
+  trigger: true,
   // Clockwise is negative wheel turn (src/sim/mechanism.ts): the gun's top limit is the wheel's bottom one.
   min: wheelForElevation(MAX_ELEVATION),
   max: wheelForElevation(MIN_ELEVATION),

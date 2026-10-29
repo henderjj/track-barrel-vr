@@ -108,7 +108,9 @@ describe('the gunsight (F1.9)', () => {
     const armBottom = EYEPIECE[1] - 0.04;
     const armInner = EYEPIECE[0] - 0.04;
     expect(armInner - GUN.breechHalfWidth).toBeGreaterThan(0.1);
-    const wheelTop = STATION.elevation.at[1] + ELEVATION_WHEEL.radius * Math.cos(STATION.elevation.tilt);
+    // The elevation handwheel's handle at the top, its trigger bar 2.5 cm out and the handle standing out of the tilted face.
+    const tilt = STATION.elevation.tilt;
+    const wheelTop = STATION.elevation.at[1] + (ELEVATION_WHEEL.radius + 0.025) * Math.cos(tilt) - ELEVATION_WHEEL.knobLength * Math.sin(tilt);
     expect(armBottom - wheelTop).toBeGreaterThan(0.05);
     // The gunner's head stops before the lens (the seat's head box), so the eye can come to it but not through it.
     const gunner = SEATS.gunner;

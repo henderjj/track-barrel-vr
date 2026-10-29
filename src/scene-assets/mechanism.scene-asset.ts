@@ -54,7 +54,8 @@ export function createLever(spec: LeverSpec): Mesh {
 /**
  * A wheel facing +Z with its axle along Z: a rim, a hub and three spokes,
  * one of them marked so its turn shows, and for a crank a knob standing out
- * of the rim at the top. Turn it with `rotation.z`.
+ * of the rim at the top (with a trigger bar along it, for a crank with a
+ * `trigger`). Turn it with `rotation.z`.
  */
 export function createWheel(spec: WheelSpec): Mesh {
   const r = spec.radius;
@@ -71,6 +72,12 @@ export function createWheel(spec: WheelSpec): Mesh {
     // The knob: rubber on a steel pin that starts inside the rim.
     parts.push({ geometry: new CylinderGeometry(0.008, 0.008, 0.02, 6, 1), color: STEEL, position: [0, r, 0.004], rotation: ALONG_Z });
     parts.push({ geometry: new CylinderGeometry(0.015, 0.015, spec.knobLength - 0.01, 8, 1), color: RUBBER, position: [0, r, 0.01 + (spec.knobLength - 0.01) / 2], rotation: ALONG_Z });
+    if (spec.trigger) {
+      // The trigger bar along the knob's outer side, 4 mm off the rubber, on a stem from the pin.
+      const along = spec.knobLength - 0.01;
+      parts.push({ geometry: new BoxGeometry(0.012, 0.006, along), color: STEEL_DARK, position: [0, r + 0.022, 0.006 + along / 2] });
+      parts.push({ geometry: new BoxGeometry(0.01, 0.02, 0.008), color: STEEL_DARK, position: [0, r + 0.015, 0.004] });
+    }
   }
   return named(mergeParts(parts), spec.grip === 'crank' ? 'Crank' : 'Handwheel');
 }

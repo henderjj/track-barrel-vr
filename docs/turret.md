@@ -5,7 +5,7 @@ The turret turns and the gun elevates. The gunner lays the gun with three contro
 ## What players experience
 
 - The **gunner** sits right of the breech, facing the gun. In front of them, below chest height:
-  - the **elevation handwheel** on the left, under the breech's right edge, for the left hand. Turning it clockwise (as the gunner sees it) raises the gun, 3° a turn, from 10° down to 20° up; it stops with a firm buzz at either end and ticks every eighth of a turn. Either hand or both can turn it by its rim.
+  - the **elevation handwheel** on the left, under the breech's right edge, for the left hand. Turning it clockwise (as the gunner sees it) raises the gun, 3° a turn, from 10° down to 20° up; it stops with a firm buzz at either end and ticks every eighth of a turn. It is turned by a handle standing out of it, like the crank (as on a Tiger or a T-34), and a trigger bar along the handle fires the gun, so the gunner can fire while laying it, as on the Tiger I.
   - the **traverse crank** right of it, for the right hand: one turn of its knob traverses the turret 2°, anticlockwise to the left, clockwise to the right, with a tick each quarter turn. It is for the last few degrees.
   - the **power traverse grip**, lower down on the right beside the seat's front edge: a twist grip standing up from a pedestal. Twist it left (anticlockwise seen from above) and the turret traverses left, right to go right; the further it is twisted, the faster. Let go and it springs back and the turret stops. Its trigger fires the gun ([loading-firing.md](loading-firing.md), F1.10).
 - **Power traverse runs off the engine**, Tiger-style: at full twist the turret turns 6°/s with the engine at idle and up to 24°/s at top RPM. With the tank parked, the driver's hand throttle (F1.5) raises the idle and so the traverse. The turret speeds up and slows down at no more than 40°/s², so it never lurches.
@@ -24,7 +24,7 @@ The turret turns and the gun elevates. The gunner lays the gun with three contro
 | Power grip | ±40° twist, 4° deadband, springs back at 12/s | The kit bench's twist grip, felt in F1.3 |
 | Manual crank | 2° of turret a turn; 8 cm radius, 6 cm knob; a tick each quarter turn | Fine aim: a degree is half a turn |
 | Elevation | −10° to +20°, 3° a handwheel turn (10 turns end to end); 11 cm rim; a tick each eighth | Plan §4.4. At 500 m the shell drops about 0.4°, a bit over an eighth of a turn |
-| Elevation wheel | turret (0.29, 1.78, −0.56), tilted back 20° | Left hand, 47 cm below the eyes and 36 cm ahead; its rim clears the breech at every elevation |
+| Elevation handwheel | turret (0.29, 1.78, −0.56), tilted back 20°; 8 cm to the handle, which stands out 6 cm with its trigger bar | Left hand, about 40 cm below the eyes and 36 cm ahead; the handle's sweep clears the breech at every elevation |
 | Traverse crank | turret (0.60, 1.74, −0.55), tilted back 20° | Right hand, 51 cm below the eyes and 35 cm ahead |
 | Power grip | turret (0.72, 1.50, −0.42), upright; handle 1.535–1.645 m | Right hand, low beside the seat's front edge, 22 cm ahead |
 | Gun trunnions | the turret's front plate, at the gun's height (2.05 m) | The mantlet stays at the plate as it elevates; the breech's mouth is 0.45 m behind them and 0.5 m ahead of the gunner's eyes (1.3 m behind them until F1.10 moved it forward for loading) |
@@ -44,7 +44,7 @@ The gunner's page owns the turret (plan decision 2, the concept's "turret input 
 
 ## The practice crewmate
 
-Since F1.13 the practice crewmate lays the gun through these same mechanisms: its right hand twists the power grip and its left winds the elevation wheel ([crewmate.md](crewmate.md)).
+Since F1.13 the practice crewmate lays the gun through these same mechanisms: its right hand twists the power grip and its left winds the elevation handwheel by its handle ([crewmate.md](crewmate.md)).
 
 ## Departures from the building skill
 
@@ -54,9 +54,9 @@ Since F1.13 the practice crewmate lays the gun through these same mechanisms: it
 
 ## Tests
 
-- `test/turret.test.ts`: power traverse rate with RPM, the comfort caps on traverse, direction, wrapping round, half twist, the crank's 2° a turn, the elevation wheel's 3° a turn and its limits, the wheel and grip worked through the kit, drawing between packets the short way round, the barrel's direction and muzzle matching Three.js, the station's reach, spacing and clearances, the turret packet round-trip and its jitter buffer.
+- `test/turret.test.ts`: power traverse rate with RPM, the comfort caps on traverse, direction, wrapping round, half twist, the crank's 2° a turn, the elevation handwheel's 3° a turn and its limits, its trigger bar, the wheel and grip worked through the kit, drawing between packets the short way round, the barrel's direction and muzzle matching Three.js, the station's reach, spacing and clearances, the turret packet round-trip and its jitter buffer.
 - `test/z-fighting.test.ts`: the turret with its gun at both ends of its elevation and the controls turned, under every turret angle tested before.
-- `npm run test:xr` (step 6e): Practice → Lay the gun; the power grip twisted traverses the turret left at about the idle rate with the gunner's head kept still in the turret and the vignette darkening; let go, it stops; a turn of the crank traverses about 2°; a quarter turn of the elevation wheel raises the gun about 0.75°; Forward. Screenshot: `artifacts/xr-turret.png`.
+- `npm run test:xr` (step 6e): Practice → Lay the gun; the power grip twisted traverses the turret left at about the idle rate with the gunner's head kept still in the turret and the vignette darkening; let go, it stops; a turn of the crank traverses about 2°; a quarter turn of the elevation handwheel raises the gun about 0.75° and the trigger bar on its handle pulls; Forward. Screenshot: `artifacts/xr-turret.png`.
 - `npm run test:net` (`ONLY_TURRET=1`, or `=lag`, for just this): the guest gunner's traverse turns its turret at once and the host sees it close behind and smoothly; the stopped, elevated turret is the same on both; the host's Forward reaches the gunner's page; on a clean link and at 150 ms RTT.
 
 `window.__turret` gives `state()` (radians, and `yawDeg`, `elevationDeg`, `rateDeg`), `owner()`, `set({ traverse, elevation })`, `crank(turns)`, `forward()`, `names` (each control's name in `window.__mechanisms`), `drawn()`, `headInTurret()`, `sign`, `sent`, `received` and `lateFrames`.
@@ -65,10 +65,10 @@ Since F1.13 the practice crewmate lays the gun through these same mechanisms: it
 
 On a Quest 3 after the deploy, with the cache cleared, seated (menu → You → Seated). Stop at once if you feel unwell.
 
-1. Enter VR alone. Game menu (Y) → **Practice → Lay the gun → Gunner**. You are in the gunner's seat with a sign saying how to lay the gun. Look down: the elevation wheel is in front of your left hand, the crank in front of your right, and the power grip lower on the right. All are in easy reach without leaning.
+1. Enter VR alone. Game menu (Y) → **Practice → Lay the gun → Gunner**. You are in the gunner's seat with a sign saying how to lay the gun. Look down: the elevation handwheel is in front of your left hand, the crank in front of your right, and the power grip lower on the right. All are in easy reach without leaning.
 2. Take the **power grip** with your right hand and twist your wrist left: the turret traverses left, slowly (the engine is at idle), and you turn with it. The hull, the driver's seat and the world turn past through the gaps; your seat, the breech and the controls stay put. Twist further: faster. Let go: it eases to a stop. Note whether the turn was comfortable, with and without the vignette (Driving section).
 3. Take the **crank** knob and wind it: the turret creeps round, a degree each half turn, ticking each quarter. Note whether it is slow enough to aim finely and fast enough not to bore you.
-4. Take the **elevation wheel**'s rim with your left hand (then both) and turn it clockwise: the gun's muzzle rises and the breech dips beside you. Wind it to its end: it stops with a buzz at +20° and your glove stays on the rim. The other way it stops at −10°. Note whether the direction feels natural.
+4. Take the **elevation handwheel**'s handle with your left hand and wind it clockwise: the gun's muzzle rises and the breech dips beside you. Turn it in loose circles: it should keep turning without catching. Wind it to its end: it stops with a buzz at +20° and your glove stays on the handle. With the gun loaded (Practice → Ready to fire → 100 m), pull the left trigger while holding the handle: the gun fires, as from the power grip's trigger. The other way it stops at −10°. Note whether the direction feels natural.
 5. Menu → **Forward**: the turret and gun swing back straight ahead (the line under it says "turret ahead").
 6. With a second headset (or `?bot=1` on a PC page for a crewmate in the other seat): as the gunner, traverse while the crewmate drives; as the driver, watch the turret turn and the crewmate's hands on its controls. Both of you see the same aim. With a second headset, rev the engine as the driver while the gunner traverses: the traverse gets faster.
 7. Look round the turret and at the gun as it elevates: no flickering faces, nothing passing through the controls.

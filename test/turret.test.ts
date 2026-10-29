@@ -6,7 +6,7 @@ import type { TankHeader } from '../src/net/tank-codec.js';
 import { decodeTurretState, encodeTurretState, TURRET_STATE_BYTES } from '../src/net/turret-codec.js';
 import { GUN, SEATS, seatToHull, TURRET } from '../src/sim/cabin.js';
 import { MAX_TRAVERSE, MAX_TRAVERSE_ACCEL } from '../src/sim/comfort.js';
-import { type HandInput, TwistGrip, type Vec3, Wheel } from '../src/sim/mechanism.js';
+import { type HandInput, MechEvent, TwistGrip, type Vec3, Wheel } from '../src/sim/mechanism.js';
 import { IDLE_RPM, MAX_RPM } from '../src/sim/tank-drive.js';
 import {
   barrelDirection,
@@ -162,22 +162,47 @@ describe('turret traverse and gun laying (F1.8)', () => {
     expect(s.elevation).toBe(MAX_ELEVATION);
   });
 
-  it('the elevation wheel, held on its rim and turned, lays the gun and stops at its limit', () => {
+  it('the elevation handwheel, turned by its handle, lays the gun and stops at its limit', () => {
     const wheel = new Wheel(ELEVATION_WHEEL);
     const r = ELEVATION_WHEEL.radius;
-    // Take the rim at its right side and turn it clockwise (as the gunner sees it) a quarter turn, step by step.
-    const at = (a: number): Vec3 => [-r * Math.sin(a), r * Math.cos(a), 0];
-    expect(wheel.grab(1, hand(at(-Math.PI / 2)))).toBe(true);
-    for (let i = 1; i <= 90; i++) wheel.update(DT, [null, hand(at(-Math.PI / 2 - (i * Math.PI) / 180))]);
-    for (let i = 0; i < 30; i++) wheel.update(DT, [null, hand(at(-Math.PI))]);
+    expect(ELEVATION_WHEEL.grip).toBe('crank');
+    // Take the handle at the top and turn it clockwise (as the gunner sees it) a quarter turn, step by step.
+    const at = (a: number): Vec3 => [-r * Math.sin(a), r * Math.cos(a), ELEVATION_WHEEL.knobLength / 2];
+    expect(wheel.grab(1, hand(at(0)))).toBe(true);
+    for (let i = 1; i <= 90; i++) wheel.update(DT, [null, hand(at(-(i * Math.PI) / 180))]);
+    for (let i = 0; i < 30; i++) wheel.update(DT, [null, hand(at(-Math.PI / 2))]);
     expect(elevationForWheel(wheel.angle) / DEG).toBeCloseTo(0.75, 1);
     // Far past the top limit, the wheel stops there and the hand strains.
     wheel.angle = ELEVATION_WHEEL.min + 0.1;
     wheel.release(1);
-    wheel.grab(1, hand(at(0)));
-    for (let i = 1; i <= 60; i++) wheel.update(DT, [null, hand(at(-(i * 3 * Math.PI) / 180))]);
+    const knob = wheel.angle;
+    wheel.grab(1, hand(at(knob)));
+    for (let i = 1; i <= 60; i++) wheel.update(DT, [null, hand(at(knob - (i * 3 * Math.PI) / 180))]);
     expect(wheel.angle).toBe(ELEVATION_WHEEL.min);
     expect(wheel.strain[1]).toBeGreaterThan(0.5);
+  });
+
+  it("the trigger bar on the elevation handwheel's handle fires while it is held", () => {
+    const wheel = new Wheel(ELEVATION_WHEEL);
+    const top: Vec3 = [0, ELEVATION_WHEEL.radius, ELEVATION_WHEEL.knobLength / 2];
+    // Not held, a pulled trigger does nothing.
+    expect(wheel.update(DT, [null, { ...hand(top), trigger: 1 }]) & MechEvent.Press).toBe(0);
+    wheel.grab(1, hand(top));
+    expect(wheel.update(DT, [null, { ...hand(top), trigger: 0.5 }]) & MechEvent.Press).toBe(0);
+    expect(wheel.update(DT, [null, { ...hand(top), trigger: 0.9 }]) & MechEvent.Press).toBe(MechEvent.Press);
+    expect(wheel.firing).toBe(true);
+    // Held on, it fires once; eased back past the release point, it lets go.
+    expect(wheel.update(DT, [null, { ...hand(top), trigger: 0.5 }])).toBe(MechEvent.None);
+    expect(wheel.update(DT, [null, { ...hand(top), trigger: 0.2 }]) & MechEvent.Release).toBe(MechEvent.Release);
+    expect(wheel.firing).toBe(false);
+    // Let go of the handle with the trigger pulled, it lets go of the trigger too.
+    wheel.update(DT, [null, { ...hand(top), trigger: 1 }]);
+    wheel.release(1);
+    expect(wheel.update(DT, [null, null]) & MechEvent.Release).toBe(MechEvent.Release);
+    // The traverse crank has no trigger.
+    const crank = new Wheel(TRAVERSE_CRANK);
+    crank.grab(1, hand([0, TRAVERSE_CRANK.radius, 0.03]));
+    expect(crank.update(DT, [null, { ...hand([0, TRAVERSE_CRANK.radius, 0.03]), trigger: 1 }]) & MechEvent.Press).toBe(0);
   });
 
   it('the power grip twisted left by hand demands left traverse, and springs back to stop when let go', () => {
@@ -293,8 +318,8 @@ describe("the gunner's station (F1.8)", () => {
       const inBoxZ = z > eye[2] - forward;
       if (inBoxX && inBoxZ) expect(eye[1] - y).toBeGreaterThan(0.35);
     }
-    // The breech's bottom corner at its right side, at every elevation, stays above or left of the wheel's rim.
-    const r = ELEVATION_WHEEL.radius + 0.011;
+    // The breech's bottom corner at its right side, at every elevation, stays clear of the wheel's rim and its handle's sweep (the trigger bar 2.5 cm out).
+    const r = ELEVATION_WHEEL.radius + 0.025;
     for (let e = MIN_ELEVATION; e <= MAX_ELEVATION + 1e-9; e += DEG) {
       for (let back = TURRET.front + 0.08; back <= GUN.breechBack; back += 0.05) {
         // A point along the breech's bottom right edge, in turret space, elevated about the trunnions.
@@ -303,7 +328,7 @@ describe("the gunner's station (F1.8)", () => {
         const y = TRUNNION.y + dy * Math.cos(e) - dz * Math.sin(e);
         const z = TRUNNION.z + dy * Math.sin(e) + dz * Math.cos(e);
         const local = turretToMount('elevation', [GUN.breechHalfWidth, y, z]);
-        const clear = Math.hypot(local[0], local[1]) > r + 0.005 || Math.abs(local[2]) > 0.03;
+        const clear = Math.hypot(local[0], local[1]) > r + 0.005 || local[2] < -0.03 || local[2] > ELEVATION_WHEEL.knobLength + 0.01;
         expect(clear, `breech at ${(e / DEG).toFixed(0)}°, z ${z.toFixed(2)}`).toBe(true);
       }
     }
