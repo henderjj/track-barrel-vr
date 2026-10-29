@@ -23,6 +23,12 @@ export interface InteriorLight {
   color: readonly [number, number, number];
   /** How far it reaches: it is half as bright this far away, m. */
   range: number;
+  /**
+   * For daylight through a hatch, how tightly it falls straight down: the
+   * light is multiplied by the cosine of the angle from straight down to
+   * this power. 0 shines every way, as a lamp does.
+   */
+  cone: number;
 }
 
 /** Daylight, a little blue, and a lamp's warm tungsten. */
@@ -34,32 +40,33 @@ const scaled = (c: readonly number[], k: number) => [c[0] * k, c[1] * k, c[2] * 
 const GUNNER_HATCH_MIDDLE = [SEATS.gunner.eye[0], SEATS.gunner.eye[2] + 0.1] as const;
 
 export const INTERIOR_LIGHTS: readonly InteriorLight[] = [
-  // The sky through the open hatches: from a little above each opening, so it falls on what is under it.
+  // The sky through the open hatches: from above each opening, falling mostly straight down through it.
   {
     id: 'driver-hatch',
     frame: 'hull',
-    at: [(DRIVER_HATCH[0] + DRIVER_HATCH[2]) / 2, HULL.roof + 0.35, (DRIVER_HATCH[1] + DRIVER_HATCH[3]) / 2],
-    color: scaled(DAY, 0.75),
-    range: 0.9,
+    at: [(DRIVER_HATCH[0] + DRIVER_HATCH[2]) / 2, HULL.roof + 0.45, (DRIVER_HATCH[1] + DRIVER_HATCH[3]) / 2],
+    color: scaled(DAY, 0.9),
+    range: 1.4,
+    cone: 6,
   },
-  { id: 'gunner-hatch', frame: 'turret', at: [GUNNER_HATCH_MIDDLE[0], TURRET.roof + 0.35, GUNNER_HATCH_MIDDLE[1]], color: scaled(DAY, 0.75), range: 0.9 },
+  { id: 'gunner-hatch', frame: 'turret', at: [GUNNER_HATCH_MIDDLE[0], TURRET.roof + 0.45, GUNNER_HATCH_MIDDLE[1]], color: scaled(DAY, 0.9), range: 1.4, cone: 6 },
   // A little daylight in through the slit.
-  { id: 'slit', frame: 'hull', at: [VISION_SLIT.x, VISION_SLIT.y, VISION_SLIT.z - 0.1], color: scaled(DAY, 0.25), range: 0.4 },
+  { id: 'slit', frame: 'hull', at: [VISION_SLIT.x, VISION_SLIT.y, VISION_SLIT.z - 0.1], color: scaled(DAY, 0.12), range: 0.3, cone: 0 },
   // The dome lamps: one on the hull roof over the transmission, one on the turret roof behind the gun.
-  { id: 'hull-lamp', frame: 'hull', at: [0.1, HULL.roof - 0.05, -1.2], color: scaled(LAMP, 0.32), range: 0.8 },
-  { id: 'turret-lamp', frame: 'turret', at: [-0.45, TURRET.roof - 0.05, 0.45], color: scaled(LAMP, 0.32), range: 0.8 },
+  { id: 'hull-lamp', frame: 'hull', at: [0.1, HULL.roof - 0.05, -1.2], color: scaled(LAMP, 0.28), range: 0.6, cone: 0 },
+  { id: 'turret-lamp', frame: 'turret', at: [-0.45, TURRET.roof - 0.05, 0.45], color: scaled(LAMP, 0.28), range: 0.6, cone: 0 },
 ];
 
 /** Where the dome lamps' housings hang, in their frames: the lamps' light comes from just under them. */
 export const DOME_LAMPS = INTERIOR_LIGHTS.filter((l) => l.id === 'hull-lamp' || l.id === 'turret-lamp');
 
 /** The sky's light left inside, before any light pools: dim and a little warm, linear RGB. */
-export const INTERIOR_AMBIENT = [0.36, 0.345, 0.32] as const;
+export const INTERIOR_AMBIENT = [0.27, 0.26, 0.24] as const;
 /** On the hull floor the ambient is this much of what it is from 0.9 m up. */
-export const FLOOR_SHADE = 0.7;
+export const FLOOR_SHADE = 0.65;
 export const FLOOR_SHADE_HEIGHT = 0.9;
 /** How much of a light reaches a face turned away from it (the rest falls off with the angle). */
-export const WRAP = 0.35;
+export const WRAP = 0.25;
 
 /** Margins round the inner faces for the inside tests, m: inside the walls' 8 cm thickness, so the outer faces are outside. */
 const MARGIN = 0.03;
@@ -127,7 +134,8 @@ export function interiorLight(p: readonly number[], n: readonly number[], yaw: n
     const d2 = dx * dx + dy * dy + dz * dz;
     const d = Math.sqrt(d2);
     const facing = WRAP + (1 - WRAP) * Math.max(0, (n[0] * dx + n[1] * dy + n[2] * dz) / d);
-    const k = facing / (1 + d2 / (light.range * light.range));
+    const cone = light.cone > 0 ? Math.max(0, dy / d) ** light.cone : 1;
+    const k = (facing * cone) / (1 + d2 / (light.range * light.range));
     out[0] += light.color[0] * k;
     out[1] += light.color[1] * k;
     out[2] += light.color[2] * k;

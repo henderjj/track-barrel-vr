@@ -5,8 +5,8 @@ The crew's place in the tank: the hull with the driver's seat, the turret with i
 ## What players experience
 
 - On entering VR each player is in their seat: eyes at the seat's eye point, facing the tank's front, wherever they are in their real room. Their real floor goes at the seat's floor, with the body-height offset on top, which since F1.2 puts the calibrated eyes on the eye point ([seat-choice.md](seat-choice.md)).
-- The **driver** sits front left in the hull under an open hatch. The vision slit is 80 cm ahead of their eyes; in front of them are the tillers, the gear lever, the hand throttle and the gauges ([driver-station.md](driver-station.md), F1.5).
-- The **gunner** sits right of the gun in the turret basket, 80 cm above the hull floor. The breech is on their left at chest height, and the gunsight's eyepiece (F1.9, [gunsight.md](gunsight.md)) is 28 cm ahead of their eyes: leaning in opens it.
+- The **driver** sits front left in the hull under an open hatch. The glacis slopes over their legs, as a Sherman's does, to the hood in front of their face with the vision slit 30 cm ahead of their eyes; in front of them are the tillers and the gear lever, on their left the hand throttle and the instrument box, on their right the periscope ([driver-station.md](driver-station.md), F1.5; [interior.md](interior.md)).
+- The **gunner** sits right of the gun in the turret basket, 80 cm above the hull floor. The breech is on their left at chest height, and the gunsight's eyepiece (F1.9, [gunsight.md](gunsight.md)) is 18 cm ahead of their eyes, over the wheels: leaning in opens it.
 - A player moves their head freely inside their seat. Leaning past the edge of the seat's head box stops the head there, as if it met the wall, the breech or the controls. A head far outside the box (the headset recentred, or the player stood up and walked across the room) puts the player back in the seat.
 - The crewmate is drawn sitting in their seat: head and hands from their poses, legs bent on their seat's cushion.
 - Game menu: **Practice → Sit in Driver / Gunner** changes seats; **You → Seat → Back in my seat** puts the player back at the eye point facing forward.
@@ -24,14 +24,15 @@ Hull space: hull floor at y = 0, front towards −Z, +X to the right. The tank s
 | Turret roof | 2.75 m | 50 cm over the gunner's eyes |
 | Gun axis | 2.05 m, breech mouth 45 cm behind the trunnions, 70 cm back from the front wall (F1.10; 1.3 m behind them before) | The mouth is 50 cm ahead of the gunner's eyes, where a seated player rams a shell |
 | Driver's eye point | (−0.5, 1.45, −1.6), hull | Seated eye height (1.45 m, `body-height.ts`) over a 55 cm cushion |
-| Driver's head box | 35 cm left, 30 cm right, 60 cm forward, 35 cm back | Up to the slit, short of the side wall and the turret basket |
+| Hull front | nose plate to 1.0 m at z −2.4, glacis to 1.32 m at z −1.9 (57°), hood face upright to the roof | As a Sherman's; the slit 30 cm ahead of the driver's eyes ([interior.md](interior.md)) |
+| Driver's head box | 35 cm left, 30 cm right, 10 cm forward, 35 cm back | Up to 20 cm from the slit, short of the side wall and the turret basket |
 | Gunner's eye point | (0.4, 2.25, −0.2), turret | Right of the breech |
-| Gunner's head box | 22 cm left, 35 cm right, 24 cm forward, 45 cm back | The breech on the left; forward stops 4 cm short of the sight's lens |
-| Sight eyepiece | (0.32, 2.25, −0.48), turret | A 28 cm lean from the eye point; the sight opens within 9 cm |
+| Gunner's head box | 22 cm left, 35 cm right, 14 cm forward, 45 cm back | The breech on the left; forward stops 4 cm short of the sight's lens |
+| Sight eyepiece | (0.32, 2.25, −0.38), turret | An 18 cm lean from the eye point ([interior.md](interior.md)); the sight opens within 9 cm |
 | Reseat distance | 30 cm past the head box | Further than any lean, nearer than a step |
 | Ground | 0.6 m under the hull floor; the drive's rolling ground since F1.4 ([tank-drive.md](tank-drive.md)) | The tracks reach it |
 
-The models are lit by the sky's image-based light (`IBLGradient` in the scene), which only lights `MeshStandardMaterial`: every model uses it, rough and not metallic. There are no lights in the scene.
+The models are lit by the sky's image-based light (`IBLGradient` in the scene), which only lights `MeshStandardMaterial`: every model uses it, rough and not metallic. There are no lights in the scene. Inside the tank that light is dimmed and pooled under the hatches and the dome lamps by the cabin materials' shader (`litInside`, [interior.md](interior.md)).
 
 ## Sharing
 
@@ -65,7 +66,7 @@ The bot sits in the seat the player leaves free (it is a guest, so the host's `s
 On a Quest 3, with a second headset or the practice crewmate:
 
 1. Enter VR alone. You are in the driver's seat facing the vision slit, with the hatch open above. Your eyes are at a natural seated height, and the space in front of you is clear.
-2. Lean forward towards the slit, then left and right. Your head stops before the front plate and the side wall, and the stop doesn't feel like being shoved.
+2. Lean forward towards the slit, then left and right. Your head stops before the hood's face and the side wall, and the stop doesn't feel like being shoved.
 3. Stand up and take a step. You are put back in the seat.
 4. Game menu → Practice → Sit in Gunner. You are in the turret right of the gun, with the breech on your left at chest height.
 5. Lean forward into the sight. It opens before your head stops, and your head stops just short of the lens.

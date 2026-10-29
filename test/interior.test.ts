@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { frontAt, GLACIS, GLACIS_SLOPE, HULL, SEATS, SIGHT_EYEPIECE, TURRET, VISION_SLIT } from '../src/sim/cabin.js';
 import { DRIVER_CONTROLS } from '../src/sim/driver-station.js';
-import { INTERIOR_LIGHTS, insideCabin, interiorLight, turretToHull } from '../src/sim/interior.js';
+import { INTERIOR_AMBIENT, INTERIOR_LIGHTS, insideCabin, interiorLight, turretToHull } from '../src/sim/interior.js';
 import { Lever, type Vec3, Wheel } from '../src/sim/mechanism.js';
 import { LENS } from '../src/sim/periscope.js';
 import { ELEVATION_WHEEL, STATION, TRAVERSE_CRANK } from '../src/sim/turret.js';
@@ -122,9 +122,10 @@ describe('the interior lighting (docs/interior.md)', () => {
         expect(Math.hypot(got.x - want[0], got.y - want[1], got.z - want[2]), light.id).toBeLessThan(1e-6);
       });
       expect(interiorUniforms.cabinYaw.value).toBe(yaw);
-      // Right under the turret's dome lamp, wherever it has turned, is lit above the turret's ambient.
+      // Right under the turret's dome lamp, wherever it has turned, is lit well above the ambient.
       const lamp = INTERIOR_LIGHTS.find((l) => l.id === 'turret-lamp')!;
-      expect(lit(turretToHull([lamp.at[0], lamp.at[1] - 0.2, lamp.at[2]], yaw, v3()), [0, -1, 0], yaw)).toBeGreaterThan(0.5);
+      const ambient = (INTERIOR_AMBIENT[0] + INTERIOR_AMBIENT[1] + INTERIOR_AMBIENT[2]) / 3;
+      expect(lit(turretToHull([lamp.at[0], lamp.at[1] - 0.2, lamp.at[2]], yaw, v3()), [0, 1, 0], yaw)).toBeGreaterThan(ambient + 0.15);
     }
     setInteriorTurret(0);
   });

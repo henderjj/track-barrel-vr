@@ -31,7 +31,7 @@ export const interiorUniforms = {
   cabinOn: { value: 1 },
   cabinYaw: { value: 0 },
   cabinAmbient: { value: new Vector3(...INTERIOR_AMBIENT) },
-  /** Each light's hull-space position (w unused). */
+  /** Each light's hull-space position, and in w its cone (0 for none). */
   cabinLightAt: { value: INTERIOR_LIGHTS.map(() => new Vector4()) },
   /** Each light's colour times strength, and its range in w. */
   cabinLightColor: { value: INTERIOR_LIGHTS.map((l) => new Vector4(l.color[0], l.color[1], l.color[2], l.range)) },
@@ -44,7 +44,7 @@ export function setInteriorTurret(yaw: number): void {
   interiorUniforms.cabinYaw.value = yaw;
   INTERIOR_LIGHTS.forEach((light, i) => {
     const at = light.frame === 'turret' ? turretToHull(light.at, yaw, turned) : light.at;
-    interiorUniforms.cabinLightAt.value[i].set(at[0], at[1], at[2], 0);
+    interiorUniforms.cabinLightAt.value[i].set(at[0], at[1], at[2], light.cone);
   });
 }
 setInteriorTurret(0);
@@ -97,8 +97,10 @@ vec3 cabinLight(vec3 p, vec3 n) {
     vec3 d = cabinLightAt[i].xyz - p;
     float d2 = dot(d, d);
     float r = cabinLightColor[i].w;
-    float facing = ${f(WRAP)} + ${f(1 - WRAP)} * max(dot(n, d) * inversesqrt(d2), 0.0);
-    light += cabinLightColor[i].rgb * facing / (1.0 + d2 / (r * r));
+    float inv = inversesqrt(d2);
+    float facing = ${f(WRAP)} + ${f(1 - WRAP)} * max(dot(n, d) * inv, 0.0);
+    float cone = cabinLightAt[i].w > 0.0 ? pow(max(d.y * inv, 0.0), cabinLightAt[i].w) : 1.0;
+    light += cabinLightColor[i].rgb * facing * cone / (1.0 + d2 / (r * r));
   }
   return light;
 }

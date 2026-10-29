@@ -4,7 +4,7 @@ The gunner looks through a magnified sight on the gun and lays the reticle's ran
 
 ## What players experience
 
-- In the gunner's seat, the **eyepiece** is 28 cm ahead of the eyes, a short lean forward, with a rubber eyecup. Its arm runs forward at eye height, right of the breech and above the elevation wheel, to a **knuckle** by the turret's front plate on the trunnions' line, and a bracket holds it up from the roof.
+- In the gunner's seat, the **eyepiece** is 18 cm ahead of the eyes (28 cm until [interior.md](interior.md)), a short lean forward, with a rubber eyecup. Its arm runs forward at eye height, right of the breech and above the elevation wheel, to a **knuckle** by the turret's front plate on the trunnions' line, and a bracket holds it up from the roof.
 - **Lean in** to within about 9 cm and the lens lights up with the view along the gun at 3×, with the reticle over it: an aiming chevron on the gun's line, lead chevrons every 4 mils either side, and range marks below it every 100 m to 1000 m, numbered every 200 m. Lean back past 12 cm and it goes dark (and stops drawing). Both eyes see the picture, at infinity, as in the spike.
 - **The view follows the gun.** Traverse and the picture swings; wind the elevation wheel and it tilts up or down, but the eyepiece doesn't move, so the eye never has to chase it. As the tank drives and pitches, the picture moves with the hull.
 - **Laying on a target**: put the range mark for the target's distance on it (the 300 m mark on a target 300 m away) and the gun points high by just the drop of an armour-piercing shell at 600 m/s over that distance. The bore is parallel to the sight and 32 cm to its left; F1.10 fires along it.
@@ -22,7 +22,7 @@ The gunner looks through a magnified sight on the gun and lays the reticle's ran
 | Magnification, field | 3×, ±6° true (±18° to the eye) | Spike S1 |
 | Opens / closes | eye within 9 cm of the lens and behind it / beyond 12 cm | Spike S1 (the plan's "about 8 cm") |
 | Picture | 512² with 4× multisampling, only while open; reticle 1024² | Spike S1, pending its headset check |
-| Eyepiece | turret (0.32, 2.25, −0.48): the spike's eyepiece | 28 cm ahead of a seated gunner's eyes; the head box stops the head 4 cm short of it |
+| Eyepiece | turret (0.32, 2.25, −0.38) | 18 cm ahead of a seated gunner's eyes, over the wheels ([interior.md](interior.md)); the head box stops the head 4 cm short of it |
 | Arm | 4 cm round at eye height, x 0.28 to 0.36, forward to the knuckle | 14 cm right of the breech, 33 cm above the elevation wheel's rim; clear of F1.10's breech lever at x 0.17 |
 | Knuckle | turret (0.32, 2.05, −1.04), on the trunnions' line | Its drum ends inside the front plate; the objective half turns about the same line as the gun |
 | Objective | gun space (0.32, 0, −0.155): beside the bore at its height, 1 cm proud of a hood on the mantlet | Rides on the gun (the Gun mesh, which F1.10's recoiling parts are children of) |
