@@ -57,7 +57,7 @@ Nothing new goes over the network: the layout is the same numbers on both pages,
 
 - **The instrument box moved to the left** because the periscope needs the space right of the slit and the gauges had to come out from under it. Readability from 55 cm, at the edge of the forward view, is a headset question.
 - **The periscope's yoke turned sideways** brings a handle within 8 cm of the eyes' plane (beside the right shoulder, 26 cm out); before it stayed 18 cm ahead. The unit test now asks for 7 cm. Check it doesn't knock the chest when turned.
-- **The S3 lever-test rig** (Practice → Lever test) still stands where it did, in front of the station's tillers.
+- **The S3 lever-test rig** (Test rigs → Lever test) still stands where it did, in front of the station's tillers.
 - **The run clock** in the driver's seat moved to the left of the slit (the periscope covers the right).
 
 ## Tests

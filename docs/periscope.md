@@ -9,7 +9,7 @@ The driver gets a second way to see out: a periscope right of the vision slit (l
 - **Turn it** with the yoke: take both handles and swing them round, and the head on the roof turns with them. The eyepiece stays where it is, as on a panoramic sight, so the eye stays at the window while the view swings past. Pushing the right handle forwards looks left. It turns all the way round (behind, the turret fills the view), ticking every 15°. In one hand it still turns, but no faster than 30°/s, so the hand gets ahead of it and the strain buzzes; this is the kit's yoke ([mechanisms.md](mechanisms.md)). It stays where it is let go.
 - The **pointer** on the hub shows which way the head looks.
 - The **gunner** sees the driver's yoke turn with the driver's hands closed on its handles, and the head turn on the roof.
-- Game menu, Practice → **Periscope**:
+- Game menu, Sights → **Periscope**:
   - **Go to it** puts the player in the driver's seat with their head 15 cm behind the window, facing it (from the gunner's seat it asks for the driver's seat first; in a crew that is a swap both must agree to).
   - **Ahead** turns it straight ahead. Either player can press it: the driver's page turns it.
   - **Power 2×** steps through 1×, 2× and 3×, for the headset check to judge which reads best. The line under it says which way the periscope looks.
@@ -53,7 +53,7 @@ Everything: the periscope is the driver's own.
 
 - `test/periscope.test.ts`: both handles in seated reach and clear of the face at every 15°, and at least 15 cm from every driver's lever at both ends of its travel; the window within a lean, reachable inside the head box and wide enough for both eyes; the slit's view clear of the eyepiece from the seat and leant in; every gauge readable past the yoke and its shaft at every angle; the head on the roof ahead of the hatch, outside the turret's sweep and under the level barrel; the view's direction for each turn (positive left) and the bearings in the menu's line; the picture's texels square; the yoke fast in both hands and 30°/s in one with the strain; the packet's round trip, wrapping, and turning away other packets.
 - `test/z-fighting.test.ts`: the hull, the turret with the gun over the head, and the periscope turned seven ways.
-- `npm run test:xr`, step 6l: Practice → Periscope → Go to it puts the head just behind the window; leaning in renders the view (`artifacts/xr-periscope-ahead.png`); both handles turn it 90° left, the view and the head on the roof with it, the window still (`artifacts/xr-periscope-left.png`); one hand turns it slower than the hand, the strain felt, and gets there; Ahead turns it back and Power steps to 3×.
+- `npm run test:xr`, step 6l: Sights → Periscope → Go to it puts the head just behind the window; leaning in renders the view (`artifacts/xr-periscope-ahead.png`); both handles turn it 90° left, the view and the head on the roof with it, the window still (`artifacts/xr-periscope-left.png`); one hand turns it slower than the hand, the strain felt, and gets there; Ahead turns it back and Power steps to 3×.
 - `npm run test:net` (in the drive checks, `ONLY_DRIVE=1` or `=lag`): the guest driver's periscope, turned 60°, is drawn turned the same on the host's page; the host's Ahead asks the guest's page, and both turn ahead. Clean link and 150 ms RTT.
 
 `window.__periscope` gives `state()` (angle in degrees and as a bearing, who holds which handle, the strain, whether it is open, its power, render stats, owner, packets sent and received, the menu's line), `goTo()`, `turn(degrees)`, `setPower(p)`, `handle(which, degrees?)`, `lens()`, `view()`, `head()` and `pictureSpread()`. The perf HUD's sight line shows the periscope's own cost while it renders.
@@ -62,11 +62,11 @@ Everything: the periscope is the driver's own.
 
 On a Quest 3 after the deploy, with the cache cleared (Ctrl+Shift+R, or close and reopen the tab), seated (menu → You → Seated). Turn the perf HUD on with X. Stop at once if you feel unwell.
 
-1. Game menu (Y) → **Practice → Periscope → Go to it**. You are in the driver's seat with the periscope's window a short lean ahead and left. Sit back: the slit's view ahead is clear of it, and you can read all five gauges past the yoke. Nothing on the periscope flickers.
+1. Game menu (Y) → **Sights → Periscope → Go to it**. You are in the driver's seat with the periscope's window a short lean ahead and left. Sit back: the slit's view ahead is clear of it, and you can read all five gauges past the yoke. Nothing on the periscope flickers.
 2. Lean in until the window lights up. You see the range ahead at 2×, with the tank's nose at the bottom. Say whether it is comfortable with both eyes, and steady as you move your head a little.
 3. Take **both handles** and turn it slowly left and right, then all the way round. The view swings and your eye stays at the window. Say whether the swinging view is comfortable, and whether the yoke's height is easy to hold.
 4. Let go with one hand and turn it: it follows slower, with a light buzz.
-5. Turn it to look at one of the range's targets, then **Practice → Periscope → Ahead**: it turns back.
+5. Turn it to look at one of the range's targets, then **Sights → Periscope → Ahead**: it turns back.
 6. Press **Power** to try 1× and 3×. Say which power you would keep.
 7. With the practice crewmate (`?bot=1`) or a second headset driving, look through it on the move (Practice → Drive the tank, or let the crewmate drive). Report the HUD's fps and the `periscope` line (cpu, calls, triangles) with it open.
 8. With a second headset: the gunner looks across at the driver turning the yoke; the yoke turns and the driver's gloves are on its handles.

@@ -89,7 +89,7 @@ const next = <T>(list: readonly T[], value: T): T => list[(list.indexOf(value) +
 export const PERISCOPE_BUTTONS: readonly PracticeButton[] = [
   { id: 'menu-periscope-go', label: () => 'Go to it', press: () => active?.goTo(), closes: true },
   { id: 'menu-periscope-ahead', label: () => 'Ahead', press: () => active?.turn(0) },
-  { id: 'menu-periscope-power', label: () => `Power ${periscopeStats.power}×`, press: () => active?.setPower(next(PERISCOPE_POWERS, periscopeStats.power)) },
+  { id: 'menu-periscope-power', label: () => `Power ${periscopeStats.power}x`, press: () => active?.setPower(next(PERISCOPE_POWERS, periscopeStats.power)) },
 ];
 
 interface PeriscopeDebug {

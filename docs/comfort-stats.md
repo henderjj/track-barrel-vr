@@ -74,7 +74,7 @@ Nothing new goes over the unreliable channel.
 
 On a Quest 3 after the deploy, with the cache cleared, seated. Stop at once if you feel unwell.
 
-1. Enter VR alone. Game menu (Y) → **Comfort and stats → Vignette → Strong**, then **Practice → Drive the tank** and drive about with turns. The edge of view should darken more than before. Try **Light** and **Off** too and say which you would pick.
+1. Enter VR alone. Game menu (Y) → **Comfort → Vignette → Strong**, then **Practice → Drive the tank** and drive about with turns. The edge of view should darken more than before. Try **Light** and **Off** too and say which you would pick.
 2. **Bumps → Reduced**, then **Practice → Test range → Up the range** and drive across the rough ground off the roads. Report whether the hull sways more gently than with Full, and whether the ground looks wrong through the slit (with reduced bumps the hull tilts less than the ground, so its front can sit a few centimetres into a slope).
 3. **Practice → Range run → Start** and play the run through by hand, as driver or gunner (`?bot=1` on a PC page gives a crewmate). During it, squeeze once just beside a control without taking hold, and press **I feel queasy** once.
 4. After the run, open the menu: the Comfort and stats line gives the run's time, shots, grinds and fumbles with the most fumbled control. Report the line.

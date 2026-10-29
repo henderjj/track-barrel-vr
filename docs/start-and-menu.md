@@ -26,9 +26,23 @@ How it should look and work (each rule fixed something a headset playtest found 
 - **Show things as what they are.** Coat colours are round swatches with a ring round the one you wear. No hover styles: under an XR ray a hover outline stays on everything the ray touched.
 - **Numbers step.** Eye height is **−** and **+** in 5 cm steps, up to 15 cm either side of the seat's eye point, with an **Eye point** button.
 - **Changes apply at once and are kept** in the browser. Settings that need a reload stay on the page's Start-up settings.
-- **Far enough to take in at a glance:** 1.3 m in front, 0.2 m below eye level. One panel, no pages; past about a dozen rows, add tabs along the top.
+- **Far enough to take in at a glance:** 1.3 m in front, 0.2 m below eye level.
+- **Grouped into tabs.** Past about a dozen rows one long panel no longer fits at a glance, so the settings are grouped into tabs down the panel's left side, one page showing at a time, the tab showing filled in. The pages area keeps one height (the tallest page's, Practice) so the panel doesn't jump as the tabs change. The menu opens on the tab picked last (You the first time). The Crew tab shows only in a crew; out of one, the menu falls back to You.
 
-| Group | Row | Choices |
+| Tab | What it holds |
+| --- | --- |
+| Crew (only in a crew) | The crew's state, My microphone, Crewmate's voice, and Calls to the other seat ([crewmate.md](crewmate.md)) |
+| You | Coat colour, Playing, Eye height, Seat, Calibration |
+| Comfort | Vignette, Bumps, I feel queasy, the play-test stats ([comfort-stats.md](comfort-stats.md)) |
+| Sound and view | The other live settings: tank sounds, perf HUD, frame rate, fog, foveation |
+| Tank | Driving (its state and the gear lever), the range's state, and Riding while on spike S2's ride |
+| Practice | Shortcuts for the crew's jobs: Sit in, Drive the tank, Lay the gun, Load and fire, Tank sounds, Test range, Range run, Ready to fire |
+| Sights | Gunsight, Lay on, Sight render, Periscope |
+| Test rigs | Ride the tank (spike S2), Lever test (S3), Mechanism kit (F1.3) |
+
+Some of the rows:
+
+| Tab | Row | Choices |
 | --- | --- | --- |
 | Crew (only in a crew) | My microphone | On, Muted |
 | Crew | Crewmate's voice | On, Muted (for you only) |
@@ -46,17 +60,18 @@ How it should look and work (each rule fixed something a headset playtest found 
 
 Below them, **Back to start screen** leaves any crew and shows the start screen, and **Exit VR** ends the session.
 
-Add a Practice button for each feature that jumps straight to the situation its headset check needs. In a crew, a guest's Practice button asks the host, who sets it up for both.
+Add a Practice button for each feature (in the Practice tab, or Sights or Test rigs if it belongs there; a new tab is one `MENU_TABS` entry in `src/game-flow.ts` plus its `tab-<id>` button and `page-<id>` page in the panel, and the pages area's height may need to grow to the tallest page) that jumps straight to the situation its headset check needs. In a crew, a guest's Practice button asks the host, who sets it up for both.
 
 In code, the crew, Playing and live-setting rows are `CHOICE_ROWS` in the menu system; the live settings come from `LIVE_ITEMS` in `src/live-settings.ts`, applied by the system that owns each from `onSettingChange`. A new live setting is one `LIVE_ITEMS` entry (up to four choices) plus a `row-<key>` row in the panel. Start-up settings are `MENU_ITEMS` in `src/settings-menu.ts`.
 
 ## Checks
 
-Unit tests cover the words on the crew page and the menu, typing a code, the eye-height steps, and saving the settings. The emulated-headset test (`npm run test:xr`) checks the start screen stands in front of the player when VR starts, a ray click on **Play solo** closes it, Y opens the menu in front of the player, the ray turns the HUD off and on, picks standing and seated play, steps the eye height and picks a coat, and Y and B close it. The two-player test (`npm run test:net`) checks a crew link's start screen closes once the crewmate is aboard, joining a crew from the keypad, muting yourself and the crewmate, the coat colour reaching the crewmate, the HUD and eye-height settings saving at once, and the start-up settings keeping the menu's choices when they reload the page.
+Unit tests cover the words on the crew page and the menu, typing a code, the eye-height steps, saving the settings, and the menu's tabs (a button and a page for each, every row on a page, Crew falling back to You out of a crew). The emulated-headset test (`npm run test:xr`) checks the start screen stands in front of the player when VR starts, a ray click on **Play solo** closes it, Y opens the menu in front of the player on its You tab, the ray picks the Sound and view tab (only its page showing) and turns the HUD off and on, picks You again, picks standing and seated play, steps the eye height and picks a coat, and Y and B close it. The two-player test (`npm run test:net`) checks a crew link's start screen closes once the crewmate is aboard, joining a crew from the keypad, muting yourself and the crewmate, the coat colour reaching the crewmate, the HUD and eye-height settings saving at once, and the start-up settings keeping the menu's choices when they reload the page.
 
 ## Headset check
 
 1. Open the game in Quest Browser and press **Enter VR** on the page. The start screen should stand in front of you.
 2. Point at **Play solo** and pull the trigger: nothing should be left in front of you.
-3. Press **Y**. Try a coat swatch (your cuffs change), **Seated** and **Standing**, **+** and **−** on the eye height, and the frame rate (the wrist HUD shows the new Hz). Say whether anything is hard to hit with the ray or hard to read. Press Y again to close it.
-4. With a second player or the practice crewmate, try **My microphone: Muted** and **Crewmate's voice: Muted**.
+3. Press **Y**. The menu should open on the **You** tab, with the tabs down its left side. Press each tab in turn: only that tab's page shows, the tab you pressed is filled in, and the panel stays the same size and in the same place. Close the menu and open it again: it opens on the last tab you picked. Report whether the tab names make it easy to find things, and whether any row sits on a tab you wouldn't look for it on.
+4. On **You**, try a coat swatch (your cuffs change), **Seated** and **Standing**, and **+** and **−** on the eye height; then on **Sound and view**, the frame rate (the wrist HUD shows the new Hz). Say whether anything is hard to hit with the ray or hard to read. Press Y again to close it.
+5. With a second player or the practice crewmate, a **Crew** tab appears at the top of the tabs: try **My microphone: Muted** and **Crewmate's voice: Muted**.
