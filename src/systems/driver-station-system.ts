@@ -22,7 +22,7 @@ import {
   gearOfLever,
   needleAngle,
   PANEL,
-  TOP_ROW,
+  GEAR_PLATE,
   throttleAngle,
   throttleOf,
   tillerAngle,
@@ -313,7 +313,7 @@ export class DriverStationSystem extends createSystem({}) {
       ctx.fillText(dial.label, cx, cy + r * 0.62);
     }
     // The gear plate, in the bottom row's third place.
-    dialCentre(TOP_ROW + 2, at);
+    dialCentre(GEAR_PLATE, at);
     const gx = FACE_PX_W / 2 + at[0] * px;
     const gy = FACE_PX_H / 2 - at[1] * px;
     const line = PANEL.dialRadius * px * 0.42;

@@ -45,25 +45,25 @@ export const INTERIOR_LIGHTS: readonly InteriorLight[] = [
     id: 'driver-hatch',
     frame: 'hull',
     at: [(DRIVER_HATCH[0] + DRIVER_HATCH[2]) / 2, HULL.roof + 0.45, (DRIVER_HATCH[1] + DRIVER_HATCH[3]) / 2],
-    color: scaled(DAY, 0.9),
-    range: 1.4,
-    cone: 6,
+    color: scaled(DAY, 1.2),
+    range: 1.2,
+    cone: 12,
   },
-  { id: 'gunner-hatch', frame: 'turret', at: [GUNNER_HATCH_MIDDLE[0], TURRET.roof + 0.45, GUNNER_HATCH_MIDDLE[1]], color: scaled(DAY, 0.9), range: 1.4, cone: 6 },
+  { id: 'gunner-hatch', frame: 'turret', at: [GUNNER_HATCH_MIDDLE[0], TURRET.roof + 0.45, GUNNER_HATCH_MIDDLE[1]], color: scaled(DAY, 1.2), range: 1.2, cone: 12 },
   // A little daylight in through the slit.
-  { id: 'slit', frame: 'hull', at: [VISION_SLIT.x, VISION_SLIT.y, VISION_SLIT.z - 0.1], color: scaled(DAY, 0.12), range: 0.3, cone: 0 },
+  { id: 'slit', frame: 'hull', at: [VISION_SLIT.x, VISION_SLIT.y, VISION_SLIT.z - 0.1], color: scaled(DAY, 0.25), range: 0.35, cone: 0 },
   // The dome lamps: one on the hull roof over the transmission, one on the turret roof behind the gun.
-  { id: 'hull-lamp', frame: 'hull', at: [0.1, HULL.roof - 0.05, -1.2], color: scaled(LAMP, 0.28), range: 0.6, cone: 0 },
-  { id: 'turret-lamp', frame: 'turret', at: [-0.45, TURRET.roof - 0.05, 0.45], color: scaled(LAMP, 0.28), range: 0.6, cone: 0 },
+  { id: 'hull-lamp', frame: 'hull', at: [0.1, HULL.roof - 0.05, -1.2], color: scaled(LAMP, 0.5), range: 0.5, cone: 0 },
+  { id: 'turret-lamp', frame: 'turret', at: [-0.45, TURRET.roof - 0.05, 0.45], color: scaled(LAMP, 0.5), range: 0.5, cone: 0 },
 ];
 
 /** Where the dome lamps' housings hang, in their frames: the lamps' light comes from just under them. */
 export const DOME_LAMPS = INTERIOR_LIGHTS.filter((l) => l.id === 'hull-lamp' || l.id === 'turret-lamp');
 
 /** The sky's light left inside, before any light pools: dim and a little warm, linear RGB. */
-export const INTERIOR_AMBIENT = [0.27, 0.26, 0.24] as const;
+export const INTERIOR_AMBIENT = [0.065, 0.062, 0.058] as const;
 /** On the hull floor the ambient is this much of what it is from 0.9 m up. */
-export const FLOOR_SHADE = 0.65;
+export const FLOOR_SHADE = 0.55;
 export const FLOOR_SHADE_HEIGHT = 0.9;
 /** How much of a light reaches a face turned away from it (the rest falls off with the angle). */
 export const WRAP = 0.25;

@@ -15,7 +15,7 @@
  *  1. checks this player's own hands are drawn and posed by the controller
  *     (flat, fist, point, thumbs-up);
  *  1b. sits in the driver's seat (the cabin, F1.1): the eyes over its eye
- *     point, a lean stopped at the head box's edge, a recentre put back in
+ *     point, a lean past the head box's edge fading the view, a recentre put back in
  *     the seat, and the game menu's Practice row moving them to the
  *     gunner's seat in the turret basket and back;
  *  1c. raises the eyes from the menu's eye height, and stops a head that
@@ -473,12 +473,12 @@ async function calibrationStep() {
 }
 
 /** Where this player sits: their seat, head and its eye point (hull space), and the play space's height. */
-const seated = () => evalInApp('({ mine: window.__seats.mine, head: window.__seats.head(), eye: window.__seats.eye(window.__seats.mine), rigY: window.__debug.world.player.position.y, offset: window.__body.state.offset, fixes: { ...window.__seats.fixes } })');
+const seated = () => evalInApp('({ mine: window.__seats.mine, head: window.__seats.head(), eye: window.__seats.eye(window.__seats.mine), rigY: window.__debug.world.player.position.y, offset: window.__body.state.offset, fixes: { ...window.__seats.fixes }, fade: window.__seats.fade })');
 const flatGap = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 
 /**
  * 1b. The cabin (F1.1): playing solo the player sits in the driver's seat,
- *     eyes over its eye point; a lean forward stops at the head box's edge
+ *     eyes over its eye point; a lean forward past the head box's edge fades the view
  *     (the controls and the front plate are beyond); a recentre, a jump of
  *     over a metre, puts them back in the seat; the game menu's Practice
  *     row moves them to the gunner's seat in the turret basket, its floor
@@ -498,16 +498,24 @@ async function seatStep() {
   await sleep(500);
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-driver-seat.png'], {});
 
-  // Lean 30 cm forward in the room: the head box reaches 10 cm ahead of the eye point, stopping the eyes 20 cm short of the slit
-  // (src/sim/cabin.ts). One jump of more than RESEAT_DISTANCE past the edge would reseat instead.
-  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([eye[0], eye[1], eye[2] - 0.3]) });
-  const leant = await waitFor('the lean to stop', () => {
+  // Lean 20 cm forward in the room, 10 cm past the head box's front edge (10 cm ahead of the eye point, src/sim/cabin.ts):
+  // the view fades to black and the seat stays put; leaning back clears it.
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([eye[0], eye[1], eye[2] - 0.2]) });
+  const leant = await waitFor('the view to fade', () => {
     const s = seated();
-    return s.fixes.push > start.fixes.push ? s : null;
+    return s.fixes.walls > start.fixes.walls && s.fade > 0.99 ? s : null;
   }, 5000).catch(() => seated());
-  check('Leaning past the head box stops the head at its edge',
-    leant.fixes.push > start.fixes.push && Math.abs(leant.head[2] - (eye[2] - 0.1)) < 0.01 && Math.abs(leant.head[0] - eye[0]) < 0.01,
-    `head at ${fmt(leant.head)}, edge at z ${(eye[2] - 0.1).toFixed(3)}`);
+  check('Leaning past the head box fades the view to black, the seat staying where it was',
+    leant.fixes.walls > start.fixes.walls && leant.fade > 0.99 && Math.abs(leant.head[2] - (eye[2] - 0.2)) < 0.01 && Math.abs(leant.rigY - start.rigY) < 1e-6,
+    `head at ${fmt(leant.head)}, fade ${leant.fade.toFixed(2)}, box edge at z ${(eye[2] - 0.1).toFixed(3)}`);
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([eye[0], eye[1], eye[2] - 0.05]) });
+  const clear = await waitFor('the view to clear', () => {
+    const s = seated();
+    return s.fade === 0 ? s : null;
+  }, 5000).catch(() => seated());
+  check('Leaning back inside the box clears the view, the eyes back where they were',
+    clear.fade === 0 && Math.abs(clear.head[2] - (eye[2] - 0.05)) < 0.01 && clear.fixes.reseat === start.fixes.reseat,
+    `head at ${fmt(clear.head)}, fade ${clear.fade}`);
 
   // A recentre: the head jumps 1.5 m sideways in the room.
   const now = iwsdk(['xr', 'get-transform'], { device: 'headset' }).result.position;
@@ -1929,9 +1937,9 @@ async function main() {
   await seatStep();
 
   // 1c. Eye height (F1.2): the menu's +5 cm raises the eyes above the
-  //     driver's eye point, hands too; standing up out of the chair stops
-  //     the head under the roof.
-  const bodyState = () => evalInApp('({ ...window.__body.state, head: window.__seats.head(), eye: window.__seats.eye("driver"), roof: window.__seats.fixes.roof, hand: window.__ownHands.position("right") })');
+  //     driver's eye point, hands too; standing up out of the chair fades
+  //     the view under the roof.
+  const bodyState = () => evalInApp('({ ...window.__body.state, head: window.__seats.head(), eye: window.__seats.eye("driver"), roof: window.__seats.fixes.roof, fade: window.__seats.fade, hand: window.__ownHands.position("right") })');
   const level = bodyState();
   evalInApp('(window.__body.choose({ raise: 0.05, seated: true }), true)');
   const raised = await waitFor('the eyes 5 cm up', () => { const b = bodyState(); return Math.abs(b.head[1] - (b.eye[1] + 0.05)) < 0.005 && b; }, 5000).catch(() => bodyState());
@@ -1940,13 +1948,13 @@ async function main() {
     `head at ${raised.head[1].toFixed(3)} m for ${(raised.eye[1] + 0.05).toFixed(3)}, right hand ${(raised.hand[1] - level.hand[1]).toFixed(3)} m higher`);
   evalInApp('(window.__body.choose({ raise: 0, seated: true }), true)');
   const now1c = iwsdk(['xr', 'get-transform'], { device: 'headset' }).result.position;
-  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: now1c.x, y: now1c.y + 0.45, z: now1c.z } });
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: now1c.x, y: now1c.y + 0.3, z: now1c.z } });
   // Mirrors the driver's headUp in src/sim/cabin.ts: the hull roof (1.8 m) less 15 cm.
   const top = 1.8 - 0.15;
-  const stood = await waitFor('the head under the roof', () => { const b = bodyState(); return b.roof > level.roof && Math.abs(b.head[1] - top) < 0.005 && b; }, 5000).catch(() => bodyState());
-  check('Standing up out of the seat stops the head under the roof',
-    stood.roof > level.roof && Math.abs(stood.head[1] - top) < 0.005,
-    `head at ${stood.head[1].toFixed(3)} m, roof stop at ${top.toFixed(3)} m, ${stood.roof - level.roof} stop(s)`);
+  const stood = await waitFor('the view to fade under the roof', () => { const b = bodyState(); return b.roof > level.roof && b.fade > 0.99 && b; }, 5000).catch(() => bodyState());
+  check('Standing up out of the seat fades the view under the roof, the seat staying where it was',
+    stood.roof > level.roof && stood.fade > 0.99 && Math.abs(stood.head[1] - (level.head[1] + 0.3)) < 0.005,
+    `head at ${stood.head[1].toFixed(3)} m, roof stop at ${top.toFixed(3)} m, fade ${stood.fade.toFixed(2)}, ${stood.roof - level.roof} time(s)`);
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
 

@@ -1,12 +1,15 @@
-import { createSystem, Euler, Quaternion, Vector3 } from '@iwsdk/core';
+import { BackSide, createSystem, Euler, Mesh, MeshBasicMaterial, Quaternion, SphereGeometry, Vector3 } from '@iwsdk/core';
 import { saveSettings, settings } from '../settings.js';
 import {
+  HEAD_JUMP,
   headDrop,
+  headFade,
   headFix,
   type HeadFix,
   otherSeat,
   parseSeat,
   placeInSeat,
+  RESEAT_AFTER,
   type RigPlace,
   type SeatId,
   SEATS,
@@ -33,8 +36,10 @@ interface SeatDebug {
   eye(seat: SeatId): number[];
   /** This player's head, hull space. */
   head(): number[];
-  /** How often the head was stopped at its box's edge, under the roof, and the player put back in the seat. */
-  readonly fixes: { push: number; roof: number; reseat: number };
+  /** How often the view faded with the head past its box's edge and over the roof stop, and the player was put back in the seat. */
+  readonly fixes: { walls: number; roof: number; reseat: number };
+  /** How dark the view is now, 0 to 1, from the head past its box or over the roof stop. */
+  readonly fade: number;
   /** A swap waiting for a word: 'asked', 'offered' or 'none'. */
   readonly swap: string;
   /** The sign about a swap is showing, and what it says. */
@@ -49,13 +54,13 @@ interface SeatDebug {
  * seat's floor, with the body-height system's offset on top.
  *
  * After that the player moves their head freely within the seat's head
- * box. Leaning past its edge stops the head there, as the walls, the
- * breech and the controls would, by moving the play space back: the head
- * is limited, not the play space's origin, so a lean or a step in the room
- * can't put a head through the armour. A head far outside the box (the
- * headset recentred, or the player stood up and walked) puts the player
- * back in the seat. Rising out of the seat (standing up from the chair)
- * stops the head under the roof, the same way, by lowering the play space.
+ * box. Leaning past its edge, into the walls, the breech or the controls,
+ * fades the view to black over 8 cm (`headFade`), and rising over the
+ * roof stop does the same: the play space stays where the player was
+ * calibrated, so the seat never shifts under them, and leaning back clears
+ * the view. A head that jumps far outside the box (the headset recentred),
+ * or stays far outside for two seconds (the player stood up and walked),
+ * puts the player back in the seat.
  *
  * Seats are shared: the host decides who sits where (`seats` event). Alone,
  * or before the crewmate is aboard, the player sits where they like. In a
@@ -76,9 +81,16 @@ export class SeatSystem extends createSystem({}) {
   private headHull: [number, number, number] = [0, 0, 0];
   private fix: [number, number] = [0, 0];
   private place: RigPlace = { x: 0, z: 0, yaw: 0 };
-  private fixes = { push: 0, roof: 0, reseat: 0 };
+  private fixes = { walls: 0, roof: 0, reseat: 0 };
   private lastFix: HeadFix = 'inside';
-  private underRoof = false;
+  private overRoof = false;
+  /** How long the head has been far outside its box, s. */
+  private farFor = 0;
+  /** The head's play-space position last frame, for telling a recentre's jump. */
+  private lastLocal = new Vector3();
+  private fade = 0;
+  /** Black round the eyes, as dark as `fade`. */
+  private blind!: Mesh<SphereGeometry, MeshBasicMaterial>;
   private wasAway = false;
   /** Host: when each player last asked to swap, s (performance clock). */
   private asks: SwapAsks = { host: -Infinity, guest: -Infinity };
@@ -90,6 +102,15 @@ export class SeatSystem extends createSystem({}) {
 
   init(): void {
     this.sign = new FloatingSign('Seat Sign', 0.7, [560, 160], 1.1, 0.3);
+    this.blind = new Mesh(
+      new SphereGeometry(0.1, 12, 8),
+      new MeshBasicMaterial({ color: 0x000000, side: BackSide, transparent: true, opacity: 0, depthTest: false, depthWrite: false }),
+    );
+    this.blind.name = 'Head Fade';
+    this.blind.frustumCulled = false;
+    this.blind.renderOrder = 1000;
+    this.blind.visible = false;
+    this.camera.add(this.blind);
     this.world.createTransformEntity(this.sign.mesh);
     seating.ask = (seat) => this.ask(seat);
     seating.reseat = () => {
@@ -124,6 +145,9 @@ export class SeatSystem extends createSystem({}) {
       this.offered();
     });
     this.cleanupFuncs.push(() => {
+      this.blind.removeFromParent();
+      this.blind.geometry.dispose();
+      this.blind.material.dispose();
       netLink.events.delete('seats');
       netLink.events.delete('seat-ask');
       netLink.events.delete('seat-offer');
@@ -137,6 +161,7 @@ export class SeatSystem extends createSystem({}) {
       eye: (seat) => seatToHull(SEATS[seat], seating.turretYaw, SEATS[seat].eye, [0, 0, 0]),
       head: () => this.player.head.getWorldPosition(new Vector3()).toArray(),
       get fixes() { return self.fixes; },
+      get fade() { return self.fade; },
       get swap() { return seating.swap; },
       get swapSign() { return self.sign.visible ? self.signText : ''; },
     };
@@ -155,9 +180,11 @@ export class SeatSystem extends createSystem({}) {
       this.needsPlace = true;
     }
     if (seating.away) {
+      this.setFade(0);
       return;
     }
     if (!this.world.session) {
+      this.setFade(0);
       if (this.inVr) {
         // Back on the flat page: the play space goes back where it started.
         this.inVr = false;
@@ -176,27 +203,35 @@ export class SeatSystem extends createSystem({}) {
     if (local.x === 0 && local.y === 0 && local.z === 0) {
       return; // no head pose yet
     }
-    // Standing up out of the seat: the head stops under the roof. The play space only turns about the vertical, so its height adds straight on.
-    const drop = headDrop(seat, player.position.y + local.y);
-    player.position.y += drop;
-    if (drop < 0 && !this.underRoof) this.fixes.roof++;
-    this.underRoof = drop < 0;
+    const jumped = local.distanceTo(this.lastLocal) > HEAD_JUMP;
+    this.lastLocal.copy(local);
+    // Standing up out of the seat: the head is over the roof stop. The play space only turns about the vertical, so its height adds straight on.
+    const over = -headDrop(seat, player.position.y + local.y);
+    if (over > 0 && !this.overRoof) this.fixes.roof++;
+    this.overRoof = over > 0;
+    let out = 0;
     if (!this.needsPlace) {
       player.head.getWorldPosition(this.head);
       this.headHull[0] = this.head.x;
       this.headHull[1] = this.head.y;
       this.headHull[2] = this.head.z;
       const fix = headFix(seat, seating.turretYaw, this.headHull, this.fix);
-      if (fix === 'push') {
-        player.position.x += this.fix[0];
-        player.position.z += this.fix[1];
-        if (this.lastFix !== 'push') this.fixes.push++;
-      } else if (fix === 'reseat') {
-        this.needsPlace = true;
-        this.fixes.reseat++;
+      if (fix === 'fade') {
+        out = Math.hypot(this.fix[0], this.fix[1]);
+        if (this.lastFix === 'inside') this.fixes.walls++;
+      }
+      this.farFor = fix === 'reseat' ? this.farFor + delta : 0;
+      if (fix === 'reseat') {
+        out = Infinity;
+        if (jumped || this.farFor >= RESEAT_AFTER) {
+          this.needsPlace = true;
+          this.fixes.reseat++;
+          this.farFor = 0;
+        }
       }
       this.lastFix = fix;
     }
+    this.setFade(this.needsPlace ? 0 : headFade(Math.max(out, over)));
     if (this.needsPlace) {
       this.needsPlace = false;
       this.headQuat.copy(player.head.quaternion);
@@ -208,6 +243,14 @@ export class SeatSystem extends createSystem({}) {
       seating.placements++;
       console.info(`[Seat] in the ${seat.label.toLowerCase()}'s seat`);
     }
+  }
+
+  /** Darken the view to `fade` (0 clear, 1 black). */
+  private setFade(fade: number): void {
+    if (fade === this.fade) return;
+    this.fade = fade;
+    this.blind.material.opacity = fade;
+    this.blind.visible = fade > 0;
   }
 
   /**
