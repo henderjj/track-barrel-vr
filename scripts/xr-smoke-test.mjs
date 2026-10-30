@@ -289,12 +289,13 @@ async function rayClick(target) {
   // couple of seconds) were sometimes lost on CI runners, so aim, wait,
   // click and wait about as long as before. Software rendering can drop to a
   // frame or two a second with the menu open, and a press shorter than a
-  // frame is never seen, so the trigger is held for at least one and a half
-  // of the slowest recent frames (and half a second), the waits stretched to
-  // match. The ray then needs a longer click window than IWSDK's 0.8 s:
-  // relaxRayClicks() opens it.
+  // frame is never seen, so the trigger is held for two and a half of the
+  // slowest recent frames (at least half a second; a frame can run longer
+  // than the last second's slowest), the waits stretched to match. The ray
+  // then needs a longer click window than IWSDK's 0.8 s: relaxRayClicks()
+  // opens it to 5 s.
   const frameMs = slowestFrameMs();
-  const holdMs = Math.max(500, 1.5 * frameMs);
+  const holdMs = Math.min(4000, Math.max(500, 2.5 * frameMs));
   const settleMs = Math.max(1000, 3 * frameMs);
   if (frameMs > slowestClickFrameMs + 100) {
     slowestClickFrameMs = frameMs;
@@ -946,10 +947,10 @@ async function mechanismBench() {
 
 async function menuButtonPress() {
   const wasOpen = evalInApp('window.__gameMenu.open');
-  // A press shorter than a frame is never seen: hold Y for one and a half of
+  // A press shorter than a frame is never seen: hold Y for two and a half of
   // the slowest recent frames (at least 0.3 s), then wait for the menu to
   // open or close.
-  const holdMs = Math.max(300, 1.5 * slowestFrameMs());
+  const holdMs = Math.max(300, 2.5 * slowestFrameMs());
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-left', buttons: [{ index: 4, value: 1 }] });
   await sleep(holdMs);
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-left', buttons: [{ index: 4, value: 0 }] });
