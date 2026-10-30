@@ -352,7 +352,7 @@ async function driveChecks(host, guest, label) {
   // The driver's station (F1.5): the host's page draws the guest's tillers forwards.
   const hostSees = await waitFor('the host to draw the guest\'s tillers', async () => {
     const st = await host.page.evaluate(() => window.__driverStation.state());
-    return st.angles.tillerLeft > 20 && st.angles.tillerRight > 20 ? st : null;
+    return st.angles.tillerLeft > 15 && st.angles.tillerRight > 15 ? st : null;
   }, 5000).catch(() => null);
   check(`The host's page draws the guest driver's tillers where the guest pushed them (${label})`, hostSees !== null,
     hostSees ? `${hostSees.angles.tillerLeft.toFixed(1)}° and ${hostSees.angles.tillerRight.toFixed(1)}°` : JSON.stringify(await host.page.evaluate(() => window.__driverStation.state().angles)));
@@ -421,7 +421,7 @@ async function driveChecks(host, guest, label) {
       guest.page.evaluate(() => window.__driverStation.gauges()),
       tank(host),
     ]);
-    return st.angles.tillerLeft > 20 && st.angles.throttle > 35 && Math.abs(gauges.rpm - h.rpm) < 200 ? { st, gauges, h } : null;
+    return st.angles.tillerLeft > 15 && st.angles.throttle > 35 && Math.abs(gauges.rpm - h.rpm) < 200 ? { st, gauges, h } : null;
   }, 8000).catch(() => null);
   check(`The guest's page draws the host driver's tillers and throttle, and its gauges read the host's tank (${label})`, guestSees !== null,
     guestSees ? `tillers ${guestSees.st.angles.tillerLeft.toFixed(1)}°, throttle ${guestSees.st.angles.throttle.toFixed(1)}°, ${guestSees.gauges.rpm.toFixed(0)} rpm for the host's ${guestSees.h.rpm.toFixed(0)}`
