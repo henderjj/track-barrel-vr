@@ -105,6 +105,14 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       - name: Emulated-headset test
         run: npm run test:xr
+      - name: Why the managed browser died
+        # Chromium has closed under the test on CI with nothing in its output:
+        # show the dev runtime's log and anything the kernel killed.
+        if: failure()
+        run: |
+          tail -n 120 .iwsdk/runtime/logs/*.log || true
+          sudo dmesg | grep -iE 'killed process|out of memory|oom|segfault|chrom' | tail -n 30 || true
+          free -m
       - name: Stop the dev runtime
         if: always()
         run: npx iwsdk dev down || true
