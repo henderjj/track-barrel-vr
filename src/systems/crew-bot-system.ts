@@ -61,7 +61,7 @@ const HAND_SPEED = 0.8;
 const ON_HANDLE = 0.001;
 /** A squeeze that hasn't taken hold in this long lets go and tries again, s. */
 const GRAB_TIMEOUT = 0.6;
-/** How fast its hand winds the elevation wheel's rim, rad/s. */
+/** How fast its hand winds the elevation handwheel's handle round, rad/s. */
 const WHEEL_SPEED = 6;
 /** Laid this long before it fires, s; the trigger is held this long, s. */
 const LAID_FOR = 0.3;
@@ -200,10 +200,9 @@ export class CrewBotSystem extends createSystem({}) {
   private loads = 0;
   private shots = 0;
   private hits = 0;
-  /** The twist grip's angle and the elevation wheel's rim angle when its hand took hold. */
+  /** The twist grip's angle when its hand took hold, and the elevation handwheel's handle's angle its hand is at. */
   private twistAtGrab = 0;
-  private rimAngle = 0;
-  private rimBase = 0;
+  private knobAngle = 0;
   private status = '';
   private statusSentAt = -Infinity;
   private lastCall = '';
@@ -585,7 +584,7 @@ export class CrewBotSystem extends createSystem({}) {
     if (handUse.right !== TWIST) hand.trigger = 0;
   }
 
-  /** The left hand on the elevation wheel's rim, winding it until the gun is at `elevation`. */
+  /** The left hand on the elevation handwheel's handle, winding it until the gun is at `elevation`. */
   private holdElevation(elevation: number): void {
     const control = findControl(ELEVATION);
     if (control == null) return;
@@ -595,15 +594,12 @@ export class CrewBotSystem extends createSystem({}) {
       this.onControl('left', ELEVATION, null);
       return;
     }
-    if (hand.held !== ELEVATION) {
-      // Just took hold, at the rim's left side (the kit's handle 0): the wheel turns with the hand's angle from here.
-      this.rimAngle = Math.PI / 2;
-      this.rimBase = wheel.angle - this.rimAngle;
-    }
-    const wanted = Math.min(ELEVATION_WHEEL.max, Math.max(ELEVATION_WHEEL.min, wheelForElevation(elevation))) - this.rimBase;
+    // Just took hold, on the handle: the wheel turns with the hand's angle from here.
+    if (hand.held !== ELEVATION) this.knobAngle = wheel.angle;
+    const wanted = Math.min(ELEVATION_WHEEL.max, Math.max(ELEVATION_WHEEL.min, wheelForElevation(elevation)));
     const step = WHEEL_SPEED * this.dt;
-    this.rimAngle += Math.max(-step, Math.min(step, wanted - this.rimAngle));
-    this.onControl('left', ELEVATION, wheelGrip(ELEVATION_WHEEL, this.rimAngle, this.p));
+    this.knobAngle += Math.max(-step, Math.min(step, wanted - this.knobAngle));
+    this.onControl('left', ELEVATION, wheelGrip(ELEVATION_WHEEL, this.knobAngle, this.p));
   }
 
   // ------------------------------------------------------------ Hands

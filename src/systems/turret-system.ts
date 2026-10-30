@@ -70,7 +70,8 @@ export function turretForward(): void {
 }
 
 /**
- * How many times the power grip's trigger has been pulled on this page
+ * How many times the power grip's trigger, or the trigger bar on the
+ * elevation handwheel's handle, has been pulled on this page
  * since the last call, and reset: the gun's trigger (F1.10, LoadingSystem
  * fires a loaded breech with it). Only the gunner's page's pulls count.
  */
@@ -136,7 +137,8 @@ interface TurretDebug {
  * gun with three controls built from the mechanism kit, mounted in the
  * turret: the power traverse grip on the right (twist to traverse, faster
  * as the engine revs), the manual traverse crank for fine aim, and the
- * elevation handwheel on the left. The sums are src/sim/turret.ts.
+ * elevation handwheel on the left, turned by its handle, with a trigger bar
+ * on it. The sums are src/sim/turret.ts.
  *
  * The gunner's page owns the turret (plan decision 2): it steps the turret
  * at once from its own hands, with the engine RPM the drive draws, and
@@ -270,8 +272,8 @@ export class TurretSystem extends createSystem({}) {
         kind,
         // Spike S2's ride hides the cabin while it runs. Only the gunner's seat is in reach of them.
         active: () => !ride.active,
-        // The power grip's trigger is the gun's (F1.10).
-        moved: key === 'twist' ? (events) => {
+        // The power grip's trigger, and the bar on the elevation handwheel's handle, are the gun's (F1.10).
+        moved: key !== 'crank' ? (events) => {
           if (events & MechEvent.Press && this.isOwner()) this.triggerPulls++;
         } : undefined,
       }));
@@ -309,7 +311,7 @@ export class TurretSystem extends createSystem({}) {
 
   sayHowToLay(): void {
     const vr = this.world.visibilityState.peek() !== VisibilityState.NonImmersive;
-    this.say('Laying the gun', vr ? ['Right grip: twist to traverse. Crank: fine aim', 'Left wheel: clockwise raises the gun'] : ['In a headset: twist grip, crank, elevation wheel', 'Practice: Forward puts the turret back']);
+    this.say('Laying the gun', vr ? ['Right grip: twist to traverse. Crank: fine aim', 'Left crank: clockwise raises. Triggers fire'] : ['In a headset: twist grip, crank, elevation wheel', 'Practice: Forward puts the turret back']);
   }
 
   update(delta: number): void {
