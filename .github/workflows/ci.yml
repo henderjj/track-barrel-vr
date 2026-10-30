@@ -105,6 +105,11 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       - name: Emulated-headset test
         run: npm run test:xr
+        env:
+          # Some runners now have a GPU device node but no usable GPU: IWSDK
+          # then launches Chromium on hardware GL and it dies (reloads and
+          # screenshots kill it, ray clicks miss). Always render in software.
+          IWSDK_GPU: swiftshader
       - name: Stop the dev runtime
         if: always()
         run: npx iwsdk dev down || true
