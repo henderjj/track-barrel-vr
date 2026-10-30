@@ -268,18 +268,36 @@ async function rayClick(target) {
   // couple of seconds) were sometimes lost on CI runners, so aim, wait,
   // click and wait about as long as before. Software rendering can drop to a
   // frame or two a second with the menu open, and a press shorter than a
-  // frame is never seen, so the trigger is held for three of the slowest
-  // recent frames (at least half a second) and the waits stretch to match.
+  // frame is never seen, so the trigger is held for at least one and a half
+  // of the slowest recent frames (and half a second), the waits stretched to
+  // match. The ray then needs a longer click window than IWSDK's 0.8 s:
+  // relaxRayClicks() opens it.
   const frameMs = slowestFrameMs();
+  const holdMs = Math.max(500, 1.5 * frameMs);
+  const settleMs = Math.max(1000, 3 * frameMs);
   if (frameMs > slowestClickFrameMs + 100) {
     slowestClickFrameMs = frameMs;
-    console.log(`      (ray clicks: frames up to ${Math.round(frameMs)} ms, so the trigger is held ${Math.max(500, 3 * frameMs).toFixed(0)} ms)`);
+    console.log(`      (ray clicks: frames up to ${Math.round(frameMs)} ms, so the trigger is held ${Math.round(holdMs)} ms)`);
   }
-  const holdMs = Math.max(500, 3 * frameMs);
-  const settleMs = Math.max(1000, 3 * frameMs);
   await sleep(settleMs);
   iwsdk(['xr', 'select'], { device: 'controller-right', duration: holdMs / 1000 });
   await sleep(holdMs + settleMs);
+}
+
+/**
+ * Let a ray press count as a click for up to 5 s, on both controllers.
+ * IWSDK's ray pointer takes a press as a click only when its release lands
+ * within 0.8 s (by frame time). Software rendering on a CI runner can take
+ * 0.7 s a frame, so a press seen on one frame and its release on the next
+ * but one was dropped. A headset draws 72 frames a second, so this only
+ * matters for the emulator. Call again after any reload.
+ */
+function relaxRayClicks() {
+  evalInApp(`(() => {
+    const pointers = window.__debug.world.input.xr.multiPointers;
+    for (const side of ['left', 'right']) pointers[side].ray.pointer.options.clickThresholdMs = 5000;
+    return true;
+  })()`);
 }
 
 /** The slowest frame the page drew in its last full second, in ms (0 if not known yet). */
@@ -1943,6 +1961,7 @@ async function main() {
   // from any earlier session.
   iwsdk(['xr', 'set-device-state'], {});
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 0 }] });
+  relaxRayClicks();
   check('XR session active', iwsdk(['xr', 'status'], {}).result.sessionActive);
   await sleep(500);
   await startScreenAndMenu();
