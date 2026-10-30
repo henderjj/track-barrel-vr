@@ -1875,9 +1875,28 @@ async function main() {
   try {
     iwsdk(['browser', 'reload'], {});
   } catch (error) {
-    // On CI the first reload after start-up has died with no output; wait for the browser's bridge again and retry once.
-    console.log(`Reload failed, retrying once: ${error.message}`);
-    await waitFor('managed browser', () => iwsdk(['dev', 'status']).state?.browserCommandReady === true, 180000, 2000);
+    // On CI the first reload after start-up has died with no output, and the managed browser has not come back by
+    // itself (runtime status and wait never relaunch it): relaunch it explicitly, wait for its bridge, retry once.
+    console.log(`Reload failed, relaunching the managed browser and retrying once: ${error.message}`);
+    const lifecycle = () => {
+      try {
+        const { state, failures, nextAction, history } = iwsdk(['runtime', 'status'], {}).result.browser.lifecycle;
+        return JSON.stringify({ state, failures, nextAction, last: history?.at(-1) });
+      } catch (statusError) {
+        return statusError.message;
+      }
+    };
+    console.log(`Runtime: ${lifecycle()}`);
+    try {
+      iwsdk(['runtime', 'recover'], {});
+    } catch (recoverError) {
+      console.log(`Recover: ${recoverError.message}`);
+    }
+    await waitFor('managed browser', () => iwsdk(['dev', 'status']).state?.browserCommandReady === true, 180000, 2000)
+      .catch((waitError) => {
+        console.log(`Runtime: ${lifecycle()}`);
+        throw waitError;
+      });
     iwsdk(['browser', 'reload'], {});
   }
   if (process.env.THROTTLE) {
