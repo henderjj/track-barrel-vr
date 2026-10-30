@@ -31,6 +31,34 @@ export const HULL = {
   wall: 0.08,
 } as const;
 
+/**
+ * The hull's front, as on a Sherman (docs/interior.md): an upright nose
+ * plate from the floor in front of the driver's legs to `noseTop`, the
+ * glacis sloping back from it at 57° from upright, as the Sherman's does
+ * at 56°, and the driver's hood: an upright face from `hoodBottom` to the
+ * roof with the vision slit in it, 30 cm ahead of the driver's eyes, so
+ * they see out with their hands on the tillers. Inner faces, hull space, m.
+ */
+export const GLACIS = {
+  /** Top of the nose plate, which stands at z = HULL.front. */
+  noseTop: 1.0,
+  /** Bottom of the hood's face, where the glacis meets it. */
+  hoodBottom: 1.32,
+  /** The hood face's inner face, hull z. */
+  face: -1.9,
+} as const;
+
+/** The front armour's inner face at height `y` (hull space), hull z: the nose, the glacis or the hood's face. */
+export function frontAt(y: number): number {
+  const { noseTop, hoodBottom, face } = GLACIS;
+  if (y <= noseTop) return HULL.front;
+  if (y >= hoodBottom) return face;
+  return HULL.front + ((y - noseTop) / (hoodBottom - noseTop)) * (face - HULL.front);
+}
+
+/** The glacis's slope from upright, radians. */
+export const GLACIS_SLOPE = Math.atan2(GLACIS.face - HULL.front, GLACIS.hoodBottom - GLACIS.noseTop);
+
 /** The ground under the tracks, m (the tracks reach down to it). */
 export const GROUND_Y = -0.6;
 
@@ -71,8 +99,8 @@ export const GUN = {
   barrelRadius: 0.06,
 } as const;
 
-/** The driver's vision slit: an opening in the front plate in front of the driver's eyes (middle x, y; width, height), m. */
-export const VISION_SLIT = { x: -0.5, y: 1.45, width: 0.34, height: 0.1 } as const;
+/** The driver's vision slit: an opening in the hood's face in front of the driver's eyes (middle x, y, z of the inner face; width, height), m. */
+export const VISION_SLIT = { x: -0.5, y: 1.45, z: GLACIS.face, width: 0.34, height: 0.1 } as const;
 
 /** Height of a seat's cushion above the floor it stands on, m. */
 export const CUSHION_HEIGHT = 0.55;
@@ -118,11 +146,13 @@ const headUpUnder = (roofY: number, eyeY: number) => roofY - EYES_BELOW_TOP - HE
 
 /**
  * The driver sits front left in the hull, under a hatch, with the vision
- * slit 80 cm ahead of their eyes and room in front for the tillers and the
- * gear lever (F1.5). The gunner sits in the turret basket right of the gun,
- * with the breech on their left at chest height and the gunsight's eyepiece
- * 28 cm ahead of their eyes, a short lean away (F1.9, F1.10); their head
- * stops 4 cm short of it.
+ * slit in the hood 30 cm ahead of their eyes and room under the glacis for
+ * the tillers and the gear lever (F1.5); leaning 10 cm in brings the eyes
+ * to 20 cm from it, the brow just short of its pad. The gunner sits in the
+ * turret basket right of the gun, with the breech on their left at chest
+ * height and the gunsight's eyepiece 18 cm ahead of their eyes, a short
+ * lean away (F1.9, F1.10); their head stops 4 cm short of it. Both leans
+ * keep the hands on the controls (docs/interior.md).
  */
 export const SEATS: Readonly<Record<SeatId, Seat>> = {
   driver: {
@@ -131,7 +161,7 @@ export const SEATS: Readonly<Record<SeatId, Seat>> = {
     frame: 'hull',
     floorY: DRIVER_FLOOR,
     eye: [-0.5, DRIVER_FLOOR + SEATED_EYE, -1.6],
-    headBox: [0.35, 0.3, 0.6, 0.35],
+    headBox: [0.35, 0.3, 0.1, 0.35],
     // Under the hull roof (the hatch above opens in F2.1).
     headUp: headUpUnder(HULL.roof, DRIVER_FLOOR + SEATED_EYE),
     cushion: [-0.5, DRIVER_FLOOR + CUSHION_HEIGHT, -1.45],
@@ -142,14 +172,26 @@ export const SEATS: Readonly<Record<SeatId, Seat>> = {
     frame: 'turret',
     floorY: GUNNER_FLOOR,
     eye: [0.4, GUNNER_FLOOR + SEATED_EYE, -0.2],
-    headBox: [0.22, 0.35, 0.24, 0.45],
+    headBox: [0.22, 0.35, 0.14, 0.45],
     headUp: headUpUnder(TURRET.roof, GUNNER_FLOOR + SEATED_EYE),
     cushion: [0.4, GUNNER_FLOOR + CUSHION_HEIGHT, -0.08],
   },
 };
 
-/** The gunsight's eyepiece, in turret space (a blockout until F1.9), m. */
-export const SIGHT_EYEPIECE = [0.32, SEATS.gunner.eye[1], -0.48] as const;
+/**
+ * The driver's hatch in the hull roof, over their head (x0, z0, x1, z1), m:
+ * from 10 cm ahead of their eyes, so the periscope's head stands on the
+ * roof in front of it.
+ */
+export const DRIVER_HATCH = [
+  SEATS.driver.eye[0] - 0.25,
+  SEATS.driver.eye[2] - 0.1,
+  SEATS.driver.eye[0] + 0.25,
+  SEATS.driver.eye[2] + 0.4,
+] as const;
+
+/** The gunsight's eyepiece, in turret space, m: 18 cm ahead of the gunner's eyes, over the elevation wheel. */
+export const SIGHT_EYEPIECE = [0.32, SEATS.gunner.eye[1], -0.38] as const;
 
 /** The other seat. */
 export function otherSeat(seat: SeatId): SeatId {

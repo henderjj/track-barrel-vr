@@ -174,7 +174,7 @@ describe('no faces that flicker through each other (z-fighting)', () => {
       }
       const panel = new Group();
       panel.position.set(...station.PANEL.centre);
-      panel.rotation.x = -station.PANEL.tilt;
+      panel.rotation.set(-station.PANEL.tilt, station.PANEL.yaw, 0, 'YXZ');
       const at: [number, number] = [0, 0];
       station.DIALS.forEach((dial, i) => {
         const needle = createNeedle();

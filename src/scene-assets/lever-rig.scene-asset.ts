@@ -1,6 +1,7 @@
 import { BoxGeometry, Mesh, MeshStandardMaterial } from '@iwsdk/core';
 import { beam, mergeParts } from './lowpoly.js';
 import { LEVER_RIG } from '../sim/lever.js';
+import { litInside } from './cabin-light.js';
 
 /**
  * Spike S3's lever test rig: a pair of tank tillers in a housing on a post,
@@ -23,7 +24,7 @@ const POST_HEIGHT = 0.5;
 /** The screen sits this far in front of its frame's face, m. */
 export const SCREEN_GAP = 0.006;
 
-const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
 
 /** The static part: post, housing with a slot for each tiller, and the board's stalk and frame. */
 export function createLeverRig(): Mesh {

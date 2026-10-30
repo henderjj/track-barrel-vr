@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rigOffset, targetEyeHeight } from '../src/sim/body-height.js';
-import { HULL, SEATS, VISION_SLIT } from '../src/sim/cabin.js';
+import { frontAt, HULL, SEATS, VISION_SLIT } from '../src/sim/cabin.js';
 import {
   DIALS,
   dialCentre,
@@ -21,6 +21,7 @@ import {
   throttleOf,
   tillerAngle,
   TILLER_PEDESTAL,
+  TOP_ROW,
 } from '../src/sim/driver-station.js';
 import { type HandInput, Lever, type Vec3 } from '../src/sim/mechanism.js';
 import {
@@ -204,12 +205,31 @@ describe('the driver\'s gauges (F1.5)', () => {
     expect(range('oil').max).toBeGreaterThanOrEqual(oilPressure(MAX_RPM, COOLANT_START));
   });
 
-  it('puts the panel under the slit, facing the driver, the dials apart and on it', () => {
-    const top = panelToHull([0, PANEL.height / 2, 0], [0, 0, 0]);
-    const bottom = panelToHull([0, -PANEL.height / 2, 0], [0, 0, 0]);
-    expect(top[1]).toBeLessThan(VISION_SLIT.y - VISION_SLIT.height / 2 - SLIT_FRAME.inset - SLIT_FRAME.bar);
-    expect(top[2]).toBeGreaterThan(HULL.front);
-    expect(bottom[2]).toBeGreaterThan(top[2]);
+  it("puts the instrument box on the left wall by the knee, as the M4A4's, inside the armour and clear of the head and the throttle", () => {
+    const corners: Vec3[] = [];
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        for (const z of [0, -0.06]) corners.push(panelToHull([(sx * (PANEL.width + 0.03)) / 2, (sy * (PANEL.height + 0.03)) / 2, z], [0, 0, 0]));
+      }
+    }
+    const [left, , forward, back] = SEATS.driver.headBox;
+    for (const c of corners) {
+      // Inside the side wall (the box's back may sink into it) and behind the hood and glacis.
+      expect(c[0]).toBeGreaterThan(-HULL.halfWidth - HULL.wall / 2);
+      expect(c[2]).toBeGreaterThan(frontAt(c[1]) + 0.01);
+      // Left of and below the eyes; what is within 25 cm under them, a head's half-width clear of where the head can go.
+      expect(c[0]).toBeLessThan(EYE[0] - left);
+      if (EYE[1] - c[1] < 0.25) expect(c[0]).toBeLessThan(EYE[0] - left - 0.08);
+      expect(c[1]).toBeLessThan(EYE[1] - 0.12);
+      expect(c[2]).toBeLessThan(EYE[2] + back);
+      expect(c[2]).toBeGreaterThan(EYE[2] - forward - 0.3);
+    }
+    // Over the hand throttle's handle, with a fist's room, wherever it stands.
+    for (const angle of [HAND_THROTTLE.min, HAND_THROTTLE.max]) {
+      const h = handleAt('throttle', angle);
+      const lowest = Math.min(...corners.filter((c) => Math.abs(c[2] - h[2]) < 0.15).map((c) => c[1]));
+      expect(lowest - h[1], `the throttle at ${(angle / DEG).toFixed(0)}°`).toBeGreaterThan(0.1);
+    }
     // Its face turned towards the eyes: the eyes are in front of it.
     const middle = panelToHull([0, 0, 0], [0, 0, 0]);
     const out = panelToHull([0, 0, 1], [0, 0, 0]);
@@ -218,12 +238,15 @@ describe('the driver\'s gauges (F1.5)', () => {
     const len = Math.hypot(...toEye);
     expect((normal[0] * toEye[0] + normal[1] * toEye[1] + normal[2] * toEye[2]) / len).toBeGreaterThan(0.9);
     const at: [number, number] = [0, 0];
-    for (let i = 0; i < DIALS.length; i++) {
-      dialCentre(i, at);
+    // Each dial, and the gear plate in the bottom row's third place, on the face and apart.
+    const places: [number, number][] = [];
+    for (let i = 0; i < DIALS.length + 1; i++) {
+      dialCentre(i === DIALS.length ? TOP_ROW + 2 : i, at);
       expect(Math.abs(at[0]) + PANEL.dialRadius).toBeLessThan(PANEL.width / 2);
       expect(Math.abs(at[1]) + PANEL.dialRadius).toBeLessThan(PANEL.height / 2);
+      for (const p of places) expect(Math.hypot(at[0] - p[0], at[1] - p[1])).toBeGreaterThan(2 * PANEL.dialRadius + 0.005);
+      places.push([at[0], at[1]]);
     }
-    expect(PANEL.dialSpacing).toBeGreaterThan(2 * PANEL.dialRadius);
   });
 
   it('can be read past the tillers and the gear lever from the seat', () => {
@@ -276,12 +299,14 @@ describe('the vision slit (F1.5)', () => {
     expect(f.inset).toBeGreaterThan(0.008);
     // The furthest forwards the eyes go (the head box), and the forehead about 9 cm ahead of them.
     const eyes = EYE[2] - SEATS.driver.headBox[2];
-    const padFace = HULL.front + f.padDepth;
+    const padFace = VISION_SLIT.z + f.padDepth;
     expect(eyes - 0.09).toBeGreaterThan(padFace);
-    // Leaning in, the slit fills more of the view: about 24° across from the seat, over 70° leant in.
-    const across = (z: number) => (2 * Math.atan(VISION_SLIT.width / 2 / (z - HULL.front))) / DEG;
-    expect(across(EYE[2])).toBeLessThan(30);
-    expect(across(eyes)).toBeGreaterThan(70);
+    // In the hood, 30 cm ahead (docs/interior.md): about 60° across from the seat, so the driver sees out
+    // with their hands on the tillers, and 80° leant in.
+    const across = (z: number) => (2 * Math.atan(VISION_SLIT.width / 2 / (z - VISION_SLIT.z))) / DEG;
+    expect(EYE[2] - VISION_SLIT.z).toBeLessThan(0.32);
+    expect(across(EYE[2])).toBeGreaterThan(55);
+    expect(across(eyes)).toBeGreaterThan(75);
     // The pad's underside at the brow, above the eyes.
     const padBottom = VISION_SLIT.y + VISION_SLIT.height / 2 + f.padAbove;
     expect(padBottom - EYE[1]).toBeGreaterThan(0.04);

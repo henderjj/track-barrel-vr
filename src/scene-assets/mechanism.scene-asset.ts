@@ -2,6 +2,7 @@ import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial, TorusGeometr
 import { beam, mergeParts, type Part } from './lowpoly.js';
 import type { ButtonSpec, LeverSpec, TwistSpec, Vec3, WheelSpec, YokeSpec } from '../sim/mechanism.js';
 import { BENCH, BEZEL, type BenchMount, MOUNTS, mountToBench, TWIST } from '../sim/mechanism-bench.js';
+import { litInside } from './cabin-light.js';
 
 /**
  * The mechanism kit's models (F1.3, docs/mechanisms.md): one moving part per
@@ -29,7 +30,7 @@ const RIM_TUBE = 0.011;
 /** The screen sits this far in front of its frame's face, m. */
 export const SCREEN_GAP = 0.006;
 
-const material = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
 
 const ALONG_Z: readonly [number, number, number] = [Math.PI / 2, 0, 0];
 const ALONG_X: readonly [number, number, number] = [0, 0, Math.PI / 2];
@@ -136,7 +137,7 @@ export function createButtonCap(spec: ButtonSpec, color: number): Mesh {
   const geometry = mergeParts([
     { geometry: new CylinderGeometry(spec.radius, spec.radius, 0.014, 10, 1), color, position: [0, 0, -0.007], rotation: ALONG_Z },
   ]);
-  const mesh = new Mesh(geometry, new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
+  const mesh = new Mesh(geometry, litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 })));
   mesh.name = 'Button Cap';
   return mesh;
 }

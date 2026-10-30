@@ -1,5 +1,5 @@
 import { createSystem, InputComponent, type UIKitMLAsset, VisibilityState } from '@iwsdk/core';
-import { calibrationShown, menuCrewLine, raiseShown, stepRaise } from '../game-flow.js';
+import { calibrationShown, FIRST_MENU_TAB, MENU_TABS, type MenuTab, menuCrewLine, menuTab, parseMenuTab, raiseShown, stepRaise } from '../game-flow.js';
 import { changeSetting, LIVE_ITEMS, MAX_OPTIONS, onSettingChange } from '../live-settings.js';
 import { crewControls, onCrewChange } from '../net/crew-controls.js';
 import { CREW_COLORS } from '../scene-assets/avatar.scene-asset.js';
@@ -172,7 +172,11 @@ export const gameMenu = { open: false };
 
 interface GameMenuDebug {
   readonly open: boolean;
+  /** The tab showing. */
+  readonly tab: MenuTab;
   toggle(open?: boolean): void;
+  /** Show tab `id`, as pressing it would. */
+  showTab(id: string): void;
   click(id: string): boolean;
   text(id: string): string | undefined;
   shown(id: string): boolean;
@@ -186,32 +190,40 @@ interface GameMenuDebug {
  * button, ≡, does it too where the browser passes it on; SteamVR and others
  * often keep it), or M or the panel's Game menu button on the flat page.
  * Nothing pauses while it is open. It stands in front of the player where
- * they were looking when they opened it. Every setting shows all its
+ * they were looking when they opened it. Its settings are grouped into tabs
+ * down its left side (MENU_TABS in src/game-flow.ts), one page showing at a
+ * time; it opens on the tab picked last. Every setting shows all its
  * choices, the one in effect highlighted, so one press picks any of them:
  *
- * - Crew (only in a crew): the crew's state, this player's microphone on or
- *   muted, and the crewmate's voice on or muted (for this player only);
+ * - Crew (the tab shows only in a crew): the crew's state, this player's
+ *   microphone on or muted, the crewmate's voice on or muted (for this
+ *   player only), and calls for the crewmate's seat;
  * - You: coat colour as swatches, seated or standing play, eye height in
  *   5 cm steps either side of the seat's eye point, back in their seat
  *   (facing forward, with their eyes where the seat puts them), swap seats
  *   (in a crew, once the crewmate agrees) and calibrate again;
- * - Comfort and stats (F1.14): the vignette's strength and reduced bumps
+ * - Comfort (F1.14): the vignette's strength and reduced bumps
  *   (live settings), I feel queasy (a row in the play-test stats), and
  *   saving or clearing the stats CSV;
  * - Sound and view: the settings that apply straight away (LIVE_ITEMS,
  *   src/live-settings.ts), kept in this browser;
- * - Driving (not while riding): who drives and how fast, and the gear lever
- *   (moving the station's own, F1.5);
- * - Riding (only while riding the tank, spike S2): the ride's options;
+ * - Tank: driving (not while riding: who drives and how fast, and the gear
+ *   lever, moving the station's own, F1.5), the range, and riding (only
+ *   while riding the tank, spike S2: the ride's options);
  * - Practice: shortcuts straight to a situation to test (sit in either
  *   seat, drive the tank or put it back at its start, lay the gun or turn
- *   the turret forward, start or stop a range run, ready to fire on each
- *   target, play each of the tank's sounds);
+ *   the turret forward, load and fire, play each of the tank's sounds, go
+ *   up the range, start or stop a range run, ready to fire on each target);
+ * - Sights: the gunsight's and the periscope's shortcuts and render choices;
+ * - Test rigs: ride the tank (spike S2), the lever test and the mechanism kit;
  * - Back to start screen (leaves any crew) and Exit VR.
  */
 export class GameMenuSystem extends createSystem({}) {
   private ui: PanelUi | null = null;
   private open = false;
+  /** The tab picked last; the one showing is `menuTab` of it (Crew's falls back out of a crew). */
+  private wantedTab: MenuTab = FIRST_MENU_TAB;
+  private tab: MenuTab = FIRST_MENU_TAB;
   private statusAt = 0;
   private selected = new Map<string, boolean>();
   /** The seat and swap the menu last showed, so it redraws when the host moves this player or the crewmate asks. */
@@ -231,6 +243,9 @@ export class GameMenuSystem extends createSystem({}) {
     this.ui = ui;
 
     ui.on('menu-close', () => this.setOpen(false));
+    for (const tab of MENU_TABS) {
+      ui.on(`tab-${tab}`, () => this.showTab(tab));
+    }
     for (const row of CHOICE_ROWS) {
       ui.setText(`row-${row.id}-label`, row.label);
       for (let i = 0; i < MAX_OPTIONS; i++) {
@@ -432,7 +447,9 @@ export class GameMenuSystem extends createSystem({}) {
     const self = this;
     (window as unknown as { __gameMenu: GameMenuDebug }).__gameMenu = {
       get open() { return self.open; },
+      get tab() { return self.tab; },
       toggle: (open) => this.setOpen(open ?? !this.open),
+      showTab: (id) => this.showTab(parseMenuTab(id, this.wantedTab)),
       click: (id) => ui.click(id),
       text: (id) => ui.text(id),
       shown: (id) => ui.isShown(id),
@@ -499,6 +516,12 @@ export class GameMenuSystem extends createSystem({}) {
     const c = crewControls;
     const crewLine = menuCrewLine(c.state, c.room, c.crewmate, settings.bot);
     ui.show('menu-crew', crewLine !== '');
+    ui.show('tab-crew', crewLine !== '');
+    this.tab = menuTab(this.wantedTab, crewLine !== '');
+    for (const tab of MENU_TABS) {
+      ui.show(`page-${tab}`, tab === this.tab);
+      this.select(`tab-${tab}`, tab === this.tab);
+    }
     ui.setText('menu-crew-status', crewLine);
     // Calls go to the crewmate in the other seat: the gunner calls the driver, the driver the gunner.
     const calls = c.state === 'connected' && !settings.bot;
@@ -546,6 +569,12 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-swap', SWAP_LABELS[seating.swap]);
     this.select('menu-swap', seating.swap === 'offered');
     ui.setText('menu-calib-status', calibrationShown(body.calibratedEye, body.reach));
+  }
+
+  /** Show tab `tab`'s page, and keep it for the next time the menu opens. */
+  private showTab(tab: MenuTab): void {
+    this.wantedTab = tab;
+    this.render();
   }
 
   /** Show choice `id` as the one in effect, or not. */

@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { calibrationShown, codeShown, crewScreen, menuCrewLine, raiseShown, seatsLine, stepRaise, typeCode } from '../src/game-flow.js';
+import { calibrationShown, codeShown, crewScreen, MENU_TABS, menuCrewLine, menuTab, parseMenuTab, raiseShown, seatsLine, stepRaise, typeCode } from '../src/game-flow.js';
 
 describe('start screen', () => {
   it('types a four-letter crew code', () => {
@@ -42,6 +43,37 @@ describe('game menu', () => {
   it('names the crew and the crewmate', () => {
     expect(menuCrewLine('connected', 'QRST', 'Ann', false)).toBe('Crew QRST: playing with Ann.');
     expect(menuCrewLine('waiting', 'QRST', '', true)).toBe('Crew QRST: waiting for the practice crewmate.');
+  });
+});
+
+describe("the game menu's tabs", () => {
+  const menu = readFileSync(new URL('../public/ui/menu.uikitml', import.meta.url), 'utf8');
+  const ids = (prefix: string) => [...menu.matchAll(new RegExp(`id="${prefix}-([a-z]+)"`, 'g'))].map((m) => m[1]);
+
+  it('has a tab button and a page for each tab, in order, and no others', () => {
+    expect(ids('tab')).toEqual([...MENU_TABS]);
+    expect(ids('page')).toEqual([...MENU_TABS]);
+  });
+
+  it('puts every setting, shortcut and status line on a page', () => {
+    const outside = new Set(['menu-root', 'menu-close', 'menu-start', 'menu-exit', 'menu-hint']);
+    const firstPage = menu.indexOf('id="page-');
+    const lastPageEnd = menu.indexOf('<Divider>', firstPage);
+    for (const m of menu.matchAll(/id="((?:menu|row|call|coat|height)-[a-z0-9-]+)"/g)) {
+      const inPages = m.index > firstPage && m.index < lastPageEnd;
+      expect(inPages, m[1]).toBe(!outside.has(m[1]));
+    }
+  });
+
+  it('keeps the tab picked last, except Crew out of a crew', () => {
+    expect(menuTab('practice', false)).toBe('practice');
+    expect(menuTab('crew', true)).toBe('crew');
+    expect(menuTab('crew', false)).toBe('you');
+  });
+
+  it('reads a tab id, falling back for anything else', () => {
+    expect(parseMenuTab('sights', 'you')).toBe('sights');
+    expect(parseMenuTab('nope', 'tank')).toBe('tank');
   });
 });
 

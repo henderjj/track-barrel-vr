@@ -7,7 +7,8 @@
  *
  *  0. enters an immersive session, picks a seat and then Play solo on the
  *     start screen with a controller ray, and works the game menu (Y) with
- *     the ray;
+ *     the ray, its tabs included (later steps show a control's tab through
+ *     the menu's hook before ray-clicking the control);
  *  0b. calibrates (F1.2): seated, the head held still puts the eyes on the
  *     seat's eye point and both hands held out record the reach; standing,
  *     the eyes land on the same point;
@@ -95,7 +96,7 @@
 
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 
@@ -131,6 +132,7 @@ function iwsdk(args, input) {
   const argv = [CLI, ...args];
   if (input !== undefined) argv.push('--input-json', JSON.stringify(input));
   let stdout;
+  let stderr = '';
   if (worker) {
     const reply = ask({ kind: 'cli', argv: argv.slice(1) });
     if (reply.error) throw new Error(`iwsdk ${args.join(' ')}: ${reply.error}`);
@@ -144,12 +146,13 @@ function iwsdk(args, input) {
     });
   } catch (error) {
     stdout = error.stdout ?? '';
+    stderr = error.stderr ?? '';
   }
   let parsed;
   try {
     parsed = JSON.parse(stdout);
   } catch {
-    throw new Error(`iwsdk ${args.join(' ')}: unparseable output\n${stdout}`);
+    throw new Error(`iwsdk ${args.join(' ')}: unparseable output\n${stdout}${stderr ? `\nstderr: ${stderr.slice(-2000)}` : ''}`);
   }
   if (!parsed.ok) {
     throw new Error(`iwsdk ${args.join(' ')} failed: ${JSON.stringify(parsed.error)}`);
@@ -268,6 +271,36 @@ async function rayClick(target) {
   await sleep(1000);
 }
 
+/** The game menu's tab each of its elements is on: the page (page-<tab> in public/ui/menu.uikitml) it sits in. */
+const MENU_TAB_OF = (() => {
+  const source = readFileSync(new URL('../public/ui/menu.uikitml', import.meta.url), 'utf8');
+  const pages = source.slice(0, source.indexOf('class="footer"'));
+  const tabOf = new Map();
+  let tab = null;
+  for (const [, id] of pages.matchAll(/id="([a-z0-9-]+)"/g)) {
+    if (id.startsWith('page-')) {
+      tab = id.slice('page-'.length);
+    } else if (tab !== null) {
+      tabOf.set(id, tab);
+    }
+  }
+  return tabOf;
+})();
+
+/**
+ * Ray-click element `id` on the open game menu, showing its tab first if
+ * another is showing (step 0 presses the tabs themselves with the ray).
+ */
+async function menuClick(id) {
+  const tab = MENU_TAB_OF.get(id);
+  if (tab !== undefined && evalInApp('window.__gameMenu.tab') !== tab) {
+    evalInApp(`window.__gameMenu.showTab('${tab}')`);
+    // The page lays out on the next frames, which can be slow with the menu open.
+    await sleep(600);
+  }
+  await rayClick(elementPosition('menu-panel', id));
+}
+
 /**
  * 0. The start screen stands in front of the player as VR starts, and a
  *    controller ray picks Play solo on it, after which nothing is left in
@@ -306,27 +339,35 @@ async function startScreenAndMenu() {
   await menuButton();
   const opened = evalInApp('({ open: window.__gameMenu.open, at: window.__gameMenu.position(), exit: window.__gameMenu.shown("menu-exit") })');
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-game-menu.png'], {});
+  // The menu opens on its You tab; the ray presses Sound and view, then You again.
+  const tabNow = () => evalInApp('({ tab: window.__gameMenu.tab, lit: window.__gameMenu.selected("tab-" + window.__gameMenu.tab), you: window.__gameMenu.shown("page-you"), view: window.__gameMenu.shown("page-view") })');
+  const firstTab = tabNow();
+  await rayClick(elementPosition('menu-panel', 'tab-view'));
+  const viewTab = tabNow();
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-game-menu-view.png'], {});
   const hud = () => evalInApp('({ on: window.__settings.hud, offLit: window.__gameMenu.selected("row-hud-1") })');
-  await rayClick(elementPosition('menu-panel', 'row-hud-1'));
+  await menuClick('row-hud-1');
   const off = hud();
-  await rayClick(elementPosition('menu-panel', 'row-hud-0'));
+  await menuClick('row-hud-0');
   const on = hud();
+  await rayClick(elementPosition('menu-panel', 'tab-you'));
+  const youTab = tabNow();
   const seatedNow = () => evalInApp('window.__body.state.choice.seated');
   const seatedFirst = seatedNow();
-  await rayClick(elementPosition('menu-panel', 'row-seated-0'));
+  await menuClick('row-seated-0');
   const standing = !seatedNow();
-  await rayClick(elementPosition('menu-panel', 'row-seated-1'));
+  await menuClick('row-seated-1');
   const seated = seatedNow();
   const raiseNow = () => evalInApp('({ raise: window.__body.state.choice.raise, shown: window.__gameMenu.text("height-value") })');
-  await rayClick(elementPosition('menu-panel', 'height-up'));
+  await menuClick('height-up');
   const up1 = raiseNow();
-  await rayClick(elementPosition('menu-panel', 'height-up'));
+  await menuClick('height-up');
   const up2 = raiseNow();
-  await rayClick(elementPosition('menu-panel', 'height-own'));
+  await menuClick('height-own');
   const own = raiseNow();
   const swatches = () => evalInApp(`(() => { const a = window.__debug.world.getSceneObject('menu-panel'); const out = []; for (let i = 0; i < 8; i++) { const e = a.getElementById('coat-' + i); const size = e.size.peek(); out.push({ ring: String(e.properties.peek().borderColor) !== 'rgba(0, 0, 0, 0)', round: Math.abs(size[0] - size[1]) < 0.5 }); } return out; })()`);
-  await rayClick(elementPosition('menu-panel', 'coat-2'));
-  await rayClick(elementPosition('menu-panel', 'coat-5'));
+  await menuClick('coat-2');
+  await menuClick('coat-5');
   const coats = swatches();
   const ringed = coats.map((c, i) => (c.ring ? i : -1)).filter((i) => i >= 0);
   await menuButton();
@@ -334,6 +375,11 @@ async function startScreenAndMenu() {
   check('The coat swatches are round, and only the colour picked last has a ring',
     coats.every((c) => c.round) && ringed.length === 1 && ringed[0] === 5,
     `ringed ${ringed.join(', ') || 'none'}, ${coats.filter((c) => !c.round).length} not round`);
+  check('The game menu opens on its You tab, and the ray picks the Sound and view tab and back, one page showing at a time',
+    firstTab.tab === 'you' && firstTab.lit && firstTab.you && !firstTab.view &&
+      viewTab.tab === 'view' && viewTab.lit && viewTab.view && !viewTab.you &&
+      youTab.tab === 'you' && youTab.you && !youTab.view,
+    `${JSON.stringify(firstTab)}, then ${JSON.stringify(viewTab)}, then ${JSON.stringify(youTab)}`);
   check('Y opens the game menu in front of the player, its ray turns the perf HUD off and on, and it closes again',
     opened.open && opened.at[2] < -0.5 && opened.exit && !off.on && off.offLit && on.on && !on.offLit && !closed,
     `opened ${opened.open} at ${fmt(opened.at)}, HUD ${off.on ? 'on' : 'off'} then ${on.on ? 'on' : 'off'}, closed ${!closed}`);
@@ -453,15 +499,16 @@ async function seatStep() {
   await sleep(500);
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-driver-seat.png'], {});
 
-  // Lean 80 cm forward in the room: the head box reaches 60 cm ahead of the eye point (src/sim/cabin.ts).
-  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([eye[0], eye[1], eye[2] - 0.8]) });
+  // Lean 30 cm forward in the room: the head box reaches 10 cm ahead of the eye point, stopping the eyes 20 cm short of the slit
+  // (src/sim/cabin.ts). One jump of more than RESEAT_DISTANCE past the edge would reseat instead.
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([eye[0], eye[1], eye[2] - 0.3]) });
   const leant = await waitFor('the lean to stop', () => {
     const s = seated();
     return s.fixes.push > start.fixes.push ? s : null;
   }, 5000).catch(() => seated());
   check('Leaning past the head box stops the head at its edge',
-    leant.fixes.push > start.fixes.push && Math.abs(leant.head[2] - (eye[2] - 0.6)) < 0.01 && Math.abs(leant.head[0] - eye[0]) < 0.01,
-    `head at ${fmt(leant.head)}, edge at z ${(eye[2] - 0.6).toFixed(3)}`);
+    leant.fixes.push > start.fixes.push && Math.abs(leant.head[2] - (eye[2] - 0.1)) < 0.01 && Math.abs(leant.head[0] - eye[0]) < 0.01,
+    `head at ${fmt(leant.head)}, edge at z ${(eye[2] - 0.1).toFixed(3)}`);
 
   // A recentre: the head jumps 1.5 m sideways in the room.
   const now = iwsdk(['xr', 'get-transform'], { device: 'headset' }).result.position;
@@ -477,7 +524,7 @@ async function seatStep() {
   await sleep(300);
 
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'row-seat-1'));
+  await menuClick('row-seat-1');
   const gunner = await waitFor("the gunner's seat", () => {
     const s = seated();
     return s.mine === 'gunner' && flatGap(s.head, s.eye) < 0.01 ? s : null;
@@ -568,14 +615,14 @@ async function sightStep() {
   // press, so wait for the menu to open and for the size to change.
   await menuButtonPress();
   await waitFor('the game menu open', () => evalInApp('window.__gameMenu.open'), 5000).catch(() => null);
-  await rayClick(elementPosition('menu-panel', 'menu-sight-size'));
+  await menuClick('menu-sight-size');
   const sizeNow = () => evalInApp("({ size: window.__sight.state().size, label: window.__gameMenu.text('menu-sight-size') })");
   const sized = await waitFor('the sight size to change', () => { const s = sizeNow(); return s.size !== 512 && s; }, 5000)
     .catch(() => sizeNow());
   await menuButtonPress();
   evalInApp('(window.__sight.setSize(512), true)');
   check("The game menu's Practice button changes the sight's texture size",
-    sized.size === 1024 && sized.label === '1024²', `size ${sized.size}, label ${sized.label}`);
+    sized.size === 1024 && sized.label === '1024 px', `size ${sized.size}, label ${sized.label}`);
 
   evalInApp("(window.__seats.ask('driver'), true)");
   iwsdk(['xr', 'set-device-state'], {});
@@ -600,7 +647,7 @@ async function loadingAndFiring() {
   await sleep(300);
   evalInApp('(window.__drive.reset(), true)');
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-loading'));
+  await menuClick('menu-loading');
   const drill = () => evalInApp('window.__loading.state()');
   const seatedHere = await waitFor("the gunner's seat", () => evalInApp('window.__seats.mine') === 'gunner', 5000).catch(() => false);
   evalInApp('(window.__turret.forward(), window.__loading.reset(), true)');
@@ -726,7 +773,7 @@ async function loadingAndFiring() {
 async function mechanismBench() {
   evalInApp('(window.__lever.hide(), true)');
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-bench'));
+  await menuClick('menu-bench');
   iwsdk(['xr', 'set-device-state'], {});
   const shown = await waitFor('the mechanism bench', () => evalInApp('window.__bench.shown'), 5000).catch(() => false);
   const names = evalInApp('window.__bench.names');
@@ -856,7 +903,7 @@ async function ridingTheTank() {
   iwsdk(['xr', 'look-at'], { device: 'headset', target: { x: -0.5, y: 1.2, z: -3 } });
   await sleep(300);
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-ride-driver'));
+  await menuClick('menu-ride-driver');
   evalInApp("(window.__ride.set('tank', 'stick'), window.__ride.set('turret', 'still'), true)");
   const seated = await waitFor('the driver\'s seat', () => {
     const s = state();
@@ -886,7 +933,7 @@ async function ridingTheTank() {
   check('The vignette darkens while the tank speeds up', placed.alpha > 0.2, `alpha ${placed.alpha.toFixed(2)}`);
   await menuButtonPress();
   const status = evalInApp('window.__gameMenu.text("menu-ride-status")');
-  await rayClick(elementPosition('menu-panel', 'row-ride-vignette-1'));
+  await menuClick('row-ride-vignette-1');
   const unshaded = await waitFor('the vignette to go', () => { const s = state(); return !s.vignetteShown && s; }, 3000).catch(() => state());
   // Still moving fast enough that a vignette left on would show (40% at top speed).
   check('The menu shows the ride and turns the vignette off',
@@ -895,7 +942,7 @@ async function ridingTheTank() {
   thumbstick('controller-left', 0, 0);
 
   // The gunner's seat goes round with the turret.
-  await rayClick(elementPosition('menu-panel', 'menu-ride-gunner'));
+  await menuClick('menu-ride-gunner');
   evalInApp("(window.__ride.set('turret', 'stick'), window.__ride.set('cabin', 'closed'), true)");
   thumbstick('controller-right', 1, 0);
   const turned = await waitFor('the turret to turn', () => { const s = state(); return s.turret.angle < -0.5 && s; }, 8000).catch(() => state());
@@ -911,7 +958,7 @@ async function ridingTheTank() {
     `turret at ${((a * 180) / Math.PI).toFixed(0)}°, head at ${fmt(turned.head)} for the seat at ${fmt(eye)}`);
 
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-ride-stop'));
+  await menuClick('menu-ride-stop');
   await menuButtonPress();
   const backInSeat = () => {
     const s = state();
@@ -956,7 +1003,7 @@ async function drivingTheTank() {
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-drive-go'));
+  await menuClick('menu-drive-go');
   const seated = await waitFor('the driver\'s seat and the sign', () => {
     const s = evalInApp('({ seat: window.__seats.mine, sign: window.__drive.sign, driver: window.__drive.driver() })');
     return s.seat === 'driver' && s.sign.startsWith('Driving') && s;
@@ -997,7 +1044,7 @@ async function drivingTheTank() {
   // The gear lever: into high with a stick pushed grinds; let go and it goes in.
   sticks(1, 1);
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'row-gear-2'));
+  await menuClick('row-gear-2');
   const grinding = await waitFor('the gears to grind', () => {
     const s = { ...state(), sign: evalInApp('window.__drive.sign') };
     return s.grinding && s;
@@ -1011,7 +1058,7 @@ async function drivingTheTank() {
   const status = shifted.status;
   check('With the sticks let go the gear goes in, and the menu says so', shifted.gear === 2 && !shifted.grinding && status.includes('high gear'),
     `gear ${shifted.gear}, "${status}"`);
-  await rayClick(elementPosition('menu-panel', 'row-gear-1'));
+  await menuClick('row-gear-1');
   await menuButtonPress();
 
   // Into the boulder: the tank stops against it, never in it.
@@ -1030,7 +1077,7 @@ async function drivingTheTank() {
     `stopped at z ${bumped.z.toFixed(2)} for the boulder's edge at ${stopAt.toFixed(2)}, ${bumped.speed.toFixed(2)} m/s, ${bumped.bumps} bump(s)`);
 
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-drive-reset'));
+  await menuClick('menu-drive-reset');
   await menuButtonPress();
   const atStart = () => ({ ...state(), ranges: evalInApp('window.__range.targets().map((t, i) => window.__range.drawnRange(i))') });
   const home = await waitFor('the tank back at its start', () => {
@@ -1074,16 +1121,16 @@ async function theTestRange() {
 
   // The fog is a live setting: off and on again from the menu.
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'row-fog-1'));
+  await menuClick('row-fog-1');
   const fogOff = await waitFor('the fog off', () => { const f = evalInApp('window.__range.fog()'); return !f.on && f; }, 5000)
     .catch(() => evalInApp('window.__range.fog()'));
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-range-clear.png'], {});
   check("The menu's Range fog setting clears the air at once", fogOff.on === false, `fog ${fogOff.on ? 'on' : 'off'}`);
-  await rayClick(elementPosition('menu-panel', 'row-fog-0'));
+  await menuClick('row-fog-0');
   await waitFor('the fog back on', () => evalInApp('window.__range.fog().on'), 5000).catch(() => null);
 
   // Practice → Up the range: parked 200 m up the road facing the far target.
-  await rayClick(elementPosition('menu-panel', 'menu-range-up'));
+  await menuClick('menu-range-up');
   const up = await waitFor('the tank parked up the range', () => {
     const r = range();
     return r.tank.nearest === 1 && Math.abs(r.tank.distance - 51) < 10 && r;
@@ -1134,20 +1181,20 @@ async function comfortAndStats() {
 
   // The vignette's strength.
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'row-vignette-3'));
+  await menuClick('row-vignette-3');
   const strong = evalInApp("window.__gameMenu.selected('row-vignette-3')");
   evalInApp('(window.__drive.set({ left: 1, right: 1 }), true)');
   const dark = await waitFor('the strong vignette', () => { const a = evalInApp('window.__drive.vignetteAlpha'); return a > 0.55 && a; }, 6000).catch(() => evalInApp('window.__drive.vignetteAlpha'));
   check('Comfort → Vignette → Strong darkens the view further than Normal can while the tank pulls away',
     strong && dark > 0.55, `selected ${strong}, alpha ${dark.toFixed(2)} (normal tops out at 0.5)`);
-  await rayClick(elementPosition('menu-panel', 'row-vignette-0'));
+  await menuClick('row-vignette-0');
   const clear = await waitFor('the vignette to go', () => { const a = evalInApp('window.__drive.vignetteAlpha'); return a < 0.01 && { a, speed: evalInApp('window.__drive.state().speed') }; }, 4000)
     .catch(() => ({ a: evalInApp('window.__drive.vignetteAlpha'), speed: evalInApp('window.__drive.state().speed') }));
   check('Vignette → Off leaves the view clear while the tank still drives', clear.a < 0.01 && clear.speed > 1,
     `alpha ${clear.a.toFixed(3)} at ${clear.speed.toFixed(1)} m/s`);
-  await rayClick(elementPosition('menu-panel', 'row-vignette-2'));
+  await menuClick('row-vignette-2');
   // Reduced bumps.
-  await rayClick(elementPosition('menu-panel', 'row-bumps-1'));
+  await menuClick('row-bumps-1');
   const bumps = await waitFor('reduced bumps', () => evalInApp('window.__drive.bumps') === 'reduced', 3000).catch(() => false);
   check('Comfort → Bumps → Reduced makes the tank ride on reduced bumps', bumps && evalInApp("window.__gameMenu.selected('row-bumps-1')"),
     `the tank rides on ${evalInApp('window.__drive.bumps')} bumps`);
@@ -1177,13 +1224,13 @@ async function comfortAndStats() {
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-queasy'));
+  await menuClick('menu-queasy');
   const marks = evalInApp("window.__stats.rows().filter((r) => r.kind === 'queasy')");
   const run = evalInApp('window.__rangeRun.state()');
   check('I feel queasy marks the moment in the stats with the run and its clock',
     marks.length === 1 && marks[0].run === run.id && marks[0].time > 0 && marks[0].seat === 'driver',
     JSON.stringify(marks.map((m) => ({ run: m.run, time: m.time, seat: m.seat }))));
-  await rayClick(elementPosition('menu-panel', 'menu-run-stop'));
+  await menuClick('menu-run-stop');
   const row = await waitFor('the run\'s row', () => evalInApp("window.__stats.rows().find((r) => r.kind === 'run') ?? null"), 4000).catch(() => null);
   const line = await waitFor('the menu line', () => { const t = evalInApp("window.__gameMenu.text('menu-stats-status')"); return t.startsWith('Last: run') && t; }, 3000)
     .catch(() => evalInApp("window.__gameMenu.text('menu-stats-status')"));
@@ -1196,7 +1243,7 @@ async function comfortAndStats() {
     /^Last: run \d+ stopped at \d:\d\d\.\d, 0 shots, \d+ grinds?, 1 fumble \(most: gear\)/.test(line) && csv[0].startsWith('kind,run,at,seat') &&
       csv.filter((l) => l.startsWith('run,')).length === 1 && csv.at(-1).startsWith('visit,'),
     `"${line}"; CSV ${csv.length - 1} rows`);
-  await rayClick(elementPosition('menu-panel', 'row-bumps-0'));
+  await menuClick('row-bumps-0');
   await menuButtonPress();
   evalInApp('(window.__stats.clear(), window.__drive.set(null), window.__drive.reset(), true)');
   iwsdk(['xr', 'set-device-state'], {});
@@ -1219,7 +1266,7 @@ async function theRangeRun() {
   evalInApp("(window.__seats.ask('driver'), window.__drive.place(0, -150, 0), true)");
   await sleep(300);
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-run-start'));
+  await menuClick('menu-run-start');
   const counting = await waitFor('the countdown', () => { const r = run(); return r.phase === 'running' && r.clock < 0 && r; }, 5000).catch(() => run());
   const sign = evalInApp('window.__rangeRun.sign');
   const clocks = evalInApp('window.__rangeRun.clock()');
@@ -1236,7 +1283,7 @@ async function theRangeRun() {
 
   // Practice → Ready to fire → 100 m: alone, into the gunner's seat, laid and loaded.
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-ready-0'));
+  await menuClick('menu-ready-0');
   const ready = await waitFor('laid and loaded', () => evalInApp('window.__rangeRun.pending') === -1 && evalInApp('window.__loading.state().loaded') && evalInApp('window.__seats.mine') === 'gunner', 6000).catch(() => false);
   const predicted = evalInApp('window.__firing.predict()');
   check('Practice → Ready to fire → 100 m puts a solo player in the gunner\'s seat with the gun laid on the target and loaded',
@@ -1288,7 +1335,7 @@ async function theRangeRun() {
   }, 3000).catch(() => evalInApp("window.__gameMenu.text('menu-run-status')"));
   check("The menu's range run line gives the run's time and shots",
     /^Three targets in \d:\d\d\.\d, 3 shots \(assisted\)\./.test(menuLine), `"${menuLine}"`);
-  await rayClick(elementPosition('menu-panel', 'menu-run-stop'));
+  await menuClick('menu-run-stop');
   const stopped = await waitFor('the run stopped', () => { const r = run(); return r.phase === 'idle' && r; }, 4000).catch(() => run());
   await menuButtonPress();
   check('Stop ends the run and takes the flags down', stopped.phase === 'idle' && !evalInApp('window.__rangeRun.flags()').some(Boolean),
@@ -1312,10 +1359,10 @@ async function layingWithTheSight() {
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-range-up'));
+  await menuClick('menu-range-up');
   await waitFor('the tank parked up the range', () => evalInApp('window.__range.tank().nearest') === 1, 8000).catch(() => null);
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-sight-go'));
+  await menuClick('menu-sight-go');
   const lens0 = sight('lens()');
   const behindLens = (head, lens) => (head[0] - lens.at[0]) * lens.facing[0] + (head[2] - lens.at[2]) * lens.facing[2];
   const there = await waitFor('the eyepiece', () => {
@@ -1327,7 +1374,7 @@ async function layingWithTheSight() {
     there.mine === 'gunner', `${there.mine}, head ${fmt(there.head)}, lens ${fmt(lens0.at)}`);
 
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-sight-lay-2'));
+  await menuClick('menu-sight-lay-2');
   const laid = await waitFor('the gun laid on the far target', () => {
     const e = sight('error(2)');
     return Math.abs(e.across) < 0.05 && Math.abs(e.up) < 0.05 && e;
@@ -1426,7 +1473,7 @@ async function theDriversPeriscope() {
   await sleep(300);
   evalInApp('(window.__periscope.turn(0), true)');
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-periscope-go'));
+  await menuClick('menu-periscope-go');
   const behindLens = (head, lens) => (head[0] - lens.at[0]) * lens.facing[0] + (head[2] - lens.at[2]) * lens.facing[2];
   const there = await waitFor('the periscope\'s window', () => {
     const s = seated();
@@ -1493,8 +1540,8 @@ async function theDriversPeriscope() {
 
   // The menu: Ahead turns it back, Power cycles 2× → 3×.
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-periscope-ahead'));
-  await rayClick(elementPosition('menu-panel', 'menu-periscope-power'));
+  await menuClick('menu-periscope-ahead');
+  await menuClick('menu-periscope-power');
   await menuButtonPress();
   const ahead = await waitFor('the periscope ahead', () => { const s = scope('state()'); return Math.abs(s.angleDeg) < 0.01 && s; }, 4000).catch(() => scope('state()'));
   check('Practice → Periscope → Ahead turns it straight ahead and Power steps to 3×', Math.abs(ahead.angleDeg) < 0.01 && ahead.power === 3,
@@ -1543,7 +1590,7 @@ async function layingTheGun() {
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-turret-go'));
+  await menuClick('menu-turret-go');
   const seated = await waitFor('the gunner\'s seat and the sign', () => {
     const s = evalInApp('({ seat: window.__seats.mine, sign: window.__turret.sign, owner: window.__turret.owner() })');
     return s.seat === 'gunner' && s.sign.startsWith('Laying') && s;
@@ -1620,7 +1667,7 @@ async function layingTheGun() {
   await letGoOf('elevation');
 
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-turret-forward'));
+  await menuClick('menu-turret-forward');
   await menuButtonPress();
   const home = await waitFor('the turret forward', () => { const s = turret(); return Math.abs(s.yaw) < 1e-6 && s.elevation === 0 && s; }, 5000).catch(() => turret());
   const headHome = evalInApp('window.__turret.headInTurret()');
@@ -1664,7 +1711,7 @@ async function tankSounds() {
 
   await menuButtonPress();
   const heard0 = audio().heard;
-  await rayClick(elementPosition('menu-panel', 'menu-audio-play'));
+  await menuClick('menu-audio-play');
   const played = await waitFor('every short sound played', () => {
     const now = audio().heard;
     return Object.keys(now).every((id) => now[id] > heard0[id]) && now;
@@ -1674,10 +1721,10 @@ async function tankSounds() {
     Object.keys(played).every((id) => played[id] > heard0[id]) && line.length > 0,
     `${Object.keys(played).filter((id) => played[id] > heard0[id]).join(', ')}; "${line}"`);
 
-  await rayClick(elementPosition('menu-panel', 'row-sound-2'));
+  await menuClick('row-sound-2');
   const off = await waitFor('the sounds off', () => { const a = audio(); return a.sound === 0 && a; }, 5000).catch(() => audio());
   const offLit = evalInApp("window.__gameMenu.selected('row-sound-2')");
-  await rayClick(elementPosition('menu-panel', 'row-sound-0'));
+  await menuClick('row-sound-0');
   const on = await waitFor('the sounds back on', () => { const a = audio(); return a.sound === 1 && a; }, 5000).catch(() => audio());
   check("The menu's Tank sounds row turns the tank's sounds off and on again",
     off.sound === 0 && offLit && on.sound === 1, `off: ${off.sound} (${off.context}), on: ${on.sound} (${on.context})`);
@@ -1817,7 +1864,14 @@ async function main() {
   await ensureRuntime();
   const startedAt = Date.now();
 
-  iwsdk(['browser', 'reload'], {});
+  try {
+    iwsdk(['browser', 'reload'], {});
+  } catch (error) {
+    // On CI the first reload after start-up has died with no output; wait for the browser's bridge again and retry once.
+    console.log(`Reload failed, retrying once: ${error.message}`);
+    await waitFor('managed browser', () => iwsdk(['dev', 'status']).state?.browserCommandReady === true, 180000, 2000);
+    iwsdk(['browser', 'reload'], {});
+  }
   if (process.env.THROTTLE) {
     // Slow the page's CPU, to see how the checks fare on a slow CI runner.
     const file = 'artifacts/.throttle.mjs';
@@ -1943,7 +1997,7 @@ async function main() {
   //     is pulled 45 cm off, springs back, and both forwards drive the tank
   //     up the lane on the board.
   await menuButtonPress();
-  await rayClick(elementPosition('menu-panel', 'menu-levers'));
+  await menuClick('menu-levers');
   iwsdk(['xr', 'set-device-state'], {});
   const leverShown = await waitFor('the lever test rig', () => evalInApp('window.__lever.shown'), 5000).catch(() => false);
   check('Practice > Lever test puts the tillers in front of the player', leverShown, `handles at ${fmt(evalInApp('window.__lever.handle("left")'))} and ${fmt(evalInApp('window.__lever.handle("right")'))}`);

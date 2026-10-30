@@ -24,7 +24,7 @@ Every feature of the game, by phase, with where it stands. The approach behind e
 | Phase | Goal | Features | Done |
 | --- | --- | --- | --- |
 | 0 Groundwork | Rename, plan, spikes | 6 | 3 |
-| 1 Core controls prototype | Prove the tank's controls work in VR co-op | 14 | 0 |
+| 1 Core controls prototype | Prove the tank's controls work in VR co-op | 15 | 0 |
 | 2 Communication aids | Hatches and diegetic signals, compared against voice only | 7 | 0 |
 | 3 Combat and damage | Enemies, ammunition types, damage and repairs | 9 | 0 |
 | 4 Training and tutorials | Simplified systems and five training stages | 7 | 0 |
@@ -63,6 +63,7 @@ Ends when a crew can drive the range, find and hit three static targets, and the
 | F1.12 | Tank audio and intercom: engine by RPM, tracks, clunks and grinds, gun, breech, casings; voice ducking; plain intercom voice by default | Headset check | F1.5, F1.10 | #25 | [audio.md](audio.md): synthesised in `src/sim/tank-audio.ts`, played by `TankAudioSystem` from the tank as each page draws it (nothing new sent); voice ducks the tank 6 dB; plain voice by default; Settings → Tank sounds; Practice → Tank sounds → Play each |
 | F1.13 | Practice crewmate in both seats: drives a route or follows calls; aims at and fires on the nearest target | Headset check | F1.5, F1.10 | #23 | [crewmate.md](crewmate.md): its scripted hands work the tillers, gear lever, shells, breech, power grip and elevation wheel through the kit; drives the route or follows the menu's new Calls (`crew-call` event, shown on the other player's sign); loads, lays on the nearest target not yet hit and fires from a halt |
 | F1.14 | Comfort and play-test stats: motion vignette, reduced bumps, per-run CSV (time to three hits, grinds, fumbles per control, time per role) | Headset check | F1.11 | #33 | [comfort-stats.md](comfort-stats.md): Comfort and stats menu section: Vignette (Off/Light/Normal/Strong), Bumps (reduced if either player asks, `comfort` event), I feel queasy, Save CSV; `src/sim/play-stats.ts` and `PlayStatsSystem` write a row per range run with the crewmate's numbers (`run-stats` event); answers the concept's §14 questions |
+| F1.15 | Sherman interior: eyes and hands together at each station from the M4A4's layout, interior lighting (John's play-test note) | Headset check | F1.5, F1.6, F1.9 | #38 | [interior.md](interior.md): glacis and hood bring the slit to 30 cm; instrument box on the left wall, periscope right; gunsight an 18 cm lean over raised wheels; final drive housing, co-driver seat, bow gun, extinguishers, sponson rounds, radio; hatch daylight and dome lamps in the cabin shader (`litInside`, `CabinLightSystem`) |
 
 ## Phase 2: Communication aids
 

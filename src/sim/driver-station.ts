@@ -65,6 +65,8 @@ export const HAND_THROTTLE: LeverSpec = {
 
 /** How far each tiller's pivot is to the side of the driver's eyes, m: outside the knees. */
 export const TILLER_SIDE = 0.21;
+/** How far each tiller's pivot is under the driver's eyes, m (spike S3's rig had it 1 m under them). */
+export const TILLER_DROP = 0.94;
 
 /** The gearbox's hump beside the driver's legs: its sides, its top and its ends, hull space, m. */
 export const GEARBOX = { x0: -0.2, x1: 0.3, top: 0.45, z0: -2.4, z1: -1.1 } as const;
@@ -76,13 +78,14 @@ export const DRIVER_CONTROL_IDS: readonly DriverControlId[] = ['tillerLeft', 'ti
 export const DRIVER_CONTROLS: Readonly<Record<DriverControlId, { spec: LeverSpec; pivot: readonly [number, number, number] }>> = (() => {
   const [ex, ey, ez] = SEATS.driver.eye;
   return {
-    // A forearm ahead of the eyes and a metre below them (spike S3's rig), either side of the knees.
-    tillerLeft: { spec: DRIVER_TILLER, pivot: [ex - TILLER_SIDE, ey - 1.0, ez - 0.42] },
-    tillerRight: { spec: DRIVER_TILLER, pivot: [ex + TILLER_SIDE, ey - 1.0, ez - 0.42] },
+    // A forearm ahead of the eyes, either side of the knees, the tops 49 cm under the eyes: 6 cm higher
+    // than spike S3's rig, so the hands stay on them with the eyes at the slit (docs/interior.md).
+    tillerLeft: { spec: DRIVER_TILLER, pivot: [ex - TILLER_SIDE, ey - TILLER_DROP, ez - 0.42] },
+    tillerRight: { spec: DRIVER_TILLER, pivot: [ex + TILLER_SIDE, ey - TILLER_DROP, ez - 0.42] },
     // On the gearbox's hump at the driver's right knee.
     gear: { spec: GEAR_LEVER, pivot: [GEARBOX.x0 + 0.1, GEARBOX.top, ez - 0.35] },
-    // On its quadrant against the left wall, by the driver's left knee.
-    throttle: { spec: HAND_THROTTLE, pivot: [-0.98, 0.8, ez - 0.25] },
+    // On its quadrant against the left wall, by the driver's left knee, under the instrument box.
+    throttle: { spec: HAND_THROTTLE, pivot: [-0.98, 0.66, ez - 0.25] },
   };
 })();
 
@@ -93,22 +96,32 @@ export const THROTTLE_QUADRANT = { halfWidth: 0.06, height: 0.1, depth: 0.2 } as
 export const TILLER_PEDESTAL = { halfWidth: 0.04, depth: 0.12, above: 0.03 } as const;
 
 /**
- * The instrument panel under the vision slit: its face's middle (hull
- * space), its size, and its tilt back from upright towards the driver's
- * eyes, m and radians. Five dials across it, then a line of lettering
- * under them saying which way the gear lever goes.
+ * The instrument box: on the left wall beside the driver's knee, as the
+ * M4A4's is (TM 9-754, figure 9), turned and tilted so its face looks at
+ * the driver's eyes. Its face's middle (hull space) and size, m. Five dials
+ * in two rows, three over two, and a plate in the bottom row's third place
+ * saying which way the gear lever goes.
  */
-export const PANEL = {
-  centre: [VISION_SLIT.x, 1.205, -2.31] as const,
-  width: 0.64,
-  height: 0.18,
-  tilt: 20 * DEG,
-  /** Each dial's radius, and how far apart their middles are, m. */
-  dialRadius: 0.048,
-  dialSpacing: 0.122,
-  /** How far up the face the dials' middles are, from its middle, m. */
-  dialY: 0.018,
-} as const;
+export const PANEL = (() => {
+  const centre = [-0.98, 1.19, -1.66] as const;
+  const [ex, ey, ez] = SEATS.driver.eye;
+  const dx = ex - centre[0];
+  const dz = ez - centre[2];
+  return {
+    centre,
+    width: 0.4,
+    height: 0.24,
+    /** Its turn about +Y from facing the hull's rear, and its tilt back from upright, so the face looks at the eyes, radians. */
+    yaw: Math.atan2(dx, dz),
+    tilt: Math.atan2(ey - centre[1], Math.hypot(dx, dz)),
+    /** Each dial's radius, how far apart their middles are across a row, and how far apart the rows are, m. */
+    dialRadius: 0.048,
+    dialSpacing: 0.122,
+    rowSpacing: 0.108,
+    /** How far up the face the rows' middle is, from its middle, m. */
+    dialY: 0.0,
+  };
+})();
 
 /** A dial: what it reads, its range, and the face's numbers. Needles sweep clockwise through DIAL_SWEEP from the bottom left. */
 export interface Dial {
@@ -133,10 +146,15 @@ export const DIALS: readonly Dial[] = [
 /** A needle's sweep from its dial's minimum to its maximum, clockwise, radians; it starts at the bottom left. */
 export const DIAL_SWEEP = 270 * DEG;
 
-/** Each dial's middle in panel space (x right, y up the face), m. */
+/** How many dials the top row holds; the rest go under its first ones, left to right. */
+export const TOP_ROW = 3;
+
+/** Each dial's middle in panel space (x right, y up the face), m; index TOP_ROW + 2 is the gear plate's. */
 export function dialCentre(index: number, out: [number, number]): [number, number] {
-  out[0] = (index - (DIALS.length - 1) / 2) * PANEL.dialSpacing;
-  out[1] = PANEL.dialY;
+  const row = index < TOP_ROW ? 0 : 1;
+  const column = row === 0 ? index : index - TOP_ROW;
+  out[0] = (column - (TOP_ROW - 1) / 2) * PANEL.dialSpacing;
+  out[1] = PANEL.dialY + (row === 0 ? 1 : -1) * (PANEL.rowSpacing / 2);
   return out;
 }
 
@@ -151,7 +169,7 @@ export function dialValue(dial: Dial, angle: number): number {
   return dial.min + ((angle + DIAL_SWEEP / 2) / DIAL_SWEEP) * (dial.max - dial.min);
 }
 
-/** The vision slit's brow pad and frame (docs/driver-station.md#vision-slit), m. */
+/** The vision slit's brow pad and frame in the hood's face (docs/driver-station.md#vision-slit), m. */
 export const SLIT_FRAME = {
   /** The steel frame's bars round the slit: how wide, how far into the cabin, and how far back from the opening's edges. */
   bar: 0.03,
@@ -194,13 +212,20 @@ export function tillerAngle(demand: number): number {
   return d > 0 ? rest + deadband + d * (max - rest - deadband) : rest - deadband + d * (rest - min - deadband);
 }
 
-/** A point in panel space (x right along the face, y up it, z out of it towards the driver) in hull space, into `out`. */
+/**
+ * A point in panel space (x right along the face, y up it, z out of it
+ * towards the driver) in hull space, into `out`. The face tilts back about
+ * its X, then turns about +Y (Three.js: rotation.set(-tilt, yaw, 0, 'YXZ')).
+ */
 export function panelToHull(p: readonly number[], out: [number, number, number]): [number, number, number] {
-  // The face turns back about X by the tilt (Three.js: rotation.x = -tilt).
   const c = Math.cos(-PANEL.tilt);
   const s = Math.sin(-PANEL.tilt);
-  out[0] = PANEL.centre[0] + p[0];
-  out[1] = PANEL.centre[1] + p[1] * c - p[2] * s;
-  out[2] = PANEL.centre[2] + p[1] * s + p[2] * c;
+  const y = p[1] * c - p[2] * s;
+  const z = p[1] * s + p[2] * c;
+  const cy = Math.cos(PANEL.yaw);
+  const sy = Math.sin(PANEL.yaw);
+  out[0] = PANEL.centre[0] + p[0] * cy + z * sy;
+  out[1] = PANEL.centre[1] + y;
+  out[2] = PANEL.centre[2] - p[0] * sy + z * cy;
   return out;
 }

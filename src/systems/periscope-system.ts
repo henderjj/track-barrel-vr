@@ -89,7 +89,7 @@ const next = <T>(list: readonly T[], value: T): T => list[(list.indexOf(value) +
 export const PERISCOPE_BUTTONS: readonly PracticeButton[] = [
   { id: 'menu-periscope-go', label: () => 'Go to it', press: () => active?.goTo(), closes: true },
   { id: 'menu-periscope-ahead', label: () => 'Ahead', press: () => active?.turn(0) },
-  { id: 'menu-periscope-power', label: () => `Power ${periscopeStats.power}×`, press: () => active?.setPower(next(PERISCOPE_POWERS, periscopeStats.power)) },
+  { id: 'menu-periscope-power', label: () => `Power ${periscopeStats.power}x`, press: () => active?.setPower(next(PERISCOPE_POWERS, periscopeStats.power)) },
 ];
 
 interface PeriscopeDebug {
@@ -123,7 +123,7 @@ interface PeriscopeDebug {
 
 /**
  * The driver's periscope (F1.6, docs/periscope.md). Its eyepiece is fixed
- * in the hull left of the vision slit; its head on the roof and the yoke
+ * in the hull right of the vision slit; its head on the roof and the yoke
  * under the eyepiece turn together about an upright, so turning the yoke
  * swings the view while the eye stays at the window, as on a panoramic
  * sight. The yoke is a mechanism-kit Yoke (HoldKind 8): quick in both

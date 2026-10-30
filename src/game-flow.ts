@@ -94,6 +94,23 @@ export function menuCrewLine(state: SessionState, room: string, crewmate: string
   }
 }
 
+/** The game menu's tabs, top to bottom (`tab-<id>` and `page-<id>` in public/ui/menu.uikitml). */
+export const MENU_TABS = ['crew', 'you', 'comfort', 'view', 'tank', 'practice', 'sights', 'rigs'] as const;
+export type MenuTab = (typeof MENU_TABS)[number];
+
+/** The tab the menu opens on, the first time. */
+export const FIRST_MENU_TAB: MenuTab = 'you';
+
+/** The tab the menu shows when `wanted` was picked last: Crew's only shows in a crew, so out of one it falls back to the first. */
+export function menuTab(wanted: MenuTab, inCrew: boolean): MenuTab {
+  return wanted === 'crew' && !inCrew ? FIRST_MENU_TAB : wanted;
+}
+
+/** `id` as one of the menu's tabs, or `fallback` if it isn't one. */
+export function parseMenuTab(id: string, fallback: MenuTab): MenuTab {
+  return (MENU_TABS as readonly string[]).includes(id) ? (id as MenuTab) : fallback;
+}
+
 /**
  * The eye raise after one press of the menu's + (`direction` 1) or −
  * (-1): one `step` up or down, between -`max` and `max`.

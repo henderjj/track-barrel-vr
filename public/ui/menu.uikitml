@@ -1,29 +1,41 @@
 <!--
   The in-game menu (src/systems/game-menu-system.ts), opened with Y (or the
   menu button) on the left controller, or M or the Game menu button on the
-  flat page. Every setting shows all its choices at once, the one in effect
-  highlighted, so one press picks any of them: coat colours as swatches,
-  eye height as a 5 cm stepper, everything else as a row of up to four
-  buttons (row-<key>-0 to -3, labelled and shown by the menu system from
-  LIVE_ITEMS in src/live-settings.ts). The crew section shows only in a crew.
-  Practice holds shortcuts straight to a situation worth testing, one per
-  feature, so a headset check never has to play its way there (the cabin's:
-  sit in either seat; the drive's: drive, or put the tank back at its start; the turret's: lay
-  the gun, or turn the turret forward; loading: load and fire as gunner; the range's: park up the range facing a target; the
-  gunsight's: go to it, or lay the gun on a target's range mark; the range run's: start or stop a run, and ready to fire on each target, parked at the start,
-  laid and loaded; the tank's sounds: play each short sound in turn; the periscope's: go to it, turn it ahead, its power).
-  Comfort and stats (F1.14) sets the vignette's strength and reduced bumps, marks a moment
-  the player feels queasy, and saves or clears the play-test stats CSV.
-  Calls (in a crew) sends the crewmate a call for the other seat, which shows on their sign and
-  which the practice crewmate obeys (F1.13): to the driver from the gunner's seat, to the gunner
-  from the driver's. You →
-  Seat swaps seats (in a crew, once the
-  crewmate agrees) and Calibration measures the eyes and reach again.
+  flat page. Its settings are grouped into tabs down the left (tab-<name>),
+  each showing one page (page-<name>, listed in MENU_TABS in
+  src/game-flow.ts); the pages area keeps one height so the panel doesn't
+  jump as the tabs change. Every setting shows all its choices at once, the
+  one in effect highlighted, so one press picks any of them: coat colours as
+  swatches, eye height as a 5 cm stepper, everything else as a row of up to
+  four buttons (row-<key>-0 to -3, labelled and shown by the menu system from
+  LIVE_ITEMS in src/live-settings.ts).
+
+  - Crew (the tab shows only in a crew): microphone and the crewmate's voice,
+    and Calls, which sends the crewmate a call for the other seat, shown on
+    their sign and obeyed by the practice crewmate (F1.13): to the driver
+    from the gunner's seat, to the gunner from the driver's.
+  - You: coat, standing or seated, eye height, Seat (back in it, or swap,
+    in a crew once the crewmate agrees) and Calibration (eyes and reach again).
+  - Comfort (F1.14): the vignette's strength and reduced bumps, a mark for
+    the moment the player feels queasy, and the play-test stats CSV.
+  - Sound and view: the other live settings.
+  - Tank: the drive's state and gear lever, the range's state, and spike
+    S2's ride options while riding.
+  - Practice, Sights and Test rigs hold shortcuts straight to a situation
+    worth testing, one per feature, so a headset check never has to play its
+    way there. Practice: sit in either seat; drive, or put the tank back at
+    its start; lay the gun, or turn the turret forward; load and fire as
+    gunner; play each of the tank's short sounds; park up the range facing a
+    target; start or stop a range run, and ready to fire on each target,
+    parked at the start, laid and loaded. Sights: go to the gunsight, lay the
+    gun on a target's range mark, the sight's render choices; go to the
+    periscope, turn it ahead, its power. Test rigs: ride the tank (spike
+    S2), the lever test and the mechanism kit.
 -->
 <style>
   .root {
     flex-direction: column;
-    width: 520px;
+    width: 672px;
     padding-top: 14px;
     padding-bottom: 16px;
     padding-left: 22px;
@@ -45,6 +57,35 @@
 
   .title:dark {
     color: rgba(255, 255, 255, 0.95);
+  }
+
+  .body {
+    flex-direction: row;
+    gap: 16px;
+  }
+
+  .tabs {
+    flex-direction: column;
+    flex-shrink: 0;
+    width: 136px;
+    gap: 6px;
+    padding-top: 4px;
+  }
+
+  .tab {
+    justify-content: flex-start;
+  }
+
+  .pages {
+    flex-direction: column;
+    flex-shrink: 0;
+    width: 476px;
+    min-height: 424px;
+  }
+
+  .page {
+    flex-direction: column;
+    gap: 8px;
   }
 
   .section {
@@ -189,346 +230,373 @@
   </div>
   <Divider></Divider>
 
-  <div id="menu-crew" class="section" style="display: none">
-    <div class="section-title">CREW</div>
-    <div id="menu-crew-status" class="hint">Crew</div>
-    <div id="row-mic" class="setting">
-      <div id="row-mic-label" class="label">My microphone</div>
-      <div id="row-mic-choices" class="choices">
-        <Button id="row-mic-0" class="choice" size="sm" variant="secondary">On</Button>
-        <Button id="row-mic-1" class="choice" size="sm" variant="secondary">Muted</Button>
-        <div id="row-mic-note" class="note" style="display: none">Off</div>
-      </div>
+  <div class="body">
+    <div class="tabs">
+      <Button id="tab-crew" class="tab" size="sm" variant="secondary" style="display: none">Crew</Button>
+      <Button id="tab-you" class="tab" size="sm" variant="secondary">You</Button>
+      <Button id="tab-comfort" class="tab" size="sm" variant="secondary">Comfort</Button>
+      <Button id="tab-view" class="tab" size="sm" variant="secondary">Sound and view</Button>
+      <Button id="tab-tank" class="tab" size="sm" variant="secondary">Tank</Button>
+      <Button id="tab-practice" class="tab" size="sm" variant="secondary">Practice</Button>
+      <Button id="tab-sights" class="tab" size="sm" variant="secondary">Sights</Button>
+      <Button id="tab-rigs" class="tab" size="sm" variant="secondary">Test rigs</Button>
     </div>
-    <div id="row-crew" class="setting">
-      <div id="row-crew-label" class="label">Crewmate's voice</div>
-      <div id="row-crew-choices" class="choices">
-        <Button id="row-crew-0" class="choice" size="sm" variant="secondary">On</Button>
-        <Button id="row-crew-1" class="choice" size="sm" variant="secondary">Muted</Button>
+    <div class="pages">
+      <div id="page-crew" class="page" style="display: none">
+        <div id="menu-crew" class="section" style="display: none">
+          <div id="menu-crew-status" class="hint">Crew</div>
+          <div id="row-mic" class="setting">
+            <div id="row-mic-label" class="label">My microphone</div>
+            <div id="row-mic-choices" class="choices">
+              <Button id="row-mic-0" class="choice" size="sm" variant="secondary">On</Button>
+              <Button id="row-mic-1" class="choice" size="sm" variant="secondary">Muted</Button>
+              <div id="row-mic-note" class="note" style="display: none">Off</div>
+            </div>
+          </div>
+          <div id="row-crew" class="setting">
+            <div id="row-crew-label" class="label">Crewmate's voice</div>
+            <div id="row-crew-choices" class="choices">
+              <Button id="row-crew-0" class="choice" size="sm" variant="secondary">On</Button>
+              <Button id="row-crew-1" class="choice" size="sm" variant="secondary">Muted</Button>
+            </div>
+          </div>
+        </div>
+        <div id="menu-calls" class="section" style="display: none">
+          <div class="section-title">CALLS</div>
+          <div id="menu-calls-status" class="hint">Calls</div>
+          <div id="row-calls-drive" class="setting">
+            <div class="label">Driver</div>
+            <div class="choices">
+              <Button id="call-advance" class="choice" size="sm" variant="secondary">Advance</Button>
+              <Button id="call-halt" class="choice" size="sm" variant="secondary">Halt</Button>
+              <Button id="call-reverse" class="choice" size="sm" variant="secondary">Reverse</Button>
+            </div>
+          </div>
+          <div id="row-calls-turn" class="setting">
+            <div class="label">Driver</div>
+            <div class="choices">
+              <Button id="call-left" class="choice" size="sm" variant="secondary">Left</Button>
+              <Button id="call-right" class="choice" size="sm" variant="secondary">Right</Button>
+              <Button id="call-route" class="choice" size="sm" variant="secondary">Route</Button>
+            </div>
+          </div>
+          <div id="row-calls-gun" class="setting">
+            <div class="label">Gunner</div>
+            <div class="choices">
+              <Button id="call-fire" class="choice" size="sm" variant="secondary">Fire at will</Button>
+              <Button id="call-hold" class="choice" size="sm" variant="secondary">Hold fire</Button>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
-  <div id="menu-calls" class="section" style="display: none">
-    <div class="section-title">CALLS</div>
-    <div id="menu-calls-status" class="hint">Calls</div>
-    <div id="row-calls-drive" class="setting">
-      <div class="label">Driver</div>
-      <div class="choices">
-        <Button id="call-advance" class="choice" size="sm" variant="secondary">Advance</Button>
-        <Button id="call-halt" class="choice" size="sm" variant="secondary">Halt</Button>
-        <Button id="call-reverse" class="choice" size="sm" variant="secondary">Reverse</Button>
+      <div id="page-you" class="page">
+        <div class="section">
+          <div class="setting">
+            <div class="label">Coat colour</div>
+            <div class="swatches">
+              <div id="coat-0" class="swatch"><div id="coat-0-dot" class="dot"></div></div>
+              <div id="coat-1" class="swatch"><div id="coat-1-dot" class="dot"></div></div>
+              <div id="coat-2" class="swatch"><div id="coat-2-dot" class="dot"></div></div>
+              <div id="coat-3" class="swatch"><div id="coat-3-dot" class="dot"></div></div>
+              <div id="coat-4" class="swatch"><div id="coat-4-dot" class="dot"></div></div>
+              <div id="coat-5" class="swatch"><div id="coat-5-dot" class="dot"></div></div>
+              <div id="coat-6" class="swatch"><div id="coat-6-dot" class="dot"></div></div>
+              <div id="coat-7" class="swatch"><div id="coat-7-dot" class="dot"></div></div>
+            </div>
+          </div>
+          <div id="row-seated" class="setting">
+            <div id="row-seated-label" class="label">Playing</div>
+            <div id="row-seated-choices" class="choices">
+              <Button id="row-seated-0" class="choice" size="sm" variant="secondary">Standing</Button>
+              <Button id="row-seated-1" class="choice" size="sm" variant="secondary">Seated</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Eye height</div>
+            <div class="choices">
+              <Button id="height-down" class="stepper" size="sm" variant="secondary">-</Button>
+              <div id="height-value" class="amount">-</div>
+              <Button id="height-up" class="stepper" size="sm" variant="secondary">+</Button>
+              <Button id="height-own" class="own" size="sm" variant="secondary">Eye point</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Seat</div>
+            <div class="choices">
+              <Button id="menu-reseat" class="choice" size="sm" variant="secondary">Back in my seat</Button>
+              <Button id="menu-swap" class="choice" size="sm" variant="secondary">Swap seats</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Calibration</div>
+            <div class="choices">
+              <Button id="menu-calibrate" class="choice" size="sm" variant="secondary">Calibrate again</Button>
+            </div>
+          </div>
+          <div id="menu-calib-status" class="hint">Not calibrated yet.</div>
+        </div>
       </div>
-    </div>
-    <div id="row-calls-turn" class="setting">
-      <div class="label">Driver</div>
-      <div class="choices">
-        <Button id="call-left" class="choice" size="sm" variant="secondary">Left</Button>
-        <Button id="call-right" class="choice" size="sm" variant="secondary">Right</Button>
-        <Button id="call-route" class="choice" size="sm" variant="secondary">Route</Button>
+      <div id="page-comfort" class="page" style="display: none">
+        <div class="section">
+          <div id="row-vignette" class="setting">
+            <div id="row-vignette-label" class="label">Setting</div>
+            <div id="row-vignette-choices" class="choices">
+              <Button id="row-vignette-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-vignette-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-vignette-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-vignette-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
+          <div id="row-bumps" class="setting">
+            <div id="row-bumps-label" class="label">Setting</div>
+            <div id="row-bumps-choices" class="choices">
+              <Button id="row-bumps-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-bumps-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-bumps-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-bumps-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">How I feel</div>
+            <div class="choices">
+              <Button id="menu-queasy" class="choice" size="sm" variant="secondary">I feel queasy</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Play-test stats</div>
+            <div class="choices">
+              <Button id="menu-stats-save" class="choice" size="sm" variant="secondary">Save CSV</Button>
+              <Button id="menu-stats-clear" class="choice" size="sm" variant="secondary">Clear</Button>
+            </div>
+          </div>
+          <div id="menu-stats-status" class="hint">No runs recorded yet: start a range run.</div>
+        </div>
       </div>
-    </div>
-    <div id="row-calls-gun" class="setting">
-      <div class="label">Gunner</div>
-      <div class="choices">
-        <Button id="call-fire" class="choice" size="sm" variant="secondary">Fire at will</Button>
-        <Button id="call-hold" class="choice" size="sm" variant="secondary">Hold fire</Button>
+      <div id="page-view" class="page" style="display: none">
+        <div class="section">
+          <div id="row-sound" class="setting">
+            <div id="row-sound-label" class="label">Setting</div>
+            <div id="row-sound-choices" class="choices">
+              <Button id="row-sound-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-sound-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-sound-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-sound-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
+          <div id="row-hud" class="setting">
+            <div id="row-hud-label" class="label">Setting</div>
+            <div id="row-hud-choices" class="choices">
+              <Button id="row-hud-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-hud-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-hud-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-hud-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
+          <div id="row-hz" class="setting">
+            <div id="row-hz-label" class="label">Setting</div>
+            <div id="row-hz-choices" class="choices">
+              <Button id="row-hz-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-hz-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-hz-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-hz-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
+          <div id="row-fog" class="setting">
+            <div id="row-fog-label" class="label">Setting</div>
+            <div id="row-fog-choices" class="choices">
+              <Button id="row-fog-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-fog-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-fog-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-fog-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
+          <div id="row-foveation" class="setting">
+            <div id="row-foveation-label" class="label">Setting</div>
+            <div id="row-foveation-choices" class="choices">
+              <Button id="row-foveation-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-foveation-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-foveation-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-foveation-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">YOU</div>
-    <div class="setting">
-      <div class="label">Coat colour</div>
-      <div class="swatches">
-        <div id="coat-0" class="swatch"><div id="coat-0-dot" class="dot"></div></div>
-        <div id="coat-1" class="swatch"><div id="coat-1-dot" class="dot"></div></div>
-        <div id="coat-2" class="swatch"><div id="coat-2-dot" class="dot"></div></div>
-        <div id="coat-3" class="swatch"><div id="coat-3-dot" class="dot"></div></div>
-        <div id="coat-4" class="swatch"><div id="coat-4-dot" class="dot"></div></div>
-        <div id="coat-5" class="swatch"><div id="coat-5-dot" class="dot"></div></div>
-        <div id="coat-6" class="swatch"><div id="coat-6-dot" class="dot"></div></div>
-        <div id="coat-7" class="swatch"><div id="coat-7-dot" class="dot"></div></div>
+      <div id="page-tank" class="page" style="display: none">
+        <div id="menu-drive" class="section">
+          <div class="section-title">DRIVING</div>
+          <div id="menu-drive-status" class="hint">Driving</div>
+          <div id="row-gear" class="setting">
+            <div id="row-gear-label" class="label">Gear lever</div>
+            <div class="choices">
+              <Button id="row-gear-0" class="choice" size="sm" variant="secondary">Neutral</Button>
+              <Button id="row-gear-1" class="choice" size="sm" variant="secondary">Low</Button>
+              <Button id="row-gear-2" class="choice" size="sm" variant="secondary">High</Button>
+            </div>
+          </div>
+        </div>
+        <div id="menu-range" class="section">
+          <div class="section-title">RANGE</div>
+          <div id="menu-range-status" class="hint">The range</div>
+        </div>
+        <div id="menu-ride" class="section" style="display: none">
+          <div class="section-title">RIDING (SPIKE S2)</div>
+          <div id="menu-ride-status" class="hint">Riding</div>
+          <div id="row-ride-vignette" class="setting">
+            <div id="row-ride-vignette-label" class="label">Vignette</div>
+            <div class="choices">
+              <Button id="row-ride-vignette-0" class="choice" size="sm" variant="secondary">On</Button>
+              <Button id="row-ride-vignette-1" class="choice" size="sm" variant="secondary">Off</Button>
+            </div>
+          </div>
+          <div id="row-ride-cabin" class="setting">
+            <div id="row-ride-cabin-label" class="label">Cabin</div>
+            <div class="choices">
+              <Button id="row-ride-cabin-0" class="choice" size="sm" variant="secondary">Open top</Button>
+              <Button id="row-ride-cabin-1" class="choice" size="sm" variant="secondary">Closed</Button>
+            </div>
+          </div>
+          <div id="row-ride-tank" class="setting">
+            <div id="row-ride-tank-label" class="label">Driven by</div>
+            <div class="choices">
+              <Button id="row-ride-tank-0" class="choice" size="sm" variant="secondary">Crewmate</Button>
+              <Button id="row-ride-tank-1" class="choice" size="sm" variant="secondary">Left stick</Button>
+              <Button id="row-ride-tank-2" class="choice" size="sm" variant="secondary">Parked</Button>
+            </div>
+          </div>
+          <div id="row-ride-turret" class="setting">
+            <div id="row-ride-turret-label" class="label">Turret</div>
+            <div class="choices">
+              <Button id="row-ride-turret-0" class="choice" size="sm" variant="secondary">Crewmate</Button>
+              <Button id="row-ride-turret-1" class="choice" size="sm" variant="secondary">Right stick</Button>
+              <Button id="row-ride-turret-2" class="choice" size="sm" variant="secondary">Still</Button>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-    <div id="row-seated" class="setting">
-      <div id="row-seated-label" class="label">Playing</div>
-      <div id="row-seated-choices" class="choices">
-        <Button id="row-seated-0" class="choice" size="sm" variant="secondary">Standing</Button>
-        <Button id="row-seated-1" class="choice" size="sm" variant="secondary">Seated</Button>
+      <div id="page-practice" class="page" style="display: none">
+        <div class="section">
+          <div id="row-seat" class="setting">
+            <div id="row-seat-label" class="label">Sit in</div>
+            <div id="row-seat-choices" class="choices">
+              <Button id="row-seat-0" class="choice" size="sm" variant="secondary">Driver</Button>
+              <Button id="row-seat-1" class="choice" size="sm" variant="secondary">Gunner</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Drive the tank</div>
+            <div class="choices">
+              <Button id="menu-drive-go" class="choice" size="sm" variant="secondary">Drive</Button>
+              <Button id="menu-drive-reset" class="choice" size="sm" variant="secondary">Back to start</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Lay the gun</div>
+            <div class="choices">
+              <Button id="menu-turret-go" class="choice" size="sm" variant="secondary">Gunner</Button>
+              <Button id="menu-turret-forward" class="choice" size="sm" variant="secondary">Forward</Button>
+            </div>
+          </div>
+          <div id="menu-turret-status" class="hint">Turret</div>
+          <div class="setting">
+            <div class="label">Load and fire</div>
+            <div class="choices">
+              <Button id="menu-loading" class="choice" size="sm" variant="secondary">Gunner</Button>
+            </div>
+          </div>
+          <div id="menu-loading-status" class="hint">Loading</div>
+          <div class="setting">
+            <div class="label">Tank sounds</div>
+            <div class="choices">
+              <Button id="menu-audio-play" class="choice" size="sm" variant="secondary">Play each</Button>
+            </div>
+          </div>
+          <div id="menu-audio-status" class="hint">Sound</div>
+          <div class="setting">
+            <div class="label">Test range</div>
+            <div class="choices">
+              <Button id="menu-range-up" class="choice" size="sm" variant="secondary">Up the range</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Range run</div>
+            <div class="choices">
+              <Button id="menu-run-start" class="choice" size="sm" variant="secondary">Start</Button>
+              <Button id="menu-run-stop" class="choice" size="sm" variant="secondary">Stop</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Ready to fire</div>
+            <div class="choices">
+              <Button id="menu-ready-0" class="choice" size="sm" variant="secondary">100 m</Button>
+              <Button id="menu-ready-1" class="choice" size="sm" variant="secondary">250 m</Button>
+              <Button id="menu-ready-2" class="choice" size="sm" variant="secondary">500 m</Button>
+            </div>
+          </div>
+          <div id="menu-run-status" class="hint">Range run</div>
+        </div>
       </div>
-    </div>
-    <div class="setting">
-      <div class="label">Eye height</div>
-      <div class="choices">
-        <Button id="height-down" class="stepper" size="sm" variant="secondary">-</Button>
-        <div id="height-value" class="amount">-</div>
-        <Button id="height-up" class="stepper" size="sm" variant="secondary">+</Button>
-        <Button id="height-own" class="own" size="sm" variant="secondary">Eye point</Button>
+      <div id="page-sights" class="page" style="display: none">
+        <div class="section">
+          <div class="setting">
+            <div class="label">Gunsight</div>
+            <div class="choices">
+              <Button id="menu-sight-go" class="choice" size="sm" variant="secondary">Go to it</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Lay on</div>
+            <div class="choices">
+              <Button id="menu-sight-lay-ahead" class="choice" size="sm" variant="secondary">Ahead</Button>
+              <Button id="menu-sight-lay-0" class="choice" size="sm" variant="secondary">100 m</Button>
+              <Button id="menu-sight-lay-1" class="choice" size="sm" variant="secondary">250 m</Button>
+              <Button id="menu-sight-lay-2" class="choice" size="sm" variant="secondary">500 m</Button>
+            </div>
+          </div>
+          <div id="menu-sight-status" class="hint">Lean in to the eyepiece to look</div>
+          <div class="setting">
+            <div class="label">Sight render</div>
+            <div class="choices">
+              <Button id="menu-sight-draw" class="choice" size="sm" variant="secondary">Draw: near</Button>
+              <Button id="menu-sight-size" class="choice" size="sm" variant="secondary">512 px</Button>
+              <Button id="menu-sight-eye" class="choice" size="sm" variant="secondary">Both eyes</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Periscope</div>
+            <div class="choices">
+              <Button id="menu-periscope-go" class="choice" size="sm" variant="secondary">Go to it</Button>
+              <Button id="menu-periscope-ahead" class="choice" size="sm" variant="secondary">Ahead</Button>
+              <Button id="menu-periscope-power" class="choice" size="sm" variant="secondary">Power 2x</Button>
+            </div>
+          </div>
+          <div id="menu-periscope-status" class="hint">Lean in to the window to look; turn it with both handles</div>
+        </div>
       </div>
-    </div>
-    <div class="setting">
-      <div class="label">Seat</div>
-      <div class="choices">
-        <Button id="menu-reseat" class="choice" size="sm" variant="secondary">Back in my seat</Button>
-        <Button id="menu-swap" class="choice" size="sm" variant="secondary">Swap seats</Button>
-      </div>
-    </div>
-    <div class="setting">
-      <div class="label">Calibration</div>
-      <div class="choices">
-        <Button id="menu-calibrate" class="choice" size="sm" variant="secondary">Calibrate again</Button>
-      </div>
-    </div>
-    <div id="menu-calib-status" class="hint">Not calibrated yet.</div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">COMFORT AND STATS</div>
-    <div id="row-vignette" class="setting">
-      <div id="row-vignette-label" class="label">Setting</div>
-      <div id="row-vignette-choices" class="choices">
-        <Button id="row-vignette-0" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-vignette-1" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-vignette-2" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-vignette-3" class="choice" size="sm" variant="secondary">Choice</Button>
-      </div>
-    </div>
-    <div id="row-bumps" class="setting">
-      <div id="row-bumps-label" class="label">Setting</div>
-      <div id="row-bumps-choices" class="choices">
-        <Button id="row-bumps-0" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-bumps-1" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-bumps-2" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-bumps-3" class="choice" size="sm" variant="secondary">Choice</Button>
-      </div>
-    </div>
-    <div class="setting">
-      <div class="label">How I feel</div>
-      <div class="choices">
-        <Button id="menu-queasy" class="choice" size="sm" variant="secondary">I feel queasy</Button>
-      </div>
-    </div>
-    <div class="setting">
-      <div class="label">Play-test stats</div>
-      <div class="choices">
-        <Button id="menu-stats-save" class="choice" size="sm" variant="secondary">Save CSV</Button>
-        <Button id="menu-stats-clear" class="choice" size="sm" variant="secondary">Clear</Button>
-      </div>
-    </div>
-    <div id="menu-stats-status" class="hint">No runs recorded yet: start a range run.</div>
-  </div>
-  <div class="section">
-    <div class="section-title">SOUND AND VIEW</div>
-    <div id="row-sound" class="setting">
-      <div id="row-sound-label" class="label">Setting</div>
-      <div id="row-sound-choices" class="choices">
-        <Button id="row-sound-0" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-sound-1" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-sound-2" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-sound-3" class="choice" size="sm" variant="secondary">Choice</Button>
-      </div>
-    </div>
-    <div id="row-hud" class="setting">
-      <div id="row-hud-label" class="label">Setting</div>
-      <div id="row-hud-choices" class="choices">
-        <Button id="row-hud-0" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-hud-1" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-hud-2" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-hud-3" class="choice" size="sm" variant="secondary">Choice</Button>
-      </div>
-    </div>
-    <div id="row-hz" class="setting">
-      <div id="row-hz-label" class="label">Setting</div>
-      <div id="row-hz-choices" class="choices">
-        <Button id="row-hz-0" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-hz-1" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-hz-2" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-hz-3" class="choice" size="sm" variant="secondary">Choice</Button>
-      </div>
-    </div>
-    <div id="row-fog" class="setting">
-      <div id="row-fog-label" class="label">Setting</div>
-      <div id="row-fog-choices" class="choices">
-        <Button id="row-fog-0" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-fog-1" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-fog-2" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-fog-3" class="choice" size="sm" variant="secondary">Choice</Button>
-      </div>
-    </div>
-    <div id="row-foveation" class="setting">
-      <div id="row-foveation-label" class="label">Setting</div>
-      <div id="row-foveation-choices" class="choices">
-        <Button id="row-foveation-0" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-foveation-1" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-foveation-2" class="choice" size="sm" variant="secondary">Choice</Button>
-        <Button id="row-foveation-3" class="choice" size="sm" variant="secondary">Choice</Button>
-      </div>
-    </div>
-  </div>
-  <div id="menu-drive" class="section">
-    <div class="section-title">DRIVING</div>
-    <div id="menu-drive-status" class="hint">Driving</div>
-    <div id="row-gear" class="setting">
-      <div id="row-gear-label" class="label">Gear lever</div>
-      <div class="choices">
-        <Button id="row-gear-0" class="choice" size="sm" variant="secondary">Neutral</Button>
-        <Button id="row-gear-1" class="choice" size="sm" variant="secondary">Low</Button>
-        <Button id="row-gear-2" class="choice" size="sm" variant="secondary">High</Button>
-      </div>
-    </div>
-  </div>
-  <div id="menu-range" class="section">
-    <div class="section-title">RANGE</div>
-    <div id="menu-range-status" class="hint">The range</div>
-  </div>
-  <div id="menu-ride" class="section" style="display: none">
-    <div class="section-title">RIDING (SPIKE S2)</div>
-    <div id="menu-ride-status" class="hint">Riding</div>
-    <div id="row-ride-vignette" class="setting">
-      <div id="row-ride-vignette-label" class="label">Vignette</div>
-      <div class="choices">
-        <Button id="row-ride-vignette-0" class="choice" size="sm" variant="secondary">On</Button>
-        <Button id="row-ride-vignette-1" class="choice" size="sm" variant="secondary">Off</Button>
-      </div>
-    </div>
-    <div id="row-ride-cabin" class="setting">
-      <div id="row-ride-cabin-label" class="label">Cabin</div>
-      <div class="choices">
-        <Button id="row-ride-cabin-0" class="choice" size="sm" variant="secondary">Open top</Button>
-        <Button id="row-ride-cabin-1" class="choice" size="sm" variant="secondary">Closed</Button>
-      </div>
-    </div>
-    <div id="row-ride-tank" class="setting">
-      <div id="row-ride-tank-label" class="label">Driven by</div>
-      <div class="choices">
-        <Button id="row-ride-tank-0" class="choice" size="sm" variant="secondary">Crewmate</Button>
-        <Button id="row-ride-tank-1" class="choice" size="sm" variant="secondary">Left stick</Button>
-        <Button id="row-ride-tank-2" class="choice" size="sm" variant="secondary">Parked</Button>
-      </div>
-    </div>
-    <div id="row-ride-turret" class="setting">
-      <div id="row-ride-turret-label" class="label">Turret</div>
-      <div class="choices">
-        <Button id="row-ride-turret-0" class="choice" size="sm" variant="secondary">Crewmate</Button>
-        <Button id="row-ride-turret-1" class="choice" size="sm" variant="secondary">Right stick</Button>
-        <Button id="row-ride-turret-2" class="choice" size="sm" variant="secondary">Still</Button>
-      </div>
-    </div>
-  </div>
-  <div class="section">
-    <div class="section-title">PRACTICE</div>
-    <div id="row-seat" class="setting">
-      <div id="row-seat-label" class="label">Sit in</div>
-      <div id="row-seat-choices" class="choices">
-        <Button id="row-seat-0" class="choice" size="sm" variant="secondary">Driver</Button>
-        <Button id="row-seat-1" class="choice" size="sm" variant="secondary">Gunner</Button>
-      </div>
-    </div>
-    <div class="setting">
-      <div class="label">Drive the tank</div>
-      <div class="choices">
-        <Button id="menu-drive-go" class="choice" size="sm" variant="secondary">Drive</Button>
-        <Button id="menu-drive-reset" class="choice" size="sm" variant="secondary">Back to start</Button>
-      </div>
-    </div>
-    <div class="setting">
-      <div class="label">Lay the gun</div>
-      <div class="choices">
-        <Button id="menu-turret-go" class="choice" size="sm" variant="secondary">Gunner</Button>
-        <Button id="menu-turret-forward" class="choice" size="sm" variant="secondary">Forward</Button>
-      </div>
-    </div>
-    <div id="menu-turret-status" class="hint">Turret</div>
-    <div class="setting">
-      <div class="label">Load and fire</div>
-      <div class="choices">
-        <Button id="menu-loading" class="choice" size="sm" variant="secondary">Gunner</Button>
-      </div>
-    </div>
-    <div id="menu-loading-status" class="hint">Loading</div>
-    <div class="setting">
-      <div class="label">Tank sounds</div>
-      <div class="choices">
-        <Button id="menu-audio-play" class="choice" size="sm" variant="secondary">Play each</Button>
-      </div>
-    </div>
-    <div id="menu-audio-status" class="hint">Sound</div>
-    <div class="setting">
-      <div class="label">Test range</div>
-      <div class="choices">
-        <Button id="menu-range-up" class="choice" size="sm" variant="secondary">Up the range</Button>
-      </div>
-    </div>
-    <div class="setting">
-      <div class="label">Range run</div>
-      <div class="choices">
-        <Button id="menu-run-start" class="choice" size="sm" variant="secondary">Start</Button>
-        <Button id="menu-run-stop" class="choice" size="sm" variant="secondary">Stop</Button>
-      </div>
-    </div>
-    <div class="setting">
-      <div class="label">Ready to fire</div>
-      <div class="choices">
-        <Button id="menu-ready-0" class="choice" size="sm" variant="secondary">100 m</Button>
-        <Button id="menu-ready-1" class="choice" size="sm" variant="secondary">250 m</Button>
-        <Button id="menu-ready-2" class="choice" size="sm" variant="secondary">500 m</Button>
-      </div>
-    </div>
-    <div id="menu-run-status" class="hint">Range run</div>
-    <div class="setting">
-      <div class="label">Ride the tank</div>
-      <div class="choices">
-        <Button id="menu-ride-driver" class="choice" size="sm" variant="secondary">As driver</Button>
-        <Button id="menu-ride-gunner" class="choice" size="sm" variant="secondary">As gunner</Button>
-        <Button id="menu-ride-stop" class="choice" size="sm" variant="secondary" style="display: none">Stop</Button>
-      </div>
-    </div>
-    <div class="setting">
-      <div class="label">Gunsight</div>
-      <div class="choices">
-        <Button id="menu-sight-go" class="choice" size="sm" variant="secondary">Go to it</Button>
-      </div>
-    </div>
-    <div class="setting">
-      <div class="label">Lay on</div>
-      <div class="choices">
-        <Button id="menu-sight-lay-ahead" class="choice" size="sm" variant="secondary">Ahead</Button>
-        <Button id="menu-sight-lay-0" class="choice" size="sm" variant="secondary">100 m</Button>
-        <Button id="menu-sight-lay-1" class="choice" size="sm" variant="secondary">250 m</Button>
-        <Button id="menu-sight-lay-2" class="choice" size="sm" variant="secondary">500 m</Button>
-      </div>
-    </div>
-    <div id="menu-sight-status" class="hint">Lean in to the eyepiece to look</div>
-    <div class="setting">
-      <div class="label">Sight render</div>
-      <div class="choices">
-        <Button id="menu-sight-draw" class="choice" size="sm" variant="secondary">Draw: near</Button>
-        <Button id="menu-sight-size" class="choice" size="sm" variant="secondary">512²</Button>
-        <Button id="menu-sight-eye" class="choice" size="sm" variant="secondary">Both eyes</Button>
-      </div>
-    </div>
-    <div class="setting">
-      <div class="label">Periscope</div>
-      <div class="choices">
-        <Button id="menu-periscope-go" class="choice" size="sm" variant="secondary">Go to it</Button>
-        <Button id="menu-periscope-ahead" class="choice" size="sm" variant="secondary">Ahead</Button>
-        <Button id="menu-periscope-power" class="choice" size="sm" variant="secondary">Power 2×</Button>
-      </div>
-    </div>
-    <div id="menu-periscope-status" class="hint">Lean in to the window to look; turn it with both handles</div>
-    <div class="setting">
-      <div class="label">Lever test</div>
-      <div class="choices">
-        <Button id="menu-levers" class="choice" size="sm" variant="secondary">In front of me</Button>
-        <Button id="menu-levers-away" class="choice" size="sm" variant="secondary">Put away</Button>
-      </div>
-    </div>
-    <div class="setting">
-      <div class="label">Mechanism kit</div>
-      <div class="choices">
-        <Button id="menu-bench" class="choice" size="sm" variant="secondary">In front of me</Button>
-        <Button id="menu-bench-away" class="choice" size="sm" variant="secondary">Put away</Button>
+      <div id="page-rigs" class="page" style="display: none">
+        <div class="section">
+          <div class="setting">
+            <div class="label">Ride the tank</div>
+            <div class="choices">
+              <Button id="menu-ride-driver" class="choice" size="sm" variant="secondary">As driver</Button>
+              <Button id="menu-ride-gunner" class="choice" size="sm" variant="secondary">As gunner</Button>
+              <Button id="menu-ride-stop" class="choice" size="sm" variant="secondary" style="display: none">Stop</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Lever test</div>
+            <div class="choices">
+              <Button id="menu-levers" class="choice" size="sm" variant="secondary">In front of me</Button>
+              <Button id="menu-levers-away" class="choice" size="sm" variant="secondary">Put away</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Mechanism kit</div>
+            <div class="choices">
+              <Button id="menu-bench" class="choice" size="sm" variant="secondary">In front of me</Button>
+              <Button id="menu-bench-away" class="choice" size="sm" variant="secondary">Put away</Button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

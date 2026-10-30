@@ -6,7 +6,7 @@ The question from [the plan](../plan.md#5-risks-and-spikes): does a hand-followi
 
 ## What the player gets
 
-**Practice > Lever test > In front of me** in the game menu (Y on the left controller) puts a test rig in front of the player, facing the way they face: two tank tillers coming up out of a housing on a post, and a board above them showing a winding lane from above with a tank on it. **Put away** hides it. Pressing **In front of me** again moves the rig to where the player is now and starts the lane afresh.
+**Test rigs > Lever test > In front of me** in the game menu (Y on the left controller) puts a test rig in front of the player, facing the way they face: two tank tillers coming up out of a housing on a post, and a board above them showing a winding lane from above with a tank on it. **Put away** hides it. Pressing **In front of me** again moves the rig to where the player is now and starts the lane afresh.
 
 - **Take hold** of a tiller by squeezing the grip with the fist within 10 cm of its handle (with tracked hands, a fist or a pinch, as for everything else). The glove closes on the handle (grip locking, [hands.md](../hands.md)) and the controller gives a short buzz.
 - **Push and pull.** The tiller follows the hand round its pivot. Only the hand's movement in the tiller's swing matters; moving sideways or up and down along the handle doesn't move it. It never jumps on taking hold, wherever on the handle the hand closes.
@@ -52,7 +52,7 @@ Departures from the building skill, because this is a one-player spike: no pract
 | --- | --- |
 | Unit tests (`test/lever.test.ts`, 14) | Hand angle round the pivot; no jump on taking hold; follows the hand; stops at both limits with the overshoot measured and one tick per hit (felt again after backing off); ignores sideways movement and distance from the pivot; a tick at the middle; holds for a lost hand; springs back; drive demand with its deadband; tracked-hand jitter steadied without lag; handles in seated reach at every angle; the lane's distance measure, straight driving, turning, turning on the spot, a simple steering rule finishing the 105 m lane in 24 s without leaving it, and time off the lane counted |
 | Z-fighting (`test/z-fighting.test.ts`) | The rig with its tillers upright and at both limits: no faces sharing a plane |
-| Emulated headset, controller (`npm run test:xr`, step 5b) | Practice > Lever test puts the handles 0.99 m up and 0.42 m ahead for a standing 1.6 m head. Squeezing at the handle takes hold, the glove closed on it. A 15 cm push turns the tiller 23.8°. Pushed 32 cm, it stops at 25° with one limit tick while the hand is 20° past, the drawn fist still on the handle (0.0 cm off). Pulled 45 cm off, the hand lets go and the tiller is back upright within the check's polling. Both tillers forwards drive the tank 6.2 m straight up the lane in 1.6 s |
+| Emulated headset, controller (`npm run test:xr`, step 5b) | Test rigs > Lever test puts the handles 0.99 m up and 0.42 m ahead for a standing 1.6 m head. Squeezing at the handle takes hold, the glove closed on it. A 15 cm push turns the tiller 23.8°. Pushed 32 cm, it stops at 25° with one limit tick while the hand is 20° past, the drawn fist still on the handle (0.0 cm off). Pulled 45 cm off, the hand lets go and the tiller is back upright within the check's polling. Both tillers forwards drive the tank 6.2 m straight up the lane in 1.6 s |
 | Emulated headset, tracked hand pinching (step 6b) | A pinch at the handle takes hold; moving the hand 12 cm forwards turns the tiller 16.4°; letting go of the pinch lets go |
 
 ## Questions for the headset
@@ -67,11 +67,11 @@ Departures from the building skill, because this is a one-player spike: no pract
 
 After the deploy, open the game in the headset with the cache cleared (Ctrl+Shift+R on a PC page; on Quest, close and reopen the tab). Note the wrist HUD (X on the left controller): its buzz line says whether the controllers can buzz.
 
-1. **Practice.** Play solo, open the game menu (Y), and press **Practice > Lever test > In front of me**. Two tillers and a board appear in front of you. Sit down and press it again: they move to suit you.
+1. **Practice.** Play solo, open the game menu (Y), and press **Test rigs > Lever test > In front of me**. Two tillers and a board appear in front of you. Sit down and press it again: they move to suit you.
 2. **One tiller.** Squeeze the grip on the right tiller's handle. Your glove should close on it with a buzz. Push it forwards and pull it back slowly: it should follow your hand exactly, with a tick as it passes upright.
 3. **Limits.** Push it as far forwards as it goes and keep pushing: it stops with a firm tick, your glove stays on the handle, and a light buzz grows the further you push. Keep going: about 25 cm past, your hand lets go and the tiller springs upright.
 4. **The lane.** Take both tillers and drive the tank on the board from the start line to the finish line: both forwards to go, one ahead of the other to turn. Note your time and time off the lane on your first try and after a few minutes (the board keeps your best). Pass: you can drive the lane cleanly within a few minutes.
 5. **Tracked hands.** Put the controllers down and repeat 2 to 4 with your hands, gripping with a fist or a pinch. The tiller should hold still while your hand does, and not lag a deliberate push.
-6. **Put away.** Press **Practice > Lever test > Put away**: the rig goes.
+6. **Put away.** Press **Test rigs > Lever test > Put away**: the rig goes.
 
 Report the board's times from step 4, and an answer to each question above.

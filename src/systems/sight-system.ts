@@ -115,7 +115,7 @@ export const SIGHT_BUTTONS: readonly PracticeButton[] = [
     label: () => ({ auto: 'Draw: near', always: 'Draw: always', off: 'Draw: off' })[sightStats.mode],
     press: () => active?.setMode(next(DRAW_MODES, sightStats.mode)),
   },
-  { id: 'menu-sight-size', label: () => `${sightStats.size}²`, press: () => active?.setSize(next(SIGHT_SIZES, sightStats.size)) },
+  { id: 'menu-sight-size', label: () => `${sightStats.size} px`, press: () => active?.setSize(next(SIGHT_SIZES, sightStats.size)) },
   {
     id: 'menu-sight-eye',
     label: () => ({ both: 'Both eyes', left: 'Left eye', right: 'Right eye' })[sightStats.eye],
