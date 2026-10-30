@@ -23,6 +23,7 @@ import {
   HULL,
   SEATS,
   TURRET,
+  TURRET_RING,
   VISION_SLIT,
 } from '../sim/cabin.js';
 import { MANTLET_DEPTH, POWER_GRIP, STATION, TRUNNION } from '../sim/turret.js';
@@ -50,6 +51,8 @@ import { litInside } from './cabin-light.js';
 const PAINT = 0x8f8a5c;
 const PAINT_DARK = 0x6f6b47;
 const IVORY = 0xe6dcc0;
+/** A rib or casting on an ivory plate, a shade darker so it reads. */
+const IVORY_SHADE = 0xcfc5a8;
 const FLOOR = 0x55534c;
 const BASKET = 0x6a6860;
 const STEEL = 0x3c3d3f;
@@ -117,8 +120,10 @@ function rectangle(path: Path, x0: number, z0: number, x1: number, z1: number): 
   return path;
 }
 
-/** The gunner's hatch in the turret roof, in turret space, over their seat (x0, z0, x1, z1), m. */
-const GUNNER_HATCH = [SEATS.gunner.eye[0] - 0.27, SEATS.gunner.eye[2] - 0.17, SEATS.gunner.eye[0] + 0.27, SEATS.gunner.eye[2] + 0.37] as const;
+/** The gunner's round hatch in the turret roof, turret space, over their seat: its middle's x and z and its radius, m (src/sim/interior.ts's GUNNER_HATCH_MIDDLE). */
+const GUNNER_HATCH = { x: SEATS.gunner.eye[0], z: SEATS.gunner.eye[2] + 0.1, radius: 0.27 } as const;
+/** The cast turret's rounding inside: how far the chamfers along the roof's edges and down its corners reach across each face, m. */
+const TURRET_FILLET = 0.12;
 /** How high a hatch lid stands when open, m. */
 const LID = 0.5;
 
@@ -359,6 +364,58 @@ function turretDetailParts(): Part[] {
   return parts;
 }
 
+/**
+ * What makes the turret's inside read as a cast Sherman turret's rather than
+ * a box, turret space: chamfers along the roof's four edges and down the
+ * four corners, a collar round the hatch, the ventilator's housing in the
+ * roof over the loader's side and a rib across the roof behind the hatch.
+ */
+function turretRoofParts(): Part[] {
+  const parts: Part[] = [];
+  const inner = TURRET.halfWidth - HULL.wall;
+  const f = TURRET_FILLET;
+  const thick = 0.03;
+  // The roof's edges: a plate at 45° across each top corner, its face f in from the wall and down from the roof.
+  const across = f * Math.SQRT2;
+  const mid = inner - f / 2 + thick / (2 * Math.SQRT2);
+  const midY = TURRET.roof - f / 2 + thick / (2 * Math.SQRT2);
+  // Their ends sink into the walls.
+  const length = 2 * inner + 0.04;
+  for (const side of [-1, 1]) {
+    parts.push({ geometry: new BoxGeometry(thick, across, length), color: IVORY, position: [side * mid, midY, 0], rotation: [0, 0, side * (Math.PI / 4)] });
+    parts.push({ geometry: new BoxGeometry(length, across, thick), color: IVORY, position: [0, midY, side * mid], rotation: [-side * (Math.PI / 4), 0, 0] });
+  }
+  // The corners, from just above the walls' foot up to the roof's chamfers.
+  const bottom = HULL.roof + HULL.wall + 0.02;
+  const height = TURRET.roof - f / 2 - bottom;
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      parts.push({
+        geometry: new BoxGeometry(across, height, thick),
+        color: IVORY,
+        position: [sx * mid, bottom + height / 2, sz * mid],
+        rotation: [0, sx * sz * (Math.PI / 4), 0],
+      });
+    }
+  }
+  // A collar round the hatch, under the roof.
+  const h = GUNNER_HATCH;
+  const collar = new TorusGeometry(h.radius + 0.03, 0.03, 4, 20);
+  collar.rotateX(Math.PI / 2);
+  collar.scale(1, 0.7, 1);
+  parts.push({ geometry: collar, color: STEEL_LIGHT, position: [h.x, TURRET.roof - 0.015, h.z] });
+  // The ventilator's round housing over the loader's side, with a grille of bars under it.
+  const vent = { x: -0.5, z: -0.5, radius: 0.12, depth: 0.08 };
+  parts.push({ geometry: new CylinderGeometry(vent.radius, vent.radius, vent.depth, 14, 1), color: STEEL, position: [vent.x, TURRET.roof - vent.depth / 2, vent.z] });
+  for (let i = -2; i <= 2; i++) {
+    const half = Math.sqrt(vent.radius * vent.radius - (i * 0.045) ** 2) - 0.01;
+    parts.push(box([2 * half, 0.012, 0.014], [vent.x, TURRET.roof - vent.depth - 0.012, vent.z + i * 0.045], STEEL_LIGHT));
+  }
+  // A rib across the roof behind the hatch and the dome lamp, between the chamfers, its top sunk into the roof.
+  parts.push(box([2 * (inner - f), 0.045, 0.06], [0, TURRET.roof - 0.0125, 0.72], IVORY_SHADE));
+  return parts;
+}
+
 /** The dome lamps' glowing lenses, each just under its housing, in the frame `frame` (a separate mesh: they glow). */
 function createLampLenses(frame: 'hull' | 'turret'): Mesh {
   const parts: Part[] = DOME_LAMPS.filter((l) => l.frame === frame).map((l): Part => ({
@@ -388,16 +445,22 @@ function turretParts(): Part[] {
     plate([2 * (w - t), height, t], [0, midY, TURRET.rear - t / 2], inside),
   ];
   const outline = rectangle(new Shape(), -w, TURRET.front, w, TURRET.rear) as Shape;
-  const [hx0, hz0, hx1, hz1] = GUNNER_HATCH;
-  outline.holes.push(rectangle(new Path(), hx0, hz1, hx1, hz0));
+  const h = GUNNER_HATCH;
+  outline.holes.push(new Path().absarc(h.x, h.z, h.radius, 0, Math.PI * 2, true));
   parts.push(roof(outline, top, t));
-  parts.push(box([hx1 - hx0, LID, 0.05], [(hx0 + hx1) / 2, top + LID / 2, hz1 + 0.03], PAINT_DARK));
+  // The round lid, standing open behind the hole.
+  const lid = new CylinderGeometry(h.radius + 0.02, h.radius + 0.02, 0.05, 16, 1);
+  lid.rotateX(Math.PI / 2);
+  parts.push({ geometry: lid, color: PAINT_DARK, position: [h.x, top + h.radius + 0.02, h.z + h.radius + 0.06] });
+  // The cast turret's inside, rounded rather than a box (docs/interior.md).
+  parts.push(...turretRoofParts());
   // The ring the turret turns on.
   // The ring the turret turns on, flattened, with the basket's posts hanging from it.
-  const ringTop = bottom - 0.02;
-  const ring = new TorusGeometry(0.9, 0.07, 4, 24);
+  // Narrow, at the hole's edge, so the gunner's crank and hands turn inside it.
+  const ringTop = TURRET_RING.y;
+  const ring = new TorusGeometry(TURRET_RING.radius, TURRET_RING.tube, 4, 24);
   ring.rotateX(Math.PI / 2);
-  ring.scale(1, 0.5, 1);
+  ring.scale(1, TURRET_RING.halfHeight / TURRET_RING.tube, 1);
   parts.push({ geometry: ring, color: STEEL, position: [0, ringTop, 0] });
 
   // The gun is its own mesh, so it can elevate (createGun).

@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   GUN,
   headDrop,
+  HEAD_FADE_DEPTH,
+  headFade,
   headFix,
   HULL,
   hullToSeat,
@@ -95,6 +97,16 @@ describe('the cabin', () => {
 });
 
 describe('keeping the head in the seat', () => {
+  it('fades the view over a few centimetres past the edge, and never pushes the seat', () => {
+    expect(headFade(0)).toBe(0);
+    expect(headFade(-0.1)).toBe(0);
+    expect(headFade(HEAD_FADE_DEPTH / 2)).toBeCloseTo(0.5, 9);
+    expect(headFade(HEAD_FADE_DEPTH)).toBe(1);
+    expect(headFade(1)).toBe(1);
+    // Black well before a head is far enough out to count as a recentre.
+    expect(HEAD_FADE_DEPTH).toBeLessThan(RESEAT_DISTANCE / 2);
+  });
+
   const out: [number, number] = [0, 0];
 
   it('leaves a head inside the box alone', () => {
@@ -105,37 +117,37 @@ describe('keeping the head in the seat', () => {
     }
   });
 
-  it('stops a head leaning past the edge at the edge', () => {
+  it('says how far a head leaning past the edge is out, back to the edge', () => {
     const seat = SEATS.driver;
     const forward = seat.eye[2] - seat.headBox[2];
     const head = [seat.eye[0], seat.eye[1], forward - 0.1];
-    expect(headFix(seat, 0, head, out)).toBe('push');
+    expect(headFix(seat, 0, head, out)).toBe('fade');
     expect(out[0]).toBeCloseTo(0, 9);
     expect(out[1]).toBeCloseTo(0.1, 9);
     // Diagonally past a corner: back to the corner.
     const left = seat.eye[0] - seat.headBox[0];
-    expect(headFix(seat, 0, [left - 0.05, 1.4, forward - 0.05], out)).toBe('push');
+    expect(headFix(seat, 0, [left - 0.05, 1.4, forward - 0.05], out)).toBe('fade');
     expect(out[0]).toBeCloseTo(0.05, 9);
     expect(out[1]).toBeCloseTo(0.05, 9);
   });
 
-  it('pushes the gunner\'s head back the right way with the turret turned', () => {
+  it('measures the gunner\'s head back the right way with the turret turned', () => {
     const seat = SEATS.gunner;
     const yaw = Math.PI / 2;
     // 0.1 m past the box's front edge, in turret space.
     const local = [seat.eye[0], seat.eye[1], seat.eye[2] - seat.headBox[2] - 0.1];
     const head = seatToHull(seat, yaw, local, v3());
-    expect(headFix(seat, yaw, head, out)).toBe('push');
+    expect(headFix(seat, yaw, head, out)).toBe('fade');
     const fixed = seatToHull(seat, yaw, [local[0], local[1], local[2] + 0.1], v3());
     expect(head[0] + out[0]).toBeCloseTo(fixed[0], 9);
     expect(head[2] + out[1]).toBeCloseTo(fixed[2], 9);
   });
 
-  it('puts the player back in the seat when the head is far outside (a recentre)', () => {
+  it('tells a head far outside the box (a recentre) from one leant past the edge', () => {
     const seat = SEATS.driver;
     expect(headFix(seat, 0, [0, 1.6, 0], out)).toBe('reseat');
     const edge = seat.eye[0] + seat.headBox[1];
-    expect(headFix(seat, 0, [edge + RESEAT_DISTANCE - 0.01, 1.4, seat.eye[2]], out)).toBe('push');
+    expect(headFix(seat, 0, [edge + RESEAT_DISTANCE - 0.01, 1.4, seat.eye[2]], out)).toBe('fade');
     expect(headFix(seat, 0, [edge + RESEAT_DISTANCE + 0.01, 1.4, seat.eye[2]], out)).toBe('reseat');
   });
 });

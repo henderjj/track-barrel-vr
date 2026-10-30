@@ -84,6 +84,14 @@ export const TURRET = {
   roof: 2.75,
 } as const;
 
+/**
+ * The race ring the turret turns on, round the hole in the hull roof, turret
+ * space: its middle's height and radius, its tube's radius across and its
+ * half-height, m. Its inner edge is 87 cm from the middle, so the gunner's
+ * crank and the hand on it turn inside it (docs/interior.md).
+ */
+export const TURRET_RING = { y: HULL.roof + HULL.wall - 0.02, radius: 0.91, tube: 0.04, halfHeight: 0.035 } as const;
+
 /** The gun, in turret space: its axis's height, its breech beside the gunner, and its barrel, m. */
 export const GUN = {
   y: 2.05,
@@ -263,23 +271,44 @@ export function hullToSeat(seat: Seat, turretYaw: number, p: readonly number[], 
   return out;
 }
 
-/** Beyond the head box by more than this, the player is put back in the seat rather than stopped at its edge, m. */
+/**
+ * Beyond the head box by more than this, the head is far outside: a jump this
+ * far in one frame (the headset recentred) or a head kept out here for
+ * `RESEAT_AFTER` (the player stood up and walked) puts them back in the seat, m.
+ */
 export const RESEAT_DISTANCE = 0.3;
+/** How long a head stays far outside the box before the player is put back in the seat, s. */
+export const RESEAT_AFTER = 2;
+/** A head that moves this far in one frame has jumped (the headset recentred), m. */
+export const HEAD_JUMP = 0.2;
+/** How far past the head box's edge, or over the roof stop, the view has faded to black, m. */
+export const HEAD_FADE_DEPTH = 0.08;
 
-/** What to do about the head this frame: nothing, stop it at the box's edge, or put the player back in the seat. */
-export type HeadFix = 'inside' | 'push' | 'reseat';
+/**
+ * How dark the view is with the head `depth` m past the box's edge or the
+ * roof stop: 0 at the edge, 1 (black) from `HEAD_FADE_DEPTH`, easing in.
+ */
+export function headFade(depth: number): number {
+  const t = Math.min(1, Math.max(0, depth / HEAD_FADE_DEPTH));
+  return t * t * (3 - 2 * t);
+}
+
+/** Where the head is: inside its box, past the edge (the view fades), or far outside. */
+export type HeadFix = 'inside' | 'fade' | 'reseat';
 
 /**
  * Keeping the head in the seat's box. `head` is the head's hull-space
  * position (only x and z are used). Writes to `out` the hull-space x and z
- * the play space must move by to bring the head back to the box's edge,
- * and says what to do:
+ * from the head back to the box's edge (its length is how far out the head
+ * is), and says where the head is:
  *
- * - 'inside': nothing (out is [0, 0]);
- * - 'push': the head leant past the edge, so the play space moves back by
- *   `out` and the head stays at the edge, as if it met the wall;
+ * - 'inside': nothing to do (out is [0, 0]);
+ * - 'fade': the head leant past the edge, into the walls, the breech or the
+ *   controls, so the view fades (`headFade`); the seat stays where the
+ *   player calibrated it, and leaning back clears the view;
  * - 'reseat': the head is far outside (the player recentred the headset,
- *   or stood up and walked), so put them back in the seat (`placeInSeat`).
+ *   or stood up and walked); after a jump or `RESEAT_AFTER` out there, put
+ *   them back in the seat (`placeInSeat`).
  */
 export function headFix(seat: Seat, turretYaw: number, head: readonly number[], out: [number, number]): HeadFix {
   const local = hullToSeat(seat, turretYaw, head, tmpLocal);
@@ -304,14 +333,15 @@ export function headFix(seat: Seat, turretYaw: number, head: readonly number[], 
   const s = Math.sin(yaw);
   out[0] = dx * c + dz * s;
   out[1] = -dx * s + dz * c;
-  return 'push';
+  return 'fade';
 }
 const tmpLocal: [number, number, number] = [0, 0, 0];
 
 /**
- * How far to lower the play space (m, 0 or less) so a head at height
- * `headY` (hull space) stays under the seat's roof: the eyes stop
- * `seat.headUp` above the eye point, as if the head met the roof.
+ * How far over the seat's roof stop a head at height `headY` (hull space)
+ * is, as a drop (m, 0 or less): the eyes may rise `seat.headUp` above the
+ * eye point before the head meets the roof. Past it the view fades
+ * (`headFade` of the drop's size).
  */
 export function headDrop(seat: Seat, headY: number): number {
   return Math.min(0, seat.eye[1] + seat.headUp - headY);

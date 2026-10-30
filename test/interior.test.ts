@@ -39,22 +39,24 @@ describe('a Sherman-like front (docs/interior.md)', () => {
     expect(VISION_SLIT.y - VISION_SLIT.height / 2).toBeGreaterThan(GLACIS.hoodBottom + 0.04);
   });
 
-  it("brings what the driver looks through within a short lean, with their hands still on the tillers", () => {
+  it("brings what the driver looks through within a short lean, the tillers in easy reach from the seat", () => {
     const [ex, ey, ez] = SEATS.driver.eye;
     // The slit 30 cm ahead (it was 80), the periscope's window 15 cm ahead and 26 cm to the right.
     expect(ez - VISION_SLIT.z).toBeCloseTo(0.3, 6);
     expect(Math.hypot(LENS[0] - ex, LENS[2] - ez)).toBeLessThan(0.32);
-    // Leant in as far as the head goes, the tillers' handles are a forearm ahead and under the shoulders, at either end of their travel.
-    const leant: Vec3 = [ex, ey, ez - SEATS.driver.headBox[2]];
+    // From the seat, without leaning, the tillers' handles are where seated hands rest with the elbows bent, at
+    // either end of their travel: full forwards within a short reach of the shoulder (John's headset check).
     for (const id of ['tillerLeft', 'tillerRight'] as const) {
       const { spec } = DRIVER_CONTROLS[id];
       for (const angle of [spec.min, 0, spec.max]) {
         const h = tillerHandle(id, angle);
         const label = `${id} at ${(angle / DEG).toFixed(0)}°`;
-        expect(leant[2] - h[2], label).toBeGreaterThan(0.1);
-        expect(leant[2] - h[2], label).toBeLessThan(0.5);
-        expect(leant[1] - h[1], label).toBeGreaterThan(0.4);
-        expect(leant[1] - h[1], label).toBeLessThan(0.6);
+        expect(ez - h[2], label).toBeGreaterThan(0.15);
+        expect(ez - h[2], label).toBeLessThan(0.5);
+        expect(ey - h[1], label).toBeGreaterThan(0.35);
+        expect(ey - h[1], label).toBeLessThan(0.48);
+        const shoulder: Vec3 = [ex + (h[0] < ex ? -0.18 : 0.18), ey - 0.2, ez + 0.05];
+        expect(Math.hypot(h[0] - shoulder[0], h[1] - shoulder[1], h[2] - shoulder[2]), label).toBeLessThan(0.6);
       }
     }
   });
@@ -98,17 +100,18 @@ describe('the interior lighting (docs/interior.md)', () => {
     }
   });
 
-  it('darkens the inside: dim away from the hatches and lamps, darkest low down, brightest under an open hatch', () => {
+  it('darkens the inside: dark away from the hatches and lamps, darkest low down, the pool under an open hatch standing out', () => {
     const rearFloor = lit([0.8, 0.02, 1.8]);
     const rearWall = lit([0, 1.2, HULL.rear], [0, 0, -1]);
     expect(rearFloor).toBeLessThan(rearWall);
-    expect(rearWall).toBeLessThan(0.6);
-    // The driver's seat cushion, under their hatch, is lit well above the rear of the hull.
+    // About a tenth of the sky's light away from the pools (John's headset check: a quarter still read as bright).
+    expect(rearWall).toBeLessThan(0.15);
+    // The driver's seat cushion, under their hatch, is several times brighter than the rear of the hull.
     const cushion = SEATS.driver.cushion;
-    expect(lit([...cushion])).toBeGreaterThan(rearFloor + 0.15);
-    // Nowhere inside is black, nor brighter than the sky outside (beyond a little right under an open hatch).
+    expect(lit([...cushion])).toBeGreaterThan(4 * rearWall);
+    // Nowhere inside is quite black, nor brighter than the sky outside (beyond a little right under an open hatch).
     for (const p of [[0, 0.02, -2.3], [-0.5, 1.7, -1.5], [0.9, 1.0, 0.5], [0.4, 2.7, -0.1], [0, 2.0, 1.0]]) {
-      expect(lit(p)).toBeGreaterThan(0.2);
+      expect(lit(p)).toBeGreaterThan(0.03);
       expect(lit(p)).toBeLessThan(1.1);
     }
   });

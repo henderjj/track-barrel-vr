@@ -164,15 +164,18 @@ async function measureMotion(sender, receiver, seconds) {
         frame();
       }),
   );
+  // At least `seconds`, and on a slow runner (six or seven frames a second) on until there are enough frames to
+  // judge, up to three times as long: the checks need about 20 of them.
   const samples = await receiver.page.evaluate(
     (ms) =>
       new Promise((resolve) => {
         const out = [];
-        const end = performance.now() + ms;
+        const start = performance.now();
         const frame = () => {
           const p = window.__net.remotePose();
           if (p) out.push([p.head.px, p.head.pz, performance.now(), window.__net.remoteAtMs]);
-          if (performance.now() < end) requestAnimationFrame(frame);
+          const took = performance.now() - start;
+          if (took < ms || (out.length < 25 && took < ms * 3)) requestAnimationFrame(frame);
           else resolve(out);
         };
         frame();
@@ -352,7 +355,7 @@ async function driveChecks(host, guest, label) {
   // The driver's station (F1.5): the host's page draws the guest's tillers forwards.
   const hostSees = await waitFor('the host to draw the guest\'s tillers', async () => {
     const st = await host.page.evaluate(() => window.__driverStation.state());
-    return st.angles.tillerLeft > 20 && st.angles.tillerRight > 20 ? st : null;
+    return st.angles.tillerLeft > 15 && st.angles.tillerRight > 15 ? st : null;
   }, 5000).catch(() => null);
   check(`The host's page draws the guest driver's tillers where the guest pushed them (${label})`, hostSees !== null,
     hostSees ? `${hostSees.angles.tillerLeft.toFixed(1)}° and ${hostSees.angles.tillerRight.toFixed(1)}°` : JSON.stringify(await host.page.evaluate(() => window.__driverStation.state().angles)));
@@ -421,7 +424,7 @@ async function driveChecks(host, guest, label) {
       guest.page.evaluate(() => window.__driverStation.gauges()),
       tank(host),
     ]);
-    return st.angles.tillerLeft > 20 && st.angles.throttle > 35 && Math.abs(gauges.rpm - h.rpm) < 200 ? { st, gauges, h } : null;
+    return st.angles.tillerLeft > 15 && st.angles.throttle > 35 && Math.abs(gauges.rpm - h.rpm) < 200 ? { st, gauges, h } : null;
   }, 8000).catch(() => null);
   check(`The guest's page draws the host driver's tillers and throttle, and its gauges read the host's tank (${label})`, guestSees !== null,
     guestSees ? `tillers ${guestSees.st.angles.tillerLeft.toFixed(1)}°, throttle ${guestSees.st.angles.throttle.toFixed(1)}°, ${guestSees.gauges.rpm.toFixed(0)} rpm for the host's ${guestSees.h.rpm.toFixed(0)}`

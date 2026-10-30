@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rigOffset, targetEyeHeight } from '../src/sim/body-height.js';
-import { frontAt, HULL, SEATS, VISION_SLIT } from '../src/sim/cabin.js';
+import { frontAt, GLACIS, HULL, SEATS, VISION_SLIT } from '../src/sim/cabin.js';
 import {
   DIALS,
   dialCentre,
@@ -21,7 +21,7 @@ import {
   throttleOf,
   tillerAngle,
   TILLER_PEDESTAL,
-  TOP_ROW,
+  GEAR_PLATE,
 } from '../src/sim/driver-station.js';
 import { type HandInput, Lever, type Vec3 } from '../src/sim/mechanism.js';
 import {
@@ -205,33 +205,35 @@ describe('the driver\'s gauges (F1.5)', () => {
     expect(range('oil').max).toBeGreaterThanOrEqual(oilPressure(MAX_RPM, COOLANT_START));
   });
 
-  it("puts the instrument box on the left wall by the knee, as the M4A4's, inside the armour and clear of the head and the throttle", () => {
+  it('puts the instrument box in front of the driver, on the glacis between the tillers, clear of the hands', () => {
     const corners: Vec3[] = [];
     for (const sx of [-1, 1]) {
       for (const sy of [-1, 1]) {
-        for (const z of [0, -0.06]) corners.push(panelToHull([(sx * (PANEL.width + 0.03)) / 2, (sy * (PANEL.height + 0.03)) / 2, z], [0, 0, 0]));
+        corners.push(panelToHull([(sx * (PANEL.width + 0.03)) / 2, (sy * (PANEL.height + 0.03)) / 2, 0], [0, 0, 0]));
       }
     }
-    const [left, , forward, back] = SEATS.driver.headBox;
     for (const c of corners) {
-      // Inside the side wall (the box's back may sink into it) and behind the hood and glacis.
-      expect(c[0]).toBeGreaterThan(-HULL.halfWidth - HULL.wall / 2);
-      expect(c[2]).toBeGreaterThan(frontAt(c[1]) + 0.01);
-      // Left of and below the eyes; what is within 25 cm under them, a head's half-width clear of where the head can go.
-      expect(c[0]).toBeLessThan(EYE[0] - left);
-      if (EYE[1] - c[1] < 0.25) expect(c[0]).toBeLessThan(EYE[0] - left - 0.08);
-      expect(c[1]).toBeLessThan(EYE[1] - 0.12);
-      expect(c[2]).toBeLessThan(EYE[2] + back);
-      expect(c[2]).toBeGreaterThan(EYE[2] - forward - 0.3);
+      // Its face in front of the glacis (its box's back may sink into it), under the slit.
+      expect(c[2]).toBeGreaterThan(frontAt(c[1]) + 0.005);
+      expect(c[1]).toBeLessThan(VISION_SLIT.y - VISION_SLIT.height / 2 - 0.1);
+      // Between the tillers' handles with a fist's room (5 cm) either side, wherever they stand.
+      for (const id of ['tillerLeft', 'tillerRight'] as const) {
+        const { spec } = DRIVER_CONTROLS[id];
+        for (const angle of [spec.min, 0, spec.max]) {
+          expect(Math.abs(handleAt(id, angle)[0] - c[0]), `${id} at ${(angle / DEG).toFixed(0)}°`).toBeGreaterThan(0.05);
+        }
+      }
     }
-    // Over the hand throttle's handle, with a fist's room, wherever it stands.
-    for (const angle of [HAND_THROTTLE.min, HAND_THROTTLE.max]) {
-      const h = handleAt('throttle', angle);
-      const lowest = Math.min(...corners.filter((c) => Math.abs(c[2] - h[2]) < 0.15).map((c) => c[1]));
-      expect(lowest - h[1], `the throttle at ${(angle / DEG).toFixed(0)}°`).toBeGreaterThan(0.1);
-    }
-    // Its face turned towards the eyes: the eyes are in front of it.
+    // In front: its middle within 15° of straight ahead, a glance down of 25° to 45°, half a metre or so away.
     const middle = panelToHull([0, 0, 0], [0, 0, 0]);
+    expect(Math.abs(Math.atan2(middle[0] - EYE[0], EYE[2] - middle[2])) / DEG).toBeLessThan(15);
+    const down = Math.atan2(EYE[1] - middle[1], EYE[2] - middle[2]) / DEG;
+    expect(down).toBeGreaterThan(25);
+    expect(down).toBeLessThan(45);
+    const away = Math.hypot(middle[0] - EYE[0], middle[1] - EYE[1], middle[2] - EYE[2]);
+    expect(away).toBeGreaterThan(0.45);
+    expect(away).toBeLessThan(0.7);
+    // Its face turned towards the eyes: the eyes are in front of it.
     const out = panelToHull([0, 0, 1], [0, 0, 0]);
     const normal = [out[0] - middle[0], out[1] - middle[1], out[2] - middle[2]];
     const toEye = [EYE[0] - middle[0], EYE[1] - middle[1], EYE[2] - middle[2]];
@@ -241,7 +243,7 @@ describe('the driver\'s gauges (F1.5)', () => {
     // Each dial, and the gear plate in the bottom row's third place, on the face and apart.
     const places: [number, number][] = [];
     for (let i = 0; i < DIALS.length + 1; i++) {
-      dialCentre(i === DIALS.length ? TOP_ROW + 2 : i, at);
+      dialCentre(i === DIALS.length ? GEAR_PLATE : i, at);
       expect(Math.abs(at[0]) + PANEL.dialRadius).toBeLessThan(PANEL.width / 2);
       expect(Math.abs(at[1]) + PANEL.dialRadius).toBeLessThan(PANEL.height / 2);
       for (const p of places) expect(Math.hypot(at[0] - p[0], at[1] - p[1])).toBeGreaterThan(2 * PANEL.dialRadius + 0.005);

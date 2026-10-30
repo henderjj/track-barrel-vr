@@ -21,9 +21,11 @@ const DEG = Math.PI / 180;
 
 /**
  * A tiller: spike S3's, which players drove a lane with (docs/spikes/s3-lever-feel.md):
- * 45 cm, the top 12 cm the handle, 25° each way, springing back upright with a tick at the middle.
+ * 45 cm, the top 12 cm the handle, springing back upright with a tick at the middle. It
+ * swings 20° each way (S3's went 25°), so full forwards stays within a seated arm's reach
+ * (John's headset check, docs/interior.md).
  */
-export const DRIVER_TILLER: LeverSpec = TILLER;
+export const DRIVER_TILLER: LeverSpec = { ...TILLER, min: -20 * DEG, max: 20 * DEG };
 
 /**
  * The gear lever: 40 cm, the top 10 cm the handle, three notches 24° apart
@@ -65,8 +67,10 @@ export const HAND_THROTTLE: LeverSpec = {
 
 /** How far each tiller's pivot is to the side of the driver's eyes, m: outside the knees. */
 export const TILLER_SIDE = 0.21;
-/** How far each tiller's pivot is under the driver's eyes, m (spike S3's rig had it 1 m under them). */
-export const TILLER_DROP = 0.94;
+/** How far each tiller's pivot is under the driver's eyes, m (spike S3's rig had it 1 m under them): the handles 42 cm under the eyes. */
+export const TILLER_DROP = 0.81;
+/** How far each tiller's pivot is ahead of the driver's eyes, m: the handles 32 cm ahead upright, 45 cm pushed fully forwards and 19 cm pulled back. */
+export const TILLER_AHEAD = 0.32;
 
 /** The gearbox's hump beside the driver's legs: its sides, its top and its ends, hull space, m. */
 export const GEARBOX = { x0: -0.2, x1: 0.3, top: 0.45, z0: -2.4, z1: -1.1 } as const;
@@ -78,10 +82,10 @@ export const DRIVER_CONTROL_IDS: readonly DriverControlId[] = ['tillerLeft', 'ti
 export const DRIVER_CONTROLS: Readonly<Record<DriverControlId, { spec: LeverSpec; pivot: readonly [number, number, number] }>> = (() => {
   const [ex, ey, ez] = SEATS.driver.eye;
   return {
-    // A forearm ahead of the eyes, either side of the knees, the tops 49 cm under the eyes: 6 cm higher
-    // than spike S3's rig, so the hands stay on them with the eyes at the slit (docs/interior.md).
-    tillerLeft: { spec: DRIVER_TILLER, pivot: [ex - TILLER_SIDE, ey - TILLER_DROP, ez - 0.42] },
-    tillerRight: { spec: DRIVER_TILLER, pivot: [ex + TILLER_SIDE, ey - TILLER_DROP, ez - 0.42] },
+    // Either side of the knees, the handles where seated hands rest with the elbows bent: 42 cm under the
+    // eyes and 32 cm ahead, so full forwards needs no lean and the eyes stay at the slit (docs/interior.md).
+    tillerLeft: { spec: DRIVER_TILLER, pivot: [ex - TILLER_SIDE, ey - TILLER_DROP, ez - TILLER_AHEAD] },
+    tillerRight: { spec: DRIVER_TILLER, pivot: [ex + TILLER_SIDE, ey - TILLER_DROP, ez - TILLER_AHEAD] },
     // On the gearbox's hump at the driver's right knee.
     gear: { spec: GEAR_LEVER, pivot: [GEARBOX.x0 + 0.1, GEARBOX.top, ez - 0.35] },
     // On its quadrant against the left wall, by the driver's left knee, under the instrument box.
@@ -96,28 +100,29 @@ export const THROTTLE_QUADRANT = { halfWidth: 0.06, height: 0.1, depth: 0.2 } as
 export const TILLER_PEDESTAL = { halfWidth: 0.04, depth: 0.12, above: 0.03 } as const;
 
 /**
- * The instrument box: on the left wall beside the driver's knee, as the
- * M4A4's is (TM 9-754, figure 9), turned and tilted so its face looks at
- * the driver's eyes. Its face's middle (hull space) and size, m. Five dials
- * in two rows, three over two, and a plate in the bottom row's third place
- * saying which way the gear lever goes.
+ * The instrument box: in front of the driver, standing on the glacis
+ * between the tillers like a dashboard, a glance down from the slit (John's
+ * headset check; the M4A4's is on the left front, TM 9-754 figure 9, where
+ * ours was). Tilted back so its face looks at the eyes. Its face's middle
+ * (hull space) and size, m. Five dials in two rows, three over two, and a
+ * plate in the bottom row's third place saying which way the gear lever goes.
  */
 export const PANEL = (() => {
-  const centre = [-0.98, 1.19, -1.66] as const;
+  const centre = [-0.5, 1.1, -2.06] as const;
   const [ex, ey, ez] = SEATS.driver.eye;
   const dx = ex - centre[0];
   const dz = ez - centre[2];
   return {
     centre,
-    width: 0.4,
-    height: 0.24,
+    width: 0.28,
+    height: 0.16,
     /** Its turn about +Y from facing the hull's rear, and its tilt back from upright, so the face looks at the eyes, radians. */
     yaw: Math.atan2(dx, dz),
     tilt: Math.atan2(ey - centre[1], Math.hypot(dx, dz)),
     /** Each dial's radius, how far apart their middles are across a row, and how far apart the rows are, m. */
-    dialRadius: 0.048,
-    dialSpacing: 0.122,
-    rowSpacing: 0.108,
+    dialRadius: 0.036,
+    dialSpacing: 0.085,
+    rowSpacing: 0.08,
     /** How far up the face the rows' middle is, from its middle, m. */
     dialY: 0.0,
   };
@@ -148,8 +153,10 @@ export const DIAL_SWEEP = 270 * DEG;
 
 /** How many dials the top row holds; the rest go under its first ones, left to right. */
 export const TOP_ROW = 3;
+/** The gear plate's place: the bottom row's third. */
+export const GEAR_PLATE = TOP_ROW + 2;
 
-/** Each dial's middle in panel space (x right, y up the face), m; index TOP_ROW + 2 is the gear plate's. */
+/** Each dial's middle in panel space (x right, y up the face), m; index GEAR_PLATE is the gear plate's. */
 export function dialCentre(index: number, out: [number, number]): [number, number] {
   const row = index < TOP_ROW ? 0 : 1;
   const column = row === 0 ? index : index - TOP_ROW;
