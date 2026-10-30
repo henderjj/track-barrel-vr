@@ -255,6 +255,9 @@ function elementPosition(panel, id) {
   return evalInApp(`(() => { const w = window.__debug.world; const p = w.getSceneObject('${panel}').getElementById('${id}').getWorldPosition(w.player.head.position.clone()); return [p.x, p.y, p.z]; })()`);
 }
 
+/** The slowest frame a ray click has had to wait for so far, to log when it grows. */
+let slowestClickFrameMs = 400;
+
 /** Point the right controller's ray at `target` from a little in front of the head, and pull the trigger. */
 async function rayClick(target) {
   const from = [target[0] + 0.2, target[1] - 0.45, target[2] + 0.55];
@@ -263,12 +266,31 @@ async function rayClick(target) {
   iwsdk(['xr', 'look-at'], { device: 'controller-right', target: o });
   // Clicks closer together than the slow CLI calls used to space them (a
   // couple of seconds) were sometimes lost on CI runners, so aim, wait,
-  // click and wait about as long as before. The trigger is held for half a
-  // second: software rendering can drop to a few frames a second with the
-  // menu open, and a press shorter than a frame is never seen.
-  await sleep(1000);
-  iwsdk(['xr', 'select'], { device: 'controller-right', duration: 0.5 });
-  await sleep(1000);
+  // click and wait about as long as before. Software rendering can drop to a
+  // frame or two a second with the menu open, and a press shorter than a
+  // frame is never seen, so the trigger is held for three of the slowest
+  // recent frames (at least half a second) and the waits stretch to match.
+  const frameMs = slowestFrameMs();
+  if (frameMs > slowestClickFrameMs + 100) {
+    slowestClickFrameMs = frameMs;
+    console.log(`      (ray clicks: frames up to ${Math.round(frameMs)} ms, so the trigger is held ${Math.max(500, 3 * frameMs).toFixed(0)} ms)`);
+  }
+  const holdMs = Math.max(500, 3 * frameMs);
+  const settleMs = Math.max(1000, 3 * frameMs);
+  await sleep(settleMs);
+  iwsdk(['xr', 'select'], { device: 'controller-right', duration: holdMs / 1000 });
+  await sleep(holdMs + settleMs);
+}
+
+/** The slowest frame the page drew in its last full second, in ms (0 if not known yet). */
+function slowestFrameMs() {
+  try {
+    const ms = Number(evalInApp('window.__perf?.recorder.latest.frameMax ?? 0'));
+    // A frame over 2 s is a stall (a reload, a screenshot), not the pace to click at.
+    return Number.isFinite(ms) ? Math.min(ms, 2000) : 0;
+  } catch {
+    return 0;
+  }
 }
 
 /** The game menu's tab each of its elements is on: the page (page-<tab> in public/ui/menu.uikitml) it sits in. */
