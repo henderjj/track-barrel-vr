@@ -1,6 +1,7 @@
 import { clampEyeRaise } from './sim/body-height.js';
 import { parseSeat, type SeatId } from './sim/cabin.js';
 import { type Bumps, parseBumps, VIGNETTE_STRENGTHS } from './sim/comfort.js';
+import { type OpenHatches, parseHatches } from './sim/interior.js';
 
 /**
  * Runtime settings, read once when the page loads: first the ones saved from
@@ -81,6 +82,16 @@ export interface Settings {
    * asks. 'full' (the default) is every bump within the comfort caps.
    */
   bumps: Bumps;
+  /**
+   * The cabin's look (src/sim/interior.ts's CabinLook), to find what looks
+   * best (John's headset check, 2026-10-30): which hatches stand open
+   * ('both', the default, 'driver', 'gunner' or 'none'); the ambient light
+   * inside times `cabin` (1 the default); the dome lamps times `lamps` (0
+   * off, 1 the default). The game menu's Sound and view tab changes them at once.
+   */
+  hatches: OpenHatches;
+  cabin: number;
+  lamps: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -109,6 +120,9 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: 1,
   vignette: VIGNETTE_STRENGTHS.normal,
   bumps: 'full',
+  hatches: 'both',
+  cabin: 1,
+  lamps: 1,
 };
 
 function num(params: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
@@ -161,6 +175,9 @@ export function parseSettings(search: string): Settings {
     sound: num(params, 'sound', d.sound, 0, 1),
     vignette: num(params, 'vignette', d.vignette, 0, 1),
     bumps: parseBumps(params.get('bumps'), d.bumps),
+    hatches: parseHatches(params.get('hatches'), d.hatches),
+    cabin: num(params, 'cabin', d.cabin, 0.1, 8),
+    lamps: num(params, 'lamps', d.lamps, 0, 4),
   };
 }
 

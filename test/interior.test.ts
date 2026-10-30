@@ -1,11 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { frontAt, GLACIS, GLACIS_SLOPE, HULL, SEATS, SIGHT_EYEPIECE, TURRET, VISION_SLIT } from '../src/sim/cabin.js';
 import { DRIVER_CONTROLS } from '../src/sim/driver-station.js';
-import { INTERIOR_AMBIENT, INTERIOR_LIGHTS, insideCabin, interiorLight, turretToHull } from '../src/sim/interior.js';
+import {
+  type CabinLook,
+  cabinLook,
+  HATCH_AMBIENT_SHARE,
+  INTERIOR_AMBIENT,
+  INTERIOR_LIGHTS,
+  insideCabin,
+  interiorLight,
+  lookFor,
+  parseHatches,
+  turretToHull,
+} from '../src/sim/interior.js';
 import { Lever, type Vec3, Wheel } from '../src/sim/mechanism.js';
 import { LENS } from '../src/sim/periscope.js';
 import { ELEVATION_WHEEL, STATION, TRAVERSE_CRANK } from '../src/sim/turret.js';
-import { interiorUniforms, setInteriorTurret } from '../src/scene-assets/cabin-light.js';
+import { interiorUniforms, setCabinLook, setInteriorTurret } from '../src/scene-assets/cabin-light.js';
+import { createHull, createTurret, HATCH_LID_NAMES } from '../src/scene-assets/cabin.scene-asset.js';
+import { Raycaster, Vector3 } from '@iwsdk/core';
 
 const DEG = Math.PI / 180;
 const v3 = (): [number, number, number] => [0, 0, 0];
@@ -133,11 +146,78 @@ describe('the interior lighting (docs/interior.md)', () => {
     setInteriorTurret(0);
   });
 
+  it("shuts the hatches, dims or brightens the cabin and the lamps as the menu asks (John's headset check, 2026-10-30)", () => {
+    const look = (hatches: string, ambient = 1, lamps = 1): CabinLook =>
+      lookFor(parseHatches(hatches), ambient, lamps, { driverHatch: true, gunnerHatch: true, ambient: 1, lamps: 1 });
+    const at = (p: number[], l: CabinLook, n = up) => {
+      const c = interiorLight(p, n, 0, v3(), l);
+      return (c[0] + c[1] + c[2]) / 3;
+    };
+    const cushion = [...SEATS.driver.cushion];
+    const gunnerCushion = turretToHull([...SEATS.gunner.cushion], 0, v3());
+    const rearWall = [0, 1.2, HULL.rear];
+    const back = [0, 0, -1];
+    // Shutting the driver's hatch takes its pool away; the gunner's stays.
+    expect(at(cushion, look('gunner'))).toBeLessThan(at(cushion, look('both')) / 3);
+    expect(at(gunnerCushion, look('gunner'))).toBeGreaterThan(0.8 * at(gunnerCushion, look('both')));
+    // Each shut hatch takes its share of the ambient too.
+    expect(at(rearWall, look('none'), back) / at(rearWall, look('both'), back)).toBeLessThan(1 - HATCH_AMBIENT_SHARE);
+    // The cabin light scales the ambient; the lamps only the pools under them.
+    const lamp = INTERIOR_LIGHTS.find((l) => l.id === 'hull-lamp')!;
+    const underLamp = [lamp.at[0], lamp.at[1] - 0.3, lamp.at[2]];
+    expect(at(rearWall, look('both', 2), back)).toBeGreaterThan(1.5 * at(rearWall, look('both'), back));
+    expect(at(underLamp, look('both', 1, 0))).toBeLessThan(at(underLamp, look('both', 1, 2)) / 3);
+    expect(parseHatches('nonsense')).toBe('both');
+    // The shader's uniforms follow, and the defaults put them back.
+    setCabinLook(look('none', 0.5, 0));
+    INTERIOR_LIGHTS.forEach((light, i) => {
+      const off = light.id !== 'slit';
+      expect(interiorUniforms.cabinLightColor.value[i].x === 0, light.id).toBe(off);
+    });
+    expect(interiorUniforms.cabinAmbient.value.x).toBeCloseTo(INTERIOR_AMBIENT[0] * 0.5 * (1 - 2 * HATCH_AMBIENT_SHARE), 6);
+    setCabinLook(look('both'));
+    expect(cabinLook).toEqual({ driverHatch: true, gunnerHatch: true, ambient: 1, lamps: 1 });
+    expect(interiorUniforms.cabinAmbient.value.x).toBeCloseTo(INTERIOR_AMBIENT[0], 6);
+  });
+
+  it("draws each hatch's lid open by default and has a shut one ready in the hole", () => {
+    for (const [hatch, root] of [['driver', createHull()], ['gunner', createTurret()]] as const) {
+      const names = HATCH_LID_NAMES[hatch];
+      expect(root.getObjectByName(names.open)?.visible, names.open).toBe(true);
+      expect(root.getObjectByName(names.closed)?.visible, names.closed).toBe(false);
+    }
+  });
+
   it('keeps the lamps warm and the daylight cool', () => {
     for (const l of INTERIOR_LIGHTS) {
       const [r, , b] = l.color;
       if (l.id.endsWith('lamp')) expect(r).toBeGreaterThan(b);
       else expect(b).toBeGreaterThan(r);
+    }
+  });
+});
+
+describe("the turret's foot (John's headset check, 2026-10-30)", () => {
+  it('closes the floor under the turret wherever it turns: no ground seen past the hull roof where its corners overhang', () => {
+    const hull = createHull();
+    const ray = new Raycaster();
+    const down = new Vector3(0, -1, 0);
+    const inner = TURRET.halfWidth - HULL.wall - 0.03;
+    for (const yaw of [0, 0.05, 0.3, Math.PI / 4, 1.2, -0.7, Math.PI]) {
+      const turret = createTurret();
+      turret.position.set(0, 0, TURRET.z);
+      turret.rotation.y = yaw;
+      turret.updateMatrixWorld(true);
+      hull.updateMatrixWorld(true);
+      for (const x of [-1, -0.5, 0, 0.5, 1].map((k) => k * inner)) {
+        for (const z of [-1, -0.5, 0, 0.5, 1].map((k) => k * inner)) {
+          if (Math.hypot(x, z) < TURRET.ringRadius + 0.1) continue;
+          const from = turretToHull([x, TURRET.roof - 0.2, z], yaw, v3());
+          ray.set(new Vector3(...from), down);
+          const hit = ray.intersectObjects([hull, turret], true)[0];
+          expect(hit?.point.y ?? -Infinity, `turret at ${yaw.toFixed(2)} rad, (${x.toFixed(2)}, ${z.toFixed(2)}) in turret space`).toBeGreaterThan(HULL.roof);
+        }
+      }
     }
   });
 });
