@@ -164,15 +164,18 @@ async function measureMotion(sender, receiver, seconds) {
         frame();
       }),
   );
+  // At least `seconds`, and on a slow runner (six or seven frames a second) on until there are enough frames to
+  // judge, up to three times as long: the checks need about 20 of them.
   const samples = await receiver.page.evaluate(
     (ms) =>
       new Promise((resolve) => {
         const out = [];
-        const end = performance.now() + ms;
+        const start = performance.now();
         const frame = () => {
           const p = window.__net.remotePose();
           if (p) out.push([p.head.px, p.head.pz, performance.now(), window.__net.remoteAtMs]);
-          if (performance.now() < end) requestAnimationFrame(frame);
+          const took = performance.now() - start;
+          if (took < ms || (out.length < 25 && took < ms * 3)) requestAnimationFrame(frame);
           else resolve(out);
         };
         frame();
