@@ -55,7 +55,7 @@ async function cli(argv) {
   });
   const stderr = new Writable({
     write(chunk, _encoding, done) {
-      lastStderr = (lastStderr + chunk).slice(-4000);
+      if (lastStderr.length < 4000) lastStderr = (lastStderr + chunk).slice(0, 4000);
       done();
     },
   });

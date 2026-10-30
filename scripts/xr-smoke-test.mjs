@@ -157,9 +157,19 @@ function iwsdk(args, input) {
   try {
     parsed = JSON.parse(stdout);
   } catch {
-    throw new Error(`iwsdk ${args.join(' ')}: unparseable output\n${stdout}${stderr ? `\nstderr: ${stderr.slice(-2000)}` : ''}`);
+    // A screenshot is a picture for people to look at, not a check: on a slow
+    // runner one has failed with the page still working, so say so and go on.
+    if (args[1] === 'screenshot') {
+      console.log(`      (no screenshot for ${args.at(-1)}: ${`${stdout}${stderr}`.replace(/\s+/g, ' ').slice(0, 600)})`);
+      return null;
+    }
+    throw new Error(`iwsdk ${args.join(' ')}: unparseable output\n${stdout}${stderr ? `\nstderr: ${stderr.slice(0, 2000)}` : ''}`);
   }
   if (!parsed.ok) {
+    if (args[1] === 'screenshot') {
+      console.log(`      (no screenshot for ${args.at(-1)}: ${JSON.stringify(parsed.error).slice(0, 600)})`);
+      return null;
+    }
     throw new Error(`iwsdk ${args.join(' ')} failed: ${JSON.stringify(parsed.error)}`);
   }
   return parsed.data;
@@ -200,7 +210,10 @@ function check(name, pass, detail) {
 }
 
 async function waitFor(label, fn, timeoutMs = 60000, intervalMs = 500) {
-  const deadline = Date.now() + timeoutMs;
+  // Timeouts are set for a page drawing a few frames a second; on a runner
+  // drawing slower than that (software rendering, up to a second a frame),
+  // allow proportionally longer.
+  const deadline = Date.now() + timeoutMs * Math.min(4, Math.max(1, slowestFrameMs() / 300));
   let lastError;
   while (Date.now() < deadline) {
     try {
@@ -260,6 +273,9 @@ function elementPosition(panel, id) {
   return evalInApp(`(() => { const w = window.__debug.world; const p = w.getSceneObject('${panel}').getElementById('${id}').getWorldPosition(w.player.head.position.clone()); return [p.x, p.y, p.z]; })()`);
 }
 
+/** Set once XR has started, so the app's frame times can be read. */
+let appRunning = false;
+
 /** The slowest frame a ray click has had to wait for so far, to log when it grows. */
 let slowestClickFrameMs = 400;
 
@@ -307,6 +323,8 @@ function relaxRayClicks() {
 
 /** The slowest frame the page drew in its last full second, in ms (0 if not known yet). */
 function slowestFrameMs() {
+  // Not before the app is up: an evaluation during a reload can wait 20 s.
+  if (!appRunning) return 0;
   try {
     const ms = Number(evalInApp('window.__perf?.recorder.latest.frameMax ?? 0'));
     // A frame over 2 s is a stall (a reload, a screenshot), not the pace to click at.
@@ -927,9 +945,15 @@ async function mechanismBench() {
 }
 
 async function menuButtonPress() {
+  const wasOpen = evalInApp('window.__gameMenu.open');
+  // A press shorter than a frame is never seen: hold Y for one and a half of
+  // the slowest recent frames (at least 0.3 s), then wait for the menu to
+  // open or close.
+  const holdMs = Math.max(300, 1.5 * slowestFrameMs());
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-left', buttons: [{ index: 4, value: 1 }] });
-  await sleep(300);
+  await sleep(holdMs);
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-left', buttons: [{ index: 4, value: 0 }] });
+  await waitFor('the game menu to open or close', () => evalInApp('window.__gameMenu.open') !== wasOpen, 3000).catch(() => null);
   await sleep(300);
 }
 
@@ -1967,6 +1991,7 @@ async function main() {
   iwsdk(['xr', 'set-device-state'], {});
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 0 }] });
   relaxRayClicks();
+  appRunning = true;
   check('XR session active', iwsdk(['xr', 'status'], {}).result.sessionActive);
   await sleep(500);
   await startScreenAndMenu();
