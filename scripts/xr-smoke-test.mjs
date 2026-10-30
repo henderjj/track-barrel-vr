@@ -130,6 +130,10 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function iwsdk(args, input) {
   const argv = [CLI, ...args];
+  // A screenshot scrolls the workspace view and waits for it to draw, which
+  // at a frame or two a second (software rendering on CI) can outlast the
+  // CLI's own default.
+  if (args[0] === 'browser' && args[1] === 'screenshot' && !args.includes('--timeout')) argv.push('--timeout', '120000');
   if (input !== undefined) argv.push('--input-json', JSON.stringify(input));
   let stdout;
   let stderr = '';
@@ -137,6 +141,7 @@ function iwsdk(args, input) {
     const reply = ask({ kind: 'cli', argv: argv.slice(1) });
     if (reply.error) throw new Error(`iwsdk ${args.join(' ')}: ${reply.error}`);
     stdout = reply.stdout;
+    stderr = reply.stderr ?? '';
   } else try {
     stdout = execFileSync(process.execPath, argv, {
       cwd: ROOT,

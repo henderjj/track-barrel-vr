@@ -40,16 +40,25 @@ function answer(value) {
   Atomics.notify(header, 0);
 }
 
+/** What the last CLI command wrote to stderr, to show when its output can't be read. */
+let lastStderr = '';
+
 /** Runs one CLI command in this thread; returns what it printed. */
 async function cli(argv) {
   let out = '';
+  lastStderr = '';
   const stdout = new Writable({
     write(chunk, _encoding, done) {
       out += chunk;
       done();
     },
   });
-  const stderr = new Writable({ write: (_chunk, _encoding, done) => done() });
+  const stderr = new Writable({
+    write(chunk, _encoding, done) {
+      lastStderr = (lastStderr + chunk).slice(-4000);
+      done();
+    },
+  });
   await runCli(argv, { stdout, stderr, cwd: root });
   return out;
 }
@@ -143,7 +152,7 @@ parentPort.on('message', async (request) => {
   try {
     await (loaded ??= load());
     const stdout = request.kind === 'eval' ? await evaluate(request.expression) : await cli(request.argv);
-    answer({ stdout });
+    answer({ stdout, stderr: request.kind === 'eval' ? '' : lastStderr });
   } catch (error) {
     answer({ error: error instanceof Error ? error.message : String(error) });
   }
