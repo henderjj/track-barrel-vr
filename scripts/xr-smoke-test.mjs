@@ -1565,9 +1565,9 @@ async function theDriversPeriscope() {
  *     the gunner's seat with a sign; the power grip twisted left traverses
  *     the turret left and the gunner's play space turns with it (the head
  *     stays put in the turret), the vignette darkening; let go, it stops;
- *     a turn of the crank traverses about 2°; a quarter turn clockwise of
- *     the elevation handwheel raises the gun about 0.75° and the trigger
- *     bar on its handle pulls; Forward puts it back.
+ *     a turn of the crank traverses about 2°; a turn clockwise of the
+ *     sideways elevation handwheel raises the gun about 0.75° and the
+ *     trigger bar on its handle pulls; Forward puts it back.
  */
 async function layingTheGun() {
   const turret = () => evalInApp('window.__turret.state()');
@@ -1649,20 +1649,20 @@ async function layingTheGun() {
     cranked.turns > 0.9 && afterCrank - yaw0 > 1.6 && afterCrank - yaw0 < 2.9, `${cranked.turns.toFixed(2)} turns: ${yaw0.toFixed(2)}° to ${afterCrank.toFixed(2)}°`);
   await letGoOf('crank');
 
-  // The elevation handwheel: taken by its handle and turned a quarter clockwise, the gun rises.
+  // The elevation handwheel: taken by its handle and turned once clockwise, the gun rises.
   const e0 = turret().elevationDeg;
   await take('elevation');
   const rr = 0.08;
   const out = 0.03;
-  for (let k = 1; k <= 6; k++) {
+  for (let k = 1; k <= 24; k++) {
     const a = -(k * Math.PI) / 12;
     iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('elevation', [-rr * Math.sin(a), rr * Math.cos(a), out])), duration: 0.15 });
     await sleep(200);
   }
-  const raised = await waitFor('the gun to rise', () => { const s = turret(); return s.elevationDeg - e0 > 0.4 && s; }, 4000).catch(() => turret());
+  const raised = await waitFor('the gun to rise', () => { const s = turret(); return s.elevationDeg - e0 > 0.6 && s; }, 4000).catch(() => turret());
   const drawn = evalInApp('window.__turret.drawn()');
-  check('A quarter turn clockwise of the elevation handwheel raises the gun about 0.75°',
-    raised.elevationDeg - e0 > 0.4 && raised.elevationDeg - e0 < 1.0 && Math.abs(drawn.elevation - raised.elevationDeg) < 0.05,
+  check('A turn clockwise of the elevation handwheel raises the gun about 0.75°',
+    raised.elevationDeg - e0 > 0.6 && raised.elevationDeg - e0 < 0.9 && Math.abs(drawn.elevation - raised.elevationDeg) < 0.05,
     `gun ${e0.toFixed(2)}° to ${raised.elevationDeg.toFixed(2)}°, drawn ${drawn.elevation.toFixed(2)}°`);
   // The trigger bar on its handle pulls like the power grip's trigger.
   const pressesBefore = state('elevation').presses;

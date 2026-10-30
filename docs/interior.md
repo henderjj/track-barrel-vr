@@ -50,7 +50,7 @@ After the first pass John reported: it reads as a tank and nothing flickers, but
 | Driver's hatch | 50 cm square, from 10 cm ahead of the eyes to 40 cm behind them; lid open forwards | The periscope's head stands on the roof in front of it |
 | Gunsight eyepiece | turret (0.32, 2.25, −0.38), an 18 cm lean | The head stops 4 cm short of it |
 | Gunner's head box forward | 14 cm (24 cm before) | |
-| Elevation wheel, crank, power grip | turret (0.29, 1.86, −0.6), (0.52, 1.86, −0.52), (0.71, 1.63, −0.45) | Hubs 39 cm under the eyes; the crank's fist inside the ring |
+| Elevation wheel, crank, power grip | turret (0.29, 1.86, −0.6), (0.52, 1.86, −0.52), (0.71, 1.63, −0.45) | Hubs 39 cm under the eyes; the crank's fist inside the ring; the elevation wheel faces sideways and drives a toothed arc on the gun ([turret.md](turret.md)) |
 | Turret ring | race ring 91 cm out, 4 cm tube (90 cm, 7 cm before) | Its inner edge at 87 cm, clear of the crank |
 | Turret roof | 12 cm chamfers along its edges and down its corners; round hatch 54 cm across; ventilator 24 cm across | A cast turret, not a box |
 | Interior ambient | 6% of the sky's light, a little warm, 55% of that on the hull floor | Dark, as a closed steel box is (26% read as bright) |
