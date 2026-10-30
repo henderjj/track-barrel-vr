@@ -235,9 +235,10 @@ function toOrigin(p) {
 }
 
 const fmt = (p) => p.map((v) => v.toFixed(3)).join(', ');
+/** Start the headless dev runtime or attach to a running one; true when its page is fresh (started here). */
 async function ensureRuntime() {
   console.log('Starting (or attaching to) the headless dev runtime...');
-  iwsdk(['dev', 'up', '--headless', '--allow-browser-automation', '--timeout', '120000']);
+  let fresh = iwsdk(['dev', 'up', '--headless', '--allow-browser-automation', '--timeout', '120000']).action === 'started';
   await waitFor('managed browser', () => iwsdk(['dev', 'status']).state?.browserCommandReady === true, 180000, 2000);
   try {
     evalInApp('1');
@@ -247,7 +248,9 @@ async function ensureRuntime() {
     iwsdk(['dev', 'down']);
     iwsdk(['dev', 'up', '--headless', '--allow-browser-automation', '--timeout', '120000']);
     await waitFor('managed browser', () => iwsdk(['dev', 'status']).state?.browserCommandReady === true, 180000, 2000);
+    fresh = true;
   }
+  return fresh;
 }
 
 /** World position of element `id` on scene panel `panel`. */
@@ -1879,10 +1882,13 @@ async function driverStation() {
 
 async function main() {
   mkdirSync(`${ROOT}/artifacts`, { recursive: true });
-  await ensureRuntime();
+  const fresh = await ensureRuntime();
   const startedAt = Date.now();
 
-  try {
+  // A page attached to may hold an earlier run's state, so reload it. A runtime started here has a fresh page,
+  // and on CI that start-up reload has killed the managed browser (twice running, so the retry below failed too).
+  if (fresh) console.log('Fresh runtime: no start-up reload.');
+  else try {
     iwsdk(['browser', 'reload'], {});
   } catch (error) {
     // On CI the first reload after start-up has died with no output, and the managed browser has not come back by
