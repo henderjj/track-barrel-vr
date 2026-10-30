@@ -24,7 +24,7 @@ What gets skipped, and why it is safe:
 - A pull request that changes only Markdown, `docs/` or `LICENSE` skips **xr** and **net**: nothing they load changed.
 - When a pull request passes, **check** records the exact files it tested (the git tree of the pull request merged into `main`) as an artifact named `tested-tree-<tree>`. When that pull request is merged and `main` didn't move in between, the merge on `main` has exactly the same files, so `main` skips the tests and deploys straight away. If another pull request merged first, the files differ and `main` runs everything before it deploys.
 
-The **xr** job sets `IWSDK_GPU=swiftshader`. IWSDK picks hardware GL whenever `/dev/dri` has a device node, and some GitHub runners have one with no usable GPU behind it: Chromium then dies on the start-up reload or a screenshot, and ray clicks miss.
+The **xr** job hides `/dev/dri` and sets `IWSDK_GPU=swiftshader`. Some GitHub runners have a GPU device there with no usable GPU behind it. IWSDK then picks hardware GL whenever the device exists, and Chromium finds the device even when told to render in software. Either way it dies on the start-up reload or a screenshot, and ray clicks miss.
 
 The Chromium download for the browser tests is kept in the Actions cache, keyed on the Playwright version. The first run after a Playwright update downloads it again, which can take ten minutes or more.
 

@@ -103,12 +103,20 @@ jobs:
           cache: npm
       - run: npm ci
       - uses: ./.github/actions/playwright-chromium
+      - name: Hide the runner's GPU device
+        # Since 30 Oct 2026 some runners have a /dev/dri device with no usable
+        # GPU behind it. IWSDK then launches Chromium on hardware GL, and even
+        # in software Chromium still finds the device. Either way it dies on
+        # reloads and screenshots, and ray clicks miss. The same commit passed
+        # on runners without one. Hide it so every runner looks the same.
+        run: |
+          nproc; grep -m1 'model name' /proc/cpuinfo || true
+          ls -l /dev/dri 2>/dev/null || echo "no /dev/dri"
+          if [ -d /dev/dri ]; then sudo chmod 000 /dev/dri; fi
       - name: Emulated-headset test
         run: npm run test:xr
         env:
-          # Some runners now have a GPU device node but no usable GPU: IWSDK
-          # then launches Chromium on hardware GL and it dies (reloads and
-          # screenshots kill it, ray clicks miss). Always render in software.
+          # Render in software even if a GPU device shows up.
           IWSDK_GPU: swiftshader
       - name: Why the managed browser died
         # Chromium has closed under the test on CI with nothing in its output:
