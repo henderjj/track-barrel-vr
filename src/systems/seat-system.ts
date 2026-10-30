@@ -123,6 +123,10 @@ export class SeatSystem extends createSystem({}) {
       this.setSwap('none');
       this.sit(parseSeat(e.guest, seating.mine), parseSeat(e.host, seating.crew));
     });
+    netLink.events.set('seats-please', () => {
+      // A guest who has just joined asks where to sit. A host that hasn't seen its own connection yet sends on seeing it.
+      if (netLink.isHost && netLink.connected) this.sendSeats();
+    });
     netLink.events.set('seat-ask', (e) => {
       // The guest wants a seat: their own is no change, the host's is an ask to swap.
       if (!netLink.isHost || parseSeat(e.seat, seating.crew) === seating.crew) return;
@@ -362,7 +366,11 @@ export class SeatSystem extends createSystem({}) {
     netLink.sendEvent(event);
   }
 
-  /** A host tells a guest who has just joined where to sit: the host keeps their seat and the guest takes the other. */
+  /**
+   * A host tells a guest who has just joined where to sit: the host keeps their seat and the guest takes the other.
+   * The guest asks as well, since the host's `seats` can arrive before the guest's page has seen its own connection,
+   * while it still counts itself a host and drops it.
+   */
   private shareSeats(): void {
     if (netLink.connected === this.wasConnected) {
       return;
@@ -374,6 +382,8 @@ export class SeatSystem extends createSystem({}) {
       const wanted = seatingWith('host', seating.mine);
       this.sit(wanted.host, wanted.guest);
       this.sendSeats();
+    } else if (netLink.connected) {
+      netLink.sendEvent({ t: 'seats-please' });
     }
   }
 }

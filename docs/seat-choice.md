@@ -38,6 +38,7 @@ The host still decides who sits where and sends `seats` `{ host, guest }` ([cabi
 - The host keeps the time each player last asked. When both asks are within 30 s of each other (`swapAgreed` in `src/sim/cabin.ts`) it swaps both and sends `seats`. Each page shows its own state: `asked` (waiting for the crewmate) or `offered` (the crewmate is waiting), cleared by `seats`, by a disconnect or after 30 s.
 - The practice crewmate's page answers a `seat-offer` with a `seat-ask` at once, and as a host agrees to any `seat-ask` at once.
 - Before the crewmate is aboard there is no one to ask: the seat is taken at once, and on connecting the host keeps theirs as before.
+- On connecting the guest also sends `seats-please` `{}` and the host answers with `seats`. The host's first `seats` can arrive before the guest's page has seen its own connection, while it still counts itself a host and drops it; without the ask both players were left in the driver's seat.
 
 Calibration and eye height are each player's own; nothing about them goes over the network. The crewmate sees the result, since poses are sent in hull space with the offset included.
 
