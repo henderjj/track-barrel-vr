@@ -4,7 +4,7 @@ import { PacketType } from '../src/net/pose-codec.js';
 import { StateBuffer } from '../src/net/state-buffer.js';
 import type { TankHeader } from '../src/net/tank-codec.js';
 import { decodeTurretState, encodeTurretState, TURRET_STATE_BYTES } from '../src/net/turret-codec.js';
-import { GUN, SEATS, seatToHull, TURRET } from '../src/sim/cabin.js';
+import { GUN, SEATS, seatToHull, TURRET, TURRET_RING } from '../src/sim/cabin.js';
 import { MAX_TRAVERSE, MAX_TRAVERSE_ACCEL } from '../src/sim/comfort.js';
 import { type HandInput, MechEvent, TwistGrip, type Vec3, Wheel } from '../src/sim/mechanism.js';
 import { IDLE_RPM, MAX_RPM } from '../src/sim/tank-drive.js';
@@ -266,7 +266,8 @@ describe("the gunner's station (F1.8)", () => {
       for (const p of handles[key]) {
         const below = eye[1] - p[1];
         const ahead = eye[2] - p[2];
-        expect(below, `${key} height`).toBeGreaterThan(0.35);
+        // At its highest, a crank's handle is a hand under the shoulders (20 cm under the eyes): John found 35 cm too low seated.
+        expect(below, `${key} height`).toBeGreaterThan(0.28);
         expect(below, `${key} height`).toBeLessThan(0.8);
         expect(ahead, `${key} ahead`).toBeGreaterThan(0.2);
         expect(ahead, `${key} ahead`).toBeLessThan(0.65);
@@ -306,6 +307,22 @@ describe("the gunner's station (F1.8)", () => {
       const p = mountToTurret('crank', crank.handle(1, [0, 0, 0]));
       expect(reach('elevation', p)).toBeGreaterThan(0.1);
       expect(reach('twist', p)).toBeGreaterThan(0.1);
+    }
+  });
+
+  it('turns the crank and the elevation wheel, and a fist on them, inside the turret ring (John\'s headset check)', () => {
+    const FIST = 0.05;
+    const inner = TURRET_RING.radius - TURRET_RING.tube;
+    for (const [key, spec] of [['crank', TRAVERSE_CRANK], ['elevation', ELEVATION_WHEEL]] as const) {
+      const wheel = new Wheel(spec);
+      for (let a = 0; a < 2 * Math.PI; a += Math.PI / 12) {
+        wheel.angle = Math.min(spec.max, Math.max(spec.min, a));
+        const p = mountToTurret(key, wheel.handle(1, [0, 0, 0]));
+        // Level with the ring, the fist stays inside its inner edge.
+        if (Math.abs(p[1] - TURRET_RING.y) < TURRET_RING.halfHeight + FIST) {
+          expect(Math.hypot(p[0], p[2]) + FIST, `${key} at ${((a * 180) / Math.PI).toFixed(0)}°`).toBeLessThan(inner);
+        }
+      }
     }
   });
 

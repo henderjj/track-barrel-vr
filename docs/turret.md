@@ -24,9 +24,9 @@ The turret turns and the gun elevates. The gunner lays the gun with three contro
 | Power grip | ±40° twist, 4° deadband, springs back at 12/s | The kit bench's twist grip, felt in F1.3 |
 | Manual crank | 2° of turret a turn; 8 cm radius, 6 cm knob; a tick each quarter turn | Fine aim: a degree is half a turn |
 | Elevation | −10° to +20°, 3° a handwheel turn (10 turns end to end); 11 cm rim; a tick each eighth | Plan §4.4. At 500 m the shell drops about 0.4°, a bit over an eighth of a turn |
-| Elevation handwheel | turret (0.29, 1.81, −0.6), tilted back 20°, at the traverse crank's height; 8 cm to the handle, which stands out 6 cm with its trigger bar | Left hand, 44 cm below the eyes (its handle at least 35 cm) and 40 cm ahead, under the sight ([interior.md](interior.md)); the handle's sweep clears the breech at every elevation |
-| Traverse crank | turret (0.58, 1.81, −0.59), tilted back 20° | Right hand, 44 cm below the eyes and 39 cm ahead |
-| Power grip | turret (0.71, 1.58, −0.45), upright; handle 1.615–1.725 m | Right hand, beside the seat's front edge, 25 cm ahead (8 cm higher since [interior.md](interior.md)) |
+| Elevation handwheel | turret (0.29, 1.86, −0.6), tilted back 20°, at the traverse crank's height; 8 cm to the handle, which stands out 6 cm with its trigger bar | Left hand, 39 cm below the eyes (its handle at least 28 cm) and 40 cm ahead, under the sight ([interior.md](interior.md)); the handle's sweep clears the breech at every elevation |
+| Traverse crank | turret (0.52, 1.86, −0.52), tilted back 20° | Right hand, 39 cm below the eyes and 32 cm ahead; it and the fist on it turn inside the turret ring (John's headset check, [interior.md](interior.md)) |
+| Power grip | turret (0.71, 1.63, −0.45), upright; handle 1.665–1.775 m | Right hand, beside the seat's front edge, 25 cm ahead (13 cm higher since [interior.md](interior.md)) |
 | Gun trunnions | the turret's front plate, at the gun's height (2.05 m) | The mantlet stays at the plate as it elevates; the breech's mouth is 0.45 m behind them and 0.5 m ahead of the gunner's eyes (1.3 m behind them until F1.10 moved it forward for loading) |
 
 Every handle is between knee and chest height, 20 to 65 cm ahead of a seated gunner's eyes, and far enough from the others that a squeeze takes the one meant (`test/turret.test.ts`).

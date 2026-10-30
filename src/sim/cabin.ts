@@ -84,6 +84,14 @@ export const TURRET = {
   roof: 2.75,
 } as const;
 
+/**
+ * The race ring the turret turns on, round the hole in the hull roof, turret
+ * space: its middle's height and radius, its tube's radius across and its
+ * half-height, m. Its inner edge is 87 cm from the middle, so the gunner's
+ * crank and the hand on it turn inside it (docs/interior.md).
+ */
+export const TURRET_RING = { y: HULL.roof + HULL.wall - 0.02, radius: 0.91, tube: 0.04, halfHeight: 0.035 } as const;
+
 /** The gun, in turret space: its axis's height, its breech beside the gunner, and its barrel, m. */
 export const GUN = {
   y: 2.05,

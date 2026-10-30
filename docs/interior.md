@@ -11,15 +11,27 @@ The Medium Tank M4A4 manual, TM 9-754, has the two pictures John uploaded:
 
 So a crewman's eyes and hands work together: the vision device is a short lean from the seat, and the controls are where the hands rest with the eyes at it. We had the driver's slit 80 cm ahead of the eyes (a 60 cm lean that left the tillers behind them) and the gunsight 28 cm ahead with the wheels 47 to 51 cm under the eyes. The dimensions below are taken from those pictures and a seated adult's proportions (shoulders about 20 cm under the eyes, a forearm about 35 cm), not from measured drawings.
 
+## John's headset check (2026-10-30)
+
+After the first pass John reported: it reads as a tank and nothing flickers, but the lighting was still bright, so the hatch and lamp light didn't show; the tillers were low and pushing them fully forwards needed a lean that put the head into the slit and pushed the view back, which made testing hard ("it might be better to fade out instead so the calibrated seating position stays fixed"); the instrument box would be handier in front (and where is a Sherman's?); the periscope works; the gunner's crank clashed with the turret ring and the controls were still a bit low; 85 fps in the gunner's seat and 90 in the driver's; the turret roof looked square and basic. The second pass:
+
+- **Fade, don't push.** Leaning past the head box, or standing up over the roof stop, now fades the view to black over 8 cm, and leaning back clears it. The play space stays where calibration put it, so the seat never shifts under the player. A head more than 30 cm past the box's edge still puts the player back in the seat if it got there in one jump of over 20 cm (a recentre) or stays there two seconds (standing up and walking off).
+- **Darker.** Away from the pools the cabin now gets about 6% of the sky's light (26% before), so the daylight under each hatch, now a tighter pool, and the dome lamps, now brighter, stand out.
+- **Tillers.** The handles stand 42 cm under the eyes (55 before) and 32 cm ahead, and swing 20° each way (25° before): full forwards is 45 cm ahead, within a seated arm's reach with no lean.
+- **The instrument box** on a Sherman is at the driver's left front, by the steering levers (figure 9's "instrument box", top left), which is where ours was. It now stands in front instead, on the glacis between the tillers like a car's dashboard: a glance 37° down from the slit, 57 cm away.
+- **Gunner.** The elevation wheel, the traverse crank and the power grip are 5 cm higher (their hubs 39 cm under the eyes), the crank 9 cm further in, and the race ring the turret turns on is narrower and out at the hole's edge (its inner edge 87 cm from the middle, 83 before), so the crank and the fist on it turn clear of it.
+- **The turret's roof** reads as a cast turret's: chamfers along the roof's edges and down the four corners take away the box, the hatch is round with a collar under it and a round lid, and the roof has the ventilator's housing over the loader's side and a rib behind the lamp.
+
 ## What players experience
 
 - **The driver** sits under a sloped glacis, as in a Sherman: the front plate stands up from the floor to knee height, slopes back over the driver's legs at 57° from upright, and meets the hood's upright face, which holds the vision slit 30 cm ahead of the eyes. From the seat the slit shows about 60° of the world (24° before), so the driver can steer with both hands on the tillers and their eyes on the road; leaning 10 cm in to the brow pad opens it to 80°.
-- The tillers' tops are 6 cm higher than spike S3's rig (49 cm under the eyes), a forearm ahead of a driver leant in to the slit.
-- **The instrument box** is on the left wall beside the driver's knee, as the M4A4's is, turned and tilted to face the eyes, half a metre away: speed, engine and water on the top row, oil and fuel under them with the gear lever's plate. The hand throttle stands under it.
+- The tillers' handles are where seated hands rest with the elbows bent, 42 cm under the eyes and 32 cm ahead, and full forwards is reached without leaning.
+- **The instrument box** stands on the glacis between the tillers, tilted to face the eyes, a glance down from the slit: speed, engine and water on the top row, oil and fuel under them with the gear lever's plate. The hand throttle is on its quadrant on the left wall.
+- **Leaning into things** (past the head box, or standing up into the roof) fades the view to black instead of moving the seat.
 - **The periscope** is now right of the slit, its window 15 cm ahead of the eyes and 26 cm to the right: a lean right to look in, the yoke under it at chest height. Its head stands on the roof ahead of the driver's hatch, which now opens forwards so the turret's overhang can't sweep into its lid.
-- **The gunner**'s sight is an 18 cm lean (28 cm before), and the elevation wheel, the traverse crank and the power grip sit 7 to 8 cm higher: with the eye at the eyepiece, the wheels' hubs are 40 cm under it and a forearm ahead, so both hands stay on them while aiming, as in figure 13.
-- **The front compartment** has what a Sherman's has round the driver: the final drive's ribbed housing in the nose between the seats, the assistant driver's seat and the bow machine gun's ball in the glacis in front of it, two red fire extinguishers on the right, six 75 mm rounds in a rack on the left sponson behind the driver, and cable conduits along both walls. The turret's bustle has the radio set on its shelf.
-- **Lighting**: the inside is dim, with daylight falling in through the open hatches and a little through the slit, and a warm dome lamp glowing in the hull roof and in the turret's. The turret's daylight and lamp turn with it. Low down in the hull it is darkest. The outside of the tank and the world are lit as before. The plates stay ivory inside, as the real crew compartments were painted, so the dim inside still reads.
+- **The gunner**'s sight is an 18 cm lean (28 cm before), and the elevation wheel, the traverse crank and the power grip sit close under it: with the eye at the eyepiece, the wheels' hubs are 39 cm under it and a forearm ahead, so both hands stay on them while aiming, as in figure 13.
+- **The front compartment** has what a Sherman's has round the driver: the final drive's ribbed housing in the nose between the seats, the assistant driver's seat and the bow machine gun's ball in the glacis in front of it, two red fire extinguishers on the right, six 75 mm rounds in a rack on the left sponson behind the driver, and cable conduits along both walls. The turret's bustle has the radio set on its shelf, and its roof is rounded at the edges like a cast turret's, with a round hatch, the ventilator and a rib.
+- **Lighting**: the inside is dark, with daylight falling in through the open hatches and a little through the slit, and a warm dome lamp glowing in the hull roof and in the turret's. The turret's daylight and lamp turn with it. Low down in the hull it is darkest. The outside of the tank and the world are lit as before. The plates stay ivory inside, as the real crew compartments were painted, so the dim inside still reads.
 
 ## Numbers
 
@@ -29,19 +41,22 @@ So a crewman's eyes and hands work together: the vision device is a short lean f
 | Glacis | from 1.0 m at z −2.4 to 1.32 m at z −1.9, 57° from upright | The Sherman's is 56°; above the tillers and the driver's knees |
 | Hood face | upright at z −1.9 from 1.32 m to the roof | The slit 30 cm ahead of the eyes |
 | Vision slit | as before (34 × 10 cm at 1.45 m), in the hood face | About 60° across from the seat, 80° leant in |
-| Driver's head box forward | 10 cm (60 cm before) | Stops the eyes 20 cm from the slit, the brow 5 cm short of its pad |
-| Tiller pivots | 94 cm under the eyes (1 m before) | Tops 49 cm under the eyes |
-| Hand throttle pivot | 0.66 m (0.8 m before) | Under the instrument box with a fist's room |
-| Instrument box | face's middle (−0.98, 1.19, −1.66), 40 × 24 cm, facing the eyes 55 cm away | The M4A4's on the left; the slit and the periscope keep the front clear |
+| Driver's head box forward | 10 cm (60 cm before) | Fades the view with the eyes 20 cm from the slit, the brow 5 cm short of its pad |
+| Head fade | black 8 cm past the head box or the roof stop; more than 30 cm out, reseat after a jump of over 20 cm or 2 s | The seat stays where it was calibrated |
+| Tiller pivots | 81 cm under the eyes, 32 cm ahead (94 and 42 before); ±20° (±25°) | Handles 42 cm under the eyes, 19 to 45 cm ahead |
+| Hand throttle pivot | 0.66 m (0.8 m before) | On its quadrant by the left knee |
+| Instrument box | face's middle (−0.5, 1.1, −2.06), 28 × 16 cm, facing the eyes 57 cm away, 37° down | Between the tillers with a fist's room either side, in front of the glacis |
 | Periscope axis | 26 cm right of the eyes, 20 cm ahead (22 cm left, 37 cm ahead before) | Behind the hood face; its handles swing beside the chest when turned |
 | Driver's hatch | 50 cm square, from 10 cm ahead of the eyes to 40 cm behind them; lid open forwards | The periscope's head stands on the roof in front of it |
 | Gunsight eyepiece | turret (0.32, 2.25, −0.38), an 18 cm lean | The head stops 4 cm short of it |
 | Gunner's head box forward | 14 cm (24 cm before) | |
-| Elevation wheel, crank, power grip | turret (0.29, 1.85, −0.6), (0.58, 1.81, −0.59), (0.71, 1.58, −0.45) | 7 to 8 cm higher and 3 to 4 cm further forward |
-| Interior ambient | 26% of the sky's light, a little warm, 65% of that on the hull floor | Dim, as a closed steel box is |
-| Hatch daylight | 0.9 of daylight from 45 cm above each open hatch, falling mostly straight down (the cosine from straight down to the 6th power), half as bright 1.4 m away | A pool under each hatch, not a glow all round it |
-| Slit daylight | 0.12 of daylight from just inside the slit, half as bright 30 cm away | Lights the hood's inside face a little |
-| Dome lamps | warm, 0.28, half as bright 0.6 m away; hull roof over the transmission, turret roof behind the gun | Glowing lenses, no real-time light |
+| Elevation wheel, crank, power grip | turret (0.29, 1.86, −0.6), (0.52, 1.86, −0.52), (0.71, 1.63, −0.45) | Hubs 39 cm under the eyes; the crank's fist inside the ring |
+| Turret ring | race ring 91 cm out, 4 cm tube (90 cm, 7 cm before) | Its inner edge at 87 cm, clear of the crank |
+| Turret roof | 12 cm chamfers along its edges and down its corners; round hatch 54 cm across; ventilator 24 cm across | A cast turret, not a box |
+| Interior ambient | 6% of the sky's light, a little warm, 55% of that on the hull floor | Dark, as a closed steel box is (26% read as bright) |
+| Hatch daylight | 1.2 of daylight from 45 cm above each open hatch, falling straight down (the cosine from straight down to the 12th power), half as bright 1.2 m away | A tight pool under each hatch |
+| Slit daylight | 0.25 of daylight from just inside the slit, half as bright 35 cm away | Lights the hood's inside face a little |
+| Dome lamps | warm, 0.5, half as bright 0.5 m away; hull roof over the transmission, turret roof behind the gun | Glowing lenses, no real-time light |
 
 ## How the lighting works
 
@@ -55,29 +70,31 @@ Nothing new goes over the network: the layout is the same numbers on both pages,
 
 ## Departures and what to watch
 
-- **The instrument box moved to the left** because the periscope needs the space right of the slit and the gauges had to come out from under it. Readability from 55 cm, at the edge of the forward view, is a headset question.
+- **The instrument box is in front, not on the left** as on a Sherman: John found the left wall awkward. Between the tillers it leaves the fists 5 cm either side; whether the hands brush it at full travel is a headset question.
+- **No push at the walls.** With the fade, nothing stops a head going through a plate; the view is black by then. A head kept far out for two seconds reseats the player.
 - **The periscope's yoke turned sideways** brings a handle within 8 cm of the eyes' plane (beside the right shoulder, 26 cm out); before it stayed 18 cm ahead. The unit test now asks for 7 cm. Check it doesn't knock the chest when turned.
 - **The S3 lever-test rig** (Test rigs → Lever test) still stands where it did, in front of the station's tillers.
 - **The run clock** in the driver's seat moved to the left of the slit (the periscope covers the right).
 
 ## Tests
 
-- `test/interior.test.ts`: the glacis's slope and the hood; the slit 30 cm ahead and the tillers a forearm ahead of a driver leant in to it at every angle; the gunner's wheels 35 to 45 cm under an eye at the eyepiece; outside the tank unlit, the armour's outer faces outside however the turret turns; the inside dim, darker low down, bright under the hatch; the turret's lights turning with it in the shader's uniforms; the lamps warm, the daylight cool.
-- `test/driver-station.test.ts`: the instrument box inside the armour, clear of the head and over the throttle, facing the eyes, the dials and the gear plate apart; the slit's field from the seat and leant in.
+- `test/interior.test.ts`: the glacis's slope and the hood; the slit 30 cm ahead and the tillers in easy reach from the seat at every angle; the gunner's wheels 35 to 45 cm under an eye at the eyepiece; outside the tank unlit, the armour's outer faces outside however the turret turns; the inside dark, darker low down, the pool under the hatch several times brighter; the turret's lights turning with it in the shader's uniforms; the lamps warm, the daylight cool.
+- `test/driver-station.test.ts`: the instrument box in front, in front of the glacis and under the slit, clear of the tillers' fists, facing the eyes, the dials and the gear plate apart; the slit's field from the seat and leant in.
+- `test/cabin.test.ts`: the fade's curve, black well before a head counts as a recentre. `test/turret.test.ts`: the crank's and the elevation wheel's fists inside the turret ring all the way round.
 - `test/periscope.test.ts`, `test/turret.test.ts`, `test/sight.test.ts`, `test/cabin.test.ts`, `test/body-height.test.ts`: the moved controls in reach, clear of each other and of the head, inside the new front.
 - `test/z-fighting.test.ts`: the new front, the details, the lamps and the instrument box, the turret at every tested angle.
-- `npm run test:xr`: every seat, station and sight step, on the new layout. Screenshots `artifacts/xr-driver-seat.png` and `artifacts/xr-gunner-seat.png` show the lighting.
+- `npm run test:xr`: every seat, station and sight step, on the new layout; a lean past the head box fades the view with the seat left where it was, leaning back clears it, standing up fades it under the roof. Screenshots `artifacts/xr-driver-seat.png` and `artifacts/xr-gunner-seat.png` show the lighting.
 
 `window.__interior` gives `state()`, `setLighting(on)` (to compare with the sky's light everywhere, as before) and `light(point, normal)`.
 
 ## Headset check
 
-On a Quest 3 after the deploy, with the cache cleared, seated.
+On a Quest 3 after the deploy, with the cache cleared, seated. These are for the second pass.
 
-1. Enter VR in the driver's seat (Practice → Sit in → Driver). Look round: the glacis slopes over your legs to the hood in front of your face with the slit in it, the assistant driver's seat and the bow gun to your right across the ribbed transmission housing, the fire extinguishers and the sponson rounds. Say whether it reads as a tank's inside and whether anything flickers.
-2. **Lighting**: the inside is dim, the hatch above you lets daylight in, and the dome lamp glows warm in the roof. Say whether it is too dark to read the gauges or find the controls, or too bright to feel like inside a tank.
-3. Put your hands on both tillers and look through the slit without leaning. Then lean in to the brow pad. Say whether you could drive like that, hands on the tillers, eyes on the road.
-4. Glance left at the instrument box. Say whether the speed, the engine revs and the gear plate read without leaning.
-5. Lean right into the periscope and turn its yoke all the way round with both hands. Say whether the handles knock your chest or the tillers.
-6. Practice → Sit in → Gunner. Lean into the sight with your hands on the elevation wheel and the crank: say whether you can aim, both hands on, without stretching or crouching. Traverse with the power grip: the turret's lamp and the daylight from your hatch turn with you.
-7. Perf HUD (X): the frame rate holds 72 Hz (90 Hz if you can) in both seats; report the fps and the frame time.
+1. Enter VR in the driver's seat (Practice → Sit in → Driver). **Lighting**: away from the hatch the inside is dark, the daylight falls in a pool under your open hatch, and the dome lamp glows warm in the roof. Say whether it is now too dark to find the controls, or still too bright.
+2. Lean forward into the slit until your head goes past it: the view fades to black instead of being pushed back. Sit back: it clears and your seat is where it was. Stand up: it fades under the roof. Say whether the fade is easier to test with than the push.
+3. Hands on both tillers, push them fully forwards and pull them fully back without leaning. Say whether the handles are at a comfortable height now.
+4. Glance down at the instrument box between the tillers. Say whether the gauges read easily and whether your hands brush it on the tillers.
+5. Practice → Sit in → Gunner. Wind the traverse crank and the elevation wheel all the way round: nothing catches on the turret ring. Say whether the controls are now at an easy height seated.
+6. Look up at the turret roof: rounded edges and corners, the round hatch with its collar, the ventilator and the rib. Say whether it reads as a tank's turret.
+7. Perf HUD (X): report the fps in both seats (85 in the gunner's seat and 90 in the driver's before).

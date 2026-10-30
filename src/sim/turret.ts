@@ -53,14 +53,16 @@ export interface StationMount {
  * traverse crank right of it for the right hand, and the power traverse
  * grip lower down at the right, beside the seat's front edge. As on the
  * Sherman (TM 9-754, figure 13) both wheels sit close under the sight: with
- * the eye at the eyepiece the hands are on them 37 to 40 cm below it and a
+ * the eye at the eyepiece the hands are on them 32 to 35 cm below it and a
  * forearm ahead (docs/interior.md).
  */
 export const STATION = {
   // The elevation handwheel at the traverse crank's height: turned by a handle, its handle's highest point is no nearer the eyes than the crank's.
-  elevation: { at: [0.29, 1.81, -0.6], tilt: -20 * DEG },
-  crank: { at: [0.58, 1.81, -0.59], tilt: -20 * DEG },
-  twist: { at: [0.71, 1.58, -0.45], tilt: 0 },
+  // Both 5 cm higher than at first for an easy reach seated, and the crank 9 cm further in so it and the hand on it
+  // turn clear of the turret ring (John's headset check, docs/interior.md).
+  elevation: { at: [0.29, 1.86, -0.6], tilt: -20 * DEG },
+  crank: { at: [0.52, 1.86, -0.52], tilt: -20 * DEG },
+  twist: { at: [0.71, 1.63, -0.45], tilt: 0 },
 } as const satisfies Record<string, StationMount>;
 export type StationControl = keyof typeof STATION;
 export const STATION_CONTROLS = Object.keys(STATION) as StationControl[];

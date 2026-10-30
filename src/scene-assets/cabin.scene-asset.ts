@@ -23,6 +23,7 @@ import {
   HULL,
   SEATS,
   TURRET,
+  TURRET_RING,
   VISION_SLIT,
 } from '../sim/cabin.js';
 import { MANTLET_DEPTH, POWER_GRIP, STATION, TRUNNION } from '../sim/turret.js';
@@ -455,10 +456,11 @@ function turretParts(): Part[] {
   parts.push(...turretRoofParts());
   // The ring the turret turns on.
   // The ring the turret turns on, flattened, with the basket's posts hanging from it.
-  const ringTop = bottom - 0.02;
-  const ring = new TorusGeometry(0.9, 0.07, 4, 24);
+  // Narrow, at the hole's edge, so the gunner's crank and hands turn inside it.
+  const ringTop = TURRET_RING.y;
+  const ring = new TorusGeometry(TURRET_RING.radius, TURRET_RING.tube, 4, 24);
   ring.rotateX(Math.PI / 2);
-  ring.scale(1, 0.5, 1);
+  ring.scale(1, TURRET_RING.halfHeight / TURRET_RING.tube, 1);
   parts.push({ geometry: ring, color: STEEL, position: [0, ringTop, 0] });
 
   // The gun is its own mesh, so it can elevate (createGun).
