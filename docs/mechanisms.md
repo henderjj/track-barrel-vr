@@ -26,8 +26,8 @@ Each mechanism has its own space, which its owner places in the scene (on the hu
 | Mechanism | Space | Follows | Limits | Let go | Used by |
 | --- | --- | --- | --- | --- | --- |
 | `Lever` | Pivot at the origin, swings about X, 0 upright, positive tips forwards (−Z) | Hand's angle round the pivot in the swing's plane | `min`/`max`; `overshoot` and `strain` say how far past | Springs to `rest` at rate `spring`, or to the nearest of `notches`; `spring: 0` stays | Tillers, gear lever, hand throttle, breech lever |
-| `Wheel` (`grip: 'crank'`) | Axle along Z, face towards +Z, positive anticlockwise as seen from the front, knob at the top at 0 | Hand's angle round the axle, unwrapped (many turns), read each frame from where the hand was, so a hand going round a little off the axle still turns it smoothly | `min`/`max`, or ±Infinity | Stays | Manual traverse |
-| `Wheel` (`grip: 'rim'`) | As the crank | Each hand on the rim; with two, the mean of where each would take it | As the crank | Stays | Elevation |
+| `Wheel` (`grip: 'crank'`) | Axle along Z, face towards +Z, positive anticlockwise as seen from the front, knob at the top at 0 | Hand's angle round the axle, unwrapped (many turns), read each frame from where the hand was, so a hand going round a little off the axle still turns it smoothly | `min`/`max`, or ±Infinity | Stays | Manual traverse; elevation (with a `trigger` bar on its knob that fires) |
+| `Wheel` (`grip: 'rim'`) | As the crank | Each hand on the rim; with two, the mean of where each would take it | As the crank | Stays | The bench's handwheel |
 | `TwistGrip` | Handle up the Y axis, positive anticlockwise seen from above | The roll of the hand's back about the handle | ±`max` | Springs to the middle | Power traverse (trigger fires) |
 | `Yoke` | Turns about Y, a handle out each side along ±X | Both hands as fast as they go; one hand no faster than `oneHandSpeed` | `min`/`max`, or ±Infinity | Stays | Periscope |
 | `Button` | Cap's face at the origin facing +Z, goes in along −Z | Fingertip depth past the face, or fully in while squeezed | `travel` | Comes out; a `latching` switch stays on | Signal buttons, fuses, radio |

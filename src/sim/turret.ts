@@ -57,18 +57,25 @@ export interface StationMount {
  * forearm ahead (docs/interior.md).
  */
 export const STATION = {
-  elevation: { at: [0.29, 1.85, -0.6], tilt: -20 * DEG },
+  // The elevation handwheel at the traverse crank's height: turned by a handle, its handle's highest point is no nearer the eyes than the crank's.
+  elevation: { at: [0.29, 1.81, -0.6], tilt: -20 * DEG },
   crank: { at: [0.58, 1.81, -0.59], tilt: -20 * DEG },
   twist: { at: [0.71, 1.58, -0.45], tilt: 0 },
 } as const satisfies Record<string, StationMount>;
 export type StationControl = keyof typeof STATION;
 export const STATION_CONTROLS = Object.keys(STATION) as StationControl[];
 
-/** The elevation handwheel: gripped on the rim, one hand or both; clockwise (as the gunner sees it) raises the gun, and it stops at the gun's limits. */
+/**
+ * The elevation handwheel, turned by its handle like a crank (as on a Tiger
+ * or a T-34): clockwise (as the gunner sees it) raises the gun, and it
+ * stops at the gun's limits. A trigger bar along the handle fires the gun,
+ * so the gunner can fire while laying it, as on the Tiger I.
+ */
 export const ELEVATION_WHEEL: WheelSpec = {
-  radius: 0.11,
-  grip: 'rim',
-  knobLength: 0,
+  radius: 0.08,
+  grip: 'crank',
+  knobLength: 0.06,
+  trigger: true,
   // Clockwise is negative wheel turn (src/sim/mechanism.ts): the gun's top limit is the wheel's bottom one.
   min: wheelForElevation(MAX_ELEVATION),
   max: wheelForElevation(MIN_ELEVATION),

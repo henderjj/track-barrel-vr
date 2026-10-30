@@ -455,6 +455,8 @@ export interface WheelSpec {
   tickEvery: number;
   /** What one turn is worth to whatever it drives (degrees of traverse, say): `value()` is turns times this. */
   perTurn: number;
+  /** A crank with a trigger bar along its knob, pulled by the holding hand's index finger: `firing`, with Press and Release events. */
+  trigger?: boolean;
 }
 
 /** Nearer a wheel's axle than this share of its radius, a hand turns it less the nearer it is (`HandAngle.stepAround`). */
@@ -479,11 +481,15 @@ export function wheelAngleOf(x: number, y: number): number {
  * frame's turn is read from where the hand was, so a hand going round a
  * little off the axle (as hands turning a crank do) still turns it smoothly. Two
  * hands on a rim turn it by the mean of where each would take it. It stops
- * at its limits like a lever; a wheel let go stays where it is.
+ * at its limits like a lever; a wheel let go stays where it is. A crank
+ * with a `trigger` reads its holding hand's trigger as `firing`, like a
+ * twist grip.
  */
 export class Wheel extends Mechanism {
   /** How far it has turned from the start, radians (many turns). */
   angle = 0;
+  /** The holding hand's trigger is pulled (a crank with a `trigger`). */
+  firing = false;
   private readonly hands = [new HandAngle(), new HandAngle()];
   private readonly offset: [number, number] = [0, 0];
   /** Where on the rim each hand closed, relative to the wheel's turn. */
@@ -559,6 +565,15 @@ export class Wheel extends Mechanism {
     }
     if (this.anyHeld && this.ticker.step(before, this.angle, this.spec.tickEvery)) {
       events |= MechEvent.Detent;
+    }
+    if (this.spec.trigger) {
+      const hand = this.held[0] ? hands[0] : this.held[1] ? hands[1] : null;
+      const trigger = hand ? hand.trigger : 0;
+      const pulled = this.firing ? trigger > TRIGGER_OFF : trigger > TRIGGER_ON;
+      if (pulled !== this.firing) {
+        this.firing = pulled;
+        events |= pulled ? MechEvent.Press : MechEvent.Release;
+      }
     }
     return events;
   }
