@@ -106,6 +106,18 @@ const FUEL_AT_IDLE = 0.2;
 
 /** Most the tank slows for an obstacle ahead, m/s²: a firm but soft stop, never a jolt. */
 export const BUMP_DECEL = 3;
+/**
+ * Rolling on a slope (F1.18): with nothing holding the tank (out of gear,
+ * the clutch in or the engine stopped, and no brake on) the ground's slope
+ * pulls it downhill at gravity's share along it, up to ROLL_PULL m/s², and
+ * the tracks' drag (COAST_DECEL) takes 0.3 of that, so it rolls on slopes
+ * steeper than about 2° and at most 0.4 m/s². It rolls no faster than
+ * ROLL_TOP, m/s.
+ */
+export const GRAVITY = 9.81;
+export const ROLL_PULL = 0.7;
+export const ROLL_TOP = 2.5;
+
 /** Closer than this to an obstacle counts as touching it, m. */
 const TOUCH = 0.05;
 /** A touch faster than this counts as a bump (for the sound and the stats), m/s. */
@@ -117,14 +129,15 @@ const BUMP_SPEED = 0.3;
  * forwards): that track's speed as a share of the top speed under it
  * (tillerTop); the gear lever, the hand throttle, the clutch and how the
  * driver works the gearbox as in GearboxControls; the instrument box's
- * switches and buttons, and how the engine starts, as in EngineControls (F1.17).
+ * switches and buttons, and how the engine starts, as in EngineControls (F1.17);
+ * the parking brake (F1.18) is the gearbox's.
  */
 export type DriverControls = GearboxControls & EngineControls;
 
 export function createControls(): DriverControls {
   return {
     left: 0, right: 0, accel: 0, gear: NEUTRAL, throttle: 0, clutch: 0, mode: 'auto',
-    battery: false, ignition: false, starter: false, choke: false, siren: false, start: 'starter',
+    battery: false, ignition: false, starter: false, choke: false, siren: false, start: 'starter', parkingBrake: false,
   };
 }
 
@@ -242,6 +255,7 @@ export function stepDrive(
   feel: GroundFeel = FULL_BUMPS,
 ): TankDrive {
   if (dt <= 0) return s;
+  const slope = groundUnder(s.x, s.z, s.heading, slopeSample).pitch;
   stepEngine(s, c, dt);
   stepGearbox(s, c, dt);
   const enginePull = stepRpm(s, c, dt) * enginePullShare(s, c);
@@ -266,6 +280,11 @@ export function stepDrive(
     speedTarget = clamp((left + right) / 2, -cap.back, cap.forward);
     yawTarget = clamp((right - left) / TRACK_GAUGE, -MAX_YAW_RATE, MAX_YAW_RATE);
   }
+  if (c.parkingBrake) {
+    // The parking brake locks the tracks (F1.18): the tank stops, as hard as the comfort cap allows.
+    speedTarget = 0;
+    yawTarget = 0;
+  }
   // Speeding up takes the engine through the gear and the clutch; out of gear the tank coasts.
   // Slowing is the engine holding it back, the tillers braking, or the tracks' drag.
   const speeding = Math.abs(speedTarget) > Math.abs(s.speed) && speedTarget * s.speed >= 0;
@@ -274,7 +293,7 @@ export function stepDrive(
   const coasting = engagement(s, c) === 0;
   let speed = rise > 0
     ? approach(s.speed, speedTarget, rise * dt)
-    : approach(s.speed, speeding || coasting ? 0 : speedTarget, slowRate(s, c) * dt);
+    : approach(s.speed + (coasting ? rollPull(slope, s.speed) * dt : 0), speeding || coasting ? 0 : speedTarget, slowRate(s, c) * dt);
   let yawRate = approach(s.yawRate, yawTarget, MAX_YAW_ACCEL * dt);
 
   // Obstacles: no part of the outline may close on one faster than it could stop in the gap at BUMP_DECEL.
@@ -311,6 +330,17 @@ export function stepDrive(
   return s;
 }
 
+/**
+ * The slope's pull along the heading on a tank nothing holds (F1.18), m/s²:
+ * downhill (a nose-up `slope` pulls it backwards), capped at ROLL_PULL, and
+ * none once it rolls at ROLL_TOP that way. Whatever brakes it (the tracks'
+ * drag, a tiller, the parking brake) works against this.
+ */
+export function rollPull(slope: number, speed: number): number {
+  const pull = clamp(-GRAVITY * Math.sin(slope), -ROLL_PULL, ROLL_PULL);
+  return pull * speed >= 0 && Math.abs(speed) >= ROLL_TOP ? 0 : pull;
+}
+
 /** How hard the engine works, 0 at idle to 1 at top RPM. */
 export function engineLoad(rpm: number): number {
   return clamp((rpm - IDLE_RPM) / (MAX_RPM - IDLE_RPM), 0, 1);
@@ -341,6 +371,7 @@ interface GroundSample {
   roll: number;
 }
 const sample: GroundSample = { height: 0, pitch: 0, roll: 0 };
+const slopeSample: GroundSample = { height: 0, pitch: 0, roll: 0 };
 
 /** The ground under a tank at (x, z) facing `heading`: its mean height under the track ends, and the slope along and across. */
 export function groundUnder(x: number, z: number, heading: number, out: GroundSample): GroundSample {

@@ -5,7 +5,8 @@
  * (test/mechanism.test.ts). Design note: docs/mechanisms.md.
  *
  * - Lever: one axis, limits, spring back or notches, detents (tillers, gear
- *   lever, hand throttle, breech lever).
+ *   lever, hand throttle, breech lever), or a ratchet that holds it until
+ *   the trigger frees it (parking brake).
  * - Wheel: a handwheel gripped on its rim or a crank by its knob; turns
  *   for ever or between limits, with a tick every so often (traverse and
  *   elevation wheels).
@@ -280,6 +281,12 @@ export interface LeverSpec {
   deadband: number;
   /** Notches it settles into when let go, at the spring's rate (a gate or a ratchet): the nearest one, instead of `rest`. */
   notches?: readonly number[];
+  /**
+   * A ratchet (F1.18's parking brake): the hand moves the lever only this way
+   * (+1 forwards, -1 back) unless its trigger is pulled, which frees the
+   * pawl (the release button on top of the handle) and lets it go back.
+   */
+  ratchet?: 1 | -1;
 }
 
 /**
@@ -311,6 +318,8 @@ export class Lever extends Mechanism {
   angle: number;
   /** How far past a limit the hand would take it, radians (signed: negative past `min`); 0 within the limits. */
   overshoot = 0;
+  /** A ratchet's pawl is lifted: the holding hand's trigger is pulled (`spec.ratchet`). */
+  freed = false;
   private holder: HandIndex | -1 = -1;
   private offset = 0;
   private readonly hand = new HandAngle();
@@ -347,20 +356,28 @@ export class Lever extends Mechanism {
     if (this.holder === side) {
       this.holder = -1;
       this.overshoot = 0;
+      this.freed = false;
     }
   }
 
   update(dt: number, hands: readonly (HandInput | null)[]): number {
-    const { min, max } = this.spec;
+    const { min, max, ratchet } = this.spec;
     const before = this.angle;
     let events: number = MechEvent.None;
     if (this.holder !== -1) {
       const hand = hands[this.holder];
       const smooth = this.hand.step(hand ? angleOf(hand.fist[1], hand.fist[2]) : Number.NaN, dt);
       // NaN keeps the lever where it is for this step: the hand is over the pivot or lost.
+      if (ratchet) {
+        const trigger = hand ? hand.trigger : 0;
+        this.freed = this.freed ? trigger > TRIGGER_OFF : trigger > TRIGGER_ON;
+      }
       if (!Number.isNaN(smooth)) {
         const wanted = smooth + this.offset;
-        this.angle = wanted < min ? min : wanted > max ? max : wanted;
+        let angle = wanted < min ? min : wanted > max ? max : wanted;
+        // The pawl holds it against the hand going the other way.
+        if (ratchet && !this.freed && (angle - before) * ratchet < 0) angle = before;
+        this.angle = angle;
         this.overshoot = wanted - this.angle;
       }
       this.strain[this.holder] = Math.abs(this.overshoot);

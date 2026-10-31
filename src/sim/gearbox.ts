@@ -143,6 +143,8 @@ export interface GearboxControls {
   clutch: number;
   /** How the driver works the gearbox. */
   mode: GearboxMode;
+  /** The parking brake is on (F1.18): the tracks are locked. */
+  parkingBrake: boolean;
 }
 
 /** The gearbox's part of the tank's state. */
@@ -195,11 +197,14 @@ export function clutchEngagement(pedal: number): number {
  * Stick shift all of it unless the tank crawls slower than the engine
  * idles with the accelerator released (its clutch is worked for the
  * driver, so the tank doesn't creep); all of it with the automatic box.
- * With the engine stopped, nothing.
+ * With the engine stopped, nothing. Against the parking brake (F1.18) the
+ * automatic box and Stick shift slip their clutch, so nothing; the Clutch
+ * is the driver's, and let out against it the engine bogs and stalls.
  */
 export function engagement(s: GearboxState, c: GearboxControls): number {
   if (s.gear === NEUTRAL || !s.running) return 0;
   if (c.mode === 'clutch') return clutchEngagement(c.clutch);
+  if (c.parkingBrake) return 0;
   if (c.mode === 'stick' && demandOf(c) < 0.02 && wheelRpm(s.speed, s.gear) < IDLE_RPM * STICK_CREEP) return 0;
   return 1;
 }
@@ -387,10 +392,10 @@ export function pullRate(s: GearboxState, c: GearboxControls, enginePull: number
  * holds the tank back: with the automatic box at the full comfort cap, as
  * the tillers ask; with a Sherman's controls at ENGINE_HOLD of it), and up
  * to the cap with a tiller braking: pulled back (with the automatic box,
- * against the motion).
+ * against the motion), or the parking brake on (F1.18).
  */
 export function slowRate(s: GearboxState, c: GearboxControls): number {
   const hold = engagement(s, c) * (realControls(c.mode) ? ENGINE_HOLD : 1);
-  const brake = clamp(s.speed >= 0 || realControls(c.mode) ? -Math.min(c.left, c.right) : Math.max(c.left, c.right), 0, 1);
+  const brake = c.parkingBrake ? 1 : clamp(s.speed >= 0 || realControls(c.mode) ? -Math.min(c.left, c.right) : Math.max(c.left, c.right), 0, 1);
   return COAST_DECEL + (MAX_ACCEL - COAST_DECEL) * Math.max(hold, brake);
 }

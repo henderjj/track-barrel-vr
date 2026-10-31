@@ -1,6 +1,6 @@
 /**
  * The driver's station (F1.5, docs/driver-station.md): where the tillers,
- * the gear lever, the hand throttle, the gauges and the vision slit's brow
+ * the gear lever, the hand throttle, the parking brake (F1.18), the gauges and the vision slit's brow
  * pad are in the hull, how far each control moves, and how a control's
  * angle reads as the drive's controls (src/sim/tank-drive.ts) and back.
  * Engine-free, shared by the model, DriverStationSystem, the tests and,
@@ -70,6 +70,31 @@ export const HAND_THROTTLE: LeverSpec = {
   deadband: 0,
 };
 
+/**
+ * The parking brake (F1.18, docs/parking-brake.md): a 42 cm lever on a post
+ * from the floor just left of the left tiller's pedestal, where the M4A4's
+ * is (TM 9-754, figure 9). Off, it lies 35° forwards; pull it up and back
+ * and its ratchet clicks every 4° and holds it wherever it is let go; on
+ * from PARKING_BRAKE_ON back. To let it off, hold the trigger (the release
+ * button on its top) and push it forwards.
+ */
+export const PARKING_BRAKE: LeverSpec = {
+  length: 0.42,
+  gripLength: 0.1,
+  min: -8 * DEG,
+  max: 35 * DEG,
+  rest: 35 * DEG,
+  spring: 0,
+  detents: Array.from({ length: 10 }, (_, i) => (28 - 4 * i) * DEG),
+  deadband: 0,
+  ratchet: -1,
+};
+/** The brake holds from here back, radians; where it is drawn on for the crewmate. */
+export const PARKING_BRAKE_ON = 20 * DEG;
+export const PARKING_BRAKE_SET = 0;
+/** The post it stands on: its pivot inside the top, m. */
+export const BRAKE_POST = { halfWidth: 0.025, depth: 0.06 } as const;
+
 /** How far each tiller's pivot is to the side of the driver's eyes, m: outside the knees. */
 export const TILLER_SIDE = 0.21;
 /** How far each tiller's pivot is under the driver's eyes, m (spike S3's rig had it 1 m under them): the handles 42 cm under the eyes. */
@@ -80,8 +105,8 @@ export const TILLER_AHEAD = 0.32;
 /** The gearbox's hump beside the driver's legs: its sides, its top and its ends, hull space, m. */
 export const GEARBOX = { x0: -0.2, x1: 0.3, top: 0.45, z0: -2.4, z1: -1.1 } as const;
 
-export type DriverControlId = 'tillerLeft' | 'tillerRight' | 'gear' | 'throttle';
-export const DRIVER_CONTROL_IDS: readonly DriverControlId[] = ['tillerLeft', 'tillerRight', 'gear', 'throttle'];
+export type DriverControlId = 'tillerLeft' | 'tillerRight' | 'gear' | 'throttle' | 'brake';
+export const DRIVER_CONTROL_IDS: readonly DriverControlId[] = ['tillerLeft', 'tillerRight', 'gear', 'throttle', 'brake'];
 
 /** Each control's spec and its pivot in hull space, m. */
 export const DRIVER_CONTROLS: Readonly<Record<DriverControlId, { spec: LeverSpec; pivot: readonly [number, number, number] }>> = (() => {
@@ -95,6 +120,8 @@ export const DRIVER_CONTROLS: Readonly<Record<DriverControlId, { spec: LeverSpec
     gear: { spec: GEAR_LEVER, pivot: [GEARBOX.x0 + 0.1, GEARBOX.top, ez - 0.35] },
     // On its quadrant against the left wall, by the driver's left knee, under the instrument box.
     throttle: { spec: HAND_THROTTLE, pivot: [-0.98, 0.66, ez - 0.25] },
+    // On its post just left of the left tiller's pedestal, the handle by the left knee: a hand drops to it off the tiller.
+    brake: { spec: PARKING_BRAKE, pivot: [ex - 0.32, 0.48, ez - 0.28] },
   };
 })();
 
@@ -281,6 +308,16 @@ export function gearOfLever(angle: number): Gear {
 export function throttleOf(angle: number): number {
   const { min, max } = HAND_THROTTLE;
   return Math.min(1, Math.max(0, (angle - min) / (max - min)));
+}
+
+/** The parking brake holds with its lever at `angle`. */
+export function parkingBrakeOf(angle: number): boolean {
+  return angle <= PARKING_BRAKE_ON;
+}
+
+/** Where the parking brake's lever stands, on or off, radians. */
+export function parkingBrakeAngle(on: boolean): number {
+  return on ? PARKING_BRAKE_SET : PARKING_BRAKE.max;
 }
 
 /** Where the hand throttle stands for `throttle` (0 to 1), radians. */

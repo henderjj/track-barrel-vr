@@ -137,6 +137,26 @@ describe('tank packets (F1.4)', () => {
     expect(v2.siren).toBe(false);
   });
 
+  it('carries the parking brake (F1.18) as a switch bit, both ways, the packets the same length', () => {
+    const controls = controlsOf({ parkingBrake: true, battery: true });
+    const short = new ArrayBuffer(DRIVER_CONTROLS_BYTES);
+    expect(encodeDriverControls(short, 1, 10, controls)).toBe(DRIVER_CONTROLS_BYTES);
+    const out = createControls();
+    expect(decodeDriverControls(new DataView(short), { seq: 0, timeMs: 0 }, out)).toBe(true);
+    expect(out.parkingBrake).toBe(true);
+    expect(out.battery).toBe(true);
+    const buffer = new ArrayBuffer(TANK_STATE_BYTES);
+    expect(encodeTankState(buffer, 1, 10, createTankDrive(), controls)).toBe(TANK_STATE_BYTES);
+    const shown = createControls();
+    expect(decodeTankState(new DataView(buffer), { seq: 0, timeMs: 0 }, createTankDrive(), shown)).toBe(true);
+    expect(shown.parkingBrake).toBe(true);
+    // An F1.16 packet has no switches: the brake reads off.
+    const v2 = createControls();
+    v2.parkingBrake = true;
+    expect(decodeDriverControls(new DataView(short, 0, DRIVER_CONTROLS_V2_BYTES), { seq: 0, timeMs: 0 }, v2)).toBe(true);
+    expect(v2.parkingBrake).toBe(false);
+  });
+
   it('round-trips the driver\'s controls, and turns away other packets', () => {
     const c = controlsOf({ left: -0.5, right: 1, gear: NEUTRAL, throttle: 0.4, accel: 0.25, mode: 'stick' });
     const buffer = new ArrayBuffer(DRIVER_CONTROLS_BYTES);

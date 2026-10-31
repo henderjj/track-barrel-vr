@@ -2088,6 +2088,41 @@ async function driverStation() {
   await sleep(600);
   squeeze('controller-left', 0);
   iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+
+  // The parking brake (F1.18): pulled up, it ratchets on, lights its lamp and holds the tank against the tillers;
+  // pushed down without the trigger the ratchet holds it; with the trigger held it goes down and comes off.
+  evalInApp('(window.__drive.parkingBrake(false), window.__drive.place(0, 0, 0), true)');
+  await take('controller-left', 'brake');
+  handTo('controller-left', handle('brake', 0), 0.5);
+  const braked = await waitFor('the parking brake on', () => { const s = station(); return s.parkingBrake && s; }, 4000).catch(() => station());
+  squeeze('controller-left', 0);
+  await sleep(300);
+  const lamp = () => evalInApp('window.__driverStation.engine().lamps.brake');
+  check('The parking brake lever pulled up by the left hand ratchets on and lights its lamp',
+    braked.parkingBrake && braked.angles.brake < 20 && lamp(),
+    `lever at ${braked.angles.brake.toFixed(1)}°, ${braked.parkingBrake ? 'on' : 'off'}, lamp ${lamp()}`);
+  evalInApp('(window.__drive.set({ left: 1, right: 1 }), true)');
+  await sleep(1500);
+  const against = evalInApp('({ t: window.__drive.state(), sign: window.__drive.sign })');
+  evalInApp('(window.__drive.set(null), true)');
+  check('With the parking brake on the tillers don\'t move the tank, and a sign says why',
+    Math.abs(against.t.speed) < 0.01 && against.t.running && against.sign.startsWith('Parking brake on'),
+    `${against.t.speed.toFixed(2)} m/s, sign "${against.sign}"`);
+  await take('controller-left', 'brake');
+  handTo('controller-left', handle('brake', 30), 0.4);
+  await sleep(700);
+  const ratcheted = station();
+  trigger('controller-left', 1);
+  handTo('controller-left', handle('brake', 35), 0.4);
+  const off = await waitFor('the parking brake off', () => { const s = station(); return !s.parkingBrake && s.angles.brake > 30 && s; }, 4000).catch(() => station());
+  trigger('controller-left', 0);
+  squeeze('controller-left', 0);
+  await sleep(300);
+  check('Pushed down, the ratchet holds it until the trigger frees it; then it goes down and the lamp goes out',
+    ratcheted.parkingBrake && !off.parkingBrake && !lamp(),
+    `pushed without the trigger ${ratcheted.angles.brake.toFixed(1)}° (${ratcheted.parkingBrake ? 'on' : 'off'}), with it ${off.angles.brake.toFixed(1)}°, lamp ${lamp()}`);
+  iwsdk(['xr', 'set-device-state'], {});
 }
 
 async function main() {

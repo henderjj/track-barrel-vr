@@ -47,7 +47,8 @@ export const TANK_STATE_V1_BYTES = TANK_STATE_V2_BYTES - 6;
  * throttle (uint8, 0-255); F1.16 added the accelerator and the clutch
  * (uint8, 0-255) and the gearbox mode (uint8, GEARBOX_MODES' index);
  * F1.17 the engine's switches and buttons (uint8 bits: SWITCH_BITS) and the
- * Engine start setting (uint8, ENGINE_STARTS' index).
+ * Engine start setting (uint8, ENGINE_STARTS' index); F1.18 the parking
+ * brake, a switch bit, so the length stays.
  */
 export const DRIVER_CONTROLS_BYTES = HEADER + 9;
 /** F1.16's DriverControls, without the engine's: read with the engine left running, as that build had it. */
@@ -66,7 +67,7 @@ const FLAG_BOGGING = 4;
 /** The engine's flags in TankState (F1.17). */
 const ENGINE_FLAGS = { running: 1, cranking: 2, power: 4, rough: 8, starterHot: 16 } as const;
 /** The instrument box's switches and buttons in the controls (F1.17). */
-const SWITCH_BITS = { battery: 1, ignition: 2, starter: 4, choke: 8, siren: 16 } as const;
+const SWITCH_BITS = { battery: 1, ignition: 2, starter: 4, choke: 8, siren: 16, parkingBrake: 32 } as const;
 
 /** How far the controls go: F1.5's four bytes, F1.16's seven, F1.17's nine. */
 type ControlsForm = 1 | 2 | 3;
@@ -227,7 +228,8 @@ function writeControls(view: DataView, o: number, c: DriverControls): void {
   view.setUint8(o + 5, unit(c.clutch));
   view.setUint8(o + 6, Math.max(0, GEARBOX_MODES.indexOf(c.mode)));
   view.setUint8(o + 7, (c.battery ? SWITCH_BITS.battery : 0) | (c.ignition ? SWITCH_BITS.ignition : 0) |
-    (c.starter ? SWITCH_BITS.starter : 0) | (c.choke ? SWITCH_BITS.choke : 0) | (c.siren ? SWITCH_BITS.siren : 0));
+    (c.starter ? SWITCH_BITS.starter : 0) | (c.choke ? SWITCH_BITS.choke : 0) | (c.siren ? SWITCH_BITS.siren : 0) |
+    (c.parkingBrake ? SWITCH_BITS.parkingBrake : 0));
   view.setUint8(o + 8, Math.max(0, ENGINE_STARTS.indexOf(c.start)));
 }
 
@@ -248,6 +250,7 @@ function readControls(view: DataView, o: number, out: DriverControls, form: Cont
     out.starter = (bits & SWITCH_BITS.starter) !== 0;
     out.choke = (bits & SWITCH_BITS.choke) !== 0;
     out.siren = (bits & SWITCH_BITS.siren) !== 0;
+    out.parkingBrake = (bits & SWITCH_BITS.parkingBrake) !== 0;
     out.start = ENGINE_STARTS[view.getUint8(o + 8)] ?? 'starter';
   } else {
     out.battery = false;
@@ -255,6 +258,7 @@ function readControls(view: DataView, o: number, out: DriverControls, form: Cont
     out.starter = false;
     out.choke = false;
     out.siren = false;
+    out.parkingBrake = false;
     out.start = 'running';
   }
   if (form >= 2) {
