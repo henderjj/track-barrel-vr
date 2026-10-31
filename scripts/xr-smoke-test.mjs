@@ -1218,6 +1218,16 @@ async function theTestRange() {
   await menuClick('row-fog-0');
   await waitFor('the fog back on', () => evalInApp('window.__range.fog().on'), 5000).catch(() => null);
 
+  // The cabin's look (docs/interior.md): shut both hatches from the menu, then open them again.
+  const interior = () => evalInApp('window.__interior.state()');
+  await menuClick('row-hatches-3');
+  const shut = await waitFor('the hatches shut', () => { const s = interior(); return !s.lids.driver && !s.lids.gunner && s; }, 5000).catch(() => interior());
+  await menuClick('row-hatches-0');
+  const opened = await waitFor('the hatches open', () => { const s = interior(); return s.lids.driver && s.lids.gunner && s; }, 5000).catch(() => interior());
+  check("The menu's Open hatches shuts both lids and takes their daylight away, and opens them again",
+    !shut.lids.driver && !shut.lids.gunner && !shut.look.driverHatch && !shut.look.gunnerHatch && opened.look.driverHatch && opened.look.gunnerHatch,
+    `shut ${JSON.stringify(shut.lids)}, opened ${JSON.stringify(opened.lids)}`);
+
   // Practice → Up the range: parked 200 m up the road facing the far target.
   await menuClick('menu-range-up');
   const up = await waitFor('the tank parked up the range', () => {

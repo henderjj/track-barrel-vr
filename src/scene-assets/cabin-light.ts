@@ -1,10 +1,14 @@
 import { type Material, MeshStandardMaterial, Vector3, Vector4 } from '@iwsdk/core';
 import { GLACIS, HULL, TURRET } from '../sim/cabin.js';
 import {
+  ambientScale,
+  type CabinLook,
+  cabinLook,
   FLOOR_SHADE,
   FLOOR_SHADE_HEIGHT,
   INTERIOR_AMBIENT,
   INTERIOR_LIGHTS,
+  lightScale,
   TURRET_INSIDE,
   turretToHull,
   WRAP,
@@ -48,6 +52,17 @@ export function setInteriorTurret(yaw: number): void {
   });
 }
 setInteriorTurret(0);
+
+/** Light the cabin as `look` has it: its hatches open or shut, its ambient and lamps scaled (src/sim/interior.ts). */
+export function setCabinLook(look: Readonly<CabinLook>): void {
+  if (look !== cabinLook) Object.assign(cabinLook, look);
+  const a = ambientScale(cabinLook);
+  interiorUniforms.cabinAmbient.value.set(INTERIOR_AMBIENT[0] * a, INTERIOR_AMBIENT[1] * a, INTERIOR_AMBIENT[2] * a);
+  INTERIOR_LIGHTS.forEach((light, i) => {
+    const k = lightScale(light, cabinLook);
+    interiorUniforms.cabinLightColor.value[i].set(light.color[0] * k, light.color[1] * k, light.color[2] * k, light.range);
+  });
+}
 
 /** Turn the interior lighting on (1) or off (0, the sky's light everywhere, as before), for comparing. */
 export function setInteriorLighting(on: boolean): void {

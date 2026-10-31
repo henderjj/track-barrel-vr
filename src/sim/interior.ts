@@ -68,6 +68,69 @@ export const FLOOR_SHADE_HEIGHT = 0.9;
 /** How much of a light reaches a face turned away from it (the rest falls off with the angle). */
 export const WRAP = 0.25;
 
+/**
+ * How each player has the cabin, from the game menu's Sound and view tab
+ * (src/live-settings.ts), to find what looks best (John's headset check,
+ * 2026-10-30): which hatches stand open, and the ambient and the dome lamps
+ * scaled from the numbers above. Each player's own view: nothing of it goes
+ * over the network.
+ */
+export interface CabinLook {
+  driverHatch: boolean;
+  gunnerHatch: boolean;
+  /** The ambient times this, before the hatches' share of it. */
+  ambient: number;
+  /** The dome lamps times this: 0 off. */
+  lamps: number;
+}
+
+/** Which hatches stand open, as the settings spell it. */
+export type OpenHatches = 'both' | 'driver' | 'gunner' | 'none';
+
+export function parseHatches(raw: unknown, fallback: OpenHatches = 'both'): OpenHatches {
+  return raw === 'both' || raw === 'driver' || raw === 'gunner' || raw === 'none' ? raw : fallback;
+}
+
+/** The look the settings ask for: `hatches` open, the ambient times `ambient`, the lamps times `lamps`. */
+export function lookFor(hatches: OpenHatches, ambient: number, lamps: number, out: CabinLook): CabinLook {
+  out.driverHatch = hatches === 'both' || hatches === 'driver';
+  out.gunnerHatch = hatches === 'both' || hatches === 'gunner';
+  out.ambient = ambient;
+  out.lamps = lamps;
+  return out;
+}
+
+/** The look in effect, which CabinLightSystem keeps to the settings. */
+export const cabinLook: CabinLook = { driverHatch: true, gunnerHatch: true, ambient: 1, lamps: 1 };
+
+/**
+ * How much of the ambient is the sky's light in through each open hatch, the
+ * rest coming through the vision slit, the periscopes and the sight and off
+ * the ivory paint: shutting both leaves 40% of it.
+ */
+export const HATCH_AMBIENT_SHARE = 0.3;
+
+/** What `look` multiplies the ambient by. */
+export function ambientScale(look: Readonly<CabinLook>): number {
+  const shut = (look.driverHatch ? 0 : 1) + (look.gunnerHatch ? 0 : 1);
+  return look.ambient * (1 - HATCH_AMBIENT_SHARE * shut);
+}
+
+/** What `look` multiplies `light` by: a shut hatch lets no daylight in; the lamps as set; the slit always. */
+export function lightScale(light: InteriorLight, look: Readonly<CabinLook>): number {
+  switch (light.id) {
+    case 'driver-hatch':
+      return look.driverHatch ? 1 : 0;
+    case 'gunner-hatch':
+      return look.gunnerHatch ? 1 : 0;
+    case 'hull-lamp':
+    case 'turret-lamp':
+      return look.lamps;
+    default:
+      return 1;
+  }
+}
+
 /** Margins round the inner faces for the inside tests, m: inside the walls' 8 cm thickness, so the outer faces are outside. */
 const MARGIN = 0.03;
 /** The turret's inside: inner faces of its walls, its roof's underside and the hull roof it stands on, turret space, m. */
@@ -110,11 +173,18 @@ const lightAt: [number, number, number] = [0, 0, 0];
 
 /**
  * What the sky's light is multiplied by at hull-space point `p` on a face
- * whose unit normal is `n`, with the turret turned `yaw`: 1 outside the
- * cabin; inside, the dim ambient (darker low in the hull) plus each light's
- * pool. Into `out`, linear RGB. The shader does the same sum.
+ * whose unit normal is `n`, with the turret turned `yaw` and the cabin as
+ * `look` has it: 1 outside the cabin; inside, the dim ambient (darker low in
+ * the hull) plus each light's pool. Into `out`, linear RGB. The shader does
+ * the same sum.
  */
-export function interiorLight(p: readonly number[], n: readonly number[], yaw: number, out: [number, number, number]): [number, number, number] {
+export function interiorLight(
+  p: readonly number[],
+  n: readonly number[],
+  yaw: number,
+  out: [number, number, number],
+  look: Readonly<CabinLook> = cabinLook,
+): [number, number, number] {
   if (!insideCabin(p, yaw)) {
     out[0] = 1;
     out[1] = 1;
@@ -122,11 +192,13 @@ export function interiorLight(p: readonly number[], n: readonly number[], yaw: n
     return out;
   }
   const t = Math.min(1, Math.max(0, p[1] / FLOOR_SHADE_HEIGHT));
-  const low = FLOOR_SHADE + (1 - FLOOR_SHADE) * t * t * (3 - 2 * t);
+  const low = (FLOOR_SHADE + (1 - FLOOR_SHADE) * t * t * (3 - 2 * t)) * ambientScale(look);
   out[0] = INTERIOR_AMBIENT[0] * low;
   out[1] = INTERIOR_AMBIENT[1] * low;
   out[2] = INTERIOR_AMBIENT[2] * low;
   for (const light of INTERIOR_LIGHTS) {
+    const scale = lightScale(light, look);
+    if (scale === 0) continue;
     const at = light.frame === 'turret' ? turretToHull(light.at, yaw, lightAt) : light.at;
     const dx = at[0] - p[0];
     const dy = at[1] - p[1];
@@ -135,7 +207,7 @@ export function interiorLight(p: readonly number[], n: readonly number[], yaw: n
     const d = Math.sqrt(d2);
     const facing = WRAP + (1 - WRAP) * Math.max(0, (n[0] * dx + n[1] * dy + n[2] * dz) / d);
     const cone = light.cone > 0 ? Math.max(0, dy / d) ** light.cone : 1;
-    const k = (facing * cone) / (1 + d2 / (light.range * light.range));
+    const k = (scale * facing * cone) / (1 + d2 / (light.range * light.range));
     out[0] += light.color[0] * k;
     out[1] += light.color[1] * k;
     out[2] += light.color[2] * k;

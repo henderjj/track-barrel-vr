@@ -66,6 +66,40 @@ export const LIVE_ITEMS: readonly LiveItem[] = [
     ],
     current: (s) => String(s.hz),
   },
+  // The cabin's look (src/sim/interior.ts): shown in the menu's Sound and view tab.
+  {
+    key: 'hatches',
+    label: 'Open hatches',
+    options: [
+      ['both', 'Both'],
+      ['driver', "Driver's"],
+      ['gunner', "Gunner's"],
+      ['none', 'None'],
+    ],
+    current: (s) => s.hatches,
+  },
+  {
+    key: 'cabin',
+    label: 'Cabin light',
+    options: [
+      ['0.5', 'Darker'],
+      ['1', 'Normal'],
+      ['2', 'Lighter'],
+      ['4', 'Bright'],
+    ],
+    current: (s) => String(s.cabin),
+  },
+  {
+    key: 'lamps',
+    label: 'Dome lamps',
+    options: [
+      ['0', 'Off'],
+      ['0.5', 'Dim'],
+      ['1', 'Normal'],
+      ['2', 'Bright'],
+    ],
+    current: (s) => String(s.lamps),
+  },
   { key: 'fog', label: 'Range fog', options: [['1', 'On'], ['0', 'Off']], current: (s) => onOff(s.fog) },
   {
     key: 'foveation',

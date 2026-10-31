@@ -50,4 +50,17 @@ describe('in-game settings', () => {
     expect(parseSettings('?sound=0.5').sound).toBe(0.5);
     expect(parseSettings('?sound=3').sound).toBe(1);
   });
+
+  it("offer the cabin's look: which hatches stand open, the cabin light and the dome lamps (docs/interior.md)", () => {
+    expect([DEFAULT_SETTINGS.hatches, DEFAULT_SETTINGS.cabin, DEFAULT_SETTINGS.lamps]).toEqual(['both', 1, 1]);
+    const s = parseSettings('?hatches=none&cabin=2&lamps=0');
+    expect([s.hatches, s.cabin, s.lamps]).toEqual(['none', 2, 0]);
+    expect(parseSettings('?hatches=roof').hatches).toBe('both');
+    for (const key of ['hatches', 'cabin', 'lamps']) {
+      const item = LIVE_ITEMS.find((i) => i.key === key)!;
+      // Each choice parses back to itself, and the default is one of them.
+      for (const [value] of item.options) expect(item.current(parseSettings(`?${key}=${value}`)), `${key}=${value}`).toBe(value);
+      expect(item.options.map(([v]) => v)).toContain(item.current(DEFAULT_SETTINGS));
+    }
+  });
 });

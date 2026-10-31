@@ -153,6 +153,18 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
+  it('with the hatches shut: the lids in their holes, the turret facing every way it turns', () => {
+    const shut = (o: Object3D, hatch: 'driver' | 'gunner') => {
+      o.getObjectByName(cabin.HATCH_LID_NAMES[hatch].open)!.visible = false;
+      o.getObjectByName(cabin.HATCH_LID_NAMES[hatch].closed)!.visible = true;
+      return o;
+    };
+    const hull = shut(cabin.createHull(), 'driver');
+    for (const yaw of [0, Math.PI / 4, Math.PI, -Math.PI / 3]) {
+      expectNone([hull, shut(turretWith(yaw, 0, 0), 'gunner')], CABIN_GAP);
+    }
+  });
+
   it("in the turret: the gun at each end of its elevation, and the gunner's controls turned (F1.8)", () => {
     const hull = cabin.createHull();
     for (const [elevation, turn] of [[MIN_ELEVATION, 0], [MAX_ELEVATION, 1.3], [0.05, -2.2], [-0.1, Math.PI]]) {

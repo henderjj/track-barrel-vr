@@ -461,8 +461,10 @@ async function turretChecks(host, guest, label) {
     const [h, g] = await Promise.all([turret(host), turret(guest)]);
     return h.yawDeg > 3 ? { h, g } : null;
   }, 15000).catch(() => null);
+  // The two pages are read at nearly the same moment, not the same one: on a clean link the host can be a few
+  // milliseconds further on (3.57° to the gunner's 3.52° at 6°/s), so it may lead by up to 0.1 s of turning.
   check(`The gunner's power traverse turns the turret on the gunner's page at once, and the host sees it close behind (${label})`,
-    turning !== null && turning.g.yawDeg >= turning.h.yawDeg && turning.g.yawDeg - turning.h.yawDeg < turning.g.rateDeg * 0.6 + 0.5,
+    turning !== null && turning.g.yawDeg >= turning.h.yawDeg - turning.g.rateDeg * 0.1 && turning.g.yawDeg - turning.h.yawDeg < turning.g.rateDeg * 0.6 + 0.5,
     turning ? `gunner ${turning.g.yawDeg.toFixed(2)}° at ${turning.g.rateDeg.toFixed(1)}°/s; host draws ${turning.h.yawDeg.toFixed(2)}°` : JSON.stringify(await Promise.all([turret(host), turret(guest)])));
   // How smoothly the host draws it: frame by frame it never goes back or jumps.
   const steps = await host.page.evaluate(() => new Promise((resolve) => {
