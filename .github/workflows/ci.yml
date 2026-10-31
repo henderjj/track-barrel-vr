@@ -94,7 +94,8 @@ jobs:
     needs: plan
     if: needs.plan.outputs.browser == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # About 22 minutes on a quick runner; slower runners draw half as fast.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -105,6 +106,19 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       - name: Emulated-headset test
         run: npm run test:xr
+        env:
+          # Runners have a display device (/dev/dri/card1) but no GPU. IWSDK
+          # takes any such device for a GPU and launches Chromium on hardware
+          # GL, which dies on reloads and screenshots. Render in software.
+          IWSDK_GPU: swiftshader
+      - name: Why the managed browser died
+        # Chromium has closed under the test on CI with nothing in its output:
+        # show the dev runtime's log and anything the kernel killed.
+        if: failure()
+        run: |
+          tail -n 120 .iwsdk/runtime/logs/*.log || true
+          sudo dmesg | grep -iE 'killed process|out of memory|oom|segfault|chrom' | tail -n 30 || true
+          free -m
       - name: Stop the dev runtime
         if: always()
         run: npx iwsdk dev down || true

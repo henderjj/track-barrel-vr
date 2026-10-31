@@ -378,10 +378,12 @@ async function driveChecks(host, guest, label) {
   // How smoothly the guest draws it: the distance driven, frame by frame, never goes back or jumps.
   const steps = await guest.page.evaluate(() => new Promise((resolve) => {
     const out = [];
-    const end = performance.now() + 2000;
+    const start = performance.now();
     const frame = () => {
       out.push(window.__drive.state().odometer);
-      if (performance.now() < end) requestAnimationFrame(frame);
+      // 2 s, and on a slow runner (four or five frames a second) on until there are enough frames to judge, up to 6 s.
+      const took = performance.now() - start;
+      if (took < 2000 || (out.length < 16 && took < 6000)) requestAnimationFrame(frame);
       else resolve(out);
     };
     requestAnimationFrame(frame);
@@ -465,10 +467,12 @@ async function turretChecks(host, guest, label) {
   // How smoothly the host draws it: frame by frame it never goes back or jumps.
   const steps = await host.page.evaluate(() => new Promise((resolve) => {
     const out = [];
-    const end = performance.now() + 2000;
+    const start = performance.now();
     const frame = () => {
       out.push(window.__turret.state().yaw);
-      if (performance.now() < end) requestAnimationFrame(frame);
+      // 2 s, and on a slow runner (four or five frames a second) on until there are enough frames to judge, up to 6 s.
+      const took = performance.now() - start;
+      if (took < 2000 || (out.length < 16 && took < 6000)) requestAnimationFrame(frame);
       else resolve(out);
     };
     requestAnimationFrame(frame);
