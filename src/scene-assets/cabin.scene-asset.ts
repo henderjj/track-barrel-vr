@@ -26,7 +26,7 @@ import {
   TURRET_RING,
   VISION_SLIT,
 } from '../sim/cabin.js';
-import { MANTLET_DEPTH, POWER_GRIP, STATION, TRUNNION } from '../sim/turret.js';
+import { ELEVATING_GEAR, MANTLET_DEPTH, mountToTurret, POWER_GRIP, STATION, type StationMount, TRUNNION } from '../sim/turret.js';
 import { DOME_LAMPS } from '../sim/interior.js';
 import { binParts, boardParts, BREECH_HOLE, breechFittings, rackParts } from './loading.scene-asset.js';
 import { driverClockParts, gunnerClockParts } from './range-run.scene-asset.js';
@@ -498,12 +498,19 @@ function stationParts(): Part[] {
   const parts: Part[] = [];
   const floor = TURRET.basketFloor;
   for (const key of ['elevation', 'crank'] as const) {
-    const { at, tilt } = STATION[key];
+    const mount: StationMount = STATION[key];
     // The gearbox sits behind the wheel's hub, which ends inside it; its column stands on the basket floor.
-    const back = -0.045;
-    const centre: Vec3 = [at[0], at[1] - back * Math.sin(tilt), at[2] + back * Math.cos(tilt)];
-    parts.push({ geometry: new BoxGeometry(0.08, 0.08, 0.06), color: STEEL_LIGHT, position: centre, rotation: [tilt, 0, 0] });
+    const centre = mountToTurret(mount, [0, 0, -0.04], [0, 0, 0]);
+    // Either a tilt or a turn, so the order of the two doesn't matter.
+    parts.push({ geometry: new BoxGeometry(0.08, 0.08, 0.05), color: STEEL_LIGHT, position: centre, rotation: [mount.tilt, mount.yaw ?? 0, 0] });
     parts.push(beam([centre[0], floor - 0.01, centre[2]], [centre[0], centre[1] - 0.02, centre[2]], 0.022, STEEL, 6));
+    if (key === 'elevation') {
+      // As on the Sherman: the gearbox's column carries the drive up to the elevating pinion, which meshes with the arc on the gun (gunParts).
+      const { pinion, pinionRadius } = ELEVATING_GEAR;
+      parts.push(beam([centre[0], centre[1] + 0.02, centre[2]], [pinion[0], pinion[1] - pinionRadius - 0.005, pinion[2]], 0.02, STEEL, 6));
+      parts.push({ geometry: new BoxGeometry(0.035, 0.05, 0.06), color: STEEL_LIGHT, position: [pinion[0] + 0.03, pinion[1], pinion[2]] });
+      parts.push({ geometry: new CylinderGeometry(pinionRadius, pinionRadius, 0.03, 10, 1), color: STEEL, position: pinion, rotation: [0, 0, Math.PI / 2] });
+    }
   }
   // The power grip's pedestal: its top 15 mm under the grip's flange, as the kit's bench has it.
   const { at } = STATION.twist;
@@ -520,7 +527,37 @@ function stationParts(): Part[] {
  */
 function gunParts(): Part[] {
   const z0 = TRUNNION.z;
-  return [box([0.9, 0.32, MANTLET_DEPTH], [0, 0.01, TURRET.front - MANTLET_DEPTH / 2 + 0.01 - z0], PAINT)];
+  return [box([0.9, 0.32, MANTLET_DEPTH], [0, 0.01, TURRET.front - MANTLET_DEPTH / 2 + 0.01 - z0], PAINT), ...elevatingArcParts()];
+}
+
+/**
+ * The toothed elevating arc on the cradle's right side (src/sim/turret.ts
+ * ELEVATING_GEAR), gun space: a curved bar round the trunnions with teeth on
+ * its outer edge for the pinion, on two arms from a boss just inside the
+ * front plate. It turns with the gun, so the handwheel is seen to work it.
+ */
+function elevatingArcParts(): Part[] {
+  const { x, radius: r, half, from, to } = ELEVATING_GEAR;
+  const parts: Part[] = [];
+  const at = (angle: number, radius: number): Vec3 => [x, radius * Math.cos(angle), radius * Math.sin(angle)];
+  const steps = 10;
+  for (let i = 0; i < steps; i++) {
+    const a = from + ((to - from) * i) / steps;
+    const b = from + ((to - from) * (i + 1)) / steps;
+    // Each piece runs a little into the next, so the bar has no gaps.
+    parts.push(beam(at(a - 0.004, r), at(b + 0.004, r), half, STEEL_LIGHT, 4));
+  }
+  // A tooth every 3°.
+  const teeth = Math.round((to - from) / (Math.PI / 60));
+  for (let i = 0; i <= teeth; i++) {
+    const a = from + ((to - from) * i) / teeth;
+    parts.push(beam(at(a, r + half - 0.004), at(a, r + half + 0.008), 0.004, STEEL, 4));
+  }
+  const boss: Vec3 = [x, 0, HULL.wall + 0.04];
+  parts.push(beam(boss, at(from, r - half + 0.002), 0.012, STEEL, 5));
+  parts.push(beam(boss, at(to, r - half + 0.002), 0.012, STEEL, 5));
+  parts.push({ geometry: new CylinderGeometry(0.03, 0.03, 0.03, 8, 1), color: STEEL_LIGHT, position: boss, rotation: [0, 0, Math.PI / 2] });
+  return parts;
 }
 
 /**

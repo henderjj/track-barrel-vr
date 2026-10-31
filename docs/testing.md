@@ -24,6 +24,8 @@ What gets skipped, and why it is safe:
 - A pull request that changes only Markdown, `docs/` or `LICENSE` skips **xr** and **net**: nothing they load changed.
 - When a pull request passes, **check** records the exact files it tested (the git tree of the pull request merged into `main`) as an artifact named `tested-tree-<tree>`. When that pull request is merged and `main` didn't move in between, the merge on `main` has exactly the same files, so `main` skips the tests and deploys straight away. If another pull request merged first, the files differ and `main` runs everything before it deploys.
 
+The **xr** job sets `IWSDK_GPU=swiftshader`. Runners have a display device in `/dev/dri` but no GPU, and IWSDK takes any such device for a GPU: Chromium then runs on hardware GL and dies on the start-up reload or a screenshot. Software rendering on some runners draws a frame or two a second. IWSDK's ray takes a press as a click only if it is released within 0.8 s by frame time, so at that pace clicks were dropped: the test opens that window to 5 s (`relaxRayClicks`) and holds the trigger (and Y) for two and a half of the slowest recent frames. Its waits stretch with the frame time too, so a run there takes about 25 minutes.
+
 The Chromium download for the browser tests is kept in the Actions cache, keyed on the Playwright version. The first run after a Playwright update downloads it again, which can take ten minutes or more.
 
 When you add something random (a gust, a breakdown, weather), give it a URL switch that turns it off and load the browser tests with it off, so it can't push their other checks about; their own checks for it then send one on purpose, the way a Practice button does.
