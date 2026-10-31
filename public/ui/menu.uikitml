@@ -383,6 +383,33 @@
               <Button id="row-sound-3" class="choice" size="sm" variant="secondary">Choice</Button>
             </div>
           </div>
+          <div id="row-hatches" class="setting">
+            <div id="row-hatches-label" class="label">Setting</div>
+            <div id="row-hatches-choices" class="choices">
+              <Button id="row-hatches-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-hatches-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-hatches-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-hatches-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
+          <div id="row-cabin" class="setting">
+            <div id="row-cabin-label" class="label">Setting</div>
+            <div id="row-cabin-choices" class="choices">
+              <Button id="row-cabin-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-cabin-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-cabin-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-cabin-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
+          <div id="row-lamps" class="setting">
+            <div id="row-lamps-label" class="label">Setting</div>
+            <div id="row-lamps-choices" class="choices">
+              <Button id="row-lamps-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-lamps-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-lamps-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-lamps-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
           <div id="row-hud" class="setting">
             <div id="row-hud-label" class="label">Setting</div>
             <div id="row-hud-choices" class="choices">

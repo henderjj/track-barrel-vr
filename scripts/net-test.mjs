@@ -461,8 +461,10 @@ async function turretChecks(host, guest, label) {
     const [h, g] = await Promise.all([turret(host), turret(guest)]);
     return h.yawDeg > 3 ? { h, g } : null;
   }, 15000).catch(() => null);
+  // The two pages are read at nearly the same moment, not the same one: on a clean link the host can be a few
+  // milliseconds further on (3.57° to the gunner's 3.52° at 6°/s), so it may lead by up to 0.1 s of turning.
   check(`The gunner's power traverse turns the turret on the gunner's page at once, and the host sees it close behind (${label})`,
-    turning !== null && turning.g.yawDeg >= turning.h.yawDeg && turning.g.yawDeg - turning.h.yawDeg < turning.g.rateDeg * 0.6 + 0.5,
+    turning !== null && turning.g.yawDeg >= turning.h.yawDeg - turning.g.rateDeg * 0.1 && turning.g.yawDeg - turning.h.yawDeg < turning.g.rateDeg * 0.6 + 0.5,
     turning ? `gunner ${turning.g.yawDeg.toFixed(2)}° at ${turning.g.rateDeg.toFixed(1)}°/s; host draws ${turning.h.yawDeg.toFixed(2)}°` : JSON.stringify(await Promise.all([turret(host), turret(guest)])));
   // How smoothly the host draws it: frame by frame it never goes back or jumps.
   const steps = await host.page.evaluate(() => new Promise((resolve) => {
@@ -705,8 +707,9 @@ async function lobbyChecks(browser, host, guest) {
     const xr = navigator.xr ?? {};
     window.__vrRequests = 0;
     xr.isSessionSupported = async (mode) => mode === 'immersive-vr';
-    xr.requestSession = async () => {
+    xr.requestSession = async (mode, options) => {
       window.__vrRequests++;
+      window.__vrOptions = options;
       throw new DOMException('No headset in this test', 'NotSupportedError');
     };
     if (!navigator.xr) {
@@ -752,6 +755,10 @@ async function lobbyChecks(browser, host, guest) {
   const requests = await waitFor('a VR session request', () => solo.page.evaluate(() => window.__vrRequests), 3000).catch(() => 0);
   check('The page has its own Enter VR button, kept after joining a crew', shownSolo && shownInCrew && requests > 0,
     `shown ${shownSolo ? 'solo' : 'not solo'}, ${shownInCrew ? 'and' : 'but not'} in a crew; ${requests} session request(s) on click`);
+  // A PC browser (this one) isn't asked for WebXR Layers (sessionInitFor in src/vr-messages.ts).
+  const vrOptions = await solo.page.evaluate(() => window.__vrOptions ?? null);
+  check('A PC VR request leaves out WebXR Layers and keeps the floor', vrOptions !== null &&
+    !vrOptions.optionalFeatures.includes('layers') && vrOptions.optionalFeatures.includes('local-floor'), JSON.stringify(vrOptions));
   // A refused request says why under the button, and the button can be pressed again.
   const vrNote = await waitFor('the reason VR didn\'t start', () => solo.page.evaluate(() => {
     const note = document.getElementById('crew-vr-status');

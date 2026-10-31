@@ -22,6 +22,16 @@ After the first pass John reported: it reads as a tank and nothing flickers, but
 - **Gunner.** The elevation wheel, the traverse crank and the power grip are 5 cm higher (their hubs 39 cm under the eyes), the crank 9 cm further in, and the race ring the turret turns on is narrower and out at the hole's edge (its inner edge 87 cm from the middle, 83 before), so the crank and the fist on it turn clear of it.
 - **The turret's roof** reads as a cast turret's: chamfers along the roof's edges and down the four corners take away the box, the hatch is round with a collar under it and a round lid, and the roof has the ventilator's housing over the loader's side and a rib behind the lamp.
 
+## John's second headset check (2026-10-30)
+
+After the second pass John found all the controls in reach. In the gunner's seat he could see the world outside through gaps at the turret's front-left and rear-right corners, and with the hatches open it still looked bright. He asked for options to open and close the hatches and to adjust the light, to find what looks best. The third pass:
+
+- **The gaps.** The turret is a 2.3 m square on a hull 2.36 m wide outside, so once it turns more than about 1.5° two opposite corners overhang the hull's sides, and its foot was open there: through it the gunner saw the ground past the hull roof's edge. A plate now closes the turret's foot from its walls in to the ring (`TURRET_FOOT`), 1 cm over the hull roof, so it turns with the turret. A test casts rays down inside the turret at seven angles and finds the floor every time; without the plate, the front-left corner at 17° saw the ground.
+- **Settings → Sound and view** has three new rows, each player's own view and kept for next time:
+  - **Open hatches**: Both (the default), Driver's, Gunner's or None (`?hatches=both`, `driver`, `gunner`, `none`). A shut hatch has its lid down in the hole, lets no daylight pool under it and takes 30% of the cabin's ambient with it (`HATCH_AMBIENT_SHARE`): with both shut the ambient is 40% of the open cabin's, the rest standing for the light through the slit, the periscopes and the sight, off the ivory paint.
+  - **Cabin light**: the ambient times 0.5 (Darker), 1 (Normal, about 6% of the sky's), 2 (Lighter) or 4 (Bright, about the first pass's 26%) (`?cabin=`).
+  - **Dome lamps**: Off, Dim (half), Normal or Bright (twice) (`?lamps=`).
+
 ## What players experience
 
 - **The driver** sits under a sloped glacis, as in a Sherman: the front plate stands up from the floor to knee height, slopes back over the driver's legs at 57° from upright, and meets the hood's upright face, which holds the vision slit 30 cm ahead of the eyes. From the seat the slit shows about 60° of the world (24° before), so the driver can steer with both hands on the tillers and their eyes on the road; leaning 10 cm in to the brow pad opens it to 80°.
@@ -66,7 +76,7 @@ What it lights: the cabin, the driver's and gunner's controls, the periscope, th
 
 ## Sharing
 
-Nothing new goes over the network: the layout is the same numbers on both pages, and each page lights its own cabin from the turret angle it draws.
+Nothing new goes over the network: the layout is the same numbers on both pages, and each page lights its own cabin from the turret angle it draws. The hatch and light settings are each player's own view: a hatch one player shuts stays open on the crewmate's page. Once a look is chosen it can become the tank's, shared, if a hatch is to matter in play.
 
 ## Departures and what to watch
 
@@ -85,11 +95,20 @@ Nothing new goes over the network: the layout is the same numbers on both pages,
 - `test/z-fighting.test.ts`: the new front, the details, the lamps and the instrument box, the turret at every tested angle.
 - `npm run test:xr`: every seat, station and sight step, on the new layout; a lean past the head box fades the view with the seat left where it was, leaning back clears it, standing up fades it under the roof. Screenshots `artifacts/xr-driver-seat.png` and `artifacts/xr-gunner-seat.png` show the lighting.
 
-`window.__interior` gives `state()`, `setLighting(on)` (to compare with the sky's light everywhere, as before) and `light(point, normal)`.
+- `test/interior.test.ts` (third pass): a shut hatch takes its pool and its share of the ambient away and leaves the other's; the cabin light scales the ambient and the lamps only their pools; the shader's uniforms follow and go back; each hatch's open lid shown and its shut one ready; the turret's foot closed at every angle. `test/z-fighting.test.ts`: the shut lids in their holes, the turret at four angles.
+
+`window.__interior` gives `state()` (now with the look and which lids are drawn open), `setLighting(on)` (to compare with the sky's light everywhere, as before) and `light(point, normal)`.
 
 ## Headset check
 
-On a Quest 3 after the deploy, with the cache cleared, seated. These are for the second pass.
+On a Quest 3 after the deploy, with the cache cleared, seated. Steps 1 to 4 are for the third pass; the second pass's follow.
+
+1. Practice → Sit in → Gunner, and turn the turret a little either way with the crank. Look down into the turret's front-left and rear-right corners: a floor at the foot of the walls, no ground showing through.
+2. Settings → Sound and view → **Open hatches**: try Both, Driver's, Gunner's and None. A shut hatch has its lid down and the pool of daylight under it goes; with None the cabin is darkest. Do it in both seats.
+3. **Cabin light** (Darker, Normal, Lighter, Bright) and **Dome lamps** (Off, Dim, Normal, Bright): try them with the hatches open and shut. Say which mix looks best; it can become the default.
+4. Perf HUD (X): the fps in the gunner's seat with the hatches open and shut.
+
+The second pass's:
 
 1. Enter VR in the driver's seat (Practice → Sit in → Driver). **Lighting**: away from the hatch the inside is dark, the daylight falls in a pool under your open hatch, and the dome lamp glows warm in the roof. Say whether it is now too dark to find the controls, or still too bright.
 2. Lean forward into the slit until your head goes past it: the view fades to black instead of being pushed back. Sit back: it clears and your seat is where it was. Stand up: it fades under the roof. Say whether the fade is easier to test with than the push.

@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  type BufferGeometry,
   CylinderGeometry,
   MeshBasicMaterial,
   SphereGeometry,
@@ -126,6 +127,11 @@ const GUNNER_HATCH = { x: SEATS.gunner.eye[0], z: SEATS.gunner.eye[2] + 0.1, rad
 const TURRET_FILLET = 0.12;
 /** How high a hatch lid stands when open, m. */
 const LID = 0.5;
+/**
+ * The plate at the turret's foot, turret space: it stands `lift` above the hull roof it turns on and is `thickness`
+ * thick, its hole round the ring clear of the ring's torus, m.
+ */
+const TURRET_FOOT = { lift: 0.01, thickness: 0.03, hole: TURRET_RING.radius + TURRET_RING.tube + 0.01 } as const;
 
 /** A seat: cushion, backrest and a post down to its floor, in its frame. */
 function seatParts(cushion: Vec3, floorY: number): Part[] {
@@ -241,8 +247,6 @@ function hullParts(): Part[] {
   const [hx0, hz0, hx1, hz1] = DRIVER_HATCH;
   outline.holes.push(rectangle(new Path(), hx0, hz1, hx1, hz0));
   parts.push(roof(outline, top, t));
-  // The driver's hatch lid, standing open in front of the hole, where the turret's overhang can't sweep into it.
-  parts.push(box([hx1 - hx0, LID, 0.05], [(hx0 + hx1) / 2, top + LID / 2, hz0 - 0.03], PAINT_DARK));
 
   // The driver's place: seat, the gearbox's hump beside their legs, and the station's fixed parts (F1.5).
   const driver = SEATS.driver;
@@ -416,6 +420,53 @@ function turretRoofParts(): Part[] {
   return parts;
 }
 
+/** The names of a hatch's two lids: one drawn standing open, one shut in the hole; CabinLightSystem shows one (docs/interior.md). */
+export const HATCH_LID_NAMES = {
+  driver: { open: 'Driver Hatch Open', closed: 'Driver Hatch Closed' },
+  gunner: { open: 'Gunner Hatch Open', closed: 'Gunner Hatch Closed' },
+} as const;
+
+/**
+ * A hatch's lids, in the hull's frame for the driver's and the turret's for the gunner's: open (shown) and shut (hidden).
+ * Shut, it is a plug a little wider than the hole, through the roof: its underside 1 cm under the roof's, inside the
+ * cabin and lit as it is, and its top 3 cm over the roof's, painted.
+ */
+function createHatchLids(hatch: 'driver' | 'gunner'): Mesh[] {
+  const open: Part[] = [];
+  let shut: BufferGeometry;
+  let underside: number;
+  if (hatch === 'driver') {
+    // Standing open in front of the hole, where the turret's overhang can't sweep into it.
+    const [hx0, hz0, hx1, hz1] = DRIVER_HATCH;
+    const top = HULL.roof + HULL.wall;
+    open.push(box([hx1 - hx0, LID, 0.05], [(hx0 + hx1) / 2, top + LID / 2, hz0 - 0.03], PAINT_DARK));
+    underside = HULL.roof - LID_PLUG.under;
+    const height = top + LID_PLUG.over - underside;
+    shut = new BoxGeometry(hx1 - hx0 + 2 * LID_PLUG.rim, height, hz1 - hz0 + 2 * LID_PLUG.rim);
+    shut.translate((hx0 + hx1) / 2, underside + height / 2, (hz0 + hz1) / 2);
+  } else {
+    // The round lid, standing open behind the hole.
+    const h = GUNNER_HATCH;
+    const top = TURRET.roof + HULL.wall;
+    const lid = new CylinderGeometry(h.radius + 0.02, h.radius + 0.02, 0.05, 16, 1);
+    lid.rotateX(Math.PI / 2);
+    open.push({ geometry: lid, color: PAINT_DARK, position: [h.x, top + h.radius + 0.02, h.z + h.radius + 0.06] });
+    underside = TURRET.roof - LID_PLUG.under;
+    const height = top + LID_PLUG.over - underside;
+    shut = new CylinderGeometry(h.radius + LID_PLUG.rim, h.radius + LID_PLUG.rim, height, 20, 1);
+    shut.translate(h.x, underside + height / 2, h.z);
+  }
+  const names = HATCH_LID_NAMES[hatch];
+  const opened = new Mesh(mergeParts(open), material);
+  opened.name = names.open;
+  const closed = new Mesh(mergeParts([{ geometry: shut, color: (_tri, c) => (c.y < underside + 0.005 ? IVORY : PAINT_DARK) }]), material);
+  closed.name = names.closed;
+  closed.visible = false;
+  return [opened, closed];
+}
+/** A shut lid's plug: how far it reaches under the roof and over it, and past the hole's edge all round, m. */
+const LID_PLUG = { under: 0.01, over: 0.03, rim: 0.01 } as const;
+
 /** The dome lamps' glowing lenses, each just under its housing, in the frame `frame` (a separate mesh: they glow). */
 function createLampLenses(frame: 'hull' | 'turret'): Mesh {
   const parts: Part[] = DOME_LAMPS.filter((l) => l.frame === frame).map((l): Part => ({
@@ -448,10 +499,12 @@ function turretParts(): Part[] {
   const h = GUNNER_HATCH;
   outline.holes.push(new Path().absarc(h.x, h.z, h.radius, 0, Math.PI * 2, true));
   parts.push(roof(outline, top, t));
-  // The round lid, standing open behind the hole.
-  const lid = new CylinderGeometry(h.radius + 0.02, h.radius + 0.02, 0.05, 16, 1);
-  lid.rotateX(Math.PI / 2);
-  parts.push({ geometry: lid, color: PAINT_DARK, position: [h.x, top + h.radius + 0.02, h.z + h.radius + 0.06] });
+  // The turret's foot: a plate from its walls in to the ring, so where a turned turret's corners overhang the hull's sides
+  // nobody sees the ground past the hull roof's edge. Its edges are sunk in the walls.
+  const foot = rectangle(new Shape(), -w + t / 2, TURRET.front + t / 2, w - t / 2, TURRET.rear - t / 2) as Shape;
+  foot.holes.push(new Path().absarc(0, 0, TURRET_FOOT.hole, 0, Math.PI * 2, true));
+  const footTop = bottom + TURRET_FOOT.lift + TURRET_FOOT.thickness;
+  parts.push({ ...roof(foot, footTop, TURRET_FOOT.thickness), color: (_tri: number, c: Vector3) => (c.y > footTop - 0.005 ? IVORY : PAINT) });
   // The cast turret's inside, rounded rather than a box (docs/interior.md).
   parts.push(...turretRoofParts());
   // The ring the turret turns on.
@@ -602,7 +655,7 @@ const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatSh
 export function createHull(): Mesh {
   const mesh = new Mesh(mergeParts(hullParts()), material);
   mesh.name = 'Hull';
-  mesh.add(createLampLenses('hull'));
+  mesh.add(createLampLenses('hull'), ...createHatchLids('driver'));
   return mesh;
 }
 
@@ -625,6 +678,6 @@ export function createGun(): Mesh {
 export function createTurret(): Mesh {
   const mesh = new Mesh(mergeParts(turretParts()), material);
   mesh.name = 'Turret';
-  mesh.add(createLampLenses('turret'));
+  mesh.add(createLampLenses('turret'), ...createHatchLids('gunner'));
   return mesh;
 }
