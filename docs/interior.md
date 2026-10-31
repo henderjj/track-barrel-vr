@@ -60,7 +60,7 @@ After the second pass John found all the controls in reach. In the gunner's seat
 | Driver's hatch | 50 cm square, from 10 cm ahead of the eyes to 40 cm behind them; lid open forwards | The periscope's head stands on the roof in front of it |
 | Gunsight eyepiece | turret (0.32, 2.25, −0.38), an 18 cm lean | The head stops 4 cm short of it |
 | Gunner's head box forward | 14 cm (24 cm before) | |
-| Elevation wheel, crank, power grip | turret (0.29, 1.86, −0.6), (0.52, 1.86, −0.52), (0.71, 1.63, −0.45) | Hubs 39 cm under the eyes; the crank's fist inside the ring; the elevation wheel faces sideways and drives a toothed arc on the gun ([turret.md](turret.md)) |
+| Elevation wheel, crank, power grip | turret (0.37, 1.86, −0.59), (0.52, 1.86, −0.52), (0.71, 1.63, −0.45) | Hubs 39 cm under the eyes; the crank's fist inside the ring; the elevation wheel faces sideways, its handle on the gun's side, and drives a toothed arc on the gun, all inside the ring ([turret.md](turret.md)) |
 | Turret ring | race ring 91 cm out, 4 cm tube (90 cm, 7 cm before) | Its inner edge at 87 cm, clear of the crank |
 | Turret roof | 12 cm chamfers along its edges and down its corners; round hatch 54 cm across; ventilator 24 cm across | A cast turret, not a box |
 | Interior ambient | 6% of the sky's light, a little warm, 55% of that on the hull floor | Dark, as a closed steel box is (26% read as bright) |
@@ -90,7 +90,7 @@ Nothing new goes over the network: the layout is the same numbers on both pages,
 
 - `test/interior.test.ts`: the glacis's slope and the hood; the slit 30 cm ahead and the tillers in easy reach from the seat at every angle; the gunner's wheels 35 to 45 cm under an eye at the eyepiece; outside the tank unlit, the armour's outer faces outside however the turret turns; the inside dark, darker low down, the pool under the hatch several times brighter; the turret's lights turning with it in the shader's uniforms; the lamps warm, the daylight cool.
 - `test/driver-station.test.ts`: the instrument box in front, in front of the glacis and under the slit, clear of the tillers' fists, facing the eyes, the dials and the gear plate apart; the slit's field from the seat and leant in.
-- `test/cabin.test.ts`: the fade's curve, black well before a head counts as a recentre. `test/turret.test.ts`: the crank's and the elevation wheel's fists inside the turret ring all the way round.
+- `test/cabin.test.ts`: the fade's curve, black well before a head counts as a recentre. `test/turret.test.ts`: the crank's and the elevation wheel's fists inside the turret ring all the way round, and the elevating gear and its drive inside it at every elevation.
 - `test/periscope.test.ts`, `test/turret.test.ts`, `test/sight.test.ts`, `test/cabin.test.ts`, `test/body-height.test.ts`: the moved controls in reach, clear of each other and of the head, inside the new front.
 - `test/z-fighting.test.ts`: the new front, the details, the lamps and the instrument box, the turret at every tested angle.
 - `npm run test:xr`: every seat, station and sight step, on the new layout; a lean past the head box fades the view with the seat left where it was, leaning back clears it, standing up fades it under the roof. Screenshots `artifacts/xr-driver-seat.png` and `artifacts/xr-gunner-seat.png` show the lighting.

@@ -1858,13 +1858,14 @@ async function layingTheGun() {
     cranked.turns > 0.9 && afterCrank - yaw0 > 1.6 && afterCrank - yaw0 < 2.9, `${cranked.turns.toFixed(2)} turns: ${yaw0.toFixed(2)}° to ${afterCrank.toFixed(2)}°`);
   await letGoOf('crank');
 
-  // The elevation handwheel: taken by its handle and turned once clockwise, the gun rises.
+  // The elevation handwheel: taken by its handle and turned once clockwise as the gunner sees it from the seat (its top
+  // going forward; anticlockwise seen from its face, which is turned away from them), the gun rises.
   const e0 = turret().elevationDeg;
   await take('elevation');
   const rr = 0.08;
   const out = 0.03;
   for (let k = 1; k <= 24; k++) {
-    const a = -(k * Math.PI) / 12;
+    const a = (k * Math.PI) / 12;
     iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('elevation', [-rr * Math.sin(a), rr * Math.cos(a), out])), duration: 0.15 });
     await sleep(200);
   }

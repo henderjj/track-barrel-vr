@@ -90,7 +90,7 @@ export function turretToMount(mount: StationMount, p: readonly number[], out: Ve
 /**
  * The gunner's station, in turret space. The gunner sits right of the
  * breech facing the gun (eyes at SEATS.gunner.eye); the elevation
- * handwheel is under the breech's right edge for the left hand, the
+ * handwheel is in front of the gunner's left knee for the left hand, the
  * traverse crank right of it for the right hand, and the power traverse
  * grip lower down at the right, beside the seat's front edge. As on the
  * Sherman (TM 9-754, figure 13) both wheels sit close under the sight: with
@@ -101,28 +101,45 @@ export const STATION = {
   // The elevation handwheel at the traverse crank's height: turned by a handle, its handle's highest point is no nearer the eyes than the crank's.
   // Both 5 cm higher than at first for an easy reach seated, and the crank 9 cm further in so it and the hand on it
   // turn clear of the turret ring (John's headset check, docs/interior.md).
-  // The elevation handwheel faces sideways, its handle towards the gunner, as on the Sherman (John's headset check).
-  elevation: { at: [0.29, 1.86, -0.6], tilt: 0, yaw: 90 * DEG },
+  // The elevation handwheel faces sideways, as on the Sherman, with its handle out on the gun's side, so the left hand
+  // cranks it from the left and its gearbox is on the right (John's headset checks).
+  elevation: { at: [0.37, 1.86, -0.59], tilt: 0, yaw: -90 * DEG },
   crank: { at: [0.52, 1.86, -0.52], tilt: -20 * DEG },
   twist: { at: [0.71, 1.63, -0.45], tilt: 0 },
 } as const satisfies Record<string, StationMount>;
 export type StationControl = keyof typeof STATION;
 
-/** The elevating pinion's middle, turret space: at the top of the elevation handwheel's gearbox column, under the breech's right edge. */
-const PINION: Vec3 = [0.245, 1.9, -0.8];
 const PINION_RADIUS = 0.02;
 /** The toothed arc's half-width out from its middle line, m: the pinion sits 3 mm off its outer edge, its teeth reaching in to mesh. */
 const ARC_HALF = 0.012;
-const ARC_RADIUS = Math.hypot(PINION[1] - GUN.y, PINION[2] - TURRET.front) - ARC_HALF - 0.003 - PINION_RADIUS;
-/** The pinion's direction from the trunnions, as `atan2(z, y)` (turning the gun by `e` about X adds `e` to it). */
-const PINION_ANGLE = Math.atan2(PINION[2] - TURRET.front, PINION[1] - GUN.y);
+/**
+ * The arc's middle line's radius about the trunnions, m. The trunnions are
+ * out past the turret ring, so the arc's lower end dips through the ring's
+ * hole as the gun rises: this long a radius keeps it inside the ring's
+ * inner edge there (John saw the last one reach the ring).
+ */
+const ARC_RADIUS = 0.44;
+/** The pinion's direction from the trunnions, as `atan2(z, y)` (turning the gun by `e` about X adds `e` to it): straight back, level with them. */
+const PINION_ANGLE = Math.PI / 2;
+const PINION_DISTANCE = ARC_RADIUS + ARC_HALF + 0.003 + PINION_RADIUS;
+/** The elevating pinion's middle, turret space: beside the breech's back, right of its lever, level with the trunnions and above the turret ring. */
+const PINION: Vec3 = [0.245, GUN.y + PINION_DISTANCE * Math.cos(PINION_ANGLE), TURRET.front + PINION_DISTANCE * Math.sin(PINION_ANGLE)];
+/** The elevation handwheel's gearbox behind its hub, turret space: where its drive shaft rises to the pinion. */
+const ELEVATION_GEARBOX = mountToTurret(STATION.elevation, [0, 0, -0.04], [0, 0, 0]);
+const BEVEL: Vec3 = [ELEVATION_GEARBOX[0], PINION[1], ELEVATION_GEARBOX[2]];
+const HOUSING: Vec3 = [PINION[0] + 0.03, PINION[1], PINION[2]];
 
 /**
  * The elevating gear the elevation handwheel drives, as on the Sherman
  * (figure 13): a toothed arc on the gun's cradle, centred on the trunnions
- * in the plane x = `x`, and the pinion meshing with it at the top of the
- * handwheel's gearbox column. The arc (gun space, angles as `atan2(z, y)`)
- * runs far enough each way to stay on the pinion at every elevation.
+ * in the plane x = `x`, and the pinion meshing with it. The arc (gun space,
+ * angles as `atan2(z, y)`) runs far enough each way to stay on the pinion
+ * at every elevation, on two spokes (`spokes`, gun space angles) high enough
+ * on it that they stay above the turret ring. The drive (turret space) rises
+ * from the handwheel's gearbox (`gearbox`) to a bevel box (`bevel`) above
+ * the wheel, level with the pinion, and a shaft runs from it over the
+ * gunner's hand to the pinion's housing (`housing`, its middle) on the
+ * pinion's right.
  */
 export const ELEVATING_GEAR = {
   x: PINION[0],
@@ -132,15 +149,20 @@ export const ELEVATING_GEAR = {
   half: ARC_HALF,
   from: PINION_ANGLE - MAX_ELEVATION - 5 * DEG,
   to: PINION_ANGLE - MIN_ELEVATION + 5 * DEG,
+  spokes: [PINION_ANGLE - MAX_ELEVATION - 5 * DEG, PINION_ANGLE - 5 * DEG],
+  gearbox: ELEVATION_GEARBOX,
+  bevel: BEVEL,
+  housing: HOUSING,
 } as const;
 export const STATION_CONTROLS = Object.keys(STATION) as StationControl[];
 
 /**
- * The elevation handwheel, turned by its handle like a crank: clockwise (as
- * the gunner sees it) raises the gun, and it stops at the gun's limits. As
- * on the Sherman (TM 9-754, figure 13) it faces sideways, towards the
- * gunner, on a gearbox whose column carries the elevating pinion up to the
- * toothed elevating arc on the gun (ELEVATING_GEAR). A trigger bar along the
+ * The elevation handwheel, turned by its handle like a crank: clockwise as
+ * the gunner sees it from the seat, its top going forward, raises the gun,
+ * and it stops at the gun's limits. As on the Sherman (TM 9-754, figure 13)
+ * it faces sideways, its handle out on the gun's side for the left hand, on
+ * a gearbox whose drive rises to the elevating pinion on the toothed
+ * elevating arc on the gun (ELEVATING_GEAR). A trigger bar along the
  * handle fires the gun, so the gunner can fire while laying it, as on the
  * Tiger I.
  */
@@ -149,9 +171,9 @@ export const ELEVATION_WHEEL: WheelSpec = {
   grip: 'crank',
   knobLength: 0.06,
   trigger: true,
-  // Clockwise is negative wheel turn (src/sim/mechanism.ts): the gun's top limit is the wheel's bottom one.
-  min: wheelForElevation(MAX_ELEVATION),
-  max: wheelForElevation(MIN_ELEVATION),
+  // The handle faces away from the gunner's eyes, so their clockwise is the kit's anticlockwise (src/sim/mechanism.ts), a positive turn.
+  min: wheelForElevation(MIN_ELEVATION),
+  max: wheelForElevation(MAX_ELEVATION),
   tickEvery: Math.PI / 4,
   perTurn: ELEVATION_PER_TURN / DEG,
 };
@@ -178,12 +200,12 @@ export const POWER_GRIP: TwistSpec = {
 
 /** The elevation handwheel's turn (radians, many turns) that sets the gun at `elevation`. */
 export function wheelForElevation(elevation: number): number {
-  return (-elevation / ELEVATION_PER_TURN) * TURN;
+  return (elevation / ELEVATION_PER_TURN) * TURN;
 }
 
 /** The gun's elevation set by the elevation handwheel turned `wheel` radians, within the gun's limits. */
 export function elevationForWheel(wheel: number): number {
-  return clamp((-wheel / TURN) * ELEVATION_PER_TURN, MIN_ELEVATION, MAX_ELEVATION);
+  return clamp((wheel / TURN) * ELEVATION_PER_TURN, MIN_ELEVATION, MAX_ELEVATION);
 }
 
 /** Below this the engine has stopped (or is only turning on the starter): no power traverse, only the hand crank (F1.17), rpm. */

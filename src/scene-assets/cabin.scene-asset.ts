@@ -558,10 +558,13 @@ function stationParts(): Part[] {
     parts.push({ geometry: new BoxGeometry(0.08, 0.08, 0.05), color: STEEL_LIGHT, position: centre, rotation: [mount.tilt, mount.yaw ?? 0, 0] });
     parts.push(beam([centre[0], floor - 0.01, centre[2]], [centre[0], centre[1] - 0.02, centre[2]], 0.022, STEEL, 6));
     if (key === 'elevation') {
-      // As on the Sherman: the gearbox's column carries the drive up to the elevating pinion, which meshes with the arc on the gun (gunParts).
-      const { pinion, pinionRadius } = ELEVATING_GEAR;
-      parts.push(beam([centre[0], centre[1] + 0.02, centre[2]], [pinion[0], pinion[1] - pinionRadius - 0.005, pinion[2]], 0.02, STEEL, 6));
-      parts.push({ geometry: new BoxGeometry(0.035, 0.05, 0.06), color: STEEL_LIGHT, position: [pinion[0] + 0.03, pinion[1], pinion[2]] });
+      // As on the Sherman: the drive rises from the gearbox, right of the wheel, to a bevel box above it, and a shaft runs
+      // from there over the gunner's hand to the elevating pinion, which meshes with the arc on the gun (gunParts).
+      const { pinion, pinionRadius, bevel, housing } = ELEVATING_GEAR;
+      parts.push(beam([centre[0], centre[1] + 0.02, centre[2]], [bevel[0], bevel[1] - 0.02, bevel[2]], 0.018, STEEL, 6));
+      parts.push({ geometry: new BoxGeometry(0.05, 0.05, 0.05), color: STEEL_LIGHT, position: bevel });
+      parts.push(beam([bevel[0] - 0.02, bevel[1], bevel[2]], [housing[0] + 0.012, housing[1], housing[2]], 0.014, STEEL, 6));
+      parts.push({ geometry: new BoxGeometry(0.035, 0.05, 0.06), color: STEEL_LIGHT, position: housing });
       parts.push({ geometry: new CylinderGeometry(pinionRadius, pinionRadius, 0.03, 10, 1), color: STEEL, position: pinion, rotation: [0, 0, Math.PI / 2] });
     }
   }
@@ -586,7 +589,7 @@ function gunParts(): Part[] {
 /**
  * The toothed elevating arc on the cradle's right side (src/sim/turret.ts
  * ELEVATING_GEAR), gun space: a curved bar round the trunnions with teeth on
- * its outer edge for the pinion, on two arms from a boss just inside the
+ * its outer edge for the pinion, on two spokes from a boss just inside the
  * front plate. It turns with the gun, so the handwheel is seen to work it.
  */
 function elevatingArcParts(): Part[] {
@@ -607,8 +610,7 @@ function elevatingArcParts(): Part[] {
     parts.push(beam(at(a, r + half - 0.004), at(a, r + half + 0.008), 0.004, STEEL, 4));
   }
   const boss: Vec3 = [x, 0, HULL.wall + 0.04];
-  parts.push(beam(boss, at(from, r - half + 0.002), 0.012, STEEL, 5));
-  parts.push(beam(boss, at(to, r - half + 0.002), 0.012, STEEL, 5));
+  for (const spoke of ELEVATING_GEAR.spokes) parts.push(beam(boss, at(spoke, r - half + 0.002), 0.012, STEEL, 5));
   parts.push({ geometry: new CylinderGeometry(0.03, 0.03, 0.03, 8, 1), color: STEEL_LIGHT, position: boss, rotation: [0, 0, Math.PI / 2] });
   return parts;
 }
