@@ -111,6 +111,22 @@ With acceleration on and PRs #44 and #47 live, John played in Chrome over Air Li
 
 John, in the Quest Browser, played a crew game with a second player on an Oculus Rift through a PC browser. Voice had no echo, and voice and movement latency were good. They turned the crank together. This needed no platform-specific code beyond feature detection, so S8 passes. The design notes from that game (arms, player height, seated play, keeping in step on the crank and the rope) are design input for later features, not part of this spike.
 
+### A Rift on Chrome 156: the session ended before its first frame (2026-10-30)
+
+A Rift player on Chrome 156 (Windows, RTX 5070 Ti, graphics acceleration on) pressed Enter VR. The session was granted after 11.2 s and then ended before the first frame, with no lost context and no error from IWSDK in the console. The same player had entered VR a week or two earlier, and the Quest Browser is unaffected. An earlier check (2026-10-25) found no change in the game's start-up path since 2026-10-18, so the likeliest change is in Chrome: Chromium turned WebXR Layers on by default for every platform, Windows OpenXR included (commit "WebXR Layers: Enable layers feature on by default", February 2026). IWSDK always asks for `layers` as an optional feature, so once the browser grants it three.js draws through a projection layer instead of the XRWebGLLayer the PC path was tested with. That is the likeliest new thing between the grant and the first frame.
+
+The game now leaves `layers` out of the session request on a PC (`sessionInitFor` in `src/vr-messages.ts`); the Quest Browser still gets it. Layers buy nothing over Link (no fixed foveation there). This is a likely cause, not a proven one: it could not be reproduced without a Rift. If the session still ends early, the console now has a second `[VR] Ended ... after it was granted` line saying how far the start got (graphics being made ready, IWSDK setting it up, or taken by IWSDK), what it was drawing through, the granted features and the session's visibility changes, and the crew panel asks for a picture of `chrome://webxr-internals`, which shows the runtime's own reason.
+
+### Second log: no XR frames at all, still a projection layer (2026-10-30 22:34)
+
+With `layers` left out of the request, the same Rift player still couldn't enter VR. The new log line showed that IWSDK had taken the session and Chrome had made it visible after 1 s, yet the game never got a frame; after another 9 s the session went hidden and ended, which is how the Meta runtime closes an app that shows it nothing. It also showed the session drawing through a WebXR layer even though `layers` wasn't granted. The reason is in IWSDK's three.js (super-three r181): it makes a projection layer whenever the browser has `XRWebGLBinding.prototype.createProjectionLayer`, without checking that the session was granted Layers, and Chromium has had that method by default on desktop since 2026 (seen in Chromium 153 here). So PR #88 changed the request but not how the game draws.
+
+The game now hides `createProjectionLayer` for the length of any session that wasn't granted Layers (`hideProjectionLayers` in `src/xr-layers.ts`), so three.js takes the XRWebGLLayer path, the one every WebXR sample and older Chrome used. The Quest Browser, which grants Layers, is unchanged. The early-end console line now also names the layer type (`XRWebGLLayer` or `XRProjectionLayer`) and counts how many XR frames the browser handed the page, so a third log would say whether Chrome sends frames at all. If frames never come with an XRWebGLLayer either, the cause is below the game (Chrome, Meta Horizon Link or the graphics driver), and the immersive-web samples on the same PC would show the same.
+
+### Result: fixed (2026-10-30 23:22)
+
+With PR #89 live, the Rift player entered VR in Chrome 156. Before that, the immersive-web Barebones sample, which draws through an XRWebGLLayer, had worked on the same PC while the game didn't, which pointed at the projection layer and not at the PC.
+
 ### What to try
 
 1. Make sure the browser uses the graphics card: Chrome's or Edge's Settings → System → **Use graphics acceleration when available** must be on (`chrome://gpu` should not say "Software only"). Start Link or Air Link first, so the Link home shows in the headset, then open the game in Chrome or Edge on the PC (not Firefox, which has no WebXR on Windows).
