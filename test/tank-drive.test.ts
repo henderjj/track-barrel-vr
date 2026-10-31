@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { crewBumps, groundFeel, MAX_ACCEL, MAX_REVERSE, MAX_SPEED, MAX_TILT, MAX_YAW_ACCEL, MAX_YAW_RATE, REDUCED_BUMPS } from '../src/sim/comfort.js';
+import { crewBumps, groundFeel, MAX_ACCEL, MAX_SPEED, MAX_TILT, MAX_YAW_ACCEL, MAX_YAW_RATE, REDUCED_BUMPS } from '../src/sim/comfort.js';
 import { GROUND_Y } from '../src/sim/cabin.js';
+import { type GearboxMode, REVERSE_TOP, UP_RPM } from '../src/sim/gearbox.js';
 import {
   angleDelta,
   BUMP_DECEL,
@@ -11,19 +12,20 @@ import {
   extrapolateTankDrive,
   FOOTPRINT,
   GEARS,
-  HIGH,
+  type Gear,
   IDLE_RPM,
   settle,
   keyControls,
   lerpTankDrive,
-  LOW,
   MAX_RPM,
   NEUTRAL,
   OUTLINE,
-  SHIFT_SECONDS,
+  REVERSE,
+  STEER_RADIUS,
   stepDrive,
   type TankDrive,
   targetRpm,
+  TOP_GEAR,
   TRACK_GAUGE,
   twinStickControls,
 } from '../src/sim/tank-drive.js';
@@ -32,9 +34,17 @@ import { groundHeight, type Obstacle, obstacleDistance, OBSTACLES, wrapTile } fr
 const DT = 1 / 60;
 const DEG = Math.PI / 180;
 const NONE: readonly Obstacle[] = [];
+/** The tillers' push that asks the automatic box for 12 km/h, the old low range's top. */
+const LOW_PUSH = 12 / 3.6 / MAX_SPEED;
 
-function controls(left: number, right: number, gear = LOW, throttle = 0): DriverControls {
-  return { left, right, gear, throttle };
+/** The automatic box's controls: tillers, and the hand throttle. */
+function controls(left: number, right: number, throttle = 0): DriverControls {
+  return { ...createControls(), left, right, throttle };
+}
+
+/** A Sherman's controls (Stick shift or Clutch): tillers as brakes, the accelerator, the lever and the clutch. */
+function real(gear: Gear, accel: number, left = 0, right = 0, mode: GearboxMode = 'stick', clutch = 0): DriverControls {
+  return { ...createControls(), left, right, accel, gear, clutch, mode };
 }
 
 /** Drive for `seconds`, calling `each` after every step with the speed and turn rate before it. */
@@ -59,48 +69,55 @@ function gapTo(s: TankDrive, o: Obstacle): number {
 }
 
 describe('tank drive (F1.4)', () => {
-  it('starts at rest on the ground at the start, its hull floor GROUND_Y above it', () => {
+  it('starts at rest on the ground at the start, its hull floor GROUND_Y above it, in neutral', () => {
     const s = createTankDrive();
     expect(s.speed).toBe(0);
-    expect(s.gear).toBe(LOW);
+    expect(s.gear).toBe(NEUTRAL);
     expect(s.rpm).toBe(IDLE_RPM);
     expect(s.y).toBeCloseTo(-GROUND_Y, 6);
     expect(CLEARANCE).toBeCloseTo(0.6);
   });
 
-  it('both tillers forwards drive straight ahead (towards -Z) up to the gear\'s top speed', () => {
-    const s = run(createTankDrive(), controls(1, 1), 10, NONE, (t, speed) => {
+  it('both tillers forwards drive straight ahead (towards -Z), the automatic box changing up to 5th and 35 km/h, never more', () => {
+    const gears = new Set<number>();
+    const s = run(createTankDrive(), controls(1, 1), 60, NONE, (t, speed) => {
       expect(t.speed - speed).toBeLessThanOrEqual(MAX_ACCEL * DT + 1e-9);
+      expect(t.speed).toBeLessThanOrEqual(MAX_SPEED + 1e-9);
+      gears.add(t.gear);
     });
-    expect(s.speed).toBeCloseTo(GEARS[LOW].top, 3);
-    expect(s.z).toBeLessThan(-15);
+    expect(s.speed).toBeCloseTo(MAX_SPEED, 2);
+    expect([...gears].filter((g) => g !== NEUTRAL).sort()).toEqual([2, 3, 4, 5]);
+    expect(s.gear).toBe(TOP_GEAR);
     expect(Math.abs(s.x)).toBeLessThan(1e-6);
     expect(s.heading).toBe(0);
     expect(s.rpm).toBeGreaterThan(MAX_RPM - 50);
     expect(s.leftTrack).toBeCloseTo(s.rightTrack, 9);
   });
 
-  it('high range reaches 35 km/h, and never more', () => {
-    const s = createTankDrive();
-    s.gear = HIGH;
-    run(s, controls(1, 1, HIGH), 30);
-    expect(s.speed).toBeCloseTo(MAX_SPEED, 3);
-    expect(GEARS[HIGH].top).toBeCloseTo(MAX_SPEED);
+  it('a part push asks for a share of the top speed, in the gear that suits it', () => {
+    const s = run(createTankDrive(), controls(LOW_PUSH, LOW_PUSH), 20);
+    expect(s.speed * 3.6).toBeCloseTo(12, 1);
+    expect(s.gear).toBe(3);
   });
 
-  it('pulls gently at idle and harder as the engine revs up', () => {
+  it('pulls hardest in the low gears and less in each one up', () => {
     const s = createTankDrive();
-    stepDrive(s, controls(1, 1), DT, NONE);
-    const first = s.accel;
-    run(s, controls(1, 1), 1.5);
-    expect(first).toBeLessThan(0.6 * MAX_ACCEL);
-    expect(s.accel).toBeGreaterThan(0.85 * MAX_ACCEL);
+    let in2 = 0;
+    let in5 = 0;
+    run(s, controls(1, 1), 60, NONE, (t) => {
+      if (t.gear === 2 && t.speed > 0.5) in2 = Math.max(in2, t.accel);
+      if (t.gear === 5 && t.speed < MAX_SPEED - 1) in5 = Math.max(in5, t.accel);
+    });
+    expect(in2).toBeCloseTo(MAX_ACCEL, 2);
+    expect(in5).toBeLessThan(0.4 * MAX_ACCEL);
+    expect(in5).toBeGreaterThan(0.2 * MAX_ACCEL);
   });
 
-  it('backs up no faster than the reverse cap', () => {
+  it('backs up no faster than the reverse gear would', () => {
     const s = run(createTankDrive(), controls(-1, -1), 10);
-    expect(s.speed).toBeCloseTo(-MAX_REVERSE, 3);
-    expect(s.z).toBeGreaterThan(10);
+    expect(s.speed).toBeCloseTo(-REVERSE_TOP, 3);
+    expect(REVERSE_TOP * 3.6).toBeCloseTo(4.5, 1);
+    expect(s.z).toBeGreaterThan(5);
   });
 
   it('one tiller forwards turns the tank the other way; opposite tillers pivot it on the spot, within the turn caps', () => {
@@ -118,53 +135,125 @@ describe('tank drive (F1.4)', () => {
     expect(pivot.rightTrack - pivot.leftTrack).toBeCloseTo(MAX_YAW_RATE * TRACK_GAUGE, 6);
   });
 
-  it('rolls to a stop at the braking cap when the tillers are let go', () => {
-    const s = run(createTankDrive(), controls(1, 1), 8);
-    run(s, controls(0, 0), 5, NONE, (t, speed) => {
+  it('rolls to a stop, no harder than the braking cap, when the tillers are let go', () => {
+    const s = run(createTankDrive(), controls(1, 1), 30);
+    run(s, controls(0, 0), 30, NONE, (t, speed) => {
       expect(speed - t.speed).toBeLessThanOrEqual(MAX_ACCEL * DT + 1e-9);
     });
     expect(s.speed).toBe(0);
+    expect(s.gear).toBe(2);
   });
 
-  it('the RPM follows the demand with lag, from the hand throttle\'s idle', () => {
+  it('the RPM follows the demand with lag out of gear, from the hand throttle\'s idle, and the tracks in gear', () => {
     expect(targetRpm(controls(0, 0))).toBe(IDLE_RPM);
-    expect(targetRpm(controls(0, 0, LOW, 1))).toBeGreaterThan(IDLE_RPM + 500);
+    expect(targetRpm(controls(0, 0, 1))).toBeGreaterThan(IDLE_RPM + 500);
     expect(targetRpm(controls(0.5, -1))).toBe(MAX_RPM);
     const s = createTankDrive();
     stepDrive(s, controls(1, 1), 0.1, NONE);
     expect(s.rpm).toBeGreaterThan(IDLE_RPM);
     expect(s.rpm).toBeLessThan(IDLE_RPM + 0.3 * (MAX_RPM - IDLE_RPM));
+    // In gear, the revs follow the speed through the gear: they drop as each gear goes in.
+    let gear = s.gear;
+    let time = 0;
+    let inAt = -1;
+    const after: number[] = [];
+    run(s, controls(1, 1), 40, NONE, (t) => {
+      time += DT;
+      if (t.gear !== gear && t.gear !== NEUTRAL) {
+        gear = t.gear;
+        inAt = time;
+      }
+      if (gear > 2 && inAt > 0 && time - inAt > 0.5) {
+        after.push(t.rpm);
+        inAt = -1;
+      }
+    });
+    expect(after.length).toBe(3);
+    for (const rpm of after) expect(rpm).toBeLessThan(UP_RPM - 400);
+    expect(s.rpm).toBeCloseTo((s.speed / GEARS[s.gear].top) * MAX_RPM, -1);
   });
 
-  describe('gears', () => {
-    it('shift with the tillers centred, after a moment in neutral', () => {
-      const s = createTankDrive();
-      stepDrive(s, controls(0, 0, HIGH), DT, NONE);
-      expect(s.gear).toBe(NEUTRAL);
-      expect(s.grinding).toBe(false);
-      run(s, controls(0, 0, HIGH), SHIFT_SECONDS + 0.05);
-      expect(s.gear).toBe(HIGH);
+  describe('a Sherman\'s controls (Stick shift, Clutch)', () => {
+    it('the accelerator drives through the gear; released, the engine idles and the tank slows to a crawl', () => {
+      const s = run(createTankDrive(), real(2, 1), 10);
+      expect(s.gear).toBe(2);
+      expect(s.speed).toBeCloseTo(GEARS[2].top, 2);
+      // Pushing the tillers forwards does nothing more: they are only brakes.
+      const pushed = run(createTankDrive(), real(2, 1, 1, 1), 10);
+      expect(pushed.speed).toBeCloseTo(s.speed, 6);
+      run(s, real(2, 0), 20);
+      expect(s.speed).toBeLessThan(0.05);
     });
 
-    it('grind when shifted with a tiller off centre: out of gear, no shift, until the tillers come back', () => {
-      const s = run(createTankDrive(), controls(1, 1), 3);
-      const speed = s.speed;
-      run(s, controls(1, 1, HIGH), 2);
+    it('a tiller pulled back brakes its track: the tank turns that way on a radius, and can\'t turn standing', () => {
+      const s = run(createTankDrive(), real(2, 1), 10);
+      run(s, real(2, 1, -1, 0), 4, NONE, (t) => expect(Math.abs(t.yawRate)).toBeLessThanOrEqual(MAX_YAW_RATE + 1e-9));
+      expect(s.yawRate).toBeGreaterThan(0);
+      expect(s.yawRate).toBeCloseTo(Math.min(MAX_YAW_RATE, s.speed / STEER_RADIUS), 2);
+      const right = run(createTankDrive(), real(2, 1), 10);
+      run(right, real(2, 1, 0, -1), 4);
+      expect(right.yawRate).toBeLessThan(0);
+      const standing = run(createTankDrive(), real(NEUTRAL, 0, -1, 1), 3);
+      expect(standing.yawRate).toBe(0);
+      expect(standing.speed).toBe(0);
+    });
+
+    it('both tillers back stop it and hold it, in gear with the accelerator down', () => {
+      const s = run(createTankDrive(), real(3, 1), 15);
+      run(s, real(3, 1, -1, -1), 10, NONE, (t, speed) => expect(speed - t.speed).toBeLessThanOrEqual(MAX_ACCEL * DT + 1e-9));
+      expect(s.speed).toBe(0);
+      expect(s.z).toBeLessThan(-10);
+    });
+
+    it('reverses only in reverse gear, which waits for the tank to stop', () => {
+      const s = run(createTankDrive(), real(2, 1), 6);
+      run(s, real(REVERSE, 1), 0.5);
+      // Rolling still: reverse waits, out of gear, while the tank coasts.
+      expect(s.gear).toBe(NEUTRAL);
+      expect(s.speed).toBeGreaterThan(0);
+      run(s, real(REVERSE, 1, -1, -1), 6);
+      expect(s.gear).toBe(REVERSE);
+      expect(Math.abs(s.speed)).toBe(0);
+      run(s, real(REVERSE, 1), 10);
+      expect(s.speed).toBeCloseTo(-REVERSE_TOP, 2);
+    });
+
+    it('a slow pull-away in a high gear: 5th barely moves the tank from a standstill', () => {
+      const second = run(createTankDrive(), real(2, 1), 3);
+      const fifth = run(createTankDrive(), real(5, 1), 3);
+      expect(fifth.speed).toBeLessThan(second.speed * 0.6);
+    });
+  });
+
+  describe('changing gear', () => {
+    it('coasts while the gear changes, rather than braking', () => {
+      const s = run(createTankDrive(), real(2, 1), 8);
+      const before = s.speed;
+      run(s, real(3, 1), 0.3);
+      // Out of gear for the change: the tank slows only by its tracks' drag.
+      expect(s.speed).toBeGreaterThan(before - 0.35 * 0.3 - 1e-6);
+      run(s, real(3, 1), 1);
+      expect(s.gear).toBe(3);
+    });
+
+    it('the automatic box never grinds; the clutch\'s gears do without the clutch', () => {
+      let ground = false;
+      run(createTankDrive(), controls(1, 1), 40, NONE, (t) => (ground ||= t.grinding));
+      expect(ground).toBe(false);
+      const s = createTankDrive();
+      run(s, real(2, 0, 0, 0, 'clutch', 0), 0.5);
       expect(s.grinding).toBe(true);
       expect(s.gear).toBe(NEUTRAL);
-      // Out of gear the tank slows.
-      expect(s.speed).toBeLessThan(speed);
-      run(s, controls(0.1, 0, HIGH), SHIFT_SECONDS + 0.05);
+      run(s, real(2, 0, 0, 0, 'clutch', 1), 0.5);
       expect(s.grinding).toBe(false);
-      expect(s.gear).toBe(HIGH);
+      expect(s.gear).toBe(2);
     });
 
-    it('neutral drives nothing, and the lever goes to neutral at any time', () => {
-      const s = run(createTankDrive(), controls(1, 1), 3);
-      stepDrive(s, controls(1, 1, NEUTRAL), DT, NONE);
+    it('neutral drives nothing: the tank coasts to a stop', () => {
+      const s = run(createTankDrive(), real(2, 1), 6);
+      run(s, real(NEUTRAL, 1), 1);
       expect(s.gear).toBe(NEUTRAL);
-      expect(s.grinding).toBe(false);
-      run(s, controls(1, 1, NEUTRAL), 6);
+      run(s, real(NEUTRAL, 1), 12);
       expect(s.speed).toBe(0);
     });
   });
@@ -175,7 +264,7 @@ describe('tank drive (F1.4)', () => {
       // range's roads, src/sim/range.ts), where the ground rolls.
       const s = createTankDrive(150, 150, Math.PI / 2);
       let maxTilt = 0;
-      run(s, controls(1, 1, LOW), 60, NONE, (t) => {
+      run(s, controls(LOW_PUSH, LOW_PUSH), 60, NONE, (t) => {
         maxTilt = Math.max(maxTilt, Math.abs(t.pitch), Math.abs(t.roll));
       });
       expect(maxTilt).toBeGreaterThan(0.5 * DEG);
@@ -185,7 +274,7 @@ describe('tank drive (F1.4)', () => {
     it('with reduced bumps (F1.14) takes less of the tilt, more gently, along the same path', () => {
       const full = createTankDrive(150, 150, Math.PI / 2);
       const reduced = settle(createTankDrive(150, 150, Math.PI / 2), REDUCED_BUMPS);
-      const c = controls(1, 1, LOW);
+      const c = controls(LOW_PUSH, LOW_PUSH);
       let fullTilt = 0;
       let reducedTilt = 0;
       let fullRate = 0;
@@ -222,9 +311,8 @@ describe('tank drive (F1.4)', () => {
 
     it('a rock ahead stops the tank softly, never through it, slowing no harder than BUMP_DECEL', () => {
       const s = createTankDrive();
-      s.gear = HIGH;
       let hardest = 0;
-      run(s, controls(1, 1, HIGH), 30, [rock], (t, speed) => {
+      run(s, controls(1, 1), 30, [rock], (t, speed) => {
         hardest = Math.max(hardest, (speed - t.speed) / DT);
       });
       expect(s.speed).toBeLessThan(0.05);
@@ -236,7 +324,7 @@ describe('tank drive (F1.4)', () => {
     });
 
     it('a wall ahead stops it too; it can back away, and pivot away', () => {
-      const s = run(createTankDrive(), controls(1, 1), 30, [wall]);
+      const s = run(createTankDrive(), controls(LOW_PUSH, LOW_PUSH), 30, [wall]);
       expect(gapTo(s, wall)).toBeGreaterThanOrEqual(-0.01);
       expect(s.speed).toBeLessThan(0.05);
       const stoppedZ = s.z;
@@ -247,8 +335,8 @@ describe('tank drive (F1.4)', () => {
 
     it('driving past an obstacle beside it is not slowed', () => {
       const beside: Obstacle = { ...rock, x: FOOTPRINT.halfWidth + rock.r + 0.6 };
-      const free = run(createTankDrive(), controls(1, 1), 30);
-      const past = run(createTankDrive(), controls(1, 1), 30, [beside]);
+      const free = run(createTankDrive(), controls(LOW_PUSH, LOW_PUSH), 30);
+      const past = run(createTankDrive(), controls(LOW_PUSH, LOW_PUSH), 30, [beside]);
       expect(past.z).toBeCloseTo(free.z, 3);
     });
 
@@ -256,9 +344,8 @@ describe('tank drive (F1.4)', () => {
       const s = createTankDrive();
       for (const o of OBSTACLES) expect(gapTo(s, o)).toBeGreaterThan(5);
       // Straight up the lane for a whole tile: nothing in the way.
-      const lane = run(createTankDrive(), controls(1, 1, HIGH), 2);
-      lane.gear = HIGH;
-      run(lane, controls(1, 1, HIGH), 800 / MAX_SPEED);
+      const lane = run(createTankDrive(), controls(1, 1), 30);
+      run(lane, controls(1, 1), 800 / MAX_SPEED);
       expect(lane.touching).toBe(false);
       expect(lane.bumps).toBe(0);
       expect(Math.abs(wrapTile(lane.x))).toBeLessThan(0.01);
@@ -268,13 +355,13 @@ describe('tank drive (F1.4)', () => {
   it('draws between two states, the heading the short way round', () => {
     const a = createTankDrive(0, 0, Math.PI - 0.1);
     const b = createTankDrive(2, -4, -Math.PI + 0.1);
-    b.gear = HIGH;
+    b.gear = TOP_GEAR;
     const out = createTankDrive();
     lerpTankDrive(a, b, 0.5, out);
     expect(out.x).toBeCloseTo(1);
     expect(out.z).toBeCloseTo(-2);
     expect(Math.abs(angleDelta(Math.PI, out.heading))).toBeLessThan(1e-9);
-    expect(out.gear).toBe(HIGH);
+    expect(out.gear).toBe(TOP_GEAR);
   });
 
   it('carries a state on at its speed and turn rate', () => {

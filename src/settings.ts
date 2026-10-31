@@ -1,6 +1,7 @@
 import { clampEyeRaise } from './sim/body-height.js';
 import { parseSeat, type SeatId } from './sim/cabin.js';
 import { type Bumps, parseBumps, VIGNETTE_STRENGTHS } from './sim/comfort.js';
+import { type GearboxMode, parseGearbox } from './sim/gearbox.js';
 
 /**
  * Runtime settings, read once when the page loads: first the ones saved from
@@ -81,6 +82,14 @@ export interface Settings {
    * asks. 'full' (the default) is every bump within the comfort caps.
    */
   bumps: Bumps;
+  /**
+   * How this player drives the tank's gearbox (F1.16, src/sim/gearbox.ts):
+   * 'auto' (the default; tillers push to drive), 'stick' (the right stick
+   * changes gear) or 'clutch' (the left trigger is the clutch). With 'stick'
+   * and 'clutch' the right trigger is the accelerator and the tillers are
+   * brakes. The game menu's Driving section changes it at once.
+   */
+  gearbox: GearboxMode;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -109,6 +118,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: 1,
   vignette: VIGNETTE_STRENGTHS.normal,
   bumps: 'full',
+  gearbox: 'auto',
 };
 
 function num(params: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
@@ -161,6 +171,7 @@ export function parseSettings(search: string): Settings {
     sound: num(params, 'sound', d.sound, 0, 1),
     vignette: num(params, 'vignette', d.vignette, 0, 1),
     bumps: parseBumps(params.get('bumps'), d.bumps),
+    gearbox: parseGearbox(params.get('gearbox'), d.gearbox),
   };
 }
 

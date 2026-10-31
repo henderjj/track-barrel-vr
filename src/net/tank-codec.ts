@@ -8,11 +8,13 @@
  *   gearbox, and (since F1.5) its gauges and the driver's controls it ran
  *   on, so a guest gunner sees the host driver's levers move.
  * - DriverControls, guest driver → host at 45 Hz: the tillers, the gear
- *   lever and the hand throttle, which the host simulates.
+ *   lever and the hand throttle, which the host simulates; since F1.16 the
+ *   accelerator, the clutch and how the driver works the gearbox.
  *
  * When a packet grows, decode the old length too (see decodePose).
  */
 
+import { GEARBOX_MODES, REVERSE } from '../sim/gearbox.js';
 import { type DriverControls, type Gear, type TankDrive } from '../sim/tank-drive.js';
 import { PacketType } from './pose-codec.js';
 
@@ -25,13 +27,22 @@ const HEADER = 7;
  * (uint16), gear (uint8), flags (uint8: bit 0 grinding, bit 1 touching),
  * bumps (uint16) and odometer (float32, m). F1.5 added: coolant (uint8,
  * °C), fuel (uint8, 0-255), then the driver's controls as in
- * DriverControls (tillers int8, gear lever uint8, throttle uint8).
+ * DriverControls. F1.16: gear 0 to 6 (6 reverse), flag bit 2 bogging,
+ * and the controls' accelerator, clutch and gearbox mode.
  */
-export const TANK_STATE_BYTES = HEADER + 12 + 20 + 2 + 1 + 1 + 2 + 4 + 2 + 4;
+export const TANK_STATE_BYTES = HEADER + 12 + 20 + 2 + 1 + 1 + 2 + 4 + 2 + 7;
+/** F1.5's TankState, with the controls' first four bytes only: still decoded. */
+export const TANK_STATE_V2_BYTES = TANK_STATE_BYTES - 3;
 /** F1.4's TankState, without the gauges and controls: still decoded, for a page on the previous build. */
-export const TANK_STATE_V1_BYTES = TANK_STATE_BYTES - 6;
-/** DriverControls: header, left and right tiller (int8, ±127), gear (uint8), throttle (uint8, 0-255). */
-export const DRIVER_CONTROLS_BYTES = HEADER + 4;
+export const TANK_STATE_V1_BYTES = TANK_STATE_V2_BYTES - 6;
+/**
+ * DriverControls: header, left and right tiller (int8, ±127), gear (uint8),
+ * throttle (uint8, 0-255); F1.16 added the accelerator and the clutch
+ * (uint8, 0-255) and the gearbox mode (uint8, GEARBOX_MODES' index).
+ */
+export const DRIVER_CONTROLS_BYTES = HEADER + 7;
+/** F1.5's DriverControls, without the accelerator, clutch and mode: read as the automatic box. */
+export const DRIVER_CONTROLS_V1_BYTES = HEADER + 4;
 
 const HEADING_SCALE = 32767 / Math.PI;
 const ANGLE_SCALE = 1e4;
@@ -39,6 +50,7 @@ const MM = 1000;
 
 const FLAG_GRINDING = 1;
 const FLAG_TOUCHING = 2;
+const FLAG_BOGGING = 4;
 
 function int16(v: number): number {
   return v < -32767 ? -32767 : v > 32767 ? 32767 : Math.round(v);
@@ -91,14 +103,14 @@ export function encodeTankState(buffer: ArrayBuffer, seq: number, timeMs: number
   o += 20;
   view.setUint16(o, Math.max(0, Math.min(65535, Math.round(s.rpm))));
   view.setUint8(o + 2, s.gear);
-  view.setUint8(o + 3, (s.grinding ? FLAG_GRINDING : 0) | (s.touching ? FLAG_TOUCHING : 0));
+  view.setUint8(o + 3, (s.grinding ? FLAG_GRINDING : 0) | (s.touching ? FLAG_TOUCHING : 0) | (s.bogging ? FLAG_BOGGING : 0));
   view.setUint16(o + 4, s.bumps & 0xffff);
   view.setFloat32(o + 6, s.odometer);
   o += 10;
   view.setUint8(o, Math.max(0, Math.min(255, Math.round(s.coolant))));
   view.setUint8(o + 1, Math.round(Math.max(0, Math.min(1, s.fuel)) * 255));
   writeControls(view, o + 2, controls);
-  return o + 6;
+  return o + 9;
 }
 
 /**
@@ -106,7 +118,7 @@ export function encodeTankState(buffer: ArrayBuffer, seq: number, timeMs: number
  * `controls`; returns false if it isn't one. The heading comes back within
  * (-π, π]: the guest unwraps it against the last one it drew (lerpTankDrive
  * takes the short way round). An F1.4 packet leaves the gauges in `out`
- * and `controls` as they were.
+ * and `controls` as they were; an F1.5 one reads its controls as the automatic box's.
  */
 export function decodeTankState(view: DataView, header: TankHeader, out: TankDrive, controls: DriverControls | null = null): boolean {
   if (view.byteLength < TANK_STATE_V1_BYTES || view.getUint8(0) !== PacketType.TankState) {
@@ -130,20 +142,30 @@ export function decodeTankState(view: DataView, header: TankHeader, out: TankDri
   out.rightTrack = view.getInt16(o + 18) / MM;
   o += 20;
   out.rpm = view.getUint16(o);
-  out.gear = Math.min(2, view.getUint8(o + 2)) as Gear;
+  out.gear = gearOf(view.getUint8(o + 2));
   const flags = view.getUint8(o + 3);
   out.grinding = (flags & FLAG_GRINDING) !== 0;
   out.touching = (flags & FLAG_TOUCHING) !== 0;
+  out.bogging = (flags & FLAG_BOGGING) !== 0;
   out.bumps = view.getUint16(o + 4);
   out.odometer = view.getFloat32(o + 6);
   out.shiftTimer = 0;
+  out.toGear = 0;
   o += 10;
-  if (view.byteLength >= TANK_STATE_BYTES) {
+  if (view.byteLength >= TANK_STATE_V2_BYTES) {
     out.coolant = view.getUint8(o);
     out.fuel = view.getUint8(o + 1) / 255;
-    if (controls) readControls(view, o + 2, controls);
+    if (controls) readControls(view, o + 2, controls, view.byteLength >= TANK_STATE_BYTES);
   }
   return true;
+}
+
+function gearOf(v: number): Gear {
+  return Math.min(REVERSE, v) as Gear;
+}
+
+function unit(v: number): number {
+  return Math.round((v < 0 ? 0 : v > 1 ? 1 : v) * 255);
 }
 
 function tiller(v: number): number {
@@ -154,14 +176,27 @@ function writeControls(view: DataView, o: number, c: DriverControls): void {
   view.setInt8(o, tiller(c.left));
   view.setInt8(o + 1, tiller(c.right));
   view.setUint8(o + 2, c.gear);
-  view.setUint8(o + 3, Math.round((c.throttle < 0 ? 0 : c.throttle > 1 ? 1 : c.throttle) * 255));
+  view.setUint8(o + 3, unit(c.throttle));
+  view.setUint8(o + 4, unit(c.accel));
+  view.setUint8(o + 5, unit(c.clutch));
+  view.setUint8(o + 6, Math.max(0, GEARBOX_MODES.indexOf(c.mode)));
 }
 
-function readControls(view: DataView, o: number, out: DriverControls): void {
+/** The controls at `o`; `full` says the packet carries F1.16's three bytes, else they read as the automatic box's. */
+function readControls(view: DataView, o: number, out: DriverControls, full: boolean): void {
   out.left = view.getInt8(o) / 127;
   out.right = view.getInt8(o + 1) / 127;
-  out.gear = Math.min(2, view.getUint8(o + 2)) as Gear;
+  out.gear = gearOf(view.getUint8(o + 2));
   out.throttle = view.getUint8(o + 3) / 255;
+  if (full) {
+    out.accel = view.getUint8(o + 4) / 255;
+    out.clutch = view.getUint8(o + 5) / 255;
+    out.mode = GEARBOX_MODES[view.getUint8(o + 6)] ?? 'auto';
+  } else {
+    out.accel = 0;
+    out.clutch = 0;
+    out.mode = 'auto';
+  }
 }
 
 /** Write a DriverControls packet into `buffer` (at least DRIVER_CONTROLS_BYTES long); returns its length. */
@@ -172,12 +207,12 @@ export function encodeDriverControls(buffer: ArrayBuffer, seq: number, timeMs: n
   return DRIVER_CONTROLS_BYTES;
 }
 
-/** Decode a DriverControls packet into `out`; returns false if it isn't one. */
+/** Decode a DriverControls packet into `out` (an F1.5 one as the automatic box's); returns false if it isn't one. */
 export function decodeDriverControls(view: DataView, header: TankHeader, out: DriverControls): boolean {
-  if (view.byteLength < DRIVER_CONTROLS_BYTES || view.getUint8(0) !== PacketType.DriverControls) {
+  if (view.byteLength < DRIVER_CONTROLS_V1_BYTES || view.getUint8(0) !== PacketType.DriverControls) {
     return false;
   }
   readHeader(view, header);
-  readControls(view, HEADER, out);
+  readControls(view, HEADER, out, view.byteLength >= DRIVER_CONTROLS_BYTES);
   return true;
 }

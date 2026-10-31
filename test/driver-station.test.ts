@@ -31,11 +31,11 @@ import {
   createControls,
   createTankDrive,
   FUEL_RESERVE,
-  HIGH,
   IDLE_RPM,
-  LOW,
   MAX_RPM,
   NEUTRAL,
+  REVERSE,
+  TOP_GEAR,
   oilPressure,
   stepDrive,
   stepEngineGauges,
@@ -126,35 +126,36 @@ describe('the driver\'s controls (F1.5)', () => {
     expect(tillerAngle(5)).toBeCloseTo(DRIVER_TILLER.max, 6);
   });
 
-  it('puts the gear lever in a gear only near that gear\'s notch: back low, upright neutral, forwards high', () => {
-    expect(gearOfLever(GEAR_ANGLES[LOW])).toBe(LOW);
-    expect(gearOfLever(GEAR_ANGLES[NEUTRAL])).toBe(NEUTRAL);
-    expect(gearOfLever(GEAR_ANGLES[HIGH])).toBe(HIGH);
-    expect(GEAR_ANGLES[LOW]).toBeLessThan(0);
-    expect(GEAR_ANGLES[HIGH]).toBeGreaterThan(0);
+  it('puts the gear lever in a gear only near that gear\'s notch (F1.16): reverse furthest back, neutral, then 1st to 5th forwards', () => {
+    const order = [REVERSE, NEUTRAL, 1, 2, 3, 4, 5] as const;
+    for (let i = 0; i < order.length; i++) {
+      expect(gearOfLever(GEAR_ANGLES[order[i]])).toBe(order[i]);
+      expect(GEAR_LEVER.notches).toContain(GEAR_ANGLES[order[i]]);
+      if (i > 0) expect(GEAR_ANGLES[order[i]]).toBeGreaterThan(GEAR_ANGLES[order[i - 1]]);
+    }
     // Between notches it is out of gear.
-    expect(gearOfLever(-12 * DEG)).toBe(NEUTRAL);
-    expect(gearOfLever(13 * DEG)).toBe(NEUTRAL);
-    expect(gearOfLever(GEAR_LEVER.max)).toBe(HIGH);
-    expect(gearOfLever(GEAR_LEVER.min)).toBe(LOW);
-    for (const gear of [NEUTRAL, LOW, HIGH] as const) expect(GEAR_LEVER.notches).toContain(GEAR_ANGLES[gear]);
+    expect(gearOfLever((GEAR_ANGLES[2] + GEAR_ANGLES[3]) / 2)).toBe(NEUTRAL);
+    expect(gearOfLever(GEAR_LEVER.max)).toBe(TOP_GEAR);
+    expect(gearOfLever(GEAR_LEVER.min)).toBe(REVERSE);
   });
 
-  it('shifts from low to high by hand through neutral, and drops into high when let go near it', () => {
+  it('shifts up through the gears by hand, and drops into the notch it is let go near', () => {
     const lever = new Lever(GEAR_LEVER);
-    lever.angle = GEAR_ANGLES[LOW];
+    lever.angle = GEAR_ANGLES[NEUTRAL];
     const r = GEAR_LEVER.length - GEAR_LEVER.gripLength / 2;
-    expect(lever.grab(1, leverHand(-24, r))).toBe(true);
-    const seen = new Set<number>();
-    for (let deg = -24; deg <= 18; deg += 0.5) {
+    const from = GEAR_ANGLES[NEUTRAL] / DEG;
+    expect(lever.grab(1, leverHand(from, r))).toBe(true);
+    const seen: number[] = [];
+    for (let deg = from; deg <= GEAR_ANGLES[4] / DEG + 2; deg += 0.25) {
       lever.update(DT, [null, leverHand(deg, r)]);
-      seen.add(gearOfLever(lever.angle));
+      const gear = gearOfLever(lever.angle);
+      if (gear !== NEUTRAL && seen[seen.length - 1] !== gear) seen.push(gear);
     }
-    expect([...seen]).toEqual([LOW, NEUTRAL, HIGH]);
+    expect(seen).toEqual([1, 2, 3, 4]);
     lever.release(1);
     for (let i = 0; i < 90; i++) lever.update(DT, [null, null]);
-    expect(lever.angle).toBeCloseTo(GEAR_ANGLES[HIGH], 3);
-    expect(gearOfLever(lever.angle)).toBe(HIGH);
+    expect(lever.angle).toBeCloseTo(GEAR_ANGLES[4], 3);
+    expect(gearOfLever(lever.angle)).toBe(4);
   });
 
   it('keeps the hand throttle where it is left, idle upright and full forwards', () => {

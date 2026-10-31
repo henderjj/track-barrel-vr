@@ -6,11 +6,10 @@ import { CREW_COLORS } from '../scene-assets/avatar.scene-asset.js';
 import { settings } from '../settings.js';
 import { EYE_RAISE_STEP, MAX_EYE_RAISE } from '../sim/body-height.js';
 import { otherSeat, parseSeat, SEAT_IDS, SEATS } from '../sim/cabin.js';
-import { GEARS, type Gear } from '../sim/tank-drive.js';
 import { body, chooseBody } from './body-height-system.js';
 import { OPEN_MENU_EVENT } from './net-system.js';
 import { PanelUi } from './panel-ui.js';
-import { drive, driveStatus, resetTank, setGear, startDriving } from './drive-system.js';
+import { driveStatus, resetTank, startDriving } from './drive-system.js';
 import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-system.js';
 import { goUpTheRange, rangeStatus } from './range-system.js';
 import { readyToFire, runStatus, shownRun, startRun, stopRun } from './range-run-system.js';
@@ -89,14 +88,6 @@ const CHOICE_ROWS: readonly ChoiceRow[] = [
     ],
     current: () => yesNo(body.choice.seated),
     choose: (value) => chooseBody({ raise: body.choice.raise, seated: value === '1' }),
-  },
-  // The drive (docs/tank-drive.md): the gear lever (it moves the driver's station's lever, F1.5). The vignette is a Comfort setting (F1.14).
-  {
-    id: 'gear',
-    label: 'Gear lever',
-    options: GEARS.map((gear, i) => [`${i}`, gear.name] as const),
-    current: () => `${drive.gear}`,
-    choose: (value) => setGear(Number(value) as Gear),
   },
   // Spike S2's options, shown only while riding (docs/spikes/s2-riding.md).
   {
@@ -207,8 +198,8 @@ interface GameMenuDebug {
  *   saving or clearing the stats CSV;
  * - Sound and view: the settings that apply straight away (LIVE_ITEMS,
  *   src/live-settings.ts), kept in this browser;
- * - Tank: driving (not while riding: who drives and how fast, and the gear
- *   lever, moving the station's own, F1.5), the range, and riding (only
+ * - Tank: driving (not while riding: who drives and how fast, and the
+ *   gearbox, F1.16), the range, and riding (only
  *   while riding the tank, spike S2: the ride's options);
  * - Practice: shortcuts straight to a situation to test (sit in either
  *   seat, drive the tank or put it back at its start, lay the gun or turn

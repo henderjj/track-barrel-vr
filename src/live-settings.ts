@@ -54,6 +54,17 @@ export const LIVE_ITEMS: readonly LiveItem[] = [
     ],
     current: (s) => s.bumps,
   },
+  // The drive (F1.16): shown in the menu's Driving section.
+  {
+    key: 'gearbox',
+    label: 'Gearbox',
+    options: [
+      ['auto', 'Automatic'],
+      ['stick', 'Stick shift'],
+      ['clutch', 'Clutch'],
+    ],
+    current: (s) => s.gearbox,
+  },
   { key: 'hud', label: 'Perf HUD (X)', options: [['1', 'On'], ['0', 'Off']], current: (s) => onOff(s.hud) },
   {
     key: 'hz',
