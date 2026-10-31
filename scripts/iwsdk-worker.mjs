@@ -70,6 +70,8 @@ async function cli(argv) {
 let browser = null;
 let target = null;
 let fastPathBroken = false;
+/** Times in a row the open connection couldn't find the app; a few, and it stops trying. */
+let fastPathMisses = 0;
 
 async function appFrame() {
   if (target && !target.page.isClosed() && browser?.isConnected()) return target.frame ?? target.page.mainFrame();
@@ -128,9 +130,13 @@ async function evaluate(expression) {
     let frame;
     try {
       frame = await appFrame();
+      fastPathMisses = 0;
     } catch (error) {
-      fastPathBroken = true;
-      console.log(`    (evaluating through iwsdk browser run: ${error.message})`);
+      // A slow runner can miss once (a screenshot that timed out still
+      // holding the page): use the CLI this time, and give up on the open
+      // connection only if it keeps missing.
+      fastPathBroken = ++fastPathMisses >= 3;
+      console.log(`    (evaluating through iwsdk browser run${fastPathBroken ? ' from now on' : ' this once'}: ${error.message})`);
     }
     if (frame) {
       // The same evaluation `browser run` would do (a returned promise is

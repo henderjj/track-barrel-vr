@@ -130,10 +130,6 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function iwsdk(args, input) {
   const argv = [CLI, ...args];
-  // A screenshot scrolls the workspace view and waits for it to draw, which
-  // at a frame or two a second (software rendering on CI) can outlast the
-  // CLI's own default.
-  if (args[0] === 'browser' && args[1] === 'screenshot' && !args.includes('--timeout')) argv.push('--timeout', '120000');
   if (input !== undefined) argv.push('--input-json', JSON.stringify(input));
   let stdout;
   let stderr = '';
@@ -178,8 +174,15 @@ function iwsdk(args, input) {
 /** Evaluate an expression in the app frame (needs --allow-browser-automation). */
 function evalInApp(expression) {
   if (worker) {
-    const reply = ask({ kind: 'eval', expression });
+    let reply = ask({ kind: 'eval', expression });
+    // Straight after a screenshot that timed out, the page can still be busy
+    // and an evaluation through the CLI comes back empty: try again.
+    for (let retry = 0; retry < 3 && !reply.error && !reply.stdout; retry++) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
+      reply = ask({ kind: 'eval', expression });
+    }
     if (reply.error) throw new Error(`evaluating ${expression.slice(0, 80)}: ${reply.error}`);
+    if (!reply.stdout) throw new Error(`evaluating ${expression.slice(0, 80)}: no answer`);
     const data = JSON.parse(reply.stdout);
     if (!data.ok) throw new Error(`iwsdk browser run failed: ${JSON.stringify(data.error)}`);
     return data.data.result?.value ?? data.data.result;
