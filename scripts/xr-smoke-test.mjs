@@ -1154,6 +1154,9 @@ async function drivingTheTank() {
     await button('controller-right', 3, 1);
     await button('controller-right', 3, 0);
   };
+  // Back at the start first: on a slow runner the drive so far can end up near the wall 70 m up, which would hold
+  // the tank still when it pulls away.
+  evalInApp('(window.__drive.place(0, 0, 0), true)');
   await menuButtonPress();
   await menuClick('row-gearbox-2');
   await menuButtonPress();
@@ -1291,9 +1294,10 @@ async function theTestRange() {
  *     Vignette → Strong darkens the view more than Normal can while the
  *     tank pulls away, and Off leaves it clear; Bumps → Reduced makes the
  *     tank ride on reduced bumps. A range run then counts what the player
- *     does while its clock runs: a squeeze 14 cm wide of the gear lever
- *     takes hold of nothing and is a fumble against it, shifting with the
- *     tillers pushed grinds, I feel queasy writes a mark with the run's
+ *     does while its clock runs, on the Clutch gearbox (F1.16) so the gear
+ *     lever can be taken hold of: a squeeze 14 cm wide of the gear lever
+ *     takes hold of nothing and is a fumble against it, shifting without
+ *     the clutch grinds, I feel queasy writes a mark with the run's
  *     time; Stop writes the run's row, and the menu and the CSV show it.
  */
 async function comfortAndStats() {
@@ -1330,6 +1334,9 @@ async function comfortAndStats() {
   // A range run, in the driver's seat.
   evalInApp('(window.__rangeRun.start(), true)');
   await waitFor('the run\'s clock to run', () => evalInApp('window.__stats.counting'), 8000).catch(() => false);
+  // With the automatic box the lever can't be taken hold of (F1.16): drive on the Clutch.
+  evalInApp("(window.__drive.set({ mode: 'clutch' }), true)");
+  await sleep(300);
   // A squeeze 14 cm wide of the gear lever's handle: out of reach, so nothing is taken hold of.
   const handle = evalInApp("window.__driverStation.handle('gear')");
   iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin([handle[0] + 0.14, handle[1], handle[2]]), duration: 0.3 });
@@ -1340,10 +1347,10 @@ async function comfortAndStats() {
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 0 }] });
   check('During a run, a squeeze that misses the gear lever is a fumble against it',
     missed.fumbles[GEAR] === 1 && holding === null, `fumbles ${JSON.stringify(missed.fumbles)}, right hand holding ${holding}`);
-  // Shifting with the tillers pushed grinds.
-  evalInApp('(window.__drive.set({ left: 0.6, right: 0.6, gear: 2 }), true)');
+  // Shifting without the clutch grinds.
+  evalInApp("(window.__drive.set({ mode: 'clutch', clutch: 0, gear: 2 }), true)");
   const ground = await waitFor('a grind counted', () => { const t = tally(); return t.grinds > 0 && t; }, 4000).catch(() => tally());
-  evalInApp('(window.__drive.set({ left: 0, right: 0, gear: 1 }), true)');
+  evalInApp("(window.__drive.set({ mode: 'clutch', clutch: 1, gear: 0 }), true)");
   check('A grind during the run is counted', ground.grinds >= 1, `${ground.grinds} grinds`);
   evalInApp('(window.__drive.set(null), true)');
   // I feel queasy, from the menu.
