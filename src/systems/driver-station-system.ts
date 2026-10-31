@@ -28,8 +28,9 @@ import {
   tillerAngle,
 } from '../sim/driver-station.js';
 import { Lever } from '../sim/mechanism.js';
-import { oilPressure, type TankDrive } from '../sim/tank-drive.js';
-import { drive, shownDriverState, shownDriverControls } from './drive-system.js';
+import { type Gear, NEUTRAL } from '../sim/gearbox.js';
+import { type DriverControls, oilPressure, type TankDrive } from '../sim/tank-drive.js';
+import { drive, gearboxMode, shownDriverState, shownDriverControls } from './drive-system.js';
 import { handUse } from './grip-system.js';
 import { HoldKind } from './hand-lock.js';
 import { buzz } from './haptics.js';
@@ -87,9 +88,11 @@ interface StationDebug {
 
 /**
  * The driver's station (F1.5, docs/driver-station.md): two tillers, a gear
- * lever with three notches (low back, neutral, high forwards) and a hand
- * throttle on the left wall, all mechanism-kit levers, and five gauges
- * under the vision slit (speed, RPM, coolant, oil pressure, fuel).
+ * lever with a notch for each gear (F1.16, docs/gearbox.md: reverse,
+ * neutral and 1st to 5th, back to front) and a hand throttle on the left
+ * wall, all mechanism-kit levers, and five gauges in the instrument box
+ * (speed, RPM, coolant, oil pressure, fuel). With the automatic box the
+ * gear lever moves by itself to the gear engaged and can't be taken hold of.
  *
  * MechanismSystem takes hold of the levers and moves them; this system,
  * after it, reads them into `drive` for DriveSystem while this player sits
@@ -114,6 +117,8 @@ export class DriverStationSystem extends createSystem({}) {
   private grinds = 0;
   private shifts = 0;
   private wasGrinding = false;
+  /** Whether the automatic box had the lever last frame: changing to a manual box puts it in neutral. */
+  private wasAuto = true;
   /** The gear engaged last frame (-1 before the first). */
   private engaged = -1;
   private tmp = new Vector3();
@@ -137,7 +142,8 @@ export class DriverStationSystem extends createSystem({}) {
         mech: lever,
         frame: mount,
         kind: KINDS[id],
-        active: () => this.usable(),
+        // The automatic box works the gear lever itself.
+        active: id === 'gear' ? () => this.usable() && gearboxMode() !== 'auto' : () => this.usable(),
       };
       this.cleanupFuncs.push(addControl(control));
     }
@@ -202,17 +208,31 @@ export class DriverStationSystem extends createSystem({}) {
     const dt = Math.min(delta, 0.1);
     const { tillerLeft, tillerRight, gear, throttle } = this.levers;
     const shown = shownDriverControls();
+    const state = shownDriverState();
+    const k = 1 - Math.exp(-FOLLOW_RATE * dt);
     if (seating.mine === 'driver') {
-      // The menu, keys or a test moved the gear lever.
-      if (drive.gearAsked !== null) {
-        if (!gear.anyHeld) gear.angle = GEAR_ANGLES[drive.gearAsked];
+      const auto = gearboxMode() === 'auto';
+      if (auto) {
+        // The automatic box moves the lever to the gear it engages (the kit lets go of it: it isn't active).
         drive.gearAsked = null;
+        if (state) gear.angle += (GEAR_ANGLES[engagedGear(state)] - gear.angle) * k;
+        drive.gear = state ? engagedGear(state) : drive.gear;
+      } else {
+        // Taken over from the automatic box, the lever starts in neutral: the driver picks the gear, the clutch out
+        // in the gear the box left would bog the engine.
+        if (this.wasAuto && drive.gearAsked === null) drive.gearAsked = NEUTRAL;
+        // The stick, keys or a test moved the gear lever.
+        if (drive.gearAsked !== null) {
+          if (!gear.anyHeld) gear.angle = GEAR_ANGLES[drive.gearAsked];
+          drive.gearAsked = null;
+        }
+        drive.gear = gearOfLever(gear.angle);
       }
+      this.wasAuto = auto;
       const held = tillerLeft.anyHeld || tillerRight.anyHeld;
       drive.tillersHeld = held && this.usable();
       drive.left = tillerLeft.demand();
       drive.right = tillerRight.demand();
-      drive.gear = gearOfLever(gear.angle);
       drive.throttle = throttleOf(throttle.angle);
       // The sticks or keys drive while no hand is on a tiller: draw the tillers where they would be.
       if (!held && shown) {
@@ -222,12 +242,13 @@ export class DriverStationSystem extends createSystem({}) {
     } else {
       drive.tillersHeld = false;
       drive.gearAsked = null;
+      // An empty driver's seat runs on the automatic box.
+      this.wasAuto = true;
       if (shown) {
         // The crewmate drives (or nobody does): the levers follow the controls the tank runs on.
-        const k = 1 - Math.exp(-FOLLOW_RATE * dt);
         tillerLeft.angle += (tillerAngle(shown.left) - tillerLeft.angle) * k;
         tillerRight.angle += (tillerAngle(shown.right) - tillerRight.angle) * k;
-        gear.angle += (GEAR_ANGLES[shown.gear] - gear.angle) * k;
+        gear.angle += (GEAR_ANGLES[leverGear(shown, state)] - gear.angle) * k;
         throttle.angle += (throttleAngle(shown.throttle) - throttle.angle) * k;
       }
     }
@@ -320,7 +341,7 @@ export class DriverStationSystem extends createSystem({}) {
     ctx.fillStyle = '#c9c0a0';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ['GEAR LEVER', 'back  LOW', 'middle  N', 'fwd  HIGH', '(tillers centred)'].forEach((text, i) => {
+    ['GEARS', 'R N 1 2 3 4 5', 'back  >  fwd', 'clutch L trig', 'gears R stick'].forEach((text, i) => {
       ctx.font = `bold ${Math.round(line * (i === 0 ? 0.95 : i === 4 ? 0.7 : 0.9))}px sans-serif`;
       ctx.fillText(text, gx, gy + (i - 2) * line * 1.1, PANEL.dialSpacing * px - 8);
     });
@@ -346,6 +367,16 @@ function tick(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, 
   ctx.moveTo(cx + sx * r * 0.95, cy + cy2 * r * 0.95);
   ctx.lineTo(cx + sx * r * (0.95 - length), cy + cy2 * r * (0.95 - length));
   ctx.stroke();
+}
+
+/** The gear the box has engaged, or is putting in. */
+function engagedGear(s: TankDrive): Gear {
+  return s.gear !== NEUTRAL ? s.gear : s.toGear;
+}
+
+/** Where the driver's gear lever is drawn on the other page: the gear the automatic box engaged, or the driver's lever. */
+function leverGear(c: DriverControls, s: TankDrive | null): Gear {
+  return c.mode === 'auto' && s ? engagedGear(s) : c.gear;
 }
 
 /** What a dial reads for the tank as drawn. */

@@ -21,8 +21,8 @@ import {
   SHELL_LENGTH,
   type Vec3,
 } from './loading.js';
-import { MAX_YAW_RATE } from './comfort.js';
-import { type Gear, GEARS, HIGH, LOW, NEUTRAL, TRACK_GAUGE } from './tank-drive.js';
+import { MAX_SPEED, MAX_YAW_RATE } from './comfort.js';
+import { TRACK_GAUGE } from './tank-drive.js';
 import { wrapTile } from './terrain.js';
 
 const DEG = Math.PI / 180;
@@ -146,31 +146,36 @@ const HEADING_DONE = 1 * DEG;
 const TURN_GAIN = 1;
 /** Further off than this, the tank stops going forwards and pivots on the spot first, rad. */
 const PIVOT_ANGLE = 60 * DEG;
-/** The tillers' demand advancing and reversing. */
-const ADVANCE = 0.9;
+/**
+ * The tillers' demand advancing and reversing. The crewmate drives with
+ * the automatic box (F1.16), where a tiller's push is a share of the
+ * tank's top speed: about 11 km/h forwards, as it drove in low range, and
+ * back as fast as reverse goes.
+ */
+const ADVANCE = 3 / MAX_SPEED;
 const REVERSE = -0.6;
 /** Within this of a waypoint the tank has arrived, m. */
 export const ARRIVED = 3;
 
-/** One leg of the route: where it goes (world x and z), in which gear, and how long it halts there, s. */
+/** One leg of the route: where it goes (world x and z), how fast, km/h, and how long it halts there, s. */
 export interface RouteLeg {
   x: number;
   z: number;
-  gear: Gear;
+  kmh: number;
   halt: number;
 }
 
 /**
- * The practice route: up the range road in low gear with three firing
+ * The practice route: up the range road at 11 km/h with three firing
  * halts (each with all three targets in front of the gunner, the nearest
- * 50 m off), then back to the start in high gear, round and round. It
+ * 50 m off), then back to the start at 30 km/h, round and round. It
  * stays on the road's corridor, where the ground keeps no obstacles.
  */
 export const ROUTE: readonly RouteLeg[] = [
-  { x: 0, z: -50, gear: LOW, halt: 15 },
-  { x: 0, z: -180, gear: LOW, halt: 15 },
-  { x: 0, z: -300, gear: LOW, halt: 10 },
-  { x: 0, z: -20, gear: HIGH, halt: 5 },
+  { x: 0, z: -50, kmh: 11, halt: 15 },
+  { x: 0, z: -180, kmh: 11, halt: 15 },
+  { x: 0, z: -300, kmh: 11, halt: 10 },
+  { x: 0, z: -20, kmh: 30, halt: 5 },
 ];
 
 /** The heading that faces from a point towards (dx, dz) further on, rad (0 faces -Z, positive turns left). */
@@ -180,8 +185,8 @@ export function headingTo(dx: number, dz: number): number {
 
 /**
  * The tillers for driving at `base` (-1 to 1) while turning by `error`
- * (rad, positive: turn left) in a gear whose top track speed is `top`
- * (m/s): the tracks apart so the tank turns at TURN_GAIN times the error,
+ * (rad, positive: turn left) where a tiller's full push asks its track for
+ * `top` (m/s): the tracks apart so the tank turns at TURN_GAIN times the error,
  * pivoting on the spot when the error is large or the tank should stand.
  */
 export function steer(base: number, error: number, top: number, out: { left: number; right: number }): { left: number; right: number } {
@@ -201,24 +206,22 @@ export function steer(base: number, error: number, top: number, out: { left: num
   return out;
 }
 
-/** What the bot driver wants of its controls this frame. */
+/** What the bot driver wants of its tillers this frame (the automatic box works the gears). */
 export interface DriveWish {
   left: number;
   right: number;
-  gear: Gear;
 }
 
 export function createDriveWish(): DriveWish {
-  return { left: 0, right: 0, gear: LOW };
+  return { left: 0, right: 0 };
 }
 
-/** The tank as the bot driver sees it: where it is, which way it faces, the gear engaged. */
+/** The tank as the bot driver sees it: where it is, which way it faces, how fast it goes. */
 export interface TankView {
   x: number;
   z: number;
   heading: number;
   speed: number;
-  gear: Gear;
 }
 
 /**
@@ -226,8 +229,7 @@ export interface TankView {
  * advance or reverse, holding its heading; Left and Right turn it a
  * further 45° (on the spot at a halt); Halt stops it. Drive the route
  * sends it round ROUTE; any other driving call takes it off the route.
- * Changing gear, it centres the tillers until the new gear is in
- * (otherwise the gears grind).
+ * It drives with the automatic box (F1.16), so it never changes gear itself.
  */
 export class BotDriver {
   mode: 'calls' | 'route' = 'calls';
@@ -239,7 +241,6 @@ export class BotDriver {
   halting = 0;
   /** Waypoints reached so far, for the tests. */
   arrivals = 0;
-  private gear: Gear = LOW;
   private steerOut = { left: 0, right: 0 };
 
   /** A call from the gunner. The tank's heading now sets where Left and Right turn from. */
@@ -250,7 +251,6 @@ export class BotDriver {
       case 'reverse':
         this.mode = 'calls';
         this.motion = call;
-        this.gear = LOW;
         return true;
       case 'halt':
         this.mode = 'calls';
@@ -271,7 +271,7 @@ export class BotDriver {
     }
   }
 
-  /** Step `dt` seconds with the tank as it is; what the tillers and gear lever should do, into `out`. */
+  /** Step `dt` seconds with the tank as it is; what the tillers should do, into `out`. */
   update(dt: number, tank: TankView, out: DriveWish): DriveWish {
     if (Number.isNaN(this.heading)) this.heading = tank.heading;
     let base = 0;
@@ -280,12 +280,9 @@ export class BotDriver {
     } else {
       base = this.motion === 'advance' ? ADVANCE : this.motion === 'reverse' ? REVERSE : 0;
     }
-    steer(base, wrap(this.heading - tank.heading), GEARS[tank.gear === NEUTRAL ? LOW : tank.gear].top, this.steerOut);
-    out.gear = this.gear;
-    // Changing gear: tillers centred until it is in, or the gears grind.
-    const shifting = out.gear !== tank.gear;
-    out.left = shifting ? 0 : this.steerOut.left;
-    out.right = shifting ? 0 : this.steerOut.right;
+    steer(base, wrap(this.heading - tank.heading), MAX_SPEED, this.steerOut);
+    out.left = this.steerOut.left;
+    out.right = this.steerOut.right;
     return out;
   }
 
@@ -308,11 +305,10 @@ export class BotDriver {
       this.halting = Math.max(leg.halt, 1e-3);
       return 0;
     }
-    this.gear = leg.gear;
     this.heading = headingTo(dx, dz);
-    // Slow down in time to stop on the spot: high gear coasts further.
-    const slowFrom = leg.gear === HIGH ? 50 : 12;
-    return ADVANCE * clamp(distance / slowFrom, 0.3, 1);
+    // Slow down in time to stop on the spot: faster legs slow from further out.
+    const slowFrom = leg.kmh > 15 ? 50 : 12;
+    return (leg.kmh / 3.6 / MAX_SPEED) * clamp(distance / slowFrom, 0.3, 1);
   }
 
   /** One line for the menu and the tests. */

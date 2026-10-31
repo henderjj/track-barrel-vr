@@ -11,7 +11,7 @@ import {
   THROTTLE_QUADRANT,
   TILLER_PEDESTAL,
 } from '../sim/driver-station.js';
-import { HIGH, LOW } from '../sim/tank-drive.js';
+import { NEUTRAL, REVERSE } from '../sim/gearbox.js';
 
 /**
  * The driver's station (F1.5, docs/driver-station.md), the parts that
@@ -30,8 +30,8 @@ const STEEL_LIGHT = 0x5b5d60;
 const FRAME = 0x2b2e2a;
 const LEATHER = 0x5a3d26;
 /** The gate's marks: low range green, high range yellow. */
-const LOW_MARK = 0x4f8a3a;
-const HIGH_MARK = 0xc8a030;
+const NEUTRAL_MARK = 0x4f8a3a;
+const REVERSE_MARK = 0xa8402e;
 const NEEDLE = 0xf08a24;
 
 /** The dials' face floats this far in front of the panel's housing, and the needles this far in front of the face, m. */
@@ -61,12 +61,12 @@ export function driverStationParts(): Part[] {
     parts.push(box([2 * p.halfWidth, top + 0.01, p.depth], [x, (top - 0.01) / 2, z], OLIVE_DARK));
     parts.push(box([0.035, PROUD * 2, p.depth - 0.03], [x, top, z], FRAME));
   }
-  // The gear lever's gate on the hump, with a mark behind it for low and one ahead for high.
+  // The gear lever's gate on the hump, with a mark at neutral on its right and one at reverse, furthest back, on its left.
   const [gx, gy, gz] = DRIVER_CONTROLS.gear.pivot;
   parts.push(box([0.05, PROUD * 2, 0.2], [gx, gy, gz], FRAME));
   const reach = 0.075;
-  parts.push(box([0.02, PROUD * 2.5, 0.02], [gx + 0.045, gy, gz + Math.sin(-GEAR_ANGLES[LOW]) * reach], LOW_MARK));
-  parts.push(box([0.02, PROUD * 2.5, 0.02], [gx + 0.045, gy, gz - Math.sin(GEAR_ANGLES[HIGH]) * reach], HIGH_MARK));
+  parts.push(box([0.02, PROUD * 2.5, 0.02], [gx + 0.045, gy, gz - Math.sin(GEAR_ANGLES[NEUTRAL]) * reach], NEUTRAL_MARK));
+  parts.push(box([0.02, PROUD * 2.5, 0.02], [gx - 0.045, gy, gz - Math.sin(GEAR_ANGLES[REVERSE]) * reach], REVERSE_MARK));
   // The hand throttle's quadrant, sunk 1 cm into the left wall, its pivot inside the top.
   const [tx, ty, tz] = DRIVER_CONTROLS.throttle.pivot;
   const q = THROTTLE_QUADRANT;

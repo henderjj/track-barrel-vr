@@ -26,6 +26,7 @@ import {
 import { onSettingChange } from '../live-settings.js';
 import { settings } from '../settings.js';
 import { type Bumps, crewBumps, groundFeel, parseBumps, vignetteLevel } from '../sim/comfort.js';
+import { GEARBOX_NAMES, type GearboxMode, nextGear, realControls } from '../sim/gearbox.js';
 import {
   angleDelta,
   copyTankDrive,
@@ -36,6 +37,8 @@ import {
   GEARS,
   IDLE_RPM,
   keyControls,
+  NEUTRAL,
+  REVERSE,
   kmh,
   settle,
   stepDrive,
@@ -45,6 +48,7 @@ import {
 import { wrapTile } from '../sim/terrain.js';
 import { createVignette } from './comfort-vignette.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
+import { gameMenu } from './game-menu-system.js';
 import { bufferDelayMs, netLink } from './net-system.js';
 import { ride } from './ride-system.js';
 import { seating } from './seating.js';
@@ -56,10 +60,13 @@ import { seating } from './seating.js';
  * driver's seat; this system drives by them.
  */
 export const drive = {
-  /** The gear the gear lever is in. The menu, keys 0, 1, 2 and the tests move the lever with `setGear`. */
-  gear: 1 as Gear,
-  /** Where the gear lever is asked to go (the menu, keys, tests): the station puts it there unless a hand holds it. */
+  /** The gear the gear lever is in. The right stick, A and B, keys and the tests move the lever with `setGear` and `shiftBy`. */
+  gear: NEUTRAL as Gear,
+  /** Where the gear lever is asked to go (the stick, keys, tests): the station puts it there unless a hand holds it. */
   gearAsked: null as Gear | null,
+  /** The clutch pedal and the accelerator, 0 to 1, as someone other than this page's controllers works them (the tests). */
+  clutch: 0,
+  accel: 0,
   /** The hand throttle, 0 (idle) to 1. */
   throttle: 0,
   /** The tillers' demands, -1 to 1; while a hand holds either (`tillersHeld`) they drive and the sticks don't. */
@@ -81,9 +88,16 @@ let active: DriveSystem | null = null;
 function copyControls(from: DriverControls, to: DriverControls): void {
   to.left = from.left;
   to.right = from.right;
+  to.accel = from.accel;
   to.gear = from.gear;
   to.throttle = from.throttle;
+  to.clutch = from.clutch;
+  to.mode = from.mode;
 }
+
+/** A thumbstick pushed this far forwards or back changes gear, once, until it comes back within STICK_REARM of the middle. */
+const STICK_FLICK = 0.7;
+const STICK_REARM = 0.3;
 
 /** Practice → Drive: into the driver's seat, with a sign saying how to drive. */
 export function startDriving(): void {
@@ -119,10 +133,24 @@ export function placeTank(x: number, z: number, heading: number): void {
   active?.park(x, z, heading);
 }
 
-/** Move the gear lever to a gear's notch (the menu, keys 0, 1 and 2, tests); a hand on it keeps it. */
+/** Move the gear lever to a gear's notch (keys 0 to 5 and R, tests); a hand on it keeps it. */
 export function setGear(gear: Gear): void {
   drive.gear = gear;
   drive.gearAsked = gear;
+}
+
+/** Move the gear lever one notch forwards (+1, a gear up) or back (-1, down towards neutral and reverse): the right stick, A and B, keys E and Q. */
+export function shiftBy(step: number): void {
+  setGear(nextGear(drive.gearAsked ?? drive.gear, step));
+}
+
+/**
+ * How this page's driver works the gearbox (F1.16): the Gearbox setting,
+ * except the automatic box for the practice crewmate's page (it drives
+ * the tillers only) and for tracked hands (no triggers to squeeze).
+ */
+export function gearboxMode(): GearboxMode {
+  return active?.mode ?? settings.gearbox;
 }
 
 /**
@@ -160,7 +188,7 @@ export function driveStatus(): string {
   const s = active?.shown;
   if (s == null) return '';
   const who = seating.mine === 'driver' ? 'You drive' : netLink.connected && seating.crew === 'driver' ? 'Your crewmate drives' : 'Nobody drives';
-  const gear = s.grinding ? 'grinding' : `${GEARS[s.gear].name.toLowerCase()} gear`;
+  const gear = s.grinding ? 'grinding' : s.gear === NEUTRAL ? 'neutral' : `${GEARS[s.gear].name.toLowerCase()} gear`;
   return `${who}: ${kmh(s)} km/h${s.speed < -0.05 ? ' backwards' : ''}, ${gear}, ${Math.round(s.rpm / 10) * 10} rpm`;
 }
 
@@ -173,7 +201,7 @@ interface DriveDebug {
   shownControls(): DriverControls;
   /** Who drives, as this page sees it. */
   driver(): 'me' | 'crew' | 'nobody';
-  /** Drive as if from the sticks (tests): tillers and lever, or null to go back to the real ones. */
+  /** Drive as if from the sticks (tests): tillers, accelerator, clutch, lever and gearbox mode, or null to go back to the real ones. */
   set(controls: Partial<DriverControls> | null): void;
   reset(): void;
   /** Host only: put the tank at rest at (x, z) facing `heading` (tests and Practice). */
@@ -252,6 +280,11 @@ export class DriveSystem extends createSystem({}) {
   private signUntil = 0;
   private time = 0;
   private wasGrinding = false;
+  private wasBogging = false;
+  /** This page's driver's gearbox mode (gearboxMode). */
+  mode: GearboxMode = settings.gearbox;
+  /** Each stick (left, right) has flicked and not yet come back: no further shift until it does. */
+  private flicked = [false, false];
   private keys = new Set<string>();
   private matrix = new Matrix4();
   private euler = new Euler(0, 0, 0, 'YXZ');
@@ -289,7 +322,10 @@ export class DriveSystem extends createSystem({}) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (typing(event) || this.world.visibilityState.peek() !== VisibilityState.NonImmersive) return;
       const key = event.key.toLowerCase();
-      if (key === '0' || key === '1' || key === '2') setGear(Number(key) as Gear);
+      if (key >= '0' && key <= '5' && key.length === 1) setGear(Number(key) as Gear);
+      else if (key === 'r') setGear(REVERSE);
+      else if (key === 'e') shiftBy(1);
+      else if (key === 'q') shiftBy(-1);
       else this.keys.add(key);
     };
     const onKeyUp = (event: KeyboardEvent) => this.keys.delete(event.key.toLowerCase());
@@ -379,7 +415,12 @@ export class DriveSystem extends createSystem({}) {
 
   sayHowToDrive(): void {
     const vr = this.world.visibilityState.peek() !== VisibilityState.NonImmersive;
-    this.say('Driving', vr ? 'Grip the tillers and push. Gear lever: right' : 'W A S D to drive, 0 1 2: gear');
+    const how: Record<GearboxMode, [string, string]> = {
+      auto: ['Grip the tillers and push', 'W A S D to drive'],
+      stick: ['R trigger: go. Tillers: brakes. R stick: gears', 'W: go, S A D: brakes, E Q: gears'],
+      clutch: ['Hold L trigger (clutch), flick R stick to shift', 'W: go, S A D: brakes, Shift: clutch, E Q: gears'],
+    };
+    this.say(`Driving: ${GEARBOX_NAMES[this.mode].toLowerCase()}`, how[this.mode][vr ? 0 : 1]);
   }
 
   update(delta: number): void {
@@ -428,31 +469,68 @@ export class DriveSystem extends createSystem({}) {
    */
   private readLocalControls(): void {
     const c = this.controls;
+    const vr = this.world.visibilityState.peek() !== VisibilityState.NonImmersive;
+    const pads = this.input.xr.gamepads;
+    // The practice crewmate drives the tillers only; tracked hands have no triggers to squeeze.
+    this.mode = this.override?.mode ?? (settings.bot || (vr && pads.left == null && pads.right == null) ? 'auto' : settings.gearbox);
+    c.mode = this.mode;
     c.gear = drive.gear;
     c.throttle = drive.throttle;
     c.left = 0;
     c.right = 0;
+    c.accel = drive.accel;
+    c.clutch = drive.clutch;
     // Spike S2's ride has the sticks while it runs.
     if (seating.mine !== 'driver' || ride.active) return;
+    const real = realControls(this.mode);
+    if (vr) {
+      // The pedals: the left trigger the clutch, the right the accelerator (a finger each on the tillers' grips).
+      if (this.mode === 'clutch') c.clutch = Math.max(c.clutch, pads.left?.getButtonValue(InputComponent.Trigger) ?? 0);
+      if (real) c.accel = Math.max(c.accel, pads.right?.getButtonValue(InputComponent.Trigger) ?? 0);
+    }
     if (drive.tillersHeld) {
       c.left = drive.left;
       c.right = drive.right;
-    } else if (this.world.visibilityState.peek() !== VisibilityState.NonImmersive) {
-      const left = this.input.xr.gamepads.left?.getAxesValues(InputComponent.Thumbstick);
-      const right = this.input.xr.gamepads.right?.getAxesValues(InputComponent.Thumbstick);
+      // Hands on the tillers: the right stick flicked forwards or back changes gear.
+      if (vr && this.mode !== 'auto') this.flick(1, pads.right?.getAxesValues(InputComponent.Thumbstick)?.y ?? 0);
+    } else if (vr) {
+      const left = pads.left?.getAxesValues(InputComponent.Thumbstick);
+      const right = pads.right?.getAxesValues(InputComponent.Thumbstick);
       twinStickControls(left?.y ?? 0, right?.y ?? 0, c);
+      // Driving on the sticks: A changes up, B down (B closes the menu while it is open).
+      if (this.mode !== 'auto' && !gameMenu.open) {
+        if (pads.right?.getButtonDown(InputComponent.A_Button)) shiftBy(1);
+        if (pads.right?.getButtonDown(InputComponent.B_Button)) shiftBy(-1);
+      }
     } else if (this.keys.size > 0) {
       const k = this.keys;
       const forward = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0);
       const turn = (k.has('a') || k.has('arrowleft') ? 1 : 0) - (k.has('d') || k.has('arrowright') ? 1 : 0);
       keyControls(forward, turn, c);
+      // With a Sherman's controls W is the accelerator (S, A and D brake through the tillers); Shift is the clutch.
+      if (real && (k.has('w') || k.has('arrowup'))) c.accel = 1;
+      if (this.mode === 'clutch' && k.has('shift')) c.clutch = 1;
     }
     const o = this.override;
     if (o) {
       c.left = o.left ?? c.left;
       c.right = o.right ?? c.right;
       c.throttle = o.throttle ?? c.throttle;
+      c.accel = o.accel ?? c.accel;
+      c.clutch = o.clutch ?? c.clutch;
     }
+  }
+
+  /** A stick (0 left, 1 right) pushed past STICK_FLICK forwards changes up a gear, back down one; once each push. */
+  private flick(i: number, y: number): void {
+    if (this.flicked[i]) {
+      if (Math.abs(y) < STICK_REARM) this.flicked[i] = false;
+      return;
+    }
+    if (Math.abs(y) < STICK_FLICK) return;
+    this.flicked[i] = true;
+    // Forwards on a stick is -Y.
+    shiftBy(y < 0 ? 1 : -1);
   }
 
   /** The host: drive the tank from whoever sits in the driver's seat. */
@@ -464,17 +542,22 @@ export class DriveSystem extends createSystem({}) {
       if (performance.now() - this.remoteAt > CONTROLS_STALE_MS) {
         source.left = 0;
         source.right = 0;
+        source.accel = 0;
       }
     } else if (driver === 'nobody') {
-      // An empty seat: tillers let go, the lever where it was left.
+      // An empty seat: tillers let go, the lever where it was left, the automatic box holding the tank still.
       source.left = 0;
       source.right = 0;
+      source.accel = 0;
+      source.clutch = 0;
       source.gear = this.sim.gear;
+      source.mode = 'auto';
     }
     if (crewPresence.paused) {
       // The crew is on hold (its sign says why): the tank rolls to a stop.
       source.left = 0;
       source.right = 0;
+      source.accel = 0;
     }
     const feel = groundFeel(this.bumps);
     for (let left = dt; left > 1e-6; left -= MAX_STEP) {
@@ -559,11 +642,13 @@ export class DriveSystem extends createSystem({}) {
   }
 
   private signs(delta: number): void {
-    const grinding = this.shown.grinding;
+    const { grinding, bogging } = this.shown;
     if (grinding && !this.wasGrinding && seating.mine === 'driver') {
-      this.say('Gears grinding', 'Centre both tillers to change gear');
+      this.say('Gears grinding', this.controls.clutch < 0.8 ? 'Hold the clutch (left trigger) to change gear' : 'Too fast for that gear: slow down first');
     }
+    if (bogging && !this.wasBogging && seating.mine === 'driver') this.say('Engine labouring', 'Clutch in, or a lower gear');
     this.wasGrinding = grinding;
+    this.wasBogging = bogging;
     if (this.sign.visible) {
       if (this.time > this.signUntil) this.sign.setVisible(false);
       else this.sign.follow(this.world.visibilityState.peek() !== VisibilityState.NonImmersive ? this.player.head : this.camera, delta);

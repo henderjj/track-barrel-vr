@@ -1,12 +1,12 @@
 # Tank drive (F1.4)
 
-The tank moves. The host simulates its drive (skid steering, the engine's RPM, two gear ranges with grinds, the hull following the ground, soft stops at obstacles) and both players see the world move round the tank, which stays still at the origin (plan decision 4, proven comfortable enough to build on in spike S2). The numbers live in [`src/sim/tank-drive.ts`](../src/sim/tank-drive.ts), the comfort caps in [`src/sim/comfort.ts`](../src/sim/comfort.ts) and the ground in [`src/sim/terrain.ts`](../src/sim/terrain.ts).
+The tank moves. The host simulates its drive (skid steering, the engine's RPM, the gearbox ([gearbox.md](gearbox.md) since F1.16), the hull following the ground, soft stops at obstacles) and both players see the world move round the tank, which stays still at the origin (plan decision 4, proven comfortable enough to build on in spike S2). The numbers live in [`src/sim/tank-drive.ts`](../src/sim/tank-drive.ts), the comfort caps in [`src/sim/comfort.ts`](../src/sim/comfort.ts) and the ground in [`src/sim/terrain.ts`](../src/sim/terrain.ts).
 
 ## What players experience
 
-- Whoever sits in the **driver's seat** drives, with the driver's station's tillers, gear lever and hand throttle since F1.5 ([driver-station.md](driver-station.md)). While no hand is on a tiller the **thumbsticks** still drive: each stick's forward push drives its own track, as a tiller does. Both forwards drive straight, one forwards turns the other way, one forwards and one back pivots on the spot, both back reverses. On a PC page without a headset, **W A S D** (or the arrow keys) drive and **0, 1, 2** move the gear lever.
-- The **gear lever** is the station's (F1.5); the game menu's Driving section (Neutral, Low, High) moves it too. Low reaches 12 km/h, high 35 km/h. Moving the lever with either tiller more than 20% from centre **grinds**: the gearbox drops out of gear, nothing engages and a sign says "Gears grinding: centre both tillers to change gear". With the tillers centred the new gear engages after a third of a second.
-- The engine's **RPM** rises with how far the tillers are pushed, with a lag; the tank pulls gently at idle and harder as it revs, never faster than the comfort cap. RPM, speed and gear show in the Driving section's line and, since F1.5, on the driver's gauges.
+- Whoever sits in the **driver's seat** drives, with the driver's station's tillers, gear lever and hand throttle since F1.5 ([driver-station.md](driver-station.md)). While no hand is on a tiller the **thumbsticks** still drive: each stick's forward push drives its own track, as a tiller does. Both forwards drive straight, one forwards turns the other way, one forwards and one back pivots on the spot, both back reverses. On a PC page without a headset, **W A S D** (or the arrow keys) drive and **0 to 5** and **R** move the gear lever. That is the automatic box, the default; with the Stick shift or Clutch setting the right trigger is the accelerator and the tillers and sticks are brakes ([gearbox.md](gearbox.md)).
+- The **gearbox** (F1.16, [gearbox.md](gearbox.md)) has the Sherman's five speeds and a reverse; the game menu's Driving section picks how it is worked (Automatic, Stick shift or Clutch). It replaced F1.4's low and high ranges and their grind on a pushed tiller.
+- The engine's **RPM** rises with how far the tillers are pushed (or the accelerator), with a lag, and in gear follows the tracks; the tank pulls gently at idle and harder as it revs, never faster than the comfort cap. RPM, speed and gear show in the Driving section's line and, since F1.5, on the driver's gauges.
 - The **ground** rolls gently, with a flat start field and flat corridors for the test range's two roads (F1.7, [range.md](range.md)): one straight ahead through the start, one across it. The hull pitches and rolls with the ground under its tracks, eased and never more than 4°.
 - **Rocks, walls and houses** stand on the ground; a boulder, a wall and a house are within 110 m of the start, beside the lane. Driving at one, the tank slows into a firm, soft stop as it reaches it rather than stopping dead; it can always back or turn away. Passing close beside one slows it only as much as the corner needs.
 - The **comfort vignette** (spike S2's) darkens the edge of view as the tank turns, speeds up, slows or tilts, on by default; the menu's Comfort and stats section sets how dark it gets, or turns it off (F1.14, [comfort-stats.md](comfort-stats.md)).
@@ -18,14 +18,13 @@ The tank moves. The host simulates its drive (skid steering, the engine's RPM, t
 
 | What | Value | Why |
 | --- | --- | --- |
-| Top speed | Low 12 km/h, high 35 km/h; reverse 11 km/h | Plan §4.3; the S2 caps |
+| Top speed | 35 km/h in 5th; reverse 4.5 km/h; each gear's in [gearbox.md](gearbox.md) | Plan §4.3; the S2 caps |
 | Acceleration and braking | at most 1 m/s²; 35% of that at idle RPM, all of it at top RPM | The concept's gentle acceleration; RPM lag felt as pull |
 | Turn rate | at most 15°/s, changing by at most 20°/s² | The S2 caps |
 | Pitch and roll | at most 4°, eased over 0.5 s; height eased over 0.1 s | The S2 caps |
 | Track gauge | 3.0 m | The cabin model's tracks |
 | RPM | 800 idle (1600 with the hand throttle full), 2600 top, follows demand over 0.6 s | A Tiger-like Maybach range |
-| Grind | either tiller more than 20% from centre while the lever moves | Plan §4.3 |
-| Shift time | 0.35 s in the new gear with the tillers centred | Long enough to feel, short enough not to annoy |
+| Gear changes | 0.35 s out of gear, coasting; grinds only with the Clutch setting ([gearbox.md](gearbox.md)) | Long enough to feel, short enough not to annoy |
 | Obstacle stop | no part of the outline closes on an obstacle faster than it could stop in the gap at 3 m/s² | A soft bump, not a jolt; 35 km/h stops over about 16 m |
 | Outline | 3.6 × 5.6 m (the tracks' outer faces and ends), tested at 32 points | The cabin model; the gun overhangs it (F1.8) |
 | Ground | repeats every 800 m, height field sampled every 16 m, waves up to about 2 m peak to peak, flat within about 18 m of the start and 16 m either side of each road's middle | The drawn edge is always 800 m or more away, on the horizon (and the range's fog hides it, F1.7); the targets stand on the road up the range |
@@ -36,8 +35,8 @@ The tank moves. The host simulates its drive (skid steering, the engine's RPM, t
 
 The host runs the tank, whichever seat it sits in (plan decision 1).
 
-- **Tank state** (`PacketType.TankState` = 5), host → guest, unreliable, 45 Hz, 47 bytes (53 since F1.5, with the coolant, the fuel and the controls the host drove by; the 47-byte form still decodes): position (float32), heading, pitch, roll, speed, acceleration, turn and tilt rates, both tracks' speeds, RPM, gear, grinding and touching flags, bump count and odometer. The guest keeps the last 16 in a jitter buffer (`src/net/tank-buffer.ts`) and draws the tank as it was a little in the past (the same delay rule as the crewmate's avatar), carrying it on for up to 150 ms if a packet is late.
-- **Driver controls** (`PacketType.DriverControls` = 6), guest driver → host, unreliable, 45 Hz, 11 bytes: both tillers, the gear lever and the hand throttle. Controls older than 0.5 s count as let go.
+- **Tank state** (`PacketType.TankState` = 5), host → guest, unreliable, 45 Hz, 49 bytes (55 since F1.5, with the coolant, the fuel and the controls the host drove by; 58 since F1.16, with reverse, a bogging flag and the new controls; the older forms still decode): position (float32), heading, pitch, roll, speed, acceleration, turn and tilt rates, both tracks' speeds, RPM, gear, grinding and touching flags, bump count and odometer. The guest keeps the last 16 in a jitter buffer (`src/net/tank-buffer.ts`) and draws the tank as it was a little in the past (the same delay rule as the crewmate's avatar), carrying it on for up to 150 ms if a packet is late.
+- **Driver controls** (`PacketType.DriverControls` = 6), guest driver → host, unreliable, 45 Hz, 11 bytes: both tillers, the gear lever and the hand throttle (14 since F1.16: the accelerator, the clutch and the driver's Gearbox setting; an 11-byte one reads as the automatic box). Controls older than 0.5 s count as let go.
 - **`drive-reset`**, reliable event, guest → host: Back to start, from a guest's menu. **`drive-place`** (F1.7) is the same for a Practice shortcut that parks the tank somewhere on the range.
 - Everything aboard (heads, hands, the crewmate's legs) already goes in hull space, so the tank's motion never makes the crewmate judder against the cabin, whatever the delay on the tank itself.
 - A guest driver's tillers reach the host about half a round trip later and the tank's motion comes back about half a round trip plus the buffer later: about 250 ms at 150 ms RTT. A heavy tank accelerating at 1 m/s² hides it; the headset check asks.
@@ -65,8 +64,8 @@ On a Quest 3 after the deploy, with the cache cleared (Ctrl+Shift+R), seated (me
 1. Enter VR alone. Game menu (Y) → **Practice → Drive the tank → Drive**. You are in the driver's seat and a sign says how to drive.
 2. Push **both sticks forwards**. The tank pulls away gently and the ground slides past the slit and the open hatch. The edge of your view darkens a little as it speeds up. Let go: it rolls to a stop.
 3. Push **one stick** forwards: the tank turns the other way. One forwards and one back: it pivots on the spot. Both back: it reverses.
-4. Menu → Driving: the line shows your speed, gear and RPM. Pick **High**, close the menu and drive: it reaches about 35 km/h on the lane. Note whether the speed feels right through the slit and over the hatch.
-5. While driving, pick **Low** in the menu with a stick still pushed: the sign says the gears grind and the tank slows. Let go of the sticks: the gear goes in.
+4. Menu → Tank → Driving: the line shows your speed, gear and RPM. Drive with both sticks fully forwards: the box changes up through the gears to about 35 km/h on the lane. Note whether the speed feels right through the slit and over the hatch.
+5. The gearbox's own steps (Stick shift, Clutch) are in [gearbox.md](gearbox.md#headset-check).
 6. Drive off the lane onto the rolling ground: the hull tilts gently with it, never sharply. Note whether the tilt is comfortable.
 7. Drive into the boulder ahead on the left of the lane (about 45 m out), then the wall to the right (70 m) or the house (110 m, left). The tank slows into a stop as it reaches each, without a jolt, and backs away. Note whether the stop feels like a bump or like the tank braking by itself.
 8. Turn the **vignette off** in the Comfort and stats section and drive for a few minutes; note how it compares.

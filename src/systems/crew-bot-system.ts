@@ -27,8 +27,8 @@ import {
   twistForDemand,
   wheelGrip,
 } from '../sim/crew-bot.js';
-import { DRIVER_TILLER, GEAR_ANGLES, GEAR_LEVER, gearOfLever, tillerAngle } from '../sim/driver-station.js';
-import type { Lever, TwistGrip, Wheel } from '../sim/mechanism.js';
+import { DRIVER_TILLER, tillerAngle } from '../sim/driver-station.js';
+import type { TwistGrip, Wheel } from '../sim/mechanism.js';
 import { sightLimit } from '../sim/range.js';
 import {
   ELEVATION_WHEEL,
@@ -76,7 +76,6 @@ const CALL_SIGN_SECONDS = 4;
 
 /** The kit's names for the controls the bot works (DriverStationSystem's and TurretSystem's). */
 const TILLER = { left: 'driver-tiller-left', right: 'driver-tiller-right' } as const;
-const GEAR = 'gear-lever';
 const TWIST = 'turret-twist';
 const ELEVATION = 'turret-elevation';
 
@@ -434,15 +433,8 @@ export class CrewBotSystem extends createSystem({}) {
     tank.z = s.z;
     tank.heading = s.heading;
     tank.speed = s.speed;
-    tank.gear = s.gear;
+    // It drives with the automatic box (DriveSystem gives the crewmate's page no other), so its hands stay on the tillers.
     const wish = this.driver.update(dt, tank, this.wish);
-    const gearLever = findControl(GEAR)?.mech as Lever | undefined;
-    if (gearLever && gearOfLever(gearLever.angle) !== wish.gear) {
-      // Change gear: the left tiller held centred, the right hand moves the gear lever to the new notch.
-      this.onControl('left', TILLER.left, leverGrip(DRIVER_TILLER, tillerAngle(0), this.p));
-      this.onControl('right', GEAR, leverGrip(GEAR_LEVER, GEAR_ANGLES[wish.gear], this.p));
-      return;
-    }
     this.onControl('left', TILLER.left, leverGrip(DRIVER_TILLER, tillerAngle(wish.left), this.p));
     this.onControl('right', TILLER.right, leverGrip(DRIVER_TILLER, tillerAngle(wish.right), this.p));
   }

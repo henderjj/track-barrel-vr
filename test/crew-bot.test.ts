@@ -32,7 +32,7 @@ import {
 import { DRIVER_TILLER } from '../src/sim/driver-station.js';
 import { createDrillHand, createLoadingSnapshot, HOLD_NONE, LoadingDrill } from '../src/sim/loading.js';
 import { Lever, rollOf, TwistGrip, Wheel, wheelAngleOf } from '../src/sim/mechanism.js';
-import { createControls, createTankDrive, HIGH, IDLE_RPM, stepDrive, type TankDrive } from '../src/sim/tank-drive.js';
+import { createControls, createTankDrive, IDLE_RPM, stepDrive, type TankDrive } from '../src/sim/tank-drive.js';
 import {
   angleDelta,
   createGunnerInput,
@@ -99,7 +99,6 @@ describe('practice crewmate: driving (F1.13)', () => {
       bot.update(DT, tank, wish);
       controls.left = wish.left;
       controls.right = wish.right;
-      controls.gear = wish.gear;
       stepDrive(tank, controls, DT, []);
     }
   }
@@ -157,7 +156,7 @@ describe('practice crewmate: driving (F1.13)', () => {
     expect(tank.yawRate).toBe(0);
   });
 
-  it('drives the route: up the road with a halt at each stop, back in high gear, and round again', () => {
+  it('drives the route: up the road with a halt at each stop, back fast in 4th or 5th, and round again', () => {
     const bot = new BotDriver();
     const tank = createTankDrive();
     bot.call('route', tank.heading);
@@ -165,7 +164,7 @@ describe('practice crewmate: driving (F1.13)', () => {
     const wish = createDriveWish();
     const controls = createControls();
     let grinding = 0;
-    let highest = 0;
+    let fastest = 0;
     for (let t = 0; t < 600 && bot.arrivals < ROUTE.length + 1; t += DT) {
       const before = bot.arrivals;
       bot.update(DT, tank, wish);
@@ -176,15 +175,15 @@ describe('practice crewmate: driving (F1.13)', () => {
       }
       controls.left = wish.left;
       controls.right = wish.right;
-      controls.gear = wish.gear;
       stepDrive(tank, controls, DT, []);
       if (tank.grinding) grinding++;
-      highest = Math.max(highest, tank.gear);
+      fastest = Math.max(fastest, tank.speed);
       // The road's corridor: never more than a few metres off it.
       expect(Math.abs(tank.x)).toBeLessThan(5);
     }
     expect(reached).toEqual([0, 1, 2, 3, 0]);
-    expect(highest).toBe(HIGH);
+    // Back to the start at 30 km/h: the automatic box's 4th or 5th.
+    expect(fastest * 3.6).toBeGreaterThan(25);
     expect(grinding).toBe(0);
     // A call takes it off the route.
     bot.call('halt', tank.heading);

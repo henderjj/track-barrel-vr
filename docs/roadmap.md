@@ -24,13 +24,13 @@ Every feature of the game, by phase, with where it stands. The approach behind e
 | Phase | Goal | Features | Done |
 | --- | --- | --- | --- |
 | 0 Groundwork | Rename, plan, spikes | 6 | 3 |
-| 1 Core controls prototype | Prove the tank's controls work in VR co-op | 15 | 0 |
+| 1 Core controls prototype | Prove the tank's controls work in VR co-op | 18 | 0 |
 | 2 Communication aids | Hatches and diegetic signals, compared against voice only | 7 | 0 |
 | 3 Combat and damage | Enemies, ammunition types, damage and repairs | 9 | 0 |
 | 4 Training and tutorials | Simplified systems and five training stages | 7 | 0 |
 | 5 Content and replay | Tiers, scenarios, scoring, ghosts, replays | 11 | 0 |
 
-**Current focus:** every Phase 1 feature is built; next is the Phase 1 play test (the headset checks, and the stats CSV from F1.14 answering the concept's §14 questions), then Phase 2.
+**Current focus:** the Phase 1 play test (the headset checks, and the stats CSV from F1.14 answering the concept's §14 questions), with the driver's controls reworked from John's notes (F1.16 to F1.18: gearbox, engine start-up, parking brake), then Phase 2.
 
 ## Phase 0: Groundwork
 
@@ -64,6 +64,9 @@ Ends when a crew can drive the range, find and hit three static targets, and the
 | F1.13 | Practice crewmate in both seats: drives a route or follows calls; aims at and fires on the nearest target | Headset check | F1.5, F1.10 | #23 | [crewmate.md](crewmate.md): its scripted hands work the tillers, gear lever, shells, breech, power grip and elevation wheel through the kit; drives the route or follows the menu's new Calls (`crew-call` event, shown on the other player's sign); loads, lays on the nearest target not yet hit and fires from a halt |
 | F1.14 | Comfort and play-test stats: motion vignette, reduced bumps, per-run CSV (time to three hits, grinds, fumbles per control, time per role) | Headset check | F1.11 | #33 | [comfort-stats.md](comfort-stats.md): Comfort and stats menu section: Vignette (Off/Light/Normal/Strong), Bumps (reduced if either player asks, `comfort` event), I feel queasy, Save CSV; `src/sim/play-stats.ts` and `PlayStatsSystem` write a row per range run with the crewmate's numbers (`run-stats` event); answers the concept's §14 questions |
 | F1.15 | Sherman interior: eyes and hands together at each station from the M4A4's layout, interior lighting (John's play-test note) | Headset check | F1.5, F1.6, F1.9 | #38, #39, #40 | [interior.md](interior.md): glacis and hood bring the slit to 30 cm; instrument box on the left wall, periscope right; gunsight an 18 cm lean over raised wheels; final drive housing, co-driver seat, bow gun, extinguishers, sponson rounds, radio; hatch daylight and dome lamps in the cabin shader (`litInside`, `CabinLightSystem`); turret foot plate; menu options for open hatches, cabin light and dome lamps |
+| F1.16 | Gearbox: the Sherman's five speeds and reverse; Automatic, Stick shift or Clutch; a Sherman's controls (accelerator on the right trigger, tillers as brakes) in the last two (John's play-test notes) | Building | F1.5 | | [gearbox.md](gearbox.md): `src/sim/gearbox.ts`; menu → Tank → Gearbox; revs follow the tracks; changes coast; right stick (or A/B) changes gear, left trigger is the clutch; grinds and bogging with the Clutch; lever notches R N 1–5; driver-controls packet 14 bytes, tank state 58. Takes in F4.3 and F5.2 |
+| F1.17 | Engine start-up and stalls in normal driving: starter button or the full procedure (battery, ignition, choke, warm-up), stalls and restarts, voltmeter, warning lamps, siren | Planned | F1.16 | | Brought forward from F4.4 (John's ask): the tank starts with the engine off; an Engine start setting (Running, Starter button, Full procedure) |
+| F1.18 | Parking brake: a ratchet lever by the left tiller, its lamp, the tank rolling slowly downhill when nothing holds it | Planned | F1.16 | | HoldKind 13 |
 
 ## Phase 2: Communication aids
 
@@ -97,9 +100,9 @@ Ends when a crew can drive the range, find and hit three static targets, and the
 | --- | --- | --- | --- | --- | --- |
 | F4.1 | Turret travel lock | Planned | F1.8 | | |
 | F4.2 | Autoloader option | Planned | F1.10 | | |
-| F4.3 | Gear options: high range only, semi-automatic | Planned | F1.5 | | |
-| F4.4 | Engine startup: pre-started, one button, short checklist, full procedure that can flood | Planned | F1.5 | | |
-| F4.5 | Training stages 1–5 (driving course to full crew drill) | Planned | F4.1–F4.4 | | Concept §7.1 |
+| F4.3 | Gear options: high range only, semi-automatic | Cut | F1.5 | | Taken into F1.16's Gearbox setting (Automatic, Stick shift, Clutch) |
+| F4.4 | Engine startup: pre-started, one button, short checklist, full procedure that can flood | Cut | F1.5 | | Brought forward as F1.17 (John: the start-up belongs in normal driving); training stages pick its setting |
+| F4.5 | Training stages 1–5 (driving course to full crew drill) | Planned | F4.1, F4.2, F1.16, F1.17 | | Concept §7.1 |
 | F4.6 | AI commander callouts for targets and directions | Planned | F1.12 | | Recorded or synthesised voice; off at higher difficulty |
 | F4.7 | Callout vocabulary taught in training | Planned | F4.5, F2.6 | | |
 
@@ -107,8 +110,8 @@ Ends when a crew can drive the range, find and hit three static targets, and the
 
 | ID | Feature | Status | Depends on | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| F5.1 | Realism tiers: Recruit, Veteran, Ace | Planned | F4.1–F4.4, F3.7, F3.8 | | Concept §7.2; pick the first-session default from play tests |
-| F5.2 | Expert option: tillers as brakes, hand throttle for speed | Planned | F1.5 | | |
+| F5.1 | Realism tiers: Recruit, Veteran, Ace | Planned | F4.1, F4.2, F1.16, F1.17, F3.7, F3.8 | | Concept §7.2; pick the first-session default from play tests |
+| F5.2 | Expert option: tillers as brakes, hand throttle for speed | Cut | F1.5 | | Taken into F1.16: Stick shift and Clutch drive by the accelerator (right trigger) with the tillers as brakes |
 | F5.3 | Tank biathlon time trial with medals and penalty laps | Planned | F1.11 | | |
 | F5.4 | Per-role stats and crew ranks for a regular pair | Planned | F1.14 | | |
 | F5.5 | Ghost replay of the crew's best run | Planned | F5.3 | | |

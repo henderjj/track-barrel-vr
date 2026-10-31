@@ -1,6 +1,7 @@
 import { clampEyeRaise } from './sim/body-height.js';
 import { parseSeat, type SeatId } from './sim/cabin.js';
 import { type Bumps, parseBumps, VIGNETTE_STRENGTHS } from './sim/comfort.js';
+import { type GearboxMode, parseGearbox } from './sim/gearbox.js';
 import { type OpenHatches, parseHatches } from './sim/interior.js';
 
 /**
@@ -83,6 +84,14 @@ export interface Settings {
    */
   bumps: Bumps;
   /**
+   * How this player drives the tank's gearbox (F1.16, src/sim/gearbox.ts):
+   * 'auto' (the default; tillers push to drive), 'stick' (the right stick
+   * changes gear) or 'clutch' (the left trigger is the clutch). With 'stick'
+   * and 'clutch' the right trigger is the accelerator and the tillers are
+   * brakes. The game menu's Driving section changes it at once.
+   */
+  gearbox: GearboxMode;
+  /**
    * The cabin's look (src/sim/interior.ts's CabinLook), to find what looks
    * best (John's headset check, 2026-10-30): which hatches stand open
    * ('both', the default, 'driver', 'gunner' or 'none'); the ambient light
@@ -120,6 +129,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: 1,
   vignette: VIGNETTE_STRENGTHS.normal,
   bumps: 'full',
+  gearbox: 'auto',
   hatches: 'both',
   cabin: 1,
   lamps: 1,
@@ -175,6 +185,7 @@ export function parseSettings(search: string): Settings {
     sound: num(params, 'sound', d.sound, 0, 1),
     vignette: num(params, 'vignette', d.vignette, 0, 1),
     bumps: parseBumps(params.get('bumps'), d.bumps),
+    gearbox: parseGearbox(params.get('gearbox'), d.gearbox),
     hatches: parseHatches(params.get('hatches'), d.hatches),
     cabin: num(params, 'cabin', d.cabin, 0.1, 8),
     lamps: num(params, 'lamps', d.lamps, 0, 4),

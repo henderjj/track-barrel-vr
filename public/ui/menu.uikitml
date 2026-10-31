@@ -19,7 +19,7 @@
   - Comfort (F1.14): the vignette's strength and reduced bumps, a mark for
     the moment the player feels queasy, and the play-test stats CSV.
   - Sound and view: the other live settings.
-  - Tank: the drive's state and gear lever, the range's state, and spike
+  - Tank: the drive's state and gearbox, the range's state, and spike
     S2's ride options while riding.
   - Practice, Sights and Test rigs hold shortcuts straight to a situation
     worth testing, one per feature, so a headset check never has to play its
@@ -452,12 +452,13 @@
         <div id="menu-drive" class="section">
           <div class="section-title">DRIVING</div>
           <div id="menu-drive-status" class="hint">Driving</div>
-          <div id="row-gear" class="setting">
-            <div id="row-gear-label" class="label">Gear lever</div>
-            <div class="choices">
-              <Button id="row-gear-0" class="choice" size="sm" variant="secondary">Neutral</Button>
-              <Button id="row-gear-1" class="choice" size="sm" variant="secondary">Low</Button>
-              <Button id="row-gear-2" class="choice" size="sm" variant="secondary">High</Button>
+          <div id="row-gearbox" class="setting">
+            <div id="row-gearbox-label" class="label">Setting</div>
+            <div id="row-gearbox-choices" class="choices">
+              <Button id="row-gearbox-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-gearbox-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-gearbox-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-gearbox-3" class="choice" size="sm" variant="secondary">Choice</Button>
             </div>
           </div>
         </div>

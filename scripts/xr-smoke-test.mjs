@@ -38,11 +38,12 @@
  *     the gunner's seat turns with the turret, and Stop brings the cabin back;
  *  6d. drives the tank (F1.4): Practice → Drive the tank, both sticks drive
  *     it and the ground moves round the hull, one stick turns it, letting go
- *     stops it, the gear lever grinds and shifts, the boulder stops it, and
- *     Back to start parks it;
+ *     stops it, the automatic box changes up, the Clutch's gears grind
+ *     without the clutch and shift with it, the accelerator pulls away and
+ *     the sticks brake (F1.16), the boulder stops it, and Back to start parks it;
  *  6e. works the driver's station (F1.5): both tillers drive the tank and
- *     the gauges read it, letting go stops it, the gear lever grinds with a
- *     tiller pushed and then shifts, and the hand throttle raises the idle;
+ *     the gauges read it, letting go stops it, the gear lever by hand grinds
+ *     without the clutch and then shifts, and the hand throttle raises the idle;
  *  6f. lays the gun (F1.8): Practice → Lay the gun, the power grip
  *     traverses the turret with the gunner turning with it, the crank turns
  *     it 2°, the elevation handwheel raises the gun and its trigger bar
@@ -1077,8 +1078,11 @@ const DRIVE = { tile: 800, front: -3.0, rock: [-10, -45, 1.5] };
  *     the ground moves round the still hull (the tank's spot stays under the
  *     hull floor), the vignette darkens and S1's range rides out of sight;
  *     one stick turns the tank the other way; letting go stops it; the
- *     menu's gear lever grinds with a stick pushed and engages once both are
- *     let go; driven at the boulder, the tank stops against it without going
+ *     automatic box changes up by itself (F1.16); with the menu's Gearbox
+ *     on Clutch, A moves the lever into 1st and it grinds until the clutch
+ *     (left trigger) goes in, A changes up, the accelerator (right trigger)
+ *     pulls away as the clutch comes out, and both sticks back brake it to a
+ *     stop; driven at the boulder, the tank stops against it without going
  *     in; Back to start parks it where it began.
  */
 async function drivingTheTank() {
@@ -1130,31 +1134,67 @@ async function drivingTheTank() {
   const stopped = await waitFor('the tank to stop', () => { const s = state(); return Math.abs(s.speed) < 0.01 && Math.abs(s.yawRate) < 0.01 && s; }, 10000).catch(() => state());
   check('Letting go of the sticks stops the tank', Math.abs(stopped.speed) < 0.01, `${stopped.speed.toFixed(2)} m/s`);
 
-  // The gear lever: into high with a stick pushed grinds; let go and it goes in.
+  // The automatic box (F1.16, the default) changes up by itself as the tank speeds up.
   sticks(1, 1);
-  await menuButtonPress();
-  await menuClick('row-gear-2');
-  const grinding = await waitFor('the gears to grind', () => {
-    const s = { ...state(), sign: evalInApp('window.__drive.sign') };
-    return s.grinding && s;
-  }, 5000).catch(() => ({ ...state(), sign: evalInApp('window.__drive.sign') }));
-  check('Moving the gear lever with a stick pushed grinds: out of gear, with a sign',
-    grinding.grinding && grinding.gear === 0 && grinding.sign.startsWith('Gears grinding'), `gear ${grinding.gear}, sign "${grinding.sign}"`);
+  const upshifted = await waitFor('the automatic box to change up', () => { const s = state(); return s.gear >= 3 && s; }, 15000).catch(() => state());
+  check('With the automatic box the tank changes up by itself as it speeds up', upshifted.gear >= 3 && !upshifted.grinding,
+    `${upshifted.speed.toFixed(1)} m/s in gear ${upshifted.gear} at ${upshifted.rpm.toFixed(0)} rpm, controls ${JSON.stringify(evalInApp('window.__drive.controls()'))}`);
   sticks(0, 0);
-  // The menu's line redraws twice a second.
-  const geared = () => ({ ...state(), status: evalInApp('window.__gameMenu.text("menu-drive-status")') });
-  const shifted = await waitFor('high gear to engage', () => { const s = geared(); return s.gear === 2 && s.status.includes('high gear') && s; }, 5000).catch(() => geared());
-  const status = shifted.status;
-  check('With the sticks let go the gear goes in, and the menu says so', shifted.gear === 2 && !shifted.grinding && status.includes('high gear'),
-    `gear ${shifted.gear}, "${status}"`);
-  await menuClick('row-gear-1');
+  await waitFor('the tank to stop again', () => Math.abs(state().speed) < 0.01, 15000).catch(() => null);
+
+  // The Clutch (menu → Tank → Gearbox): A changes up; without the clutch (the left trigger) the gears grind; with it the
+  // gear goes in; the right trigger is the accelerator; the sticks pulled back brake.
+  // Each change held for two and a half of the slowest recent frames (at least 0.3 s): a shorter press is never seen.
+  const button = async (device, index, value) => {
+    iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index, value }] });
+    await sleep(Math.max(300, 2.5 * slowestFrameMs()));
+  };
+  // The CLI counts the gamepad's buttons without the empty slot: 3 is A (4 is B, as bButton presses).
+  const pressA = async () => {
+    await button('controller-right', 3, 1);
+    await button('controller-right', 3, 0);
+  };
+  // Back at the start first: on a slow runner the drive so far can end up near the wall 70 m up, which would hold
+  // the tank still when it pulls away.
+  evalInApp('(window.__drive.place(0, 0, 0), true)');
+  await menuButtonPress();
+  await menuClick('row-gearbox-2');
+  await menuButtonPress();
+  await pressA();
+  const grinding = await waitFor('the gears to grind', () => {
+    const s = { ...state(), sign: evalInApp('window.__drive.sign'), lever: evalInApp('window.__driverStation.state().gear') };
+    return s.grinding && s;
+  }, 5000).catch(() => ({ ...state(), sign: evalInApp('window.__drive.sign'), lever: evalInApp('window.__driverStation.state().gear') }));
+  check('With the Clutch, A moves the gear lever into 1st, and without the clutch it grinds: out of gear, with a sign',
+    grinding.grinding && grinding.gear === 0 && grinding.lever === 1 && grinding.sign.startsWith('Gears grinding'),
+    `lever in ${grinding.lever}, gear ${grinding.gear}, sign "${grinding.sign}"`);
+  await button('controller-left', 0, 1);
+  await waitFor('1st to go in', () => state().gear === 1, 5000).catch(() => null);
+  await pressA();
+  const second = await waitFor('2nd to go in', () => { const s = state(); return s.gear === 2 && s; }, 5000).catch(() => state());
+  check('Holding the clutch, the gear goes in and A changes up', second.gear === 2 && !second.grinding, `gear ${second.gear}`);
+  await button('controller-right', 0, 1);
+  await button('controller-left', 0, 0);
+  const pulling = await waitFor('the accelerator to pull away', () => { const s = state(); return s.speed > 1 && s; }, 8000).catch(() => state());
+  check('Letting out the clutch with the right trigger (the accelerator) down pulls away in 2nd', pulling.speed > 1 && pulling.gear === 2,
+    `${pulling.speed.toFixed(2)} m/s in gear ${pulling.gear} at ${pulling.rpm.toFixed(0)} rpm${pulling.bogging ? ', bogging' : ''}, controls ${JSON.stringify(evalInApp('window.__drive.controls()'))}`);
+  await button('controller-right', 0, 0);
+  sticks(-1, -1);
+  const braked = await waitFor('the brakes to stop the tank', () => { const s = state(); return Math.abs(s.speed) < 0.01 && s; }, 8000).catch(() => state());
+  check('Both sticks pulled back brake it to a stop', Math.abs(braked.speed) < 0.01, `${braked.speed.toFixed(2)} m/s`);
+  sticks(0, 0);
+  await menuButtonPress();
+  // The menu's Driving line ticks on only while the menu is open.
+  await sleep(700);
+  const status = evalInApp('window.__gameMenu.text("menu-drive-status")');
+  check('The menu\'s Driving line says the gear', status.includes('2nd gear'), `"${status}"`);
+  await menuClick('row-gearbox-0');
   await menuButtonPress();
 
   // Into the boulder: the tank stops against it, never in it.
   const [rx, rz, rr] = DRIVE.rock;
   const stopAt = rz + rr - DRIVE.front;
   evalInApp(`(window.__drive.place(${rx}, ${stopAt + 6}, 0), true)`);
-  await waitFor('low gear', () => state().gear === 1, 5000).catch(() => null);
   sticks(1, 1);
   const bumped = await waitFor('the tank to stop at the boulder', () => {
     const s = state();
@@ -1264,9 +1304,10 @@ async function theTestRange() {
  *     Vignette → Strong darkens the view more than Normal can while the
  *     tank pulls away, and Off leaves it clear; Bumps → Reduced makes the
  *     tank ride on reduced bumps. A range run then counts what the player
- *     does while its clock runs: a squeeze 14 cm wide of the gear lever
- *     takes hold of nothing and is a fumble against it, shifting with the
- *     tillers pushed grinds, I feel queasy writes a mark with the run's
+ *     does while its clock runs, on the Clutch gearbox (F1.16) so the gear
+ *     lever can be taken hold of: a squeeze 14 cm wide of the gear lever
+ *     takes hold of nothing and is a fumble against it, shifting without
+ *     the clutch grinds, I feel queasy writes a mark with the run's
  *     time; Stop writes the run's row, and the menu and the CSV show it.
  */
 async function comfortAndStats() {
@@ -1303,6 +1344,9 @@ async function comfortAndStats() {
   // A range run, in the driver's seat.
   evalInApp('(window.__rangeRun.start(), true)');
   await waitFor('the run\'s clock to run', () => evalInApp('window.__stats.counting'), 8000).catch(() => false);
+  // With the automatic box the lever can't be taken hold of (F1.16): drive on the Clutch.
+  evalInApp("(window.__drive.set({ mode: 'clutch' }), true)");
+  await sleep(300);
   // A squeeze 14 cm wide of the gear lever's handle: out of reach, so nothing is taken hold of.
   const handle = evalInApp("window.__driverStation.handle('gear')");
   iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin([handle[0] + 0.14, handle[1], handle[2]]), duration: 0.3 });
@@ -1313,10 +1357,10 @@ async function comfortAndStats() {
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 0 }] });
   check('During a run, a squeeze that misses the gear lever is a fumble against it',
     missed.fumbles[GEAR] === 1 && holding === null, `fumbles ${JSON.stringify(missed.fumbles)}, right hand holding ${holding}`);
-  // Shifting with the tillers pushed grinds.
-  evalInApp('(window.__drive.set({ left: 0.6, right: 0.6, gear: 2 }), true)');
+  // Shifting without the clutch grinds.
+  evalInApp("(window.__drive.set({ mode: 'clutch', clutch: 0, gear: 2 }), true)");
   const ground = await waitFor('a grind counted', () => { const t = tally(); return t.grinds > 0 && t; }, 4000).catch(() => tally());
-  evalInApp('(window.__drive.set({ left: 0, right: 0, gear: 1 }), true)');
+  evalInApp("(window.__drive.set({ mode: 'clutch', clutch: 1, gear: 0 }), true)");
   check('A grind during the run is counted', ground.grinds >= 1, `${ground.grinds} grinds`);
   evalInApp('(window.__drive.set(null), true)');
   // I feel queasy, from the menu.
@@ -1835,9 +1879,10 @@ async function tankSounds() {
  * 6e. The driver's station (F1.5): in the driver's seat, both hands take
  *     the tillers and push them forwards: the tank drives on them (not the
  *     sticks), the gloves closed on the handles and the gauges reading
- *     speed and RPM; let go, they spring back and the tank stops. One hand
- *     pushes a tiller while the other moves the gear lever from low to
- *     high: the gears grind; let go of the tiller and high goes in. The
+ *     speed and RPM; let go, they spring back and the tank stops. With the
+ *     Gearbox on Clutch, the hand moves the gear lever from 2nd to 3rd
+ *     without the clutch: the gears grind; the clutch in, 3rd goes in; let
+ *     go near 1st, the lever drops into its notch (F1.16). The
  *     hand throttle pushed forwards raises the idle and stays where it is
  *     left.
  */
@@ -1903,38 +1948,49 @@ async function driverStation() {
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
 
-  // A tiller pushed while the other hand shifts from low to high: the gears grind.
+  // The gear lever by hand (F1.16): with the automatic box it moves by itself; with the Clutch (the menu's Gearbox
+  // row) the hand works it, from 2nd up to 3rd without the clutch grinds, the clutch (left trigger) puts it in, and let
+  // go near 1st it drops into the notch.
   const before = station();
-  await take('controller-right', 'tillerRight');
-  handTo('controller-right', handle('tillerRight', 20));
+  evalInApp('(window.__gameMenu.click("row-gearbox-2"), true)');
+  await sleep(300);
+  // Taken over from the automatic box the lever starts in neutral: put it in 2nd.
+  evalInApp('(window.__drive.set({ gear: 2 }), window.__drive.set(null), true)');
+  await sleep(300);
+  const trigger = (device, value) => iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: 0, value }] });
+  trigger('controller-left', 1);
+  await waitFor('2nd in with the clutch held', () => tank().gear === 2, 5000).catch(() => null);
+  trigger('controller-left', 0);
   await take('controller-left', 'gear');
   const onLever = station();
-  handTo('controller-left', handle('gear', 0), 0.3);
+  handTo('controller-left', handle('gear', 4), 0.3);
   await sleep(400);
-  handTo('controller-left', handle('gear', 24), 0.3);
+  handTo('controller-left', handle('gear', 8), 0.3);
   // Read in one go: the station counts a grind on the frame the tank starts grinding.
   const both = () => evalInApp('({ s: window.__driverStation.state(), t: window.__drive.state(), sign: window.__drive.sign })');
   const grinding = await waitFor('the gears to grind', () => {
     const b = both();
-    return b.t.grinding && b.s.gear === 2 && b.s.grinds > before.grinds && b;
+    return b.t.grinding && b.s.gear === 3 && b.s.grinds > before.grinds && b;
   }, 6000).catch(() => both());
-  check('Moving the gear lever from low to high with a tiller pushed grinds the gears',
+  check('With the Clutch, moving the gear lever from 2nd to 3rd without the clutch grinds the gears',
     onLever.heldBy.gear === 'left' && grinding.t.grinding && grinding.t.gear === 0 && grinding.s.grinds > before.grinds && grinding.sign.startsWith('Gears grinding'),
     `lever held by ${onLever.heldBy.gear} at ${grinding.s.angles.gear.toFixed(1)}° (gear ${grinding.s.gear}), box in gear ${grinding.t.gear}, ${grinding.s.grinds - before.grinds} grind(s), sign "${grinding.sign}"`);
-  squeeze('controller-right', 0);
-  const shifted = await waitFor('high gear to go in', () => { const t = tank(); return t.gear === 2 && !t.grinding && t; }, 6000).catch(() => tank());
-  check('Let go of the tiller, high gear goes in', shifted.gear === 2 && !shifted.grinding && station().shifts > before.shifts,
+  trigger('controller-left', 1);
+  const shifted = await waitFor('3rd to go in', () => { const t = tank(); return t.gear === 3 && !t.grinding && t; }, 6000).catch(() => tank());
+  check('The clutch (left trigger) in, 3rd goes in', shifted.gear === 3 && !shifted.grinding && station().shifts > before.shifts,
     `gear ${shifted.gear}, ${station().shifts - before.shifts} shift(s)`);
-  // Back to low, let go near its notch: it drops in.
+  // Back past 2nd, let go near 1st: it drops into its notch and 1st goes in.
   handTo('controller-left', handle('gear', 0), 0.3);
   await sleep(400);
-  handTo('controller-left', handle('gear', -19), 0.3);
+  handTo('controller-left', handle('gear', -10), 0.3);
   await sleep(500);
   squeeze('controller-left', 0);
-  const low = await waitFor('low gear', () => { const s = station(); const t = tank(); return t.gear === 1 && Math.abs(s.angles.gear + 24) < 1 && { s, t }; }, 6000)
+  const first = await waitFor('1st', () => { const s = station(); const t = tank(); return t.gear === 1 && Math.abs(s.angles.gear + 8) < 1 && { s, t }; }, 6000)
     .catch(() => ({ s: station(), t: tank() }));
-  check('The gear lever let go near low drops into its notch and low goes in', low.t.gear === 1 && Math.abs(low.s.angles.gear + 24) < 1,
-    `lever at ${low.s.angles.gear.toFixed(1)}°, gear ${low.t.gear}`);
+  check('The gear lever let go near 1st drops into its notch and 1st goes in', first.t.gear === 1 && Math.abs(first.s.angles.gear + 8) < 1,
+    `lever at ${first.s.angles.gear.toFixed(1)}°, gear ${first.t.gear}`);
+  trigger('controller-left', 0);
+  evalInApp('(window.__gameMenu.click("row-gearbox-0"), true)');
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
 

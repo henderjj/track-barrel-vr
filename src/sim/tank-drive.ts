@@ -1,6 +1,6 @@
 /**
  * The tank's drive (F1.4, docs/tank-drive.md): skid steering, the engine's
- * RPM, the gearbox's ranges and grinds, following the ground and soft bumps
+ * RPM and the gearbox (F1.16, src/sim/gearbox.ts), following the ground and soft bumps
  * against obstacles. A kinematic simulation rather than a physics body
  * (plan decision 3), so it is deterministic, cheap and unit-tested, and
  * every motion passes through the comfort caps (src/sim/comfort.ts).
@@ -17,14 +17,27 @@
 import {
   FULL_BUMPS,
   type GroundFeel,
-  MAX_ACCEL,
-  MAX_REVERSE,
   MAX_SPEED,
   MAX_TILT,
   MAX_YAW_ACCEL,
   MAX_YAW_RATE,
 } from './comfort.js';
 import { GROUND_Y } from './cabin.js';
+import {
+  type Gear,
+  type GearboxControls,
+  engagement,
+  engineSpeed,
+  gearCap,
+  IDLE_RPM,
+  MAX_RPM,
+  NEUTRAL,
+  pullRate,
+  slowRate,
+  stepGearbox,
+  realControls,
+  stepRpm,
+} from './gearbox.js';
 import { groundHeight, type Obstacle, obstacleDistance, OBSTACLES, wrapTile } from './terrain.js';
 
 /** Height of the hull floor above the ground under the tracks, m. */
@@ -38,35 +51,30 @@ export const CLEARANCE = -GROUND_Y;
 export const FOOTPRINT = { halfWidth: 1.8, front: -3.0, rear: 2.6 } as const;
 /** Distance between the tracks' middles, m: it turns their speed difference into a turn rate. */
 export const TRACK_GAUGE = 3.0;
+/**
+ * With a Sherman's controls (Stick shift, Clutch), the radius the tank
+ * turns on with one tiller pulled fully back, m: the controlled
+ * differential's turn, wider for a tiller part way back.
+ */
+export const STEER_RADIUS = 7;
 /** Half the tracks' length on the ground, and half the gauge: where the ground is sampled for pitch and roll, m. */
 const PITCH_HALF = 2.6;
 const ROLL_HALF = TRACK_GAUGE / 2;
 
-/** Gear lever positions: neutral, low range and high range. */
-export type Gear = 0 | 1 | 2;
-export const NEUTRAL: Gear = 0;
-export const LOW: Gear = 1;
-export const HIGH: Gear = 2;
-/** Each gear's name and top track speed, m/s (plan §4.3: low 0-12 km/h, high 0-35 km/h). */
-export const GEARS: readonly { name: string; top: number }[] = [
-  { name: 'Neutral', top: 0 },
-  { name: 'Low', top: 12 / 3.6 },
-  { name: 'High', top: MAX_SPEED },
-];
-
-/** Engine RPM: idle, top, and the most the hand throttle raises idle to. */
-export const IDLE_RPM = 800;
-export const MAX_RPM = 2600;
-export const HAND_THROTTLE_RPM = 1600;
-/** How quickly the RPM follows the driver's demand, s (the engine's lag). */
-export const RPM_SECONDS = 0.6;
-/** At idle the tracks speed up at this share of the acceleration cap, rising to all of it at top RPM. */
-const IDLE_PULL = 0.35;
-
-/** A tiller further than this from centre while the lever moves grinds the gears: no shift (plan §4.3). */
-export const SHIFT_DEADBAND = 0.2;
-/** How long the lever must sit in a gear, tillers centred, before the gear engages, s. */
-export const SHIFT_SECONDS = 0.35;
+export {
+  GEARS,
+  type Gear,
+  type GearboxMode,
+  HAND_THROTTLE_RPM,
+  IDLE_RPM,
+  MAX_RPM,
+  NEUTRAL,
+  REVERSE,
+  RPM_SECONDS,
+  SHIFT_SECONDS,
+  targetRpm,
+  TOP_GEAR,
+} from './gearbox.js';
 
 /**
  * The engine's gauges (F1.5, docs/driver-station.md). Phase 1 shows them
@@ -91,19 +99,17 @@ const TOUCH = 0.05;
 /** A touch faster than this counts as a bump (for the sound and the stats), m/s. */
 const BUMP_SPEED = 0.3;
 
-/** The driver's controls: what the guest's page sends the host 45 times a second. */
-export interface DriverControls {
-  /** Each tiller, -1 (pulled fully back) to 1 (pushed fully forwards): that track's speed as a share of the gear's top. */
-  left: number;
-  right: number;
-  /** Where the gear lever is. */
-  gear: Gear;
-  /** The hand throttle, 0 (idle) to 1. */
-  throttle: number;
-}
+/**
+ * The driver's controls: what the guest's page sends the host 45 times a
+ * second. Each tiller is -1 (pulled fully back) to 1 (pushed fully
+ * forwards): that track's speed as a share of the top speed under it
+ * (tillerTop); the gear lever, the hand throttle, the clutch and how the
+ * driver works the gearbox as in GearboxControls.
+ */
+export type DriverControls = GearboxControls;
 
 export function createControls(): DriverControls {
-  return { left: 0, right: 0, gear: LOW, throttle: 0 };
+  return { left: 0, right: 0, accel: 0, gear: NEUTRAL, throttle: 0, clutch: 0, mode: 'auto' };
 }
 
 /** The tank's state: its pose in world space, how it moves, its engine and gearbox. The host sends it 45 times a second. */
@@ -126,17 +132,18 @@ export interface TankDrive {
   leftTrack: number;
   rightTrack: number;
   rpm: number;
-  /** The gear engaged (neutral while the lever is between gears or grinding). */
+  /** The gear engaged (neutral while between gears or grinding), the gear going in, and whether it grinds or the engine bogs (GearboxState). */
   gear: Gear;
-  /** The lever is in a gear but the gears grind: a tiller was off centre. */
+  toGear: Gear;
   grinding: boolean;
+  bogging: boolean;
   /** Touching an obstacle. */
   touching: boolean;
   /** How many bumps so far. */
   bumps: number;
   /** How far it has driven, m. */
   odometer: number;
-  /** Time the lever has sat in a new gear with the tillers centred, s. */
+  /** Time spent going into `toGear`, s. */
   shiftTimer: number;
   /** The engine's coolant temperature, °C (the driver's gauge, F1.5): warms with the revs, slowly. */
   coolant: number;
@@ -144,12 +151,12 @@ export interface TankDrive {
   fuel: number;
 }
 
-/** A tank at rest at (x, z), facing `heading`, on the ground, in low gear. */
+/** A tank at rest at (x, z), facing `heading`, on the ground, in neutral. */
 export function createTankDrive(x = 0, z = 0, heading = 0): TankDrive {
   const s: TankDrive = {
     x, y: 0, z, heading, pitch: 0, roll: 0,
     speed: 0, accel: 0, yawRate: 0, pitchRate: 0, rollRate: 0,
-    leftTrack: 0, rightTrack: 0, rpm: IDLE_RPM, gear: LOW, grinding: false,
+    leftTrack: 0, rightTrack: 0, rpm: IDLE_RPM, gear: NEUTRAL, toGear: NEUTRAL, grinding: false, bogging: false,
     touching: false, bumps: 0, odometer: 0, shiftTimer: 0,
     coolant: COOLANT_START, fuel: 1,
   };
@@ -181,46 +188,6 @@ export function approach(value: number, target: number, step: number): number {
 }
 
 /**
- * The gearbox, each step: pulling the lever to neutral always works;
- * moving it into a gear with either tiller more than SHIFT_DEADBAND from
- * centre grinds (out of gear, nothing engages) until the tillers come
- * back; with them centred the gear engages after SHIFT_SECONDS.
- */
-export function stepGearbox(s: TankDrive, c: DriverControls, dt: number): void {
-  if (c.gear === s.gear) {
-    s.grinding = false;
-    s.shiftTimer = 0;
-    return;
-  }
-  if (c.gear === NEUTRAL) {
-    s.gear = NEUTRAL;
-    s.grinding = false;
-    s.shiftTimer = 0;
-    return;
-  }
-  // The lever has left the old gear: the box is in neutral until the new one engages.
-  s.gear = NEUTRAL;
-  if (Math.max(Math.abs(c.left), Math.abs(c.right)) > SHIFT_DEADBAND) {
-    s.grinding = true;
-    s.shiftTimer = 0;
-    return;
-  }
-  s.grinding = false;
-  s.shiftTimer += dt;
-  if (s.shiftTimer >= SHIFT_SECONDS) {
-    s.gear = c.gear;
-    s.shiftTimer = 0;
-  }
-}
-
-/** The RPM the engine heads for: the hand throttle's idle, plus the tillers' demand. */
-export function targetRpm(c: DriverControls): number {
-  const idle = IDLE_RPM + clamp(c.throttle, 0, 1) * (HAND_THROTTLE_RPM - IDLE_RPM);
-  const demand = clamp(Math.max(Math.abs(c.left), Math.abs(c.right)), 0, 1);
-  return idle + (MAX_RPM - idle) * demand;
-}
-
-/**
  * Advance the tank by `dt` seconds under controls `c`: the gearbox, the
  * RPM, the tracks' speeds within the comfort caps, soft stops at
  * obstacles, and the hull following the ground under its tracks as `feel`
@@ -235,20 +202,37 @@ export function stepDrive(
 ): TankDrive {
   if (dt <= 0) return s;
   stepGearbox(s, c, dt);
-  s.rpm += (targetRpm(c) - s.rpm) * (1 - Math.exp(-dt / RPM_SECONDS));
+  const enginePull = stepRpm(s, c, dt);
 
-  // What the tillers ask of each track, then of the hull: its speed and turn rate, capped.
-  const top = GEARS[s.gear].top;
-  const left = clamp(c.left, -1, 1) * top;
-  const right = clamp(c.right, -1, 1) * top;
-  const speedTarget = clamp((left + right) / 2, -MAX_REVERSE, MAX_SPEED);
-  const yawTarget = clamp((right - left) / TRACK_GAUGE, -MAX_YAW_RATE, MAX_YAW_RATE);
-  // The engine pulls harder as it revs up; slowing down is always at the full rate.
-  const engine = engineLoad(s.rpm);
+  let speedTarget: number;
+  let yawTarget: number;
+  if (realControls(c.mode)) {
+    // A Sherman's controls: the engine drives the hull through the gear; the tillers only brake. Braking one
+    // track through the controlled differential slows that side and speeds the other, turning the tank on a
+    // radius (none at a standstill); both back stop it.
+    const brakeLeft = clamp(-c.left, 0, 1);
+    const brakeRight = clamp(-c.right, 0, 1);
+    speedTarget = engineSpeed(s, c) * (1 - Math.min(brakeLeft, brakeRight));
+    yawTarget = clamp(((brakeLeft - brakeRight) * s.speed) / STEER_RADIUS, -MAX_YAW_RATE, MAX_YAW_RATE);
+  } else {
+    // The automatic box: each tiller's push asks its track for a share of the tank's top speed; the hull's
+    // speed goes as far as the gear engaged allows (the box changing up as it gets there), its turn by the
+    // tracks' difference.
+    const left = clamp(c.left, -1, 1) * MAX_SPEED;
+    const right = clamp(c.right, -1, 1) * MAX_SPEED;
+    const cap = gearCap(s);
+    speedTarget = clamp((left + right) / 2, -cap.back, cap.forward);
+    yawTarget = clamp((right - left) / TRACK_GAUGE, -MAX_YAW_RATE, MAX_YAW_RATE);
+  }
+  // Speeding up takes the engine through the gear and the clutch; out of gear the tank coasts.
+  // Slowing is the engine holding it back, the tillers braking, or the tracks' drag.
   const speeding = Math.abs(speedTarget) > Math.abs(s.speed) && speedTarget * s.speed >= 0;
-  const pull = speeding ? IDLE_PULL + (1 - IDLE_PULL) * engine : 1;
   const before = s.speed;
-  let speed = approach(s.speed, speedTarget, MAX_ACCEL * pull * dt);
+  const rise = speeding ? pullRate(s, c, enginePull) : 0;
+  const coasting = engagement(s, c) === 0;
+  let speed = rise > 0
+    ? approach(s.speed, speedTarget, rise * dt)
+    : approach(s.speed, speeding || coasting ? 0 : speedTarget, slowRate(s, c) * dt);
   let yawRate = approach(s.yawRate, yawTarget, MAX_YAW_ACCEL * dt);
 
   // Obstacles: no part of the outline may close on one faster than it could stop in the gap at BUMP_DECEL.
@@ -453,7 +437,9 @@ export function lerpTankDrive(a: TankDrive, b: TankDrive, t: number, out: TankDr
   out.coolant = l(a.coolant, b.coolant);
   out.fuel = l(a.fuel, b.fuel);
   out.gear = b.gear;
+  out.toGear = b.toGear;
   out.grinding = b.grinding;
+  out.bogging = b.bogging;
   out.touching = b.touching;
   out.bumps = b.bumps;
   out.shiftTimer = b.shiftTimer;

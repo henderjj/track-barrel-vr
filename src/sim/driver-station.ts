@@ -12,7 +12,7 @@
  * a positive angle tipping its top forwards (-Z).
  */
 
-import { HIGH, LOW, NEUTRAL, type Gear } from './tank-drive.js';
+import { type Gear, LEVER_ORDER, NEUTRAL } from './gearbox.js';
 import { SEATS, VISION_SLIT } from './cabin.js';
 import { TILLER } from './lever.js';
 import type { LeverSpec } from './mechanism.js';
@@ -27,27 +27,32 @@ const DEG = Math.PI / 180;
  */
 export const DRIVER_TILLER: LeverSpec = { ...TILLER, min: -20 * DEG, max: 20 * DEG };
 
+/** How far apart the gear lever's notches are. */
+export const GEAR_STEP = 8 * DEG;
+/** The gear lever's notch for each gear (F1.16): back to front reverse, neutral, 1st to 5th, GEAR_STEP apart, 2nd upright. */
+export const GEAR_ANGLES: Readonly<Record<Gear, number>> = (() => {
+  const angles = {} as Record<Gear, number>;
+  LEVER_ORDER.forEach((gear, i) => (angles[gear] = (i - 3) * GEAR_STEP));
+  return angles;
+})();
 /**
- * The gear lever: 40 cm, the top 10 cm the handle, three notches 24° apart
- * that it drops into when let go: pulled back is low range, upright
- * neutral, pushed forwards high range.
+ * The gear lever: 40 cm, the top 10 cm the handle, with a notch for each
+ * gear that it drops into when let go: reverse furthest back, then neutral,
+ * then 1st to 5th forwards (F1.16; F1.5's had low, neutral and high).
  */
 export const GEAR_LEVER: LeverSpec = {
   length: 0.4,
   gripLength: 0.1,
-  min: -28 * DEG,
-  max: 28 * DEG,
+  min: GEAR_ANGLES[LEVER_ORDER[0]] - 3 * DEG,
+  max: GEAR_ANGLES[LEVER_ORDER[LEVER_ORDER.length - 1]] + 3 * DEG,
   rest: 0,
   spring: 12,
-  detents: [-24 * DEG, 0, 24 * DEG],
+  detents: LEVER_ORDER.map((gear) => GEAR_ANGLES[gear]),
   deadband: 0,
-  notches: [-24 * DEG, 0, 24 * DEG],
+  notches: LEVER_ORDER.map((gear) => GEAR_ANGLES[gear]),
 };
-/** The gear lever's notch for each gear. */
-// Indexed by gear: neutral, low, high.
-export const GEAR_ANGLES: Readonly<Record<Gear, number>> = { 0: 0, 1: -24 * DEG, 2: 24 * DEG };
 /** The lever is in a gear within this of its notch; anywhere else it is between gears (neutral). */
-export const IN_GEAR = 8 * DEG;
+export const IN_GEAR = 3.5 * DEG;
 
 /**
  * The hand throttle: a friction lever (it stays where it is left) on a
@@ -190,8 +195,7 @@ export const SLIT_FRAME = {
 
 /** The gear the lever is in at `angle`: the gear whose notch it is within IN_GEAR of, or neutral between them. */
 export function gearOfLever(angle: number): Gear {
-  if (Math.abs(angle - GEAR_ANGLES[LOW]) <= IN_GEAR) return LOW;
-  if (Math.abs(angle - GEAR_ANGLES[HIGH]) <= IN_GEAR) return HIGH;
+  for (const gear of LEVER_ORDER) if (Math.abs(angle - GEAR_ANGLES[gear]) <= IN_GEAR) return gear;
   return NEUTRAL;
 }
 

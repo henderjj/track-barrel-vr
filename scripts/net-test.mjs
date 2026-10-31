@@ -967,7 +967,8 @@ async function botChecks(browser) {
   const advancing = await waitFor('the bot to drive the tank forwards', async () => {
     await crewHolds();
     const [t, st] = await Promise.all([tank(), me.page.evaluate(() => window.__driverStation.state())]);
-    return t.speed > 1.5 && t.z < -2 && st.angles.tillerLeft > 15 && st.angles.tillerRight > 15 ? { t, st } : null;
+    // With the automatic box (F1.16) a tiller asks for a share of the top speed: 3 m/s is about a third of the way, 6°.
+    return t.speed > 1.5 && t.z < -2 && st.angles.tillerLeft > 3 && st.angles.tillerRight > 3 ? { t, st } : null;
   }, 40000).catch(() => null);
   check('Practice crewmate: "Driver, advance" — it takes both tillers and drives the tank forwards',
     advancing !== null && holdsSeen.has(2) && holdsSeen.has(3),
