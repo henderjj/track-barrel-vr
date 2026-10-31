@@ -8,6 +8,8 @@ import {
   MechEvent,
   OneEuro,
   rollOf,
+  PullKnob,
+  type PullSpec,
   Toggle,
   type ToggleSpec,
   TwistGrip,
@@ -494,6 +496,46 @@ describe('the toggle switch (headset feedback, 31 October 2026)', () => {
     const b = new Button(BUTTON);
     expect(b.reach(1, hand(0.04, 0, 0.1, { tip: [0.005, 0, 0.01] }))).toBe(0);
     expect(b.reach(1, hand(0.04, 0, 0.1, { tip: [0.05, 0, 0.01] }))).toBeGreaterThan(0.1);
+  });
+});
+
+describe('the pull knob (the choke, 31 October 2026)', () => {
+  const SPEC: PullSpec = { radius: 0.011, depth: 0.012, travel: 0.03, detents: [0.5] };
+  const fist = (z: number) => hand(0, 0, z);
+
+  it('a fist on the knob pulls it out, clicking half out and stopping at the end, and it stays where it is let go', () => {
+    const k = new PullKnob(SPEC);
+    expect(k.reach(1, fist(0.006))).toBeLessThan(k.reachRadius);
+    k.grab(1, fist(0.006));
+    let events = 0;
+    for (let i = 0; i <= 20; i++) events |= k.update(DT, right(fist(0.006 + (0.02 * i) / 20)));
+    expect(k.share).toBeCloseTo(2 / 3, 3);
+    expect(events & MechEvent.Detent).toBeTruthy();
+    // On past the end it stops there, the hand straining.
+    events = 0;
+    for (let i = 0; i <= 10; i++) events |= k.update(DT, right(fist(0.026 + (0.03 * i) / 10)));
+    expect(k.share).toBe(1);
+    expect(events & MechEvent.Limit).toBeTruthy();
+    expect(k.strain[1]).toBeGreaterThan(0);
+    // Pushed back to half and let go, it stays.
+    for (let i = 0; i <= 10; i++) k.update(DT, right(fist(0.056 - (0.035 * i) / 10)));
+    k.release(1);
+    for (let i = 0; i < 30; i++) k.update(DT, [null, null]);
+    expect(k.share).toBeCloseTo(0.5, 2);
+  });
+
+  it('a fingertip on its face pushes it in, but can\'t pull it out', () => {
+    const k = new PullKnob(SPEC);
+    k.share = 1;
+    const tip = (z: number) => hand(0, -0.05, z + 0.08, { tip: [0.004, 0, z] });
+    k.update(DT, right(tip(0.03 + 0.012 + 0.001)));
+    expect(k.share).toBe(1);
+    k.update(DT, right(tip(0.025)));
+    expect(k.out).toBeCloseTo(0.013, 5);
+    k.update(DT, right(tip(0.005)));
+    expect(k.out).toBe(0);
+    k.update(DT, right(tip(0.04)));
+    expect(k.out).toBe(0);
   });
 });
 

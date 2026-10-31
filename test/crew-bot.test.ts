@@ -360,7 +360,7 @@ describe('practice crewmate: starting the engine (F1.17)', () => {
       if (s.running && !ran) caughtAt = t;
       ran = s.running;
       const task = startTask({ running: s.running, starterHot: s.starterRest > 0, coolant: s.coolant }, c, t - caughtAt);
-      const name = task === null ? 'drive' : task.kind === 'press' ? task.id : `throttle ${task.to.toFixed(2)}`;
+      const name = task === null ? 'drive' : task.kind === 'press' ? task.id : `${task.kind} ${task.to.toFixed(2)}`;
       if (steps[steps.length - 1] !== name) {
         steps.push(name);
         busy = reach;
@@ -369,7 +369,8 @@ describe('practice crewmate: starting the engine (F1.17)', () => {
       c.starter = task?.kind === 'press' && task.id === 'starter' && busy <= 0;
       if (task && busy <= 0) {
         if (task.kind === 'throttle') c.throttle = task.to;
-        else if (task.id !== 'starter') c[task.id] = !c[task.id];
+        else if (task.kind === 'choke') c.choke = task.to;
+        else if (task.id === 'battery' || task.id === 'ignition') c[task.id] = !c[task.id];
       }
       stepDrive(s, c, dt, []);
     }
@@ -384,7 +385,9 @@ describe('practice crewmate: starting the engine (F1.17)', () => {
 
   it('works through the Full procedure in the manual\'s order, warms up and keeps it running', () => {
     const { s, steps } = start('full', 200);
-    expect(steps.slice(0, 7)).toEqual(['battery', 'ignition', 'choke', `throttle ${START_THROTTLE.toFixed(2)}`, 'starter', 'drive', 'choke']);
+    expect(steps.slice(0, 7)).toEqual(['battery', 'ignition', 'choke 1.00', `throttle ${START_THROTTLE.toFixed(2)}`, 'starter', 'drive', 'choke 0.50']);
+    // Eased right in once the engine is warm enough.
+    expect(steps).toContain('choke 0.00');
     expect(steps).toContain(`throttle ${WARM_UP_THROTTLE.toFixed(2)}`);
     expect(steps[steps.length - 1]).toBe('drive');
     expect(s.running).toBe(true);
@@ -393,6 +396,6 @@ describe('practice crewmate: starting the engine (F1.17)', () => {
   });
 
   it('leaves a hot starter to rest', () => {
-    expect(startTask({ running: false, starterHot: true, coolant: 20 }, { battery: true, ignition: true, choke: true, throttle: 0.3, start: 'full' }, 0)).toBeNull();
+    expect(startTask({ running: false, starterHot: true, coolant: 20 }, { battery: true, ignition: true, choke: 1, throttle: 0.3, start: 'full' }, 0)).toBeNull();
   });
 });

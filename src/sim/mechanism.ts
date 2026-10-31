@@ -1185,3 +1185,111 @@ export class Toggle extends Mechanism {
     axis[2] = 0;
   }
 }
+
+// ---------------------------------------------------------------- PullKnob
+
+export interface PullSpec {
+  /** The knob's radius and thickness, m, and how far it pulls out of the face, m. */
+  radius: number;
+  depth: number;
+  travel: number;
+  /** Where it clicks on the way, as shares of its travel (a half-out notch, say). */
+  detents: readonly number[];
+}
+
+/**
+ * A pull-out knob on a shaft, as a WWII engine's choke (John, 31 October
+ * 2026: a choke is pulled out to start and eased in as the engine warms,
+ * so it often sits half out). Knob space: the shaft comes out of a face at
+ * the origin along +Z; `out` is how far the knob's back stands out of the
+ * face, 0 (in) to `travel`, and its face is `depth` further out. A fist squeezed on the knob takes it and pulls
+ * it out or pushes it in, ticking at its detents and stopping at its ends;
+ * it stays where it is let go (a friction shaft). A fingertip on its face
+ * pushes it in. The hand isn't drawn on it.
+ */
+export class PullKnob extends Mechanism {
+  /** How far out it is, m. */
+  out = 0;
+  /** The hand holding it: where along the shaft its fist was taken, less where the knob was. */
+  private offset = 0;
+  private lastShare = 0;
+  private atLimit = true;
+
+  constructor(readonly spec: PullSpec) {
+    super();
+    this.reachRadius = 0.06;
+  }
+
+  /** How far out, as a share of its travel, 0 to 1. */
+  get share(): number {
+    return this.out / this.spec.travel;
+  }
+
+  set share(v: number) {
+    this.out = Math.min(1, Math.max(0, v)) * this.spec.travel;
+    this.lastShare = this.share;
+  }
+
+  reach(side: HandIndex, hand: HandInput): number {
+    if (this.held[side] || this.held[side === 0 ? 1 : 0]) return Infinity;
+    const face = this.out + this.spec.depth;
+    if (onFace(hand.tip && [hand.tip[0], hand.tip[1], hand.tip[2] - face], this.spec.radius + TIP_SLACK)) return 0;
+    const [x, y, z] = hand.fist;
+    return Math.hypot(x, y, z - this.out - this.spec.depth / 2);
+  }
+
+  grab(side: HandIndex, hand: HandInput): boolean {
+    this.held[side] = true;
+    this.offset = this.out - hand.fist[2];
+    return true;
+  }
+
+  update(_dt: number, hands: readonly (HandInput | null)[]): number {
+    const { travel, radius, depth } = this.spec;
+    let events: number = MechEvent.None;
+    let to = this.out;
+    for (let i = 0; i < 2; i++) {
+      const side = i as HandIndex;
+      const hand = hands[side];
+      if (this.held[side]) {
+        this.strain[side] = 0;
+        if (!hand) continue;
+        const want = hand.fist[2] + this.offset;
+        to = Math.min(travel, Math.max(0, want));
+        this.strain[side] = Math.abs(want - to) > 0.01 ? Math.abs(want - to) * 10 : 0;
+      } else {
+        // A fingertip on the knob's face pushes it in.
+        const tip = hand?.tip;
+        if (tip && Math.hypot(tip[0], tip[1]) < radius + TIP_SLACK && tip[2] < to + depth + 0.002 && tip[2] > to + depth - 0.03) {
+          to = Math.max(0, Math.min(to, tip[2] - depth));
+        }
+      }
+    }
+    this.out = to;
+    const share = this.share;
+    for (const d of this.spec.detents) {
+      if ((this.lastShare < d) !== (share < d)) events |= MechEvent.Detent;
+    }
+    const limit = share <= 0 || share >= 1;
+    if (limit && !this.atLimit && share !== this.lastShare) events |= MechEvent.Limit;
+    this.atLimit = limit;
+    this.lastShare = share;
+    return events;
+  }
+
+  handle(_which: HandIndex, out: Vec3): Vec3 {
+    out[0] = 0;
+    out[1] = 0;
+    out[2] = this.out + this.spec.depth / 2;
+    return out;
+  }
+
+  lock(_side: HandIndex | -1, _fist: Vec3, point: Vec3, axis: Vec3): void {
+    point[0] = 0;
+    point[1] = 0;
+    point[2] = this.out + this.spec.depth / 2;
+    axis[0] = 1;
+    axis[1] = 0;
+    axis[2] = 0;
+  }
+}

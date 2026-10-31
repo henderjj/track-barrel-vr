@@ -11,9 +11,10 @@ import {
   Vector3,
 } from '@iwsdk/core';
 import { createGearReadout, createLamp, createNeedle, LAMP_DARK } from '../scene-assets/driver-station.scene-asset.js';
-import { createButtonCap, createLever, createToggleBat, createToggleNut } from '../scene-assets/mechanism.scene-asset.js';
+import { createButtonCap, createLever, createPullKnob, createToggleBat, createToggleNut } from '../scene-assets/mechanism.scene-asset.js';
 import {
   CAP_PROUD,
+  KNOB_PROUD,
   type Dial,
   dialCentre,
   DIALS,
@@ -44,8 +45,8 @@ import {
   VOLT_DIAL,
   VOLTMETER,
 } from '../sim/driver-station.js';
-import { volts } from '../sim/engine.js';
-import { Button, Lever, MechEvent, Toggle } from '../sim/mechanism.js';
+import { chokeLevel, volts } from '../sim/engine.js';
+import { Button, Lever, MechEvent, PullKnob, Toggle } from '../sim/mechanism.js';
 import { type Gear, GEARS, gearFits, NEUTRAL } from '../sim/gearbox.js';
 import { type DriverControls, oilPressure, type TankDrive } from '../sim/tank-drive.js';
 import { drive, engineStart, gearboxMode, shownDriverState, shownDriverControls } from './drive-system.js';
@@ -124,6 +125,8 @@ interface StationDebug {
     names: Record<EngineControlId, string>;
     on: Record<EngineControlId, boolean>;
     presses: Record<EngineControlId, number>;
+    /** How far the choke knob is out, 0 to 1. */
+    choke: number;
     lamps: Record<LampId, boolean>;
     lit: boolean;
   };
@@ -171,7 +174,11 @@ export class DriverStationSystem extends createSystem({}) {
   private tmp = new Vector3();
   private tmp2 = new Vector3();
   /** The instrument box's toggle switches and push buttons, their bats and caps, and their mounts (F1.17). */
-  private buttons = {} as Record<EngineControlId, Button | Toggle>;
+  private buttons = {} as Record<EngineControlId, Button | Toggle | PullKnob>;
+  /** The choke's knob (the same as `buttons.choke`). */
+  private choke!: PullKnob;
+  /** The choke as last agreed between the knob and the controls, to tell which of them moved. */
+  private chokeSynced = 0;
   private caps = {} as Record<EngineControlId, Mesh>;
   private capMounts = {} as Record<EngineControlId, Group>;
   private lamps = {} as Record<LampId, MeshBasicMaterial>;
@@ -261,10 +268,11 @@ export class DriverStationSystem extends createSystem({}) {
         const on = {} as Record<EngineControlId, boolean>;
         const presses = {} as Record<EngineControlId, number>;
         for (const id of ENGINE_CONTROL_IDS) {
-          on[id] = self.buttons[id].on;
-          presses[id] = self.buttons[id].presses;
+          const b = self.buttons[id];
+          on[id] = b instanceof PullKnob ? chokeLevel(b.share) > 0 : b.on;
+          presses[id] = b instanceof PullKnob ? 0 : b.presses;
         }
-        return { names: { ...ENGINE_NAMES }, on, presses, lamps: { ...self.lampLit }, lit: self.faces[0]?.color.r === 1 };
+        return { names: { ...ENGINE_NAMES }, on, presses, choke: self.choke.share, lamps: { ...self.lampLit }, lit: self.faces[0]?.color.r === 1 };
       },
       cap: (id) => {
         const mount = self.capMounts[id];
@@ -370,23 +378,29 @@ export class DriverStationSystem extends createSystem({}) {
    */
   private readSwitches(state: TankDrive | null): void {
     const usable = this.usable();
-    drive.starter = usable && this.buttons.starter.on;
-    drive.siren = usable && this.buttons.siren.on;
+    drive.starter = usable && (this.buttons.starter as Button).on;
+    drive.siren = usable && (this.buttons.siren as Button).on;
     const running = state?.running ?? false;
     const start = engineStart();
-    if (start === 'full' && running && ((!this.wasRunning && !this.buttons.starter.on) || this.lastStart !== 'full')) {
+    if (start === 'full' && running && ((!this.wasRunning && !(this.buttons.starter as Button).on) || this.lastStart !== 'full')) {
       drive.battery = true;
       drive.ignition = true;
     }
-    for (const id of ['battery', 'ignition', 'choke'] as const) this.buttons[id].on = drive[id];
+    for (const id of ['battery', 'ignition'] as const) (this.buttons[id] as Toggle).on = drive[id];
+    // The choke knob: moved by a hand (a fist drawing it, a fingertip pushing it in), it sets the choke;
+    // otherwise it stays put, and keys, the crewmate and tests move it.
+    if (usable && this.choke.share !== this.chokeSynced) drive.choke = this.choke.share;
+    else this.choke.share = drive.choke;
+    this.chokeSynced = this.choke.share;
   }
 
   /** The kit pressed or let go of an engine control: a toggle flipped sets its setting, with a tick in the hand. */
   private pressed(id: EngineControlId, events: number): void {
     const b = this.buttons[id];
     if (events & MechEvent.Press) {
-      if (b instanceof Toggle && (id === 'battery' || id === 'ignition' || id === 'choke')) drive[id] = b.on;
-      const side = b.pressedBy === 0 ? 'left' : b.pressedBy === 1 ? 'right' : null;
+      if (b instanceof Toggle && (id === 'battery' || id === 'ignition')) drive[id] = b.on;
+      const by = b instanceof PullKnob ? -1 : b.pressedBy;
+      const side = by === 0 ? 'left' : by === 1 ? 'right' : null;
       if (side) buzz(this.input.xr.gamepads[side]?.gamepad, side, 0.5, 20);
     }
   }
@@ -416,8 +430,13 @@ export class DriverStationSystem extends createSystem({}) {
       const c = ENGINE_CONTROLS[id];
       const mount = new Group();
       onSwitchPanel(c.x, SWITCH_PANEL.capY, at);
-      let mech: Button | Toggle;
-      if (c.kind === 'toggle') {
+      let mech: Button | Toggle | PullKnob;
+      if (c.kind === 'pull') {
+        // The mount is the knob's space: its shaft out of the strip's face (the knob KNOB_PROUD clear of it pushed in).
+        this.choke = mech = new PullKnob(c.spec);
+        mount.position.set(at[0], at[1], KNOB_PROUD);
+        this.caps[id] = createPullKnob(c.spec, c.color);
+      } else if (c.kind === 'toggle') {
         // The mount is the toggle's space: its pivot on the strip's face, its nut round it, its bat turning.
         mech = new Toggle(c.spec);
         mount.position.set(at[0], at[1], 0);
@@ -464,7 +483,17 @@ export class DriverStationSystem extends createSystem({}) {
     for (const id of ENGINE_CONTROL_IDS) {
       const b = this.buttons[id];
       const c = ENGINE_CONTROLS[id];
-      const on = mine ? b.on : shown ? shown[id] : false;
+      if (b instanceof PullKnob) {
+        // On the crewmate's page it eases to where the driver's is.
+        if (!mine) b.out += ((shown ? shown.choke : 0) * b.spec.travel - b.out) * swing;
+        this.caps[id].position.z = b.out;
+        const out = chokeLevel(b.share) > 0;
+        const lit = this.caps[id].material as MeshStandardMaterial;
+        lit.emissive.setHex(out ? c.color : 0x000000);
+        lit.emissiveIntensity = out ? 0.3 : 0;
+        continue;
+      }
+      const on = mine ? b.on : shown ? Boolean(shown[id]) : false;
       if (b instanceof Toggle) {
         b.angle += ((on ? b.spec.lean : -b.spec.lean) - b.angle) * swing;
         this.caps[id].rotation.x = -b.angle;

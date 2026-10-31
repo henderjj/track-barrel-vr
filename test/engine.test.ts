@@ -4,7 +4,9 @@ import {
   BOG_STALL_ACCEL,
   BOG_STALL_SECONDS,
   CATCH_SECONDS,
+  CHOKE_COOLANT,
   CHOKE_HOLD,
+  chokeLevel,
   COLD_PULL,
   COLD_STALL_SECONDS,
   CRANK_RPM,
@@ -37,7 +39,7 @@ function c(over: Partial<DriverControls> = {}): DriverControls {
 
 /** The Full procedure's controls, everything done right but the starter. */
 function full(over: Partial<DriverControls> = {}): DriverControls {
-  return c({ start: 'full', battery: true, ignition: true, choke: true, throttle: 0.3, ...over });
+  return c({ start: 'full', battery: true, ignition: true, choke: 1, throttle: 0.3, ...over });
 }
 
 function run(s: TankDrive, controls: DriverControls, seconds: number, each?: (s: TankDrive, t: number) => void): TankDrive {
@@ -123,8 +125,8 @@ describe('engine start-up and stalls (F1.17)', () => {
 
   it('in the Full procedure, catches in 1 to 3 s: quickest with the choke out and the hand throttle a little open', () => {
     const best = timeToCatch(stopped(), full());
-    const noChoke = timeToCatch(stopped(), full({ choke: false }));
-    const shut = timeToCatch(stopped(), full({ choke: false, throttle: 0 }));
+    const noChoke = timeToCatch(stopped(), full({ choke: 0 }));
+    const shut = timeToCatch(stopped(), full({ choke: 0, throttle: 0 }));
     expect(best).toBeCloseTo(1, 1);
     expect(noChoke).toBeGreaterThan(best + 1);
     expect(shut).toBeGreaterThan(noChoke + 0.5);
@@ -134,7 +136,7 @@ describe('engine start-up and stalls (F1.17)', () => {
   it('started cold, dies if the choke goes in too soon, floods if it is left out, and runs if it is eased in', () => {
     const early = stopped();
     timeToCatch(early, full(), 2);
-    run(early, full({ choke: false }), 0.5);
+    run(early, full({ choke: 0 }), 0.5);
     expect(early.running).toBe(false);
     expect(early.stalls).toBe(1);
     expect(early.stallCause).toBe('choke');
@@ -151,30 +153,61 @@ describe('engine start-up and stalls (F1.17)', () => {
     const eased = stopped();
     timeToCatch(eased, full(), 2);
     run(eased, full({ throttle: 0.7 }), CHOKE_HOLD + 2);
-    run(eased, full({ choke: false, throttle: 0.7 }), 20);
+    run(eased, full({ choke: 0, throttle: 0.7 }), 20);
     expect(eased.running).toBe(true);
     expect(eased.rough).toBe(false);
     expect(eased.stalls).toBe(0);
   });
 
+  it('the choke as a pull knob (31 October 2026): half out never floods, runs smooth while cold and rough once warm', () => {
+    expect([0, 0.2, 0.3, 0.5, 0.7, 0.8, 1].map(chokeLevel)).toEqual([0, 0, 0.5, 0.5, 0.5, 1, 1]);
+    // Half out helps a cold start, less than fully out.
+    const out = timeToCatch(stopped(), full());
+    const half = timeToCatch(stopped(), full({ choke: 0.5 }));
+    const none = timeToCatch(stopped(), full({ choke: 0 }));
+    expect(half).toBeGreaterThan(out);
+    expect(half).toBeLessThan(none);
+    // Started on full choke, eased to half: it runs on smoothly well past where full choke would flood, and can go in.
+    const eased = stopped();
+    timeToCatch(eased, full(), 2);
+    run(eased, full({ choke: 0.5, throttle: 1 / 3 }), CHOKE_HOLD + FLOOD_SECONDS + 5);
+    expect(eased.running).toBe(true);
+    expect(eased.stalls).toBe(0);
+    expect(eased.coolant).toBeLessThan(CHOKE_COOLANT);
+    expect(eased.rough).toBe(false);
+    // Left half out once warm, it runs rich and rough, but doesn't stall; pushed in it runs smoothly.
+    run(eased, full({ choke: 0.5, throttle: 1 / 3 }), 60);
+    expect(eased.coolant).toBeGreaterThan(CHOKE_COOLANT);
+    expect(eased.rough).toBe(true);
+    expect(eased.running).toBe(true);
+    run(eased, full({ choke: 0, throttle: 1 / 3 }), 3);
+    expect(eased.running).toBe(true);
+    expect(eased.rough).toBe(false);
+    // Half in too soon after a cold catch doesn't kill it, as pushing it right in does.
+    const early = stopped();
+    timeToCatch(early, full(), 2);
+    run(early, full({ choke: 0.5 }), 1);
+    expect(early.running).toBe(true);
+  });
+
   it('cold, coughs and stalls at an 800 rpm idle, but runs at the hand throttle\'s 1300 until warm, and pulls less', () => {
     const slow = stopped();
-    timeToCatch(slow, full({ choke: false }), 4);
+    timeToCatch(slow, full({ choke: 0 }), 4);
     let coughs = 0;
-    run(slow, full({ choke: false, throttle: 0 }), COLD_STALL_SECONDS + 4, (t) => (coughs = t.coughs));
+    run(slow, full({ choke: 0, throttle: 0 }), COLD_STALL_SECONDS + 4, (t) => (coughs = t.coughs));
     expect(coughs).toBeGreaterThan(3);
     expect(slow.running).toBe(false);
     expect(slow.stallCause).toBe('cold');
 
     const fast = stopped();
-    timeToCatch(fast, full({ choke: false }), 4);
-    run(fast, full({ choke: false, throttle: 1 / 3 }), 60);
+    timeToCatch(fast, full({ choke: 0 }), 4);
+    run(fast, full({ choke: 0, throttle: 1 / 3 }), 60);
     expect(fast.running).toBe(true);
     expect(fast.rpm).toBeGreaterThan(1300);
-    run(fast, full({ choke: false, throttle: 1 / 3 }), 120);
+    run(fast, full({ choke: 0, throttle: 1 / 3 }), 120);
     expect(fast.coolant).toBeGreaterThan(WARM_COOLANT);
     // Warm, it idles happily.
-    run(fast, full({ choke: false, throttle: 0 }), 30);
+    run(fast, full({ choke: 0, throttle: 0 }), 30);
     expect(fast.running).toBe(true);
     expect(fast.rough).toBe(false);
 
@@ -182,7 +215,7 @@ describe('engine start-up and stalls (F1.17)', () => {
     const pull = (coolant: number) => {
       const s = createTankDrive();
       s.coolant = coolant;
-      run(s, full({ choke: false, throttle: 1 / 3, left: 1, right: 1 }), 1.5);
+      run(s, full({ choke: 0, throttle: 1 / 3, left: 1, right: 1 }), 1.5);
       return s.speed;
     };
     expect(pull(20) / pull(80)).toBeCloseTo(COLD_PULL, 1);

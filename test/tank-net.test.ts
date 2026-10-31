@@ -104,7 +104,7 @@ describe('tank packets (F1.4)', () => {
     const s = Object.assign(createTankDrive(), {
       running: false, cranking: true, power: true, rough: false, starterRest: 3, stalls: 258, coughs: 7, stallCause: 'choke' as const,
     });
-    const controls = controlsOf({ battery: true, ignition: false, starter: true, choke: true, siren: true, start: 'full' });
+    const controls = controlsOf({ battery: true, ignition: false, starter: true, choke: 1, siren: true, start: 'full' });
     const buffer = new ArrayBuffer(TANK_STATE_BYTES);
     expect(encodeTankState(buffer, 1, 10, s, controls)).toBe(TANK_STATE_BYTES);
     const out = createTankDrive();
@@ -118,6 +118,12 @@ describe('tank packets (F1.4)', () => {
     expect(out.coughs).toBe(7);
     expect(out.stallCause).toBe('choke');
     expect(outControls).toEqual(controls);
+    // The choke knob half out (31 October 2026) has its own bit; a knob between reads as its level.
+    for (const [choke, read] of [[0.5, 0.5], [0.6, 0.5], [0.9, 1], [0.1, 0]]) {
+      encodeTankState(buffer, 1, 10, s, controlsOf({ choke }));
+      decodeTankState(new DataView(buffer), { seq: 0, timeMs: 0 }, out, outControls);
+      expect(outControls.choke).toBe(read);
+    }
     // F1.16's packets: the engine runs, and the driver's page knew nothing of starting it.
     const old = createTankDrive();
     old.running = false;

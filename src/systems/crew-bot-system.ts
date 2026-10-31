@@ -29,7 +29,7 @@ import {
   twistForDemand,
   wheelGrip,
 } from '../sim/crew-bot.js';
-import { DRIVER_TILLER, ENGINE_NAMES, HAND_THROTTLE, PARKING_BRAKE, throttleAngle, tillerAngle, TILLER_NAMES } from '../sim/driver-station.js';
+import { CHOKE_KNOB, DRIVER_TILLER, ENGINE_NAMES, HAND_THROTTLE, PARKING_BRAKE, throttleAngle, tillerAngle, TILLER_NAMES } from '../sim/driver-station.js';
 import type { TwistGrip, Wheel } from '../sim/mechanism.js';
 import { sightLimit } from '../sim/range.js';
 import {
@@ -417,7 +417,8 @@ export class CrewBotSystem extends createSystem({}) {
     const t = this.task;
     if (t === null) return drive.parkingBrake ? 'letting off the parking brake' : this.driver.describe();
     if (t.kind === 'throttle') return 'setting the hand throttle';
-    return t.id === 'starter' ? 'starting the engine' : `switching the ${t.id} ${t.id === 'choke' ? (drive.choke ? 'in' : 'out') : 'on'}`;
+    if (t.kind === 'choke') return t.to === 1 ? 'pulling the choke out' : t.to === 0.5 ? 'easing the choke half in' : 'pushing the choke in';
+    return t.id === 'starter' ? 'starting the engine' : `switching the ${t.id} on`;
   }
 
   private gunnerLine(): string {
@@ -459,7 +460,13 @@ export class CrewBotSystem extends createSystem({}) {
     if (this.task) {
       const t = this.task;
       if (t.kind === 'press') this.onControl('left', ENGINE_NAMES[t.id], null);
-      else this.onControl('left', 'hand-throttle', leverGrip(HAND_THROTTLE, throttleAngle(t.to), this.p));
+      else if (t.kind === 'choke') {
+        // The knob taken and drawn out (or pushed in) to where the task wants it.
+        this.p[0] = 0;
+        this.p[1] = 0;
+        this.p[2] = t.to * CHOKE_KNOB.travel + CHOKE_KNOB.depth / 2;
+        this.onControl('left', ENGINE_NAMES.choke, this.p);
+      } else this.onControl('left', 'hand-throttle', leverGrip(HAND_THROTTLE, throttleAngle(t.to), this.p));
       this.onControl('right', TILLER.right, leverGrip(DRIVER_TILLER, tillerAngle(0), this.p));
       return;
     }

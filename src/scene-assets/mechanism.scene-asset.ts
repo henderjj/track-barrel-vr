@@ -1,6 +1,6 @@
 import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial, TorusGeometry } from '@iwsdk/core';
 import { beam, mergeParts, type Part } from './lowpoly.js';
-import type { ButtonSpec, LeverSpec, ToggleSpec, TwistSpec, Vec3, WheelSpec, YokeSpec } from '../sim/mechanism.js';
+import type { ButtonSpec, LeverSpec, PullSpec, ToggleSpec, TwistSpec, Vec3, WheelSpec, YokeSpec } from '../sim/mechanism.js';
 import { BENCH, BEZEL, type BenchMount, MOUNTS, mountToBench, TWIST } from '../sim/mechanism-bench.js';
 import { litInside } from './cabin-light.js';
 
@@ -168,6 +168,21 @@ export function createToggleBat(spec: ToggleSpec, color: number): Mesh {
   ]);
   const mesh = new Mesh(geometry, litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 })));
   mesh.name = 'Toggle Bat';
+  return mesh;
+}
+
+/**
+ * A pull knob and its shaft, the knob's back at the origin facing out
+ * along +Z and the shaft running back `travel` into the face; move it out
+ * with `position.z`. Its own material, so it can glow while out.
+ */
+export function createPullKnob(spec: PullSpec, color: number): Mesh {
+  const geometry = mergeParts([
+    { geometry: new CylinderGeometry(spec.radius, spec.radius * 0.9, spec.depth, 10, 1), color, position: [0, 0, spec.depth / 2], rotation: ALONG_Z },
+    { geometry: new CylinderGeometry(0.003, 0.003, spec.travel, 6, 1), color: STEEL, position: [0, 0, -spec.travel / 2], rotation: ALONG_Z },
+  ]);
+  const mesh = new Mesh(geometry, litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 })));
+  mesh.name = 'Pull Knob';
   return mesh;
 }
 
