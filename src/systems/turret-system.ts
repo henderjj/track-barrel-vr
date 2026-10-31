@@ -19,6 +19,7 @@ import {
   POWER_GRIP,
   STATION,
   type StationControl,
+  type StationMount,
   stepTurret,
   TRAVERSE_CRANK,
   TRUNNION,
@@ -260,7 +261,8 @@ export class TurretSystem extends createSystem({}) {
       const [x, y, z] = STATION[key].at;
       // Turret space has its origin at the ring's centre, as the turret mesh does.
       mount.position.set(x, y, z);
-      mount.rotation.x = STATION[key].tilt;
+      const m: StationMount = STATION[key];
+      mount.rotation.set(m.tilt, m.yaw ?? 0, 0, 'YXZ');
       mount.add(part);
       this.world.createTransformEntity(mount, { parent: turret });
       this.parts[key] = part;

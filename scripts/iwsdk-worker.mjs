@@ -40,16 +40,25 @@ function answer(value) {
   Atomics.notify(header, 0);
 }
 
+/** What the last CLI command wrote to stderr, to show when its output can't be read. */
+let lastStderr = '';
+
 /** Runs one CLI command in this thread; returns what it printed. */
 async function cli(argv) {
   let out = '';
+  lastStderr = '';
   const stdout = new Writable({
     write(chunk, _encoding, done) {
       out += chunk;
       done();
     },
   });
-  const stderr = new Writable({ write: (_chunk, _encoding, done) => done() });
+  const stderr = new Writable({
+    write(chunk, _encoding, done) {
+      if (lastStderr.length < 4000) lastStderr = (lastStderr + chunk).slice(0, 4000);
+      done();
+    },
+  });
   await runCli(argv, { stdout, stderr, cwd: root });
   return out;
 }
@@ -61,6 +70,8 @@ async function cli(argv) {
 let browser = null;
 let target = null;
 let fastPathBroken = false;
+/** Times in a row the open connection couldn't find the app; a few, and it stops trying. */
+let fastPathMisses = 0;
 
 async function appFrame() {
   if (target && !target.page.isClosed() && browser?.isConnected()) return target.frame ?? target.page.mainFrame();
@@ -119,9 +130,13 @@ async function evaluate(expression) {
     let frame;
     try {
       frame = await appFrame();
+      fastPathMisses = 0;
     } catch (error) {
-      fastPathBroken = true;
-      console.log(`    (evaluating through iwsdk browser run: ${error.message})`);
+      // A slow runner can miss once (a screenshot that timed out still
+      // holding the page): use the CLI this time, and give up on the open
+      // connection only if it keeps missing.
+      fastPathBroken = ++fastPathMisses >= 3;
+      console.log(`    (evaluating through iwsdk browser run${fastPathBroken ? ' from now on' : ' this once'}: ${error.message})`);
     }
     if (frame) {
       // The same evaluation `browser run` would do (a returned promise is
@@ -143,7 +158,7 @@ parentPort.on('message', async (request) => {
   try {
     await (loaded ??= load());
     const stdout = request.kind === 'eval' ? await evaluate(request.expression) : await cli(request.argv);
-    answer({ stdout });
+    answer({ stdout, stderr: request.kind === 'eval' ? '' : lastStderr });
   } catch (error) {
     answer({ error: error instanceof Error ? error.message : String(error) });
   }
