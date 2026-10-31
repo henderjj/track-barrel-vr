@@ -1644,11 +1644,22 @@ async function theRangeRun() {
   evalInApp("(window.__seats.ask('driver'), window.__drive.place(0, -150, 0), true)");
   await sleep(300);
   await menuButtonPress();
+  // The page notes the run, the sign, the clocks and the tank the first time it sees the countdown: on a slow
+  // runner the ray click and each call to the page take long enough for the 3 s countdown to be over before
+  // the test could look.
+  const read = '({ r: window.__rangeRun.state(), sign: window.__rangeRun.sign, clocks: window.__rangeRun.clock(), tank: window.__drive.state() })';
+  evalInApp(`(() => {
+    window.__countdownSeen = null;
+    const id = setInterval(() => {
+      const v = ${read};
+      if (v.r.phase === 'running' && v.r.clock < 0) { window.__countdownSeen = JSON.parse(JSON.stringify(v)); clearInterval(id); }
+    }, 20);
+    setTimeout(() => clearInterval(id), 20000);
+    return true;
+  })()`);
   await menuClick('menu-run-start');
-  const counting = await waitFor('the countdown', () => { const r = run(); return r.phase === 'running' && r.clock < 0 && r; }, 5000).catch(() => run());
-  const sign = evalInApp('window.__rangeRun.sign');
-  const clocks = evalInApp('window.__rangeRun.clock()');
-  const tank = evalInApp('window.__drive.state()');
+  const seen = await waitFor('the countdown', () => evalInApp('window.__countdownSeen'), 8000).catch(() => evalInApp(read));
+  const { r: counting, sign, clocks, tank } = seen;
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-run-countdown.png'], {});
   check('Practice → Range run → Start parks the tank at the start and counts down on a sign and the run clock',
     counting.phase === 'running' && counting.clock < 0 && /^Range run: [123]$/.test(sign) && clocks[0] === 'Get ready' && Math.hypot(tank.x, tank.z) < 0.5,
