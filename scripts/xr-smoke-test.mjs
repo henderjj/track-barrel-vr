@@ -1351,13 +1351,14 @@ async function drivingTheTank() {
   const stopped = await waitFor('the tank to stop', () => { const s = state(); return Math.abs(s.speed) < 0.01 && Math.abs(s.yawRate) < 0.01 && s; }, 10000).catch(() => state());
   check('Letting go of the sticks stops the tank', Math.abs(stopped.speed) < 0.01, `${stopped.speed.toFixed(2)} m/s`);
 
-  // The automatic box (F1.16, the default) changes up by itself as the tank speeds up. Parked at the start first: on a
-  // slow runner the drive and the turn can carry the tank up to the boulder, which then holds it.
+  // The automatic box (F1.16, the default) changes up by itself as the tank speeds up. From the start, facing up the road:
+  // on a slow runner the turn above can go on long enough to leave the tank facing something that holds it still.
   evalInApp('(window.__drive.place(0, 0, 0), true)');
+  await sleep(300);
   sticks(1, 1);
   const upshifted = await waitFor('the automatic box to change up', () => { const s = state(); return s.gear >= 3 && s; }, 15000).catch(() => state());
   check('With the automatic box the tank changes up by itself as it speeds up', upshifted.gear >= 3 && !upshifted.grinding,
-    `${upshifted.speed.toFixed(1)} m/s in gear ${upshifted.gear} at ${upshifted.rpm.toFixed(0)} rpm, controls ${JSON.stringify(evalInApp('window.__drive.controls()'))}`);
+    `${upshifted.speed.toFixed(1)} m/s in gear ${upshifted.gear} at ${upshifted.rpm.toFixed(0)} rpm at ${upshifted.x.toFixed(1)}, ${upshifted.z.toFixed(1)} heading ${((upshifted.heading * 180) / Math.PI).toFixed(0)}°, sign "${evalInApp('window.__drive.sign')}", controls ${JSON.stringify(evalInApp('window.__drive.controls()'))}`);
   sticks(0, 0);
   await waitFor('the tank to stop again', () => Math.abs(state().speed) < 0.01, 15000).catch(() => null);
 
@@ -2030,13 +2031,14 @@ async function layingTheGun() {
     cranked.turns > 0.9 && afterCrank - yaw0 > 1.6 && afterCrank - yaw0 < 2.9, `${cranked.turns.toFixed(2)} turns: ${yaw0.toFixed(2)}° to ${afterCrank.toFixed(2)}°`);
   await letGoOf('crank');
 
-  // The elevation handwheel: taken by its handle and turned once clockwise, the gun rises.
+  // The elevation handwheel: taken by its handle and turned once clockwise as the gunner sees it from the seat (its top
+  // going forward; anticlockwise seen from its face, which is turned away from them), the gun rises.
   const e0 = turret().elevationDeg;
   await take('elevation');
   const rr = 0.08;
   const out = 0.03;
   for (let k = 1; k <= 24; k++) {
-    const a = -(k * Math.PI) / 12;
+    const a = (k * Math.PI) / 12;
     iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('elevation', [-rr * Math.sin(a), rr * Math.cos(a), out])), duration: 0.15 });
     await sleep(200);
   }

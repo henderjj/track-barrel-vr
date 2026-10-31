@@ -140,18 +140,18 @@ describe('turret traverse and gun laying (F1.8)', () => {
     expect(s.rate).toBe(0);
   });
 
-  it('the elevation wheel raises the gun clockwise, 0.75° a turn, and stops at −10° and +20°', () => {
-    expect(elevationForWheel(-2 * Math.PI) / DEG).toBeCloseTo(ELEVATION_PER_TURN / DEG, 9);
-    expect(elevationForWheel(-2 * Math.PI) / DEG).toBeCloseTo(0.75, 9);
-    expect(elevationForWheel(2 * Math.PI)).toBeCloseTo(-0.75 * DEG, 9);
-    expect(elevationForWheel(-1000)).toBe(MAX_ELEVATION);
-    expect(elevationForWheel(1000)).toBe(MIN_ELEVATION);
+  it('the elevation wheel raises the gun turned positive (clockwise from the seat, its face turned away), 0.75° a turn, and stops at −10° and +20°', () => {
+    expect(elevationForWheel(2 * Math.PI) / DEG).toBeCloseTo(ELEVATION_PER_TURN / DEG, 9);
+    expect(elevationForWheel(2 * Math.PI) / DEG).toBeCloseTo(0.75, 9);
+    expect(elevationForWheel(-2 * Math.PI)).toBeCloseTo(-0.75 * DEG, 9);
+    expect(elevationForWheel(1000)).toBe(MAX_ELEVATION);
+    expect(elevationForWheel(-1000)).toBe(MIN_ELEVATION);
     for (const e of [MIN_ELEVATION, -0.05, 0, 0.1, MAX_ELEVATION]) {
       expect(elevationForWheel(wheelForElevation(e))).toBeCloseTo(e, 9);
     }
     // The wheel itself stops where the gun does, so the hand feels the limit.
-    expect(elevationForWheel(ELEVATION_WHEEL.min)).toBeCloseTo(MAX_ELEVATION, 9);
-    expect(elevationForWheel(ELEVATION_WHEEL.max)).toBeCloseTo(MIN_ELEVATION, 9);
+    expect(elevationForWheel(ELEVATION_WHEEL.max)).toBeCloseTo(MAX_ELEVATION, 9);
+    expect(elevationForWheel(ELEVATION_WHEEL.min)).toBeCloseTo(MIN_ELEVATION, 9);
     expect(MAX_ELEVATION / DEG).toBeCloseTo(20, 9);
     expect(MIN_ELEVATION / DEG).toBeCloseTo(-10, 9);
     const s = createTurretState();
@@ -165,19 +165,19 @@ describe('turret traverse and gun laying (F1.8)', () => {
     const wheel = new Wheel(ELEVATION_WHEEL);
     const r = ELEVATION_WHEEL.radius;
     expect(ELEVATION_WHEEL.grip).toBe('crank');
-    // Take the handle at the top and turn it clockwise (as the gunner sees it) a whole turn, step by step.
+    // Take the handle at the top and turn it clockwise as the gunner sees it from the seat (anticlockwise seen from its face) a whole turn, step by step.
     const at = (a: number): Vec3 => [-r * Math.sin(a), r * Math.cos(a), ELEVATION_WHEEL.knobLength / 2];
     expect(wheel.grab(1, hand(at(0)))).toBe(true);
-    for (let i = 1; i <= 360; i++) wheel.update(DT, [null, hand(at(-(i * Math.PI) / 180))]);
-    for (let i = 0; i < 30; i++) wheel.update(DT, [null, hand(at(-2 * Math.PI))]);
+    for (let i = 1; i <= 360; i++) wheel.update(DT, [null, hand(at((i * Math.PI) / 180))]);
+    for (let i = 0; i < 30; i++) wheel.update(DT, [null, hand(at(2 * Math.PI))]);
     expect(elevationForWheel(wheel.angle) / DEG).toBeCloseTo(0.75, 1);
     // Far past the top limit, the wheel stops there and the hand strains.
-    wheel.angle = ELEVATION_WHEEL.min + 0.1;
+    wheel.angle = ELEVATION_WHEEL.max - 0.1;
     wheel.release(1);
     const knob = wheel.angle;
     wheel.grab(1, hand(at(knob)));
-    for (let i = 1; i <= 60; i++) wheel.update(DT, [null, hand(at(knob - (i * 3 * Math.PI) / 180))]);
-    expect(wheel.angle).toBe(ELEVATION_WHEEL.min);
+    for (let i = 1; i <= 60; i++) wheel.update(DT, [null, hand(at(knob + (i * 3 * Math.PI) / 180))]);
+    expect(wheel.angle).toBe(ELEVATION_WHEEL.max);
     expect(wheel.strain[1]).toBeGreaterThan(0.5);
   });
 
@@ -325,12 +325,22 @@ describe("the gunner's station (F1.8)", () => {
     }
   });
 
-  it('faces the elevation handwheel sideways, towards the gunner, its handle standing out towards the seat', () => {
-    expect(STATION.elevation.yaw).toBeCloseTo(90 * DEG, 9);
+  it("faces the elevation handwheel sideways, its handle out on the gun's side so the hand cranks it from the left (John's headset check)", () => {
+    expect(STATION.elevation.yaw).toBeCloseTo(-90 * DEG, 9);
     const hub = mountToTurret('elevation', [0, 0, 0]);
     const out = mountToTurret('elevation', [0, 0, ELEVATION_WHEEL.knobLength]);
-    expect(out[0] - hub[0]).toBeCloseTo(ELEVATION_WHEEL.knobLength, 9);
+    expect(out[0] - hub[0]).toBeCloseTo(-ELEVATION_WHEEL.knobLength, 9);
     expect(out[2]).toBeCloseTo(hub[2], 9);
+    // Its gearbox is on the right, under the gunner's left knee rather than between the hand and the gun.
+    expect(ELEVATING_GEAR.gearbox[0]).toBeGreaterThan(hub[0]);
+    // Turned as before the flip, the top going forward (away from the gunner), it still raises the gun.
+    const wheel = new Wheel(ELEVATION_WHEEL);
+    const top = mountToTurret('elevation', wheel.handle(1, [0, 0, 0]));
+    const raised = wheel.angle + 0.1;
+    wheel.angle = raised;
+    const after = mountToTurret('elevation', wheel.handle(1, [0, 0, 0]));
+    expect(after[2]).toBeLessThan(top[2]);
+    expect(elevationForWheel(raised)).toBeGreaterThan(elevationForWheel(0));
     for (const p of [[0.01, 0.02, 0.03], [-0.05, 0.08, 0.06]]) {
       const back = turretToMount('elevation', mountToTurret('elevation', p));
       p.forEach((v, i) => expect(back[i]).toBeCloseTo(v, 9));
@@ -352,8 +362,66 @@ describe("the gunner's station (F1.8)", () => {
     // Beside the breech and right of the breech lever's handle, so the gun recoils and the lever swings past it.
     expect(x - half - 0.004).toBeGreaterThan(LEVER_PIVOT[0] + LEVER_HANDLE_X + 0.015);
     expect(x - half).toBeGreaterThan(GUN.breechHalfWidth + 0.05);
-    // And left of the handwheel's face, with the pinion's gearbox column between them.
-    expect(x + half).toBeLessThan(STATION.elevation.at[0] - 0.03);
+    // Its spokes end where they stay above the turret ring as the gun rises (the arc's lower end dips through the ring's hole).
+    for (const spoke of ELEVATING_GEAR.spokes) {
+      expect(spoke).toBeGreaterThanOrEqual(from);
+      expect(spoke).toBeLessThanOrEqual(to);
+      expect(TRUNNION.y + (radius - half) * Math.cos(spoke + MAX_ELEVATION)).toBeGreaterThan(TURRET_RING.y + TURRET_RING.halfHeight + 0.01);
+    }
+  });
+
+  /** Points over the elevating gear and its drive, turret space: the arc (its bar and teeth) and spokes at elevation `e`, and the fixed drive. */
+  function gearPoints(e: number): Vec3[] {
+    const { x, radius, half, from, to, pinion, pinionRadius, bevel, housing, gearbox, spokes } = ELEVATING_GEAR;
+    const points: Vec3[] = [];
+    const around = (angle: number, rho: number, dx: number): Vec3 => [x + dx, TRUNNION.y + rho * Math.cos(angle + e), TRUNNION.z + rho * Math.sin(angle + e)];
+    for (let a = from; a <= to + 1e-9; a += 0.5 * DEG) {
+      for (const rho of [radius - half, radius, radius + half + 0.008]) for (const dx of [-half, half]) points.push(around(a, rho, dx));
+    }
+    for (const spoke of spokes) for (let rho = 0.12; rho <= radius; rho += 0.01) for (const dx of [-0.012, 0.012]) points.push(around(spoke, rho, dx));
+    const line = (a: readonly number[], b: readonly number[], r: number) => {
+      for (let t = 0; t <= 1 + 1e-9; t += 0.05) {
+        const c = [0, 1, 2].map((i) => a[i] + (b[i] - a[i]) * t);
+        for (const [dx, dy, dz] of [[r, 0, 0], [-r, 0, 0], [0, r, 0], [0, -r, 0], [0, 0, r], [0, 0, -r]]) points.push([c[0] + dx, c[1] + dy, c[2] + dz]);
+      }
+    };
+    line(pinion, pinion, pinionRadius);
+    line([housing[0], housing[1], housing[2]], [housing[0], housing[1], housing[2]], 0.035);
+    line(bevel, housing, 0.025);
+    line([gearbox[0], gearbox[1] + 0.04, gearbox[2]], bevel, 0.025);
+    return points;
+  }
+
+  it("keeps the elevating gear and its drive inside the turret ring, the gun at any elevation (John's headset check)", () => {
+    const inner = TURRET_RING.radius - TURRET_RING.tube;
+    // Level with the ring and the hull roof it sits on, everything stays 1 cm inside the ring's inner edge.
+    const bottom = TURRET_RING.y - TURRET_RING.halfHeight - 0.03;
+    const top = TURRET_RING.y + TURRET_RING.halfHeight + 0.01;
+    for (let e = MIN_ELEVATION; e <= MAX_ELEVATION + 1e-9; e += DEG) {
+      for (const p of gearPoints(e)) {
+        if (p[1] > bottom && p[1] < top) expect(Math.hypot(p[0], p[2]), `at ${(e / DEG).toFixed(0)}°: ${p.map((v) => v.toFixed(3))}`).toBeLessThan(inner - 0.01);
+      }
+    }
+  });
+
+  it('keeps the left hand on the elevation handwheel clear of the elevating gear and its drive, all the way round', () => {
+    const FIST = 0.05;
+    const wheel = new Wheel(ELEVATION_WHEEL);
+    for (let a = 0; a < 2 * Math.PI; a += Math.PI / 12) {
+      wheel.angle = a;
+      // The fist round the handle, from the wheel's face to the knob's end.
+      for (const along of [0.3, 0.7, 1]) {
+        const p = wheel.handle(1, [0, 0, 0]);
+        const fist = mountToTurret('elevation', [p[0], p[1], ELEVATION_WHEEL.knobLength * along]);
+        for (let e = MIN_ELEVATION; e <= MAX_ELEVATION + 1e-9; e += 5 * DEG) {
+          for (const q of gearPoints(e)) {
+            // Behind the wheel's face (its gearbox and the drive rising from it) the wheel is between them and the hand.
+            if (turretToMount('elevation', q)[2] < 0) continue;
+            expect(Math.hypot(q[0] - fist[0], q[1] - fist[1], q[2] - fist[2]), `handle at ${((a * 180) / Math.PI).toFixed(0)}°`).toBeGreaterThan(FIST + 0.02);
+          }
+        }
+      }
+    }
   });
 
   it("keeps the gunner's head clear of the controls, and the elevating breech clear of the elevation wheel", () => {
