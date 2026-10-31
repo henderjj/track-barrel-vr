@@ -6,11 +6,13 @@ import {
   decodeTankState,
   DRIVER_CONTROLS_BYTES,
   DRIVER_CONTROLS_V1_BYTES,
+  DRIVER_CONTROLS_V2_BYTES,
   encodeDriverControls,
   encodeTankState,
   TANK_STATE_BYTES,
   TANK_STATE_V1_BYTES,
   TANK_STATE_V2_BYTES,
+  TANK_STATE_V3_BYTES,
   type TankHeader,
 } from '../src/net/tank-codec.js';
 import { createControls, createTankDrive, type DriverControls, NEUTRAL, REVERSE, TOP_GEAR } from '../src/sim/tank-drive.js';
@@ -87,7 +89,7 @@ describe('tank packets (F1.4)', () => {
     encodeTankState(buffer, 1, 10, s, controlsOf({ left: 1, right: 0.5, gear: 2, throttle: 1, accel: 1, clutch: 1, mode: 'stick' }));
     const controls = createControls();
     expect(decodeTankState(new DataView(buffer, 0, TANK_STATE_V2_BYTES), { seq: 0, timeMs: 0 }, createTankDrive(), controls)).toBe(true);
-    expect(controls).toEqual(controlsOf({ left: 1, right: controls.right, gear: 2, throttle: 1 }));
+    expect(controls).toEqual(controlsOf({ left: 1, right: controls.right, gear: 2, throttle: 1, start: 'running' }));
     expect(controls.right).toBeCloseTo(0.5, 2);
     const short = new ArrayBuffer(DRIVER_CONTROLS_BYTES);
     encodeDriverControls(short, 1, 10, controlsOf({ left: 1, accel: 1, mode: 'clutch' }));
@@ -96,6 +98,43 @@ describe('tank packets (F1.4)', () => {
     expect(out.left).toBe(1);
     expect(out.mode).toBe('auto');
     expect(out.accel).toBe(0);
+  });
+
+  it('round-trips the engine and its switches (F1.17), and reads an F1.16 packet with the engine left running', () => {
+    const s = Object.assign(createTankDrive(), {
+      running: false, cranking: true, power: true, rough: false, starterRest: 3, stalls: 258, coughs: 7, stallCause: 'choke' as const,
+    });
+    const controls = controlsOf({ battery: true, ignition: false, starter: true, choke: true, siren: true, start: 'full' });
+    const buffer = new ArrayBuffer(TANK_STATE_BYTES);
+    expect(encodeTankState(buffer, 1, 10, s, controls)).toBe(TANK_STATE_BYTES);
+    const out = createTankDrive();
+    const outControls = createControls();
+    expect(decodeTankState(new DataView(buffer), { seq: 0, timeMs: 0 }, out, outControls)).toBe(true);
+    expect(out.running).toBe(false);
+    expect(out.cranking).toBe(true);
+    expect(out.power).toBe(true);
+    expect(out.starterRest).toBeGreaterThan(0);
+    expect(out.stalls).toBe(2);
+    expect(out.coughs).toBe(7);
+    expect(out.stallCause).toBe('choke');
+    expect(outControls).toEqual(controls);
+    // F1.16's packets: the engine runs, and the driver's page knew nothing of starting it.
+    const old = createTankDrive();
+    old.running = false;
+    const oldControls = createControls();
+    expect(decodeTankState(new DataView(buffer, 0, TANK_STATE_V3_BYTES), { seq: 0, timeMs: 0 }, old, oldControls)).toBe(true);
+    expect(old.running).toBe(true);
+    expect(oldControls.start).toBe('running');
+    expect(oldControls.starter).toBe(false);
+    const short = new ArrayBuffer(DRIVER_CONTROLS_BYTES);
+    expect(encodeDriverControls(short, 1, 10, controls)).toBe(DRIVER_CONTROLS_BYTES);
+    const full = createControls();
+    expect(decodeDriverControls(new DataView(short), { seq: 0, timeMs: 0 }, full)).toBe(true);
+    expect(full).toEqual(controls);
+    const v2 = createControls();
+    expect(decodeDriverControls(new DataView(short, 0, DRIVER_CONTROLS_V2_BYTES), { seq: 0, timeMs: 0 }, v2)).toBe(true);
+    expect(v2.start).toBe('running');
+    expect(v2.siren).toBe(false);
   });
 
   it('round-trips the driver\'s controls, and turns away other packets', () => {

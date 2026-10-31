@@ -22,6 +22,8 @@ import {
   type Vec3,
 } from './loading.js';
 import { MAX_SPEED, MAX_YAW_RATE } from './comfort.js';
+import type { EngineControlId } from './driver-station.js';
+import { CHOKE_COOLANT, CHOKE_HOLD, type EngineStart, WARM_COOLANT } from './engine.js';
 import { TRACK_GAUGE } from './tank-drive.js';
 import { wrapTile } from './terrain.js';
 
@@ -320,6 +322,52 @@ export class BotDriver {
     }
     return this.motion === 'halt' ? 'halted' : this.motion === 'advance' ? 'advancing' : 'reversing';
   }
+}
+
+// ---------------------------------------------------------------- Starting the engine
+
+/**
+ * What the bot driver's left hand does next to start the engine (F1.17),
+ * in whichever Engine start setting its page has: press (and let go of) a
+ * switch on the instrument box, hold the starter until it fires, or set
+ * the hand throttle; null once there is nothing to do and it can drive.
+ */
+export type StartTask = { kind: 'press'; id: EngineControlId; hold: boolean } | { kind: 'throttle'; to: number } | null;
+
+/** The hand throttle a little open to start on, and at two thirds (about 1300 rpm) to warm up. */
+export const START_THROTTLE = 0.3;
+export const WARM_UP_THROTTLE = 2 / 3;
+/** Once it runs, the choke goes in after CHOKE_HOLD and this much more, s. */
+const CHOKE_SPARE = 1.5;
+
+/**
+ * The next step of the start-up, from the engine as drawn (`running`,
+ * `starterHot`, `coolant`), the bot's own switches and hand throttle, and
+ * how long since the engine caught (s). The Full procedure follows the
+ * Fort Knox order: battery, ignition, choke if cold, hand throttle a
+ * little open, starter; then the choke in and a fast idle until warm.
+ */
+export function startTask(
+  engine: { running: boolean; starterHot: boolean; coolant: number },
+  c: { battery: boolean; ignition: boolean; choke: boolean; throttle: number; start: EngineStart },
+  sinceCaught: number,
+): StartTask {
+  const full = c.start === 'full';
+  if (engine.running) {
+    if (!full) return null;
+    if (c.choke && sinceCaught > CHOKE_HOLD + CHOKE_SPARE) return { kind: 'press', id: 'choke', hold: false };
+    if (!c.choke && engine.coolant < WARM_COOLANT && c.throttle < WARM_UP_THROTTLE - 0.05) return { kind: 'throttle', to: WARM_UP_THROTTLE };
+    return null;
+  }
+  if (full) {
+    if (!c.battery) return { kind: 'press', id: 'battery', hold: false };
+    if (!c.ignition) return { kind: 'press', id: 'ignition', hold: false };
+    if (engine.coolant < CHOKE_COOLANT && !c.choke) return { kind: 'press', id: 'choke', hold: false };
+    if (c.throttle < START_THROTTLE - 0.1 || c.throttle > START_THROTTLE + 0.25) return { kind: 'throttle', to: START_THROTTLE };
+  }
+  // A hot starter must rest: wait with the hand off it.
+  if (engine.starterHot) return null;
+  return { kind: 'press', id: 'starter', hold: true };
 }
 
 // ---------------------------------------------------------------- Gunning

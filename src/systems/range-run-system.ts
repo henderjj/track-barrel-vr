@@ -230,7 +230,8 @@ export class RangeRunSystem extends createSystem({}) {
   private act(what: RunAsk): void {
     if (what === 'start') {
       this.run.start();
-      resetTank();
+      // The run starts at the start line with the engine as the crew left it (F1.17).
+      resetTank('keep');
       console.info(`[RangeRun] run ${this.run.s.id} starting`);
     } else if (what === 'stop') {
       this.run.stop();
@@ -244,7 +245,8 @@ export class RangeRunSystem extends createSystem({}) {
     if (!(i >= 0 && i < RANGE_TARGETS.length)) return;
     // Alone, into the gunner's seat to pull the trigger; in a crew the seats stay.
     if (!netLink.connected) seating.ask('gunner');
-    resetTank();
+    // Parked with the engine running warm, for the power traverse (F1.17).
+    resetTank('warm');
     this.ask('assist');
     if (ownsGun()) this.pend(i);
     else {

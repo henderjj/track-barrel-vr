@@ -15,7 +15,7 @@
 import { type Gear, LEVER_ORDER, NEUTRAL } from './gearbox.js';
 import { SEATS, VISION_SLIT } from './cabin.js';
 import { TILLER } from './lever.js';
-import type { LeverSpec } from './mechanism.js';
+import type { ButtonSpec, LeverSpec } from './mechanism.js';
 
 const DEG = Math.PI / 180;
 
@@ -135,7 +135,7 @@ export const PANEL = (() => {
 
 /** A dial: what it reads, its range, and the face's numbers. Needles sweep clockwise through DIAL_SWEEP from the bottom left. */
 export interface Dial {
-  id: 'speed' | 'rpm' | 'coolant' | 'oil' | 'fuel';
+  id: 'speed' | 'rpm' | 'coolant' | 'oil' | 'fuel' | 'volts';
   label: string;
   min: number;
   max: number;
@@ -149,7 +149,7 @@ export interface Dial {
 export const DIALS: readonly Dial[] = [
   { id: 'speed', label: 'KM/H', min: 0, max: 40, marks: [0, 10, 20, 30, 40], text: String },
   { id: 'rpm', label: 'RPM ×100', min: 0, max: 3000, marks: [0, 500, 1000, 1500, 2000, 2500, 3000], text: (m) => String(m / 100) },
-  { id: 'coolant', label: 'WATER °C', min: 40, max: 120, marks: [40, 60, 80, 100, 120], text: String },
+  { id: 'coolant', label: 'WATER °C', min: 0, max: 120, marks: [0, 30, 60, 90, 120], text: String },
   { id: 'oil', label: 'OIL BAR', min: 0, max: 6, marks: [0, 2, 4, 6], text: String },
   { id: 'fuel', label: 'FUEL', min: 0, max: 1, marks: [0, 0.5, 1], text: (m) => (m === 0 ? 'E' : m === 1 ? 'F' : '½') },
 ];
@@ -179,6 +179,84 @@ export function needleAngle(dial: Dial, value: number): number {
 /** A dial's value from a needle angle (the inverse of needleAngle within its range), for the tests. */
 export function dialValue(dial: Dial, angle: number): number {
   return dial.min + ((angle + DIAL_SWEEP / 2) / DIAL_SWEEP) * (dial.max - dial.min);
+}
+
+/**
+ * The switch panel (F1.17, docs/engine.md): a strip of the instrument box
+ * under the dials, the same tilt and turn, with the voltmeter, the warning
+ * lamps, and the engine's switches and buttons, pressed with a fingertip
+ * (or held in by a fist squeezed on them). Panel space as the dials'; the
+ * strip's middle is `y` up the face from the panel's middle, m.
+ */
+export const SWITCH_PANEL = {
+  y: -0.127,
+  width: 0.3,
+  height: 0.07,
+  /** The caps' and the lamps' middles above the strip's middle, and the labels' under it, m. */
+  capY: 0.008,
+  labelY: -0.024,
+} as const;
+
+/** The instrument box's housing: round the dials' face and the switch strip, m (panel space; FACE_GAP behind them). */
+export const PANEL_HOUSING = (() => {
+  const top = PANEL.height / 2 + 0.015;
+  const bottom = SWITCH_PANEL.y - SWITCH_PANEL.height / 2 - 0.015;
+  return { width: SWITCH_PANEL.width + 0.02, top, bottom, middle: (top + bottom) / 2, height: top - bottom };
+})();
+
+export type EngineControlId = 'battery' | 'ignition' | 'choke' | 'starter' | 'siren';
+export const ENGINE_CONTROL_IDS: readonly EngineControlId[] = ['battery', 'ignition', 'choke', 'starter', 'siren'];
+
+/** A switch that stays where it is put (pressed once on, again off): small, so they are pressed on purpose. */
+export const PANEL_SWITCH: ButtonSpec = { radius: 0.01, travel: 0.006, latching: true };
+/** A button held in: the starter and the siren. */
+export const PANEL_BUTTON: ButtonSpec = { radius: 0.012, travel: 0.007, latching: false };
+
+/** Each engine control: its spec, where across the strip (panel x, m), its label and its cap's colour. */
+export const ENGINE_CONTROLS: Readonly<Record<EngineControlId, { spec: ButtonSpec; x: number; label: string; color: number }>> = {
+  battery: { spec: PANEL_SWITCH, x: -0.015, label: 'BATTERY', color: 0x3a6fa8 },
+  ignition: { spec: PANEL_SWITCH, x: 0.02, label: 'IGNITION', color: 0xc9a227 },
+  choke: { spec: PANEL_SWITCH, x: 0.055, label: 'CHOKE', color: 0xd8d2bf },
+  starter: { spec: PANEL_BUTTON, x: 0.092, label: 'STARTER', color: 0x2f8a3a },
+  siren: { spec: PANEL_BUTTON, x: 0.13, label: 'SIREN', color: 0xa83228 },
+};
+/** A cap's face, out, stands this far in front of the strip's face, m: pushed fully in it stays 3 mm proud (test/z-fighting.test.ts). */
+export const CAP_PROUD = 0.004;
+/** How far in a switch that is on sits, as a share of its travel. */
+export const SWITCH_ON_DEPTH = 0.5;
+
+/** The voltmeter: a small dial at the strip's left, 0 to 32 V (F1.17). */
+export const VOLTMETER = { x: -0.112, radius: 0.024, min: 0, max: 32, marks: [0, 8, 16, 24, 32] } as const;
+/** The voltmeter as a Dial, for the needle's sums. */
+export const VOLT_DIAL: Dial = {
+  id: 'volts',
+  label: 'VOLTS',
+  min: VOLTMETER.min,
+  max: VOLTMETER.max,
+  marks: VOLTMETER.marks,
+  text: String,
+};
+
+export type LampId = 'oil' | 'generator' | 'brake';
+/**
+ * The warning lamps, in a column between the voltmeter and the switches
+ * (F1.17): oil pressure and generator, lit with the battery on and the
+ * engine stopped; the parking brake's comes with F1.18. Panel x, each
+ * one's height from the strip's middle, its label and lit colour.
+ */
+export const LAMPS: readonly { id: LampId; x: number; y: number; label: string; color: number }[] = [
+  { id: 'oil', x: -0.068, y: 0.021, label: 'OIL', color: 0xff3b2a },
+  { id: 'generator', x: -0.068, y: 0, label: 'GEN', color: 0xff3b2a },
+  { id: 'brake', x: -0.068, y: -0.021, label: 'BRAKE', color: 0xff3b2a },
+];
+/** A lamp's lens: its radius and how far it stands proud of the strip's face, m. */
+export const LAMP = { radius: 0.006, proud: 0.005 } as const;
+
+/** A point on the switch strip (x across, y up from its middle) in panel space. */
+export function onSwitchPanel(x: number, y: number, out: [number, number]): [number, number] {
+  out[0] = x;
+  out[1] = SWITCH_PANEL.y + y;
+  return out;
 }
 
 /** The vision slit's brow pad and frame in the hood's face (docs/driver-station.md#vision-slit), m. */

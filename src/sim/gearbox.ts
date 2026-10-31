@@ -55,6 +55,8 @@ export function parseGearbox(raw: string | null | undefined, fallback: GearboxMo
 export const IDLE_RPM = 800;
 export const MAX_RPM = 2600;
 export const HAND_THROTTLE_RPM = 1600;
+/** What the starter turns the engine at (F1.17, src/sim/engine.ts), rpm. */
+export const CRANK_RPM = 160;
 /** How quickly the RPM follows the driver's demand out of gear, s (the engine's lag); in gear it follows the tracks this quickly. */
 export const RPM_SECONDS = 0.6;
 export const RPM_COUPLED_SECONDS = 0.15;
@@ -158,6 +160,9 @@ export interface GearboxState {
   bogging: boolean;
   /** Time spent going into `toGear`, s. */
   shiftTimer: number;
+  /** The engine runs, and the starter turns it (F1.17, src/sim/engine.ts): stopped, nothing reaches the tracks. */
+  running: boolean;
+  cranking: boolean;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -190,9 +195,10 @@ export function clutchEngagement(pedal: number): number {
  * Stick shift all of it unless the tank crawls slower than the engine
  * idles with the accelerator released (its clutch is worked for the
  * driver, so the tank doesn't creep); all of it with the automatic box.
+ * With the engine stopped, nothing.
  */
 export function engagement(s: GearboxState, c: GearboxControls): number {
-  if (s.gear === NEUTRAL) return 0;
+  if (s.gear === NEUTRAL || !s.running) return 0;
   if (c.mode === 'clutch') return clutchEngagement(c.clutch);
   if (c.mode === 'stick' && demandOf(c) < 0.02 && wheelRpm(s.speed, s.gear) < IDLE_RPM * STICK_CREEP) return 0;
   return 1;
@@ -228,7 +234,7 @@ function finishShift(s: GearboxState, dt: number, seconds: number): boolean {
 
 /**
  * The gearbox, each step, by the driver's mode:
- * - Automatic: pulls away in 2nd; changes up above UP_RPM while the tillers
+ * - Automatic: in neutral while the engine is stopped; pulls away in 2nd; changes up above UP_RPM while the tillers
  *   ask for more speed, down below DOWN_RPM; each change takes SHIFT_SECONDS
  *   out of gear, coasting. It never grinds.
  * - Stick shift: the lever's gear goes in after SHIFT_SECONDS out of gear;
@@ -278,6 +284,13 @@ export function stepGearbox(s: GearboxState, c: GearboxControls, dt: number): vo
 }
 
 function stepAutomatic(s: GearboxState, c: GearboxControls, dt: number): void {
+  // With the engine stopped the box sits in neutral, so it starts.
+  if (!s.running) {
+    s.gear = NEUTRAL;
+    s.toGear = NEUTRAL;
+    s.shiftTimer = 0;
+    return;
+  }
   if (s.toGear !== NEUTRAL) {
     finishShift(s, dt, SHIFT_SECONDS);
     return;
@@ -328,14 +341,19 @@ export function engineSpeed(s: GearboxState, c: GearboxControls): number {
  * for the tracks' speed through the gear as the clutch engages, with the
  * automatic and stick-shift clutches slipping at LAUNCH_RPM when pulling
  * away. With the Clutch fully out and the tracks too slow for the gear it
- * bogs. Sets `s.bogging`; returns how much of its pull the engine keeps.
+ * bogs. Stopped, it runs down (or turns at CRANK_RPM on the starter).
+ * Sets `s.bogging`; returns how much of its pull the engine keeps.
  */
 export function stepRpm(s: GearboxState, c: GearboxControls, dt: number): number {
+  s.bogging = false;
+  if (!s.running) {
+    s.rpm += ((s.cranking ? CRANK_RPM : 0) - s.rpm) * (1 - Math.exp(-dt / RPM_SECONDS));
+    return 0;
+  }
   const free = targetRpm(c);
   const e = engagement(s, c);
   let coupled = free;
   let pull = 1;
-  s.bogging = false;
   if (s.gear !== NEUTRAL) {
     const wheels = wheelRpm(s.speed, s.gear);
     if (c.mode === 'clutch') {

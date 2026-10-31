@@ -271,13 +271,18 @@ describe('the driver\'s gauges (F1.5)', () => {
     }
   });
 
-  it('warms the coolant slowly with the revs and burns fuel, never running dry', () => {
+  it('warms the coolant from the air with the revs (F1.17), cools it stopped, and burns fuel, never running dry', () => {
     const s = createTankDrive();
     expect(s.coolant).toBe(COOLANT_START);
     expect(s.fuel).toBe(1);
-    stepEngineGauges(s, 10);
+    stepEngineGauges(s, 1);
     expect(s.coolant).toBeGreaterThan(COOLANT_START);
     expect(s.coolant).toBeLessThan(COOLANT_START + 2);
+    // A couple of minutes at the warm-up's 1300 rpm takes it past warm (71 °C).
+    s.rpm = 1300;
+    for (let i = 0; i < 150; i++) stepEngineGauges(s, 1);
+    expect(s.coolant).toBeGreaterThan(71);
+    s.rpm = IDLE_RPM;
     for (let i = 0; i < 3600; i++) stepEngineGauges(s, 1);
     expect(s.coolant).toBeCloseTo(COOLANT_IDLE, 0);
     s.rpm = MAX_RPM;
@@ -286,6 +291,13 @@ describe('the driver\'s gauges (F1.5)', () => {
     expect(s.coolant).toBeCloseTo(COOLANT_FULL, 0);
     expect(before - s.fuel).toBeCloseTo(0.5, 1);
     for (let i = 0; i < 36000; i++) stepEngineGauges(s, 1);
+    expect(s.fuel).toBe(FUEL_RESERVE);
+    // Stopped, it cools slowly towards the air and burns nothing.
+    s.running = false;
+    const hot = s.coolant;
+    stepEngineGauges(s, 60);
+    expect(s.coolant).toBeLessThan(hot);
+    expect(s.coolant).toBeGreaterThan(hot - 10);
     expect(s.fuel).toBe(FUEL_RESERVE);
   });
 

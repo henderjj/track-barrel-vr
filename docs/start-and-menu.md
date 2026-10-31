@@ -55,6 +55,8 @@ Some of the rows:
 | Sound and view | Perf HUD (X) | On, Off |
 | Sound and view | Frame rate (Hz) | 72, 80, 90, 120 |
 | Sound and view | Foveation | Off, Half, Full |
+| Tank | Gearbox | Automatic, Stick shift, Clutch ([gearbox.md](gearbox.md)) |
+| Tank | Engine start | Running, Starter, Full procedure ([engine.md](engine.md)) |
 | Practice | Sit in | Driver, Gunner: in a crew the crewmate's seat asks them to swap, and both move once they agree ([seat-choice.md](seat-choice.md)) |
 | Practice | Loading (S4): Sit at the breech | Your head over the loader's seat facing the gun, every shell in the rack, the breech open and the drill's stats cleared (yours only: the drill isn't shared) |
 

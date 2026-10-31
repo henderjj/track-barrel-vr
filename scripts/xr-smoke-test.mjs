@@ -1085,6 +1085,65 @@ const DRIVE = { tile: 800, front: -3.0, rock: [-10, -45, 1.5] };
  *     stop; driven at the boulder, the tank stops against it without going
  *     in; Back to start parks it where it began.
  */
+/** Where to put the right controller so the middle of its fist is at `p` (scene space), the hand holding nothing. */
+function rightGripFor(p) {
+  const fist = evalInApp('window.__ownHands.fist("right")');
+  const grip = evalInApp('window.__debug.world.player.gripSpaces.right.getWorldPosition(window.__debug.world.player.position.clone()).toArray()');
+  return toOrigin([p[0] - (fist[0] - grip[0]), p[1] - (fist[1] - grip[1]), p[2] - (fist[2] - grip[2])]);
+}
+
+/** Hold the instrument box's `id` button in with a squeeze of the right fist (F1.17); `until` is checked while it is held. */
+async function holdEngineButton(id, until, label, timeoutMs = 6000) {
+  const name = evalInApp(`window.__driverStation.engine().names.${id}`);
+  const cap = evalInApp(`window.__mechanisms.handle(${JSON.stringify(name)}, 1)`);
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: rightGripFor(cap), duration: 0.3 });
+  await sleep(500);
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 1 }] });
+  const seen = await waitFor(label, until, timeoutMs).catch(() => null);
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 0 }] });
+  await sleep(300);
+  return seen;
+}
+
+/**
+ * 6d'. Starting the engine (F1.17): the tank begins with its engine
+ *     stopped, the oil and generator lamps lit and the voltmeter on the
+ *     battery's 24 V; held in, the starter cranks it (the voltmeter
+ *     dipping) and it catches, the lamps going out and the voltmeter
+ *     reading 28 V; the gunner's power traverse has nothing while it is off.
+ */
+async function startingTheEngine() {
+  const engine = () => ({
+    ...evalInApp('(({ running, cranking, rpm, power, stalls }) => ({ running, cranking, rpm, power, stalls }))(window.__drive.state())'),
+    box: evalInApp('window.__driverStation.engine()'),
+    volts: evalInApp('window.__driverStation.gauges().volts'),
+  });
+  const off = engine();
+  check('The tank starts with its engine stopped: the oil and generator lamps lit, the voltmeter at 24 V',
+    !off.running && off.rpm < 50 && off.box.lamps.oil && off.box.lamps.generator && Math.abs(off.volts - 24) < 0.5,
+    `running ${off.running}, ${off.rpm.toFixed(0)} rpm, lamps ${JSON.stringify(off.box.lamps)}, ${off.volts} V`);
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(evalInApp('window.__mechanisms.handle(window.__driverStation.engine().names.starter, 1)')) });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-engine-off.png'], {});
+  let cranked = null;
+  const caught = await holdEngineButton('starter', () => {
+    const e = engine();
+    if (e.cranking && cranked === null) cranked = e;
+    return e.running && e;
+  }, 'the engine to catch');
+  check('Held in by a squeeze, the starter cranks the engine (the voltmeter dipping) and it catches',
+    cranked !== null && cranked.volts < 24 && caught !== null && caught.running,
+    `cranking at ${cranked?.rpm.toFixed(0)} rpm and ${cranked?.volts} V, then ${caught ? `running at ${caught.rpm.toFixed(0)} rpm` : 'never caught'}`);
+  const running = await waitFor('the lamps out and the voltmeter up', () => {
+    const e = engine();
+    return !e.box.lamps.oil && !e.box.lamps.generator && e.volts > 27 && e;
+  }, 4000).catch(() => engine());
+  check('Running, the lamps go out and the voltmeter reads the generator\'s 28 V',
+    running.running && !running.box.lamps.oil && running.volts > 27, `lamps ${JSON.stringify(running.box.lamps)}, ${running.volts.toFixed(1)} V`);
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+}
+
 async function drivingTheTank() {
   const state = () => evalInApp('window.__drive.state()');
   const thumbstick = (device, x, y) =>
@@ -1099,11 +1158,12 @@ async function drivingTheTank() {
   await menuClick('menu-drive-go');
   const seated = await waitFor('the driver\'s seat and the sign', () => {
     const s = evalInApp('({ seat: window.__seats.mine, sign: window.__drive.sign, driver: window.__drive.driver() })');
-    return s.seat === 'driver' && s.sign.startsWith('Driving') && s;
+    return s.seat === 'driver' && s.sign.startsWith('Start the engine') && s;
   }, 5000).catch(() => evalInApp('({ seat: window.__seats.mine, sign: window.__drive.sign, driver: window.__drive.driver() })'));
-  check('Practice → Drive the tank puts the player in the driver\'s seat with a sign saying how to drive',
-    seated.seat === 'driver' && seated.driver === 'me' && seated.sign.startsWith('Driving'), `seat ${seated.seat}, sign "${seated.sign}"`);
+  check('Practice → Drive the tank puts the player in the driver\'s seat with a sign saying how to start the engine (F1.17)',
+    seated.seat === 'driver' && seated.driver === 'me' && seated.sign.startsWith('Start the engine'), `seat ${seated.seat}, sign "${seated.sign}"`);
   evalInApp('(window.__drive.reset(), true)');
+  await startingTheEngine();
 
   sticks(1, 1);
   const moving = await waitFor('the tank to get going', () => { const s = state(); return s.speed > 1.5 && s; }, 10000).catch(() => state());
@@ -1183,6 +1243,17 @@ async function drivingTheTank() {
   const braked = await waitFor('the brakes to stop the tank', () => { const s = state(); return Math.abs(s.speed) < 0.01 && s; }, 8000).catch(() => state());
   check('Both sticks pulled back brake it to a stop', Math.abs(braked.speed) < 0.01, `${braked.speed.toFixed(2)} m/s`);
   sticks(0, 0);
+  // Stopped in 2nd with the clutch out, the engine labours and stalls (F1.17); with the clutch held the starter restarts it.
+  const stalled = await waitFor('the engine to stall', () => {
+    const s = { ...state(), sign: evalInApp('window.__drive.sign') };
+    return !s.running && s;
+  }, 8000).catch(() => ({ ...state(), sign: evalInApp('window.__drive.sign') }));
+  check('Stopped in gear with the clutch out, the engine stalls, with a sign saying why',
+    !stalled.running && stalled.stallCause === 'bog' && stalled.sign.startsWith('Engine stalled'),
+    `running ${stalled.running}, cause ${stalled.stallCause}, ${stalled.stalls} stall(s), sign "${stalled.sign}"`);
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-left', buttons: [{ index: 0, value: 1 }] });
+  const restarted = await holdEngineButton('starter', () => { const s = state(); return s.running && s; }, 'the engine to restart');
+  check('With the clutch held, the starter restarts it in gear', restarted !== null && restarted.gear === 2, `${restarted ? `running in gear ${restarted.gear}` : 'not running'}`);
   await menuButtonPress();
   // The menu's Driving line ticks on only while the menu is open.
   await sleep(700);
@@ -1190,6 +1261,7 @@ async function drivingTheTank() {
   check('The menu\'s Driving line says the gear', status.includes('2nd gear'), `"${status}"`);
   await menuClick('row-gearbox-0');
   await menuButtonPress();
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-left', buttons: [{ index: 0, value: 0 }] });
 
   // Into the boulder: the tank stops against it, never in it.
   const [rx, rz, rr] = DRIVE.rock;
@@ -1213,9 +1285,11 @@ async function drivingTheTank() {
     const s = atStart();
     return Math.hypot(s.x, s.z) < 0.01 && Math.abs(s.ranges[0] - 100) < 3 && s;
   }, 5000).catch(() => atStart());
-  check('Back to start parks the tank where it began, with the three targets back at 100, 250 and 500 m',
-    Math.hypot(home.x, home.z) < 0.01 && home.speed === 0 && [100, 250, 500].every((r, i) => Math.abs(home.ranges[i] - r) < 3),
-    `at ${home.x.toFixed(2)}, ${home.z.toFixed(2)}, targets drawn at ${home.ranges.map((r) => r.toFixed(1)).join(', ')} m`);
+  check('Back to start parks the tank where it began, with the three targets back at 100, 250 and 500 m, its engine stopped and cold (F1.17)',
+    Math.hypot(home.x, home.z) < 0.01 && home.speed === 0 && [100, 250, 500].every((r, i) => Math.abs(home.ranges[i] - r) < 3) && !home.running && home.coolant < 20,
+    `at ${home.x.toFixed(2)}, ${home.z.toFixed(2)}, targets drawn at ${home.ranges.map((r) => r.toFixed(1)).join(', ')} m, engine ${home.running ? 'running' : 'off'} at ${home.coolant.toFixed(0)} °C`);
+  // The rest of the test drives: start it again as a Practice shortcut does.
+  evalInApp("(window.__drive.engine('start'), true)");
   iwsdk(['xr', 'set-device-state'], {});
 }
 
@@ -1836,8 +1910,8 @@ async function tankSounds() {
   const audio = () => evalInApp('window.__audio.state()');
   const before = audio();
   const h = before.heard;
-  check('The earlier steps were heard: gears going in, a shell rammed, the breech closing, the shot and its casing',
-    h.clunk >= 1 && h.ram >= 1 && h.breech >= 1 && h.shot >= 1 && h.casing >= 1,
+  check('The earlier steps were heard: gears going in, a shell rammed, the breech closing, the shot and its casing, the engine catching and stalling',
+    h.clunk >= 1 && h.ram >= 1 && h.breech >= 1 && h.shot >= 1 && h.casing >= 1 && h.catch >= 1 && h.stall >= 1,
     `${Object.entries(h).map(([id, n]) => `${id} ${n}`).join(', ')}; audio ${before.context}`);
 
   iwsdk(['xr', 'set-device-state'], {});
@@ -1858,7 +1932,7 @@ async function tankSounds() {
   const played = await waitFor('every short sound played', () => {
     const now = audio().heard;
     return Object.keys(now).every((id) => now[id] > heard0[id]) && now;
-  }, 5000).catch(() => audio().heard);
+  }, 16000).catch(() => audio().heard);
   const line = evalInApp("window.__gameMenu.text('menu-audio-status')");
   check('Practice → Tank sounds → Play each plays every short sound, and the menu says whether sound is on',
     Object.keys(played).every((id) => played[id] > heard0[id]) && line.length > 0,
@@ -1929,7 +2003,7 @@ async function driverStation() {
     pushed.tillersHeld && driving.speed > 1.5 && Math.abs(driving.yawRate) < 0.02,
     `tillers ${pushed.left.toFixed(2)} and ${pushed.right.toFixed(2)} (${pushed.angles.tillerLeft.toFixed(1)}° and ${pushed.angles.tillerRight.toFixed(1)}°), ${driving.speed.toFixed(1)} m/s`);
   check('The gauges read the tank: speed and RPM up, coolant, oil and fuel in range',
-    Math.abs(readings.speed - driving.speed * 3.6) < 2 && readings.rpm > 1500 && readings.coolant > 40 && readings.oil > 2 && readings.fuel > 0.9,
+    Math.abs(readings.speed - driving.speed * 3.6) < 2 && readings.rpm > 1500 && readings.coolant > 10 && readings.coolant < 120 && readings.oil > 2 && readings.fuel > 0.9,
     `${readings.speed.toFixed(1)} km/h, ${readings.rpm.toFixed(0)} rpm, ${readings.coolant.toFixed(0)} °C, ${readings.oil.toFixed(1)} bar, fuel ${readings.fuel.toFixed(2)}`);
   iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([-0.35, 1.55, -1.45]) });
   iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([-0.45, 0.95, -2.2]) });

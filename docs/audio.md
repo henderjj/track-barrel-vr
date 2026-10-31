@@ -10,6 +10,7 @@ Everything is synthesised with Web Audio at load: no sample files, nothing from 
 - **The tracks**, while the tank moves (a pivot turn too): a low rumble that deepens and opens up with speed, and the links' clatter, one tick per 15 cm of track, so at walking pace you hear each link and at speed they blur into the rumble.
 - **The power traverse**: a thin electric whine rising with the turret's turn.
 - **The gearbox**: a heavy clunk as a gear goes in, and a rasping grind for as long as the gears grind (shifting with a tiller pushed, docs/driver-station.md).
+- **The engine starting and stopping** (F1.17, [engine.md](engine.md)): the starter's slow whirr, beating four times a second while it cranks, a cough and roar as it catches, single coughs when a cold engine misfires, and a sigh as it stalls, the engine's beat slowing and fading as it runs down. The siren, held on the driver's switch strip, wails at 620 Hz on both pages.
 - **A bump**: a deep thud through the floor when the hull meets an obstacle.
 - **The loading**: a thunk as the shell goes home, the breech block slamming shut as the lever closes, and a lighter clack when a hand opens it again.
 - **The gun**: a crack, a boom and a long rumble, the breech flying open as the gun runs out, then the casing ringing and bouncing in the bin half a second later.
@@ -26,7 +27,7 @@ All in `src/sim/tank-audio.ts`.
 | Track rumble | brown noise, low-pass 90 to 590 Hz, level (speed / top speed)^0.7 |
 | Link clatter | white noise through a 1.1 kHz band-pass, one tick per 15 cm of track, up to 45 a second |
 | Traverse whine | triangle, 180 to 880 Hz with the turret's rate up to 24°/s |
-| Mix peaks | gun 0.95, clunk 0.55, breech 0.5, bump 0.5, ram 0.35, engine 0.32, rumble 0.3, grind 0.3, casing 0.28, latch 0.25, clatter 0.1, whine 0.03 |
+| Mix peaks | gun 0.95, clunk 0.55, breech 0.5, bump 0.5, catch 0.5, stall 0.45, cough 0.42, ram 0.35, engine 0.32, crank 0.32, rumble 0.3, grind 0.3, casing 0.28, latch 0.25, siren 0.16, clatter 0.1, whine 0.03 |
 | Duck | −6 dB while a voice's RMS level is at or above 0.01; attack 0.05 s, hold 0.35 s, release 0.4 s |
 | Short sounds | clunk 0.45 s, grind 0.5 s loop (30 tooth beats), shot 2.2 s, breech 0.6 s, latch 0.35 s, casing 1.1 s (four bounces), ram 0.35 s, bump 0.7 s |
 

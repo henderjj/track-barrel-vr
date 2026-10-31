@@ -54,7 +54,7 @@ export const LIVE_ITEMS: readonly LiveItem[] = [
     ],
     current: (s) => s.bumps,
   },
-  // The drive (F1.16): shown in the menu's Driving section.
+  // The drive (F1.16, F1.17): shown in the menu's Driving section.
   {
     key: 'gearbox',
     label: 'Gearbox',
@@ -64,6 +64,16 @@ export const LIVE_ITEMS: readonly LiveItem[] = [
       ['clutch', 'Clutch'],
     ],
     current: (s) => s.gearbox,
+  },
+  {
+    key: 'engine',
+    label: 'Engine start',
+    options: [
+      ['running', 'Running'],
+      ['starter', 'Starter'],
+      ['full', 'Full procedure'],
+    ],
+    current: (s) => s.engine,
   },
   { key: 'hud', label: 'Perf HUD (X)', options: [['1', 'On'], ['0', 'Off']], current: (s) => onOff(s.hud) },
   {

@@ -156,6 +156,9 @@ describe('play-test stats (F1.14)', () => {
     expect(log.rows[1].crew?.fumbles[group('gear')]).toBe(3);
     expect(log.rows[1].crewmate).toBe('player');
     expect(readCrewStats({ t: 'run-stats', run: 'x' })).toBeNull();
+    // A page from before F1.17 sends no stalls.
+    const old = readCrewStats({ t: 'run-stats', run: 4, driver: 1, gunner: 0, grinds: 0, fumbles: [] });
+    expect(old?.crew.stalls).toBe(0);
   });
 
   it('makes a CSV with a column per control, marks, the visit, and keeps the log as JSON', () => {
@@ -165,6 +168,7 @@ describe('play-test stats (F1.14)', () => {
     t.fumbles[group('breech')] = 1;
     t.driver = 0;
     t.gunner = 41.25;
+    t.stalls = 2;
     log.add(runRow({ run: 3, result: 'done', time: 41.25, shots: 4, targets: 3, assisted: false, tally: t }, CONTEXT));
     log.add(queasyRow(3, 12.5, 5, (10 * Math.PI) / 180, CONTEXT));
     const csv = log.csv(visitRow(t, 300, CONTEXT)).trim().split('\n');
@@ -177,6 +181,9 @@ describe('play-test stats (F1.14)', () => {
     expect(cell(csv[1], 'time_s')).toBe('41.3');
     expect(cell(csv[1], 'fumbles')).toBe('3');
     expect(cell(csv[1], 'fumbles_shell')).toBe('2');
+    // The engine's stalls (F1.17).
+    expect(cell(csv[1], 'stalls')).toBe('2');
+    expect(cell(csv[2], 'stalls')).toBe('');
     expect(cell(csv[1], 'most_fumbled')).toBe('shell');
     expect(cell(csv[1], 'gunner_s')).toBe('41.3');
     expect(cell(csv[1], 'crew_driver_s')).toBe('');
@@ -196,7 +203,7 @@ describe('play-test stats (F1.14)', () => {
     kept.load('not json');
     kept.load('[{"kind":"nonsense"}]');
     expect(kept.rows).toHaveLength(2);
-    expect(lastRunLine(kept)).toBe('Last: run 3 0:41.3, 4 shots, 0 grinds, 3 fumbles (most: shell). 1 run, 1 queasy mark recorded.');
+    expect(lastRunLine(kept)).toBe('Last: run 3 0:41.3, 4 shots, 0 grinds, 2 stalls, 3 fumbles (most: shell). 1 run, 1 queasy mark recorded.');
     expect(lastRunLine(new StatsLog())).toBe('No runs recorded yet: start a range run.');
   });
 

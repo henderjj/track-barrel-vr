@@ -38,6 +38,13 @@ import {
   realControls,
   stepRpm,
 } from './gearbox.js';
+import {
+  AIR_COOLANT,
+  type EngineControls,
+  enginePullShare,
+  type EngineState,
+  stepEngine,
+} from './engine.js';
 import { groundHeight, type Obstacle, obstacleDistance, OBSTACLES, wrapTile } from './terrain.js';
 
 /** Height of the hull floor above the ground under the tracks, m. */
@@ -78,16 +85,21 @@ export {
 
 /**
  * The engine's gauges (F1.5, docs/driver-station.md). Phase 1 shows them
- * without failures (plan decision 7): the coolant warms from COOLANT_START
- * towards COOLANT_IDLE at idle and COOLANT_FULL at full revs over
- * COOLANT_SECONDS; the fuel burns from full in FUEL_HOURS at full revs (a
- * fifth of that rate at idle) and stops at FUEL_RESERVE; Back to start
- * refuels. The oil pressure follows the revs, a little lower when hot.
+ * without failures (plan decision 7): the coolant starts at the air's
+ * temperature (F1.17; F1.5's started warm, at 55 °C) and while the engine
+ * runs warms towards COOLANT_IDLE at idle and COOLANT_FULL at full revs,
+ * over WARM_SECONDS rising and COOLANT_SECONDS falling; stopped, it cools
+ * to the air over COOL_SECONDS. The fuel burns from full in FUEL_HOURS at
+ * full revs (a fifth of that rate at idle) and stops at FUEL_RESERVE;
+ * Back to start refuels. The oil pressure follows the revs, a little
+ * lower when hot, and falls to nothing as a stopped engine runs down.
  */
-export const COOLANT_START = 55;
+export const COOLANT_START = AIR_COOLANT;
 export const COOLANT_IDLE = 72;
 export const COOLANT_FULL = 92;
 export const COOLANT_SECONDS = 150;
+export const WARM_SECONDS = 60;
+export const COOL_SECONDS = 900;
 export const FUEL_HOURS = 2;
 export const FUEL_RESERVE = 0.1;
 const FUEL_AT_IDLE = 0.2;
@@ -104,16 +116,24 @@ const BUMP_SPEED = 0.3;
  * second. Each tiller is -1 (pulled fully back) to 1 (pushed fully
  * forwards): that track's speed as a share of the top speed under it
  * (tillerTop); the gear lever, the hand throttle, the clutch and how the
- * driver works the gearbox as in GearboxControls.
+ * driver works the gearbox as in GearboxControls; the instrument box's
+ * switches and buttons, and how the engine starts, as in EngineControls (F1.17).
  */
-export type DriverControls = GearboxControls;
+export type DriverControls = GearboxControls & EngineControls;
 
 export function createControls(): DriverControls {
-  return { left: 0, right: 0, accel: 0, gear: NEUTRAL, throttle: 0, clutch: 0, mode: 'auto' };
+  return {
+    left: 0, right: 0, accel: 0, gear: NEUTRAL, throttle: 0, clutch: 0, mode: 'auto',
+    battery: false, ignition: false, starter: false, choke: false, siren: false, start: 'starter',
+  };
 }
 
-/** The tank's state: its pose in world space, how it moves, its engine and gearbox. The host sends it 45 times a second. */
-export interface TankDrive {
+/**
+ * The tank's state: its pose in world space, how it moves, its engine and
+ * gearbox, and the engine's start-up and stalls (EngineState, F1.17). The
+ * host sends it 45 times a second.
+ */
+export interface TankDrive extends EngineState {
   x: number;
   /** Height of the hull floor, m. */
   y: number;
@@ -151,7 +171,7 @@ export interface TankDrive {
   fuel: number;
 }
 
-/** A tank at rest at (x, z), facing `heading`, on the ground, in neutral. */
+/** A tank at rest at (x, z), facing `heading`, on the ground, in neutral, its engine running but cold. */
 export function createTankDrive(x = 0, z = 0, heading = 0): TankDrive {
   const s: TankDrive = {
     x, y: 0, z, heading, pitch: 0, roll: 0,
@@ -159,6 +179,9 @@ export function createTankDrive(x = 0, z = 0, heading = 0): TankDrive {
     leftTrack: 0, rightTrack: 0, rpm: IDLE_RPM, gear: NEUTRAL, toGear: NEUTRAL, grinding: false, bogging: false,
     touching: false, bumps: 0, odometer: 0, shiftTimer: 0,
     coolant: COOLANT_START, fuel: 1,
+    running: true, cranking: false, power: true, rough: false, crankTime: 0, starterRest: 0, runTime: 0, coldStart: false,
+    chokeTime: 0, bogTime: 0, coldTime: 0, coughTimer: 0, stalls: 0, coughs: 0, stallCause: 'none', switchedOn: true,
+    lastStart: 'starter',
   };
   settle(s);
   return s;
@@ -179,6 +202,24 @@ export function copyTankDrive(from: TankDrive, to: TankDrive): TankDrive {
   return to;
 }
 
+/** The engine's state and its coolant from `from` onto `to` (a tank parked elsewhere keeps its engine as it was). */
+export function copyEngine(from: TankDrive, to: TankDrive): TankDrive {
+  to.running = from.running;
+  to.rpm = from.rpm;
+  to.coolant = from.coolant;
+  to.power = from.power;
+  to.starterRest = from.starterRest;
+  to.runTime = from.runTime;
+  to.coldStart = from.coldStart;
+  to.chokeTime = from.chokeTime;
+  to.stalls = from.stalls;
+  to.coughs = from.coughs;
+  to.stallCause = from.stallCause;
+  to.switchedOn = from.switchedOn;
+  to.lastStart = from.lastStart;
+  return to;
+}
+
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** `value` moved towards `target` by at most `step`. */
@@ -188,8 +229,8 @@ export function approach(value: number, target: number, step: number): number {
 }
 
 /**
- * Advance the tank by `dt` seconds under controls `c`: the gearbox, the
- * RPM, the tracks' speeds within the comfort caps, soft stops at
+ * Advance the tank by `dt` seconds under controls `c`: the engine's
+ * start-up and stalls (src/sim/engine.ts), the gearbox, the RPM, the tracks' speeds within the comfort caps, soft stops at
  * obstacles, and the hull following the ground under its tracks as `feel`
  * says (all of it, or reduced bumps, src/sim/comfort.ts).
  */
@@ -201,8 +242,9 @@ export function stepDrive(
   feel: GroundFeel = FULL_BUMPS,
 ): TankDrive {
   if (dt <= 0) return s;
+  stepEngine(s, c, dt);
   stepGearbox(s, c, dt);
-  const enginePull = stepRpm(s, c, dt);
+  const enginePull = stepRpm(s, c, dt) * enginePullShare(s, c);
 
   let speedTarget: number;
   let yawTarget: number;
@@ -276,17 +318,21 @@ export function engineLoad(rpm: number): number {
 
 /** The coolant and the fuel, `dt` seconds on at the tank's RPM. */
 export function stepEngineGauges(s: TankDrive, dt: number): void {
+  if (!s.running) {
+    s.coolant += (AIR_COOLANT - s.coolant) * (1 - Math.exp(-dt / COOL_SECONDS));
+    return;
+  }
   const load = engineLoad(s.rpm);
   const hot = COOLANT_IDLE + (COOLANT_FULL - COOLANT_IDLE) * load;
-  s.coolant += (hot - s.coolant) * (1 - Math.exp(-dt / COOLANT_SECONDS));
+  s.coolant += (hot - s.coolant) * (1 - Math.exp(-dt / (hot > s.coolant ? WARM_SECONDS : COOLANT_SECONDS)));
   const burn = (FUEL_AT_IDLE + (1 - FUEL_AT_IDLE) * load) / (FUEL_HOURS * 3600);
   s.fuel = Math.max(FUEL_RESERVE, s.fuel - burn * dt);
 }
 
-/** The oil pressure for the gauge, bar: about 1.5 at idle and 5 at top RPM, a little lower when the engine runs hot. */
+/** The oil pressure for the gauge, bar: about 1.5 at idle and 5 at top RPM, a little lower when the engine runs hot, falling to nothing below idle. */
 export function oilPressure(rpm: number, coolant: number): number {
   const thin = clamp((coolant - COOLANT_IDLE) / (COOLANT_FULL - COOLANT_IDLE), 0, 1) * 0.4;
-  return 1.5 + 3.5 * engineLoad(rpm) - thin;
+  return (1.5 + 3.5 * engineLoad(rpm) - thin) * clamp(rpm / IDLE_RPM, 0, 1);
 }
 
 interface GroundSample {
@@ -415,7 +461,7 @@ export function angleDelta(a: number, b: number): number {
 /**
  * The tank part way, `t` (0 to 1), from state `a` to state `b`: for drawing
  * the host's tank smoothly between its packets. Discrete things (the gear,
- * grinding, touching, bumps) come from `b`.
+ * grinding, touching, bumps, the engine's state) come from `b`.
  */
 export function lerpTankDrive(a: TankDrive, b: TankDrive, t: number, out: TankDrive): TankDrive {
   const l = (p: number, q: number) => p + (q - p) * t;
@@ -443,6 +489,14 @@ export function lerpTankDrive(a: TankDrive, b: TankDrive, t: number, out: TankDr
   out.touching = b.touching;
   out.bumps = b.bumps;
   out.shiftTimer = b.shiftTimer;
+  out.running = b.running;
+  out.cranking = b.cranking;
+  out.power = b.power;
+  out.rough = b.rough;
+  out.starterRest = b.starterRest;
+  out.stalls = b.stalls;
+  out.coughs = b.coughs;
+  out.stallCause = b.stallCause;
   return out;
 }
 

@@ -16,10 +16,11 @@ import {
   SOUND_IDS,
   SoundCues,
   type SoundId,
+  sirenVoice,
   trackVoice,
   whineVoice,
 } from '../sim/tank-audio.js';
-import { shownDriverState } from './drive-system.js';
+import { shownDriverControls, shownDriverState } from './drive-system.js';
 import { shotListeners } from './firing-system.js';
 import { loadingShown } from './loading-system.js';
 import { netLink } from './net-system.js';
@@ -30,7 +31,7 @@ const PARAM_HZ = 20;
 /** How smoothly they glide to each new value, s (a time constant). */
 const GLIDE = 0.06;
 /** Practice → Tank sounds → Play each: the sounds in turn, s apart, and how long the grind runs. */
-const PLAY_EACH: readonly SoundId[] = ['clunk', 'grind', 'ram', 'breech', 'shot', 'latch', 'bump'];
+const PLAY_EACH: readonly SoundId[] = ['clunk', 'grind', 'ram', 'breech', 'shot', 'latch', 'bump', 'crank', 'catch', 'cough', 'stall'];
 const PLAY_EACH_GAP = 1.1;
 const PLAY_EACH_GRIND = 1;
 
@@ -56,6 +57,9 @@ interface AudioDebug {
     clatterHz: number;
     whine: number;
     grinding: boolean;
+    /** The starter cranking, and the siren's level (F1.17). */
+    cranking: boolean;
+    siren: number;
     duckDb: number;
     speaking: boolean;
     /** Each short sound played (or sent to play) so far on this page. */
@@ -74,7 +78,9 @@ interface AudioDebug {
  * - short sounds rendered once at load: gears going in and grinding, the
  *   hull bumping, a shell rammed, the breech slamming shut or opened by
  *   hand, the gun (with the breech flying open) and the casing landing in
- *   the bin half a second later.
+ *   the bin half a second later; the starter cranking, the engine
+ *   catching, coughing and stalling (F1.17);
+ * - the siren while the driver holds its button (F1.17), heard on both pages.
  *
  * Each page plays the tank as it draws it (shownDriverState, the turret,
  * the loading as drawn, and every shot through `shotListeners`), so both
@@ -102,13 +108,18 @@ export class TankAudioSystem extends createSystem({}) {
   private whine!: OscillatorNode;
   private whineAmp!: GainNode;
   private grindAmp!: GainNode;
+  private crankAmp!: GainNode;
+  private siren!: OscillatorNode;
+  private sirenAmp!: GainNode;
+  private readonly sirenNow = { freq: 0, gain: 0, glide: 0.5 };
+  private cranking = false;
   private readonly engine = createEngineVoice();
   private readonly tracks = createTrackVoice();
   private readonly whineNow = { freq: 0, gain: 0 };
   private readonly ducker = new Ducker();
   private readonly cues = new SoundCues();
   private readonly cueOut = createCues();
-  private readonly cueState: CueState = { gear: 0, grinding: false, bumps: 0, lever: 0, rammed: false };
+  private readonly cueState: CueState = { gear: 0, grinding: false, bumps: 0, lever: 0, rammed: false, running: true, stalls: 0, coughs: 0 };
   private readonly heard = Object.fromEntries(SOUND_IDS.map((id) => [id, 0])) as Record<SoundId, number>;
   private grinding = false;
   private paramClock = 0;
@@ -132,6 +143,8 @@ export class TankAudioSystem extends createSystem({}) {
         clatterHz: self.tracks.clatterHz,
         whine: self.whineNow.gain,
         grinding: self.grinding,
+        cranking: self.cranking,
+        siren: self.sirenNow.gain,
         duckDb: self.ducker.db,
         speaking: self.ducker.speaking,
         heard: { ...self.heard },
@@ -214,7 +227,18 @@ export class TankAudioSystem extends createSystem({}) {
     this.grindAmp = new GainNode(ctx, { gain: 0 });
     grind.connect(this.grindAmp).connect(this.duck);
 
-    for (const osc of [this.clatterBeat, this.whine]) osc.start();
+    // The starter cranking, looping while it turns (F1.17).
+    const crank = this.loop(this.buffers.crank);
+    this.crankAmp = new GainNode(ctx, { gain: 0 });
+    crank.connect(this.crankAmp).connect(this.duck);
+
+    // The siren: a motor siren's wail, a square wave through a band-pass, gliding up while held (F1.17).
+    this.siren = new OscillatorNode(ctx, { type: 'square', frequency: 120 });
+    this.sirenAmp = new GainNode(ctx, { gain: 0 });
+    const sirenBand = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 700, Q: 0.8 });
+    this.siren.connect(sirenBand).connect(this.sirenAmp).connect(this.duck);
+
+    for (const osc of [this.clatterBeat, this.whine, this.siren]) osc.start();
   }
 
   /** A buffer playing round and round from now. */
@@ -243,7 +267,9 @@ export class TankAudioSystem extends createSystem({}) {
       engineVoice(s.rpm, this.engine);
       trackVoice(s.leftTrack, s.rightTrack, this.tracks);
       this.grinding = s.grinding;
+      this.cranking = s.cranking;
     }
+    sirenVoice(shownDriverControls()?.siren ?? false, this.sirenNow);
     whineVoice(turret.rate, this.whineNow);
     const duck = this.ducker.step(netLink.micLevel(), netLink.crewLevel(), dt);
 
@@ -254,12 +280,18 @@ export class TankAudioSystem extends createSystem({}) {
     c.bumps = s?.bumps ?? 0;
     c.lever = loading?.lever ?? 0;
     c.rammed = loading?.rammed ?? false;
+    c.running = s?.running ?? true;
+    c.stalls = s?.stalls ?? 0;
+    c.coughs = s?.coughs ?? 0;
     const cues = this.cues.step(c, this.time - this.shotAt, this.cueOut);
     if (cues.clunk) this.sound('clunk');
     if (cues.bump) this.sound('bump');
     if (cues.ram) this.sound('ram');
     if (cues.breech) this.sound('breech');
     if (cues.latch) this.sound('latch');
+    if (cues.catch) this.sound('catch');
+    if (cues.cough) this.sound('cough');
+    if (cues.stall) this.sound('stall');
 
     if (ctx == null || ctx.state !== 'running') return;
     this.paramClock += dt;
@@ -278,6 +310,10 @@ export class TankAudioSystem extends createSystem({}) {
     this.whine.frequency.setTargetAtTime(this.whineNow.freq, t, GLIDE);
     this.whineAmp.gain.setTargetAtTime(MIX.whine * this.whineNow.gain, t, GLIDE);
     this.grindAmp.gain.setTargetAtTime(this.grinding ? 1 : 0, t, 0.03);
+    this.crankAmp.gain.setTargetAtTime(this.cranking ? 1 : 0, t, 0.04);
+    const siren = this.sirenNow;
+    this.siren.frequency.setTargetAtTime(siren.freq, t, siren.glide);
+    this.sirenAmp.gain.setTargetAtTime(MIX.siren * siren.gain, t, siren.glide);
     this.duck.gain.setTargetAtTime(duck, t, 0.02);
   }
 
@@ -305,7 +341,7 @@ export class TankAudioSystem extends createSystem({}) {
 
   playEach(): void {
     console.info('[Audio] Practice: play each sound');
-    PLAY_EACH.forEach((id, i) => this.sound(id, 0.2 + i * PLAY_EACH_GAP, id === 'grind' ? PLAY_EACH_GRIND : 0));
+    PLAY_EACH.forEach((id, i) => this.sound(id, 0.2 + i * PLAY_EACH_GAP, id === 'grind' || id === 'crank' ? PLAY_EACH_GRIND : 0));
     this.sound('casing', 0.2 + PLAY_EACH.indexOf('shot') * PLAY_EACH_GAP + RECOIL.back + CASING_FLIGHT);
   }
 
