@@ -51,10 +51,15 @@ export function parseGearbox(raw: string | null | undefined, fallback: GearboxMo
   return raw === 'auto' || raw === 'stick' || raw === 'clutch' ? raw : fallback;
 }
 
-/** Engine RPM: idle, top, and the most the hand throttle raises idle to. */
+/**
+ * Engine RPM: idle, top, and the most the hand throttle sets. The hand
+ * throttle works the same linkage as the accelerator, so wide open it
+ * gives full revs (John's headset test: it used to stop at 1600 rpm and
+ * didn't drive the tank).
+ */
 export const IDLE_RPM = 800;
 export const MAX_RPM = 2600;
-export const HAND_THROTTLE_RPM = 1600;
+export const HAND_THROTTLE_RPM = MAX_RPM;
 /** What the starter turns the engine at (F1.17, src/sim/engine.ts), rpm. */
 export const CRANK_RPM = 160;
 /** How quickly the RPM follows the driver's demand out of gear, s (the engine's lag); in gear it follows the tracks this quickly. */
@@ -174,15 +179,32 @@ export function wheelRpm(speed: number, gear: Gear): number {
   return gear === NEUTRAL ? 0 : (Math.abs(speed) / GEARS[gear].top) * MAX_RPM;
 }
 
-/** How far the driver asks for power, 0 to 1: the accelerator, or with the automatic box the tiller pushed furthest either way. */
+/**
+ * How far the driver asks for power, 0 to 1. With a Sherman's controls,
+ * the accelerator or the hand throttle, whichever is further open: the
+ * hand throttle holds cruising revs with the accelerator let go, and only
+ * lowering it brings them down. With the automatic box, the tiller pushed
+ * furthest either way.
+ */
 export function demandOf(c: GearboxControls): number {
-  if (realControls(c.mode)) return clamp(c.accel, 0, 1);
+  if (realControls(c.mode)) return clamp(Math.max(c.accel, handThrottleShare(c.throttle)), 0, 1);
   return clamp(Math.max(Math.abs(c.left), Math.abs(c.right)), 0, 1);
 }
 
-/** The RPM the engine heads for out of gear: the hand throttle's idle, plus the driver's demand. */
+/** The share of the engine's range above idle that the hand throttle at `throttle` (0 to 1) sets. */
+function handThrottleShare(throttle: number): number {
+  return (clamp(throttle, 0, 1) * (HAND_THROTTLE_RPM - IDLE_RPM)) / (MAX_RPM - IDLE_RPM);
+}
+
+/**
+ * The RPM the engine heads for out of gear. With a Sherman's controls,
+ * idle plus the demand (the hand throttle's share is in it); with the
+ * automatic box, the hand throttle raises the idle (for the turret's power
+ * traverse) and the tillers' demand adds to it.
+ */
 export function targetRpm(c: GearboxControls): number {
-  const idle = IDLE_RPM + clamp(c.throttle, 0, 1) * (HAND_THROTTLE_RPM - IDLE_RPM);
+  if (realControls(c.mode)) return IDLE_RPM + (MAX_RPM - IDLE_RPM) * demandOf(c);
+  const idle = IDLE_RPM + handThrottleShare(c.throttle) * (MAX_RPM - IDLE_RPM);
   return idle + (MAX_RPM - idle) * demandOf(c);
 }
 
@@ -243,8 +265,9 @@ function finishShift(s: GearboxState, dt: number, seconds: number): boolean {
  *   ask for more speed, down below DOWN_RPM; each change takes SHIFT_SECONDS
  *   out of gear, coasting. It never grinds.
  * - Stick shift: the lever's gear goes in after SHIFT_SECONDS out of gear;
- *   one that would over-rev the engine (or reverse on the move) waits until
- *   the tank has slowed.
+ *   one that would over-rev the engine (or reverse on the move) grinds and
+ *   the box stays in the gear it is in (John's headset test: it used to
+ *   wait out of gear for the tank to slow); the driver's lever goes back.
  * - Clutch: neutral goes in at any time; a gear goes in after SYNC_SECONDS
  *   with the clutch in, if it fits the speed. Without the clutch, or into
  *   1st on the move or reverse before stopping, or too low a gear for the
@@ -269,14 +292,16 @@ export function stepGearbox(s: GearboxState, c: GearboxControls, dt: number): vo
     s.shiftTimer = 0;
     return;
   }
+  if (c.mode === 'stick' && !gearFits(asked, s.speed)) {
+    // The clutch is worked for the driver, but a gear too low for the speed grinds: the box keeps its gear.
+    s.grinding = true;
+    s.toGear = NEUTRAL;
+    s.shiftTimer = 0;
+    return;
+  }
   if (s.toGear !== asked) beginShift(s, asked);
   else s.gear = NEUTRAL;
   if (c.mode === 'stick') {
-    // The clutch is worked for the driver; a gear too low for the speed waits for the tank to slow.
-    if (!gearFits(asked, s.speed)) {
-      s.shiftTimer = 0;
-      return;
-    }
     finishShift(s, dt, SHIFT_SECONDS);
     return;
   }

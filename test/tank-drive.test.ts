@@ -205,11 +205,12 @@ describe('tank drive (F1.4)', () => {
       expect(s.z).toBeLessThan(-10);
     });
 
-    it('reverses only in reverse gear, which waits for the tank to stop', () => {
+    it('reverses only in reverse gear, which won\'t go in until the tank stops', () => {
       const s = run(createTankDrive(), real(2, 1), 6);
       run(s, real(REVERSE, 1), 0.5);
-      // Rolling still: reverse waits, out of gear, while the tank coasts.
-      expect(s.gear).toBe(NEUTRAL);
+      // Rolling still: reverse grinds and the box stays in 2nd.
+      expect(s.grinding).toBe(true);
+      expect(s.gear).toBe(2);
       expect(s.speed).toBeGreaterThan(0);
       run(s, real(REVERSE, 1, -1, -1), 6);
       expect(s.gear).toBe(REVERSE);

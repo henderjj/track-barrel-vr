@@ -109,7 +109,7 @@ export const STARTER_REST = 15;
 /** Started cold, the choke must stay out this long, s; left out this much longer, it floods and stalls. */
 export const CHOKE_HOLD = 4;
 export const FLOOD_SECONDS = 12;
-/** Cold (Full procedure), the engine idles rough below this rpm and stalls after COLD_STALL_SECONDS of it; the hand throttle at two thirds keeps it above. */
+/** Cold (Full procedure), the engine idles rough below this rpm and stalls after COLD_STALL_SECONDS of it; the hand throttle at a third (1400 rpm) keeps it above. */
 export const COLD_IDLE_RPM = 1250;
 export const COLD_STALL_SECONDS = 10;
 /** Grace after it catches before a slow cold idle counts, s: the revs are still rising. */
@@ -134,10 +134,12 @@ export function createEngineControls(): EngineControls {
 
 /**
  * Whether the starter may turn the engine: out of gear, or the clutch held
- * fully down. Stick shift's clutch is worked for the driver, so it starts in gear.
+ * fully down. The automatic box's and Stick shift's clutches are worked for
+ * the driver, so they start in gear (the automatic box's lever can't be
+ * moved to neutral by hand).
  */
 export function startable(s: Pick<EngineState, 'gear'>, c: GearboxControls): boolean {
-  return s.gear === NEUTRAL || c.mode === 'stick' || (c.mode === 'clutch' && clutchEngagement(c.clutch) === 0);
+  return s.gear === NEUTRAL || c.mode !== 'clutch' || clutchEngagement(c.clutch) === 0;
 }
 
 /**

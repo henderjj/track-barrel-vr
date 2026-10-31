@@ -168,10 +168,10 @@ describe('engine start-up and stalls (F1.17)', () => {
 
     const fast = stopped();
     timeToCatch(fast, full({ choke: false }), 4);
-    run(fast, full({ choke: false, throttle: 2 / 3 }), 60);
+    run(fast, full({ choke: false, throttle: 1 / 3 }), 60);
     expect(fast.running).toBe(true);
     expect(fast.rpm).toBeGreaterThan(1300);
-    run(fast, full({ choke: false, throttle: 2 / 3 }), 120);
+    run(fast, full({ choke: false, throttle: 1 / 3 }), 120);
     expect(fast.coolant).toBeGreaterThan(WARM_COOLANT);
     // Warm, it idles happily.
     run(fast, full({ choke: false, throttle: 0 }), 30);
@@ -182,7 +182,7 @@ describe('engine start-up and stalls (F1.17)', () => {
     const pull = (coolant: number) => {
       const s = createTankDrive();
       s.coolant = coolant;
-      run(s, full({ choke: false, throttle: 2 / 3, left: 1, right: 1 }), 1.5);
+      run(s, full({ choke: false, throttle: 1 / 3, left: 1, right: 1 }), 1.5);
       return s.speed;
     };
     expect(pull(20) / pull(80)).toBeCloseTo(COLD_PULL, 1);

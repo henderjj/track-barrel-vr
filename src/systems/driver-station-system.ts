@@ -10,8 +10,8 @@ import {
   SRGBColorSpace,
   Vector3,
 } from '@iwsdk/core';
-import { createLamp, createNeedle, LAMP_DARK } from '../scene-assets/driver-station.scene-asset.js';
-import { createButtonCap, createLever } from '../scene-assets/mechanism.scene-asset.js';
+import { createGearReadout, createLamp, createNeedle, LAMP_DARK } from '../scene-assets/driver-station.scene-asset.js';
+import { createButtonCap, createLever, createToggleBat, createToggleNut } from '../scene-assets/mechanism.scene-asset.js';
 import {
   CAP_PROUD,
   type Dial,
@@ -33,17 +33,20 @@ import {
   parkingBrakeAngle,
   parkingBrakeOf,
   GEAR_PLATE,
-  SWITCH_ON_DEPTH,
+  GEAR_READOUT,
   SWITCH_PANEL,
   throttleAngle,
   throttleOf,
   tillerAngle,
+  TILLER_NAMES,
+  ENGINE_NAMES,
+  GEAR_LEVER_NAME,
   VOLT_DIAL,
   VOLTMETER,
 } from '../sim/driver-station.js';
 import { volts } from '../sim/engine.js';
-import { Button, Lever, MechEvent } from '../sim/mechanism.js';
-import { type Gear, NEUTRAL } from '../sim/gearbox.js';
+import { Button, Lever, MechEvent, Toggle } from '../sim/mechanism.js';
+import { type Gear, GEARS, gearFits, NEUTRAL } from '../sim/gearbox.js';
 import { type DriverControls, oilPressure, type TankDrive } from '../sim/tank-drive.js';
 import { drive, engineStart, gearboxMode, shownDriverState, shownDriverControls } from './drive-system.js';
 import { handUse } from './grip-system.js';
@@ -59,9 +62,9 @@ const DEG = Math.PI / 180;
 
 /** Each control's `handUse` name and HoldKind. */
 const NAMES: Record<DriverControlId, string> = {
-  tillerLeft: 'driver-tiller-left',
-  tillerRight: 'driver-tiller-right',
-  gear: 'gear-lever',
+  tillerLeft: TILLER_NAMES.left,
+  tillerRight: TILLER_NAMES.right,
+  gear: GEAR_LEVER_NAME,
   throttle: 'hand-throttle',
   brake: 'parking-brake',
 };
@@ -73,14 +76,6 @@ const KINDS: Record<DriverControlId, number> = {
   brake: HoldKind.ParkingBrake,
 };
 
-/** Each engine control's `handUse` name (F1.17): pressed, not held, so HoldKind.None. */
-export const ENGINE_NAMES: Record<EngineControlId, string> = {
-  battery: 'driver-battery',
-  ignition: 'driver-ignition',
-  choke: 'driver-choke',
-  starter: 'driver-starter',
-  siren: 'driver-siren',
-};
 /** The voltmeter's needle is the dials' made smaller, and swings to a new reading at this rate, 1/s. */
 const VOLT_NEEDLE_SCALE = 0.55;
 const VOLT_RATE = 6;
@@ -90,6 +85,8 @@ const UNLIT = 0.3;
 const STRIP_PX_W = 1024;
 const STRIP_PX_H = Math.round((STRIP_PX_W * SWITCH_PANEL.height) / SWITCH_PANEL.width);
 
+/** A toggle's bat swings to where its switch is at this rate, 1/s (on the crewmate's page, or set by a key). */
+const TOGGLE_FOLLOW = 40;
 /** The crewmate's levers ease to where their packets put them at this rate, 1/s (packets come 45 times a second). */
 const FOLLOW_RATE = 20;
 /** While the gears grind, a rough buzz in each hand on a driver's control this often, s. */
@@ -116,6 +113,9 @@ interface StationDebug {
     grinds: number;
     shifts: number;
     usable: boolean;
+    /** What the gear indicator shows ('R', 'N', '1' to '5'; '' before the tank is drawn), and whether it is lit red for a grind. */
+    readout: string;
+    readoutGrinding: boolean;
   };
   /** What each gauge's needle points at, in its dial's units (speed km/h, rpm, coolant °C, oil bar, fuel 0-1, volts). */
   gauges(): Record<Dial['id'], number>;
@@ -127,8 +127,8 @@ interface StationDebug {
     lamps: Record<LampId, boolean>;
     lit: boolean;
   };
-  /** The middle of an engine control's cap face, scene space, and the way out of the face. */
-  cap(id: EngineControlId): { at: number[]; out: number[] };
+  /** The middle of an engine control's cap face (a toggle's pivot), scene space, the way out of the face and up it. */
+  cap(id: EngineControlId): { at: number[]; out: number[]; up: number[] };
   /** The middle of a control's handle, scene space: where it is, or where it would be at `degrees`. */
   handle(id: DriverControlId, degrees?: number): number[];
 }
@@ -170,14 +170,19 @@ export class DriverStationSystem extends createSystem({}) {
   private engaged = -1;
   private tmp = new Vector3();
   private tmp2 = new Vector3();
-  /** The instrument box's switches and buttons, their caps and mounts (F1.17). */
-  private buttons = {} as Record<EngineControlId, Button>;
+  /** The instrument box's toggle switches and push buttons, their bats and caps, and their mounts (F1.17). */
+  private buttons = {} as Record<EngineControlId, Button | Toggle>;
   private caps = {} as Record<EngineControlId, Mesh>;
   private capMounts = {} as Record<EngineControlId, Group>;
   private lamps = {} as Record<LampId, MeshBasicMaterial>;
   private lampLit = {} as Record<LampId, boolean>;
   private faces: MeshBasicMaterial[] = [];
   private voltNeedle!: Object3D;
+  /** The gear indicator's canvas and texture, and the gear (-1: none yet) and grind it shows. */
+  private readoutCanvas!: HTMLCanvasElement;
+  private readoutTexture!: CanvasTexture;
+  private readoutGear = -1;
+  private readoutGrinding = false;
   private voltsShown = 0;
   /** The engine ran last frame, and the Engine start setting then: started by a shortcut or changed to the Full procedure, the switches go on. */
   private wasRunning = false;
@@ -221,6 +226,7 @@ export class DriverStationSystem extends createSystem({}) {
       panel.add(needle);
       this.needles.push(needle);
     }
+    panel.add(this.createReadout());
     this.addSwitchPanel(panel);
     this.root.add(panel);
     this.world.createTransformEntity(this.root);
@@ -242,6 +248,7 @@ export class DriverStationSystem extends createSystem({}) {
           left: drive.left, right: drive.right, gear: drive.gear, throttle: drive.throttle, tillersHeld: drive.tillersHeld,
           parkingBrake: drive.parkingBrake, brakeFreed: self.levers.brake.freed,
           grinds: self.grinds, shifts: self.shifts, usable: self.usable(),
+          readout: self.readoutGear < 0 ? '' : GEARS[self.readoutGear].short, readoutGrinding: self.readoutGrinding,
         };
       },
       gauges: () => {
@@ -264,7 +271,8 @@ export class DriverStationSystem extends createSystem({}) {
         mount.updateWorldMatrix(true, false);
         const at = self.tmp.set(0, 0, 0).applyMatrix4(mount.matrixWorld).toArray();
         const out = self.tmp2.set(0, 0, 1).transformDirection(mount.matrixWorld).toArray();
-        return { at, out };
+        const up = self.tmp2.set(0, 1, 0).transformDirection(mount.matrixWorld).toArray();
+        return { at, out, up };
       },
       handle: (id, degrees) => {
         const { spec } = DRIVER_CONTROLS[id];
@@ -303,6 +311,10 @@ export class DriverStationSystem extends createSystem({}) {
         if (drive.gearAsked !== null) {
           if (!gear.anyHeld) gear.angle = GEAR_ANGLES[drive.gearAsked];
           drive.gearAsked = null;
+        }
+        // Stick shift won't take a gear too low for the speed (it grinds): the lever goes back to the gear the box kept.
+        if (gearboxMode() === 'stick' && state?.grinding && !gear.anyHeld && !gearFits(gearOfLever(gear.angle), state.speed)) {
+          gear.angle = GEAR_ANGLES[state.gear];
         }
         drive.gear = gearOfLever(gear.angle);
       }
@@ -369,11 +381,11 @@ export class DriverStationSystem extends createSystem({}) {
     for (const id of ['battery', 'ignition', 'choke'] as const) this.buttons[id].on = drive[id];
   }
 
-  /** The kit pressed or let go of an engine control: a switch flips its setting, with a tick in the pressing hand. */
+  /** The kit pressed or let go of an engine control: a toggle flipped sets its setting, with a tick in the hand. */
   private pressed(id: EngineControlId, events: number): void {
     const b = this.buttons[id];
     if (events & MechEvent.Press) {
-      if (b.spec.latching && (id === 'battery' || id === 'ignition' || id === 'choke')) drive[id] = b.on;
+      if (b instanceof Toggle && (id === 'battery' || id === 'ignition' || id === 'choke')) drive[id] = b.on;
       const side = b.pressedBy === 0 ? 'left' : b.pressedBy === 1 ? 'right' : null;
       if (side) buzz(this.input.xr.gamepads[side]?.gamepad, side, 0.5, 20);
     }
@@ -401,21 +413,36 @@ export class DriverStationSystem extends createSystem({}) {
       });
     }
     for (const id of ENGINE_CONTROL_IDS) {
-      const { spec, x, color } = ENGINE_CONTROLS[id];
-      const button = new Button(spec);
-      this.buttons[id] = button;
-      // The mount is the button's space: its cap's face, out, CAP_PROUD plus its travel in front of the strip.
+      const c = ENGINE_CONTROLS[id];
       const mount = new Group();
-      onSwitchPanel(x, SWITCH_PANEL.capY, at);
-      mount.position.set(at[0], at[1], CAP_PROUD + spec.travel);
-      const cap = createButtonCap(spec, color);
+      onSwitchPanel(c.x, SWITCH_PANEL.capY, at);
+      let mech: Button | Toggle;
+      if (c.kind === 'toggle') {
+        // The mount is the toggle's space: its pivot on the strip's face, its nut round it, its bat turning.
+        mech = new Toggle(c.spec);
+        mount.position.set(at[0], at[1], 0);
+        const nut = createToggleNut();
+        mount.add(nut);
+        this.cleanupFuncs.push(() => nut.geometry.dispose());
+        this.caps[id] = createToggleBat(c.spec, c.color);
+      } else {
+        // The mount is the button's space: its cap's face, out, CAP_PROUD plus its travel in front of the strip.
+        mech = new Button(c.spec);
+        mount.position.set(at[0], at[1], CAP_PROUD + c.spec.travel);
+        this.caps[id] = createButtonCap(c.spec, c.color);
+      }
+      this.buttons[id] = mech;
+      const cap = this.caps[id];
       mount.add(cap);
       panel.add(mount);
-      this.caps[id] = cap;
       this.capMounts[id] = mount;
+      this.cleanupFuncs.push(() => {
+        cap.geometry.dispose();
+        (cap.material as MeshStandardMaterial).dispose();
+      });
       const control: Control = {
         name: ENGINE_NAMES[id],
-        mech: button,
+        mech,
         frame: mount,
         kind: HoldKind.None,
         active: () => this.usable(),
@@ -426,23 +453,27 @@ export class DriverStationSystem extends createSystem({}) {
   }
 
   /**
-   * The instrument box as the engine stands: the caps in or out (a switch
-   * that is on sits half in, glowing; on the crewmate's page the buttons
-   * follow their presses), the lamps, the voltmeter, and the faces dark
+   * The instrument box as the engine stands: the toggles up or down (their
+   * knobs glowing while on), the buttons in or out (on the crewmate's page
+   * they follow the driver's), the lamps, the voltmeter, and the faces dark
    * with the battery off.
    */
   private drawEngine(dt: number, shown: DriverControls | null, s: TankDrive | null): void {
     const mine = seating.mine === 'driver';
+    const swing = 1 - Math.exp(-TOGGLE_FOLLOW * dt);
     for (const id of ENGINE_CONTROL_IDS) {
       const b = this.buttons[id];
-      const { spec, color } = ENGINE_CONTROLS[id];
+      const c = ENGINE_CONTROLS[id];
       const on = mine ? b.on : shown ? shown[id] : false;
-      const latched = spec.latching && on ? spec.travel * SWITCH_ON_DEPTH : 0;
-      const pressedIn = !spec.latching && on ? spec.travel : 0;
-      this.caps[id].position.z = -Math.max(mine ? b.depth : 0, latched, pressedIn);
+      if (b instanceof Toggle) {
+        b.angle += ((on ? b.spec.lean : -b.spec.lean) - b.angle) * swing;
+        this.caps[id].rotation.x = -b.angle;
+      } else {
+        this.caps[id].position.z = -Math.max(mine ? b.depth : 0, on ? b.spec.travel : 0);
+      }
       const lit = this.caps[id].material as MeshStandardMaterial;
-      lit.emissive.setHex(on ? color : 0x000000);
-      lit.emissiveIntensity = on ? 0.6 : 0;
+      lit.emissive.setHex(on ? c.color : 0x000000);
+      lit.emissiveIntensity = on ? (c.kind === 'toggle' ? 0.4 : 0.6) : 0;
     }
     const power = s?.power ?? false;
     const stopped = s ? !s.running : true;
@@ -494,11 +525,19 @@ export class DriverStationSystem extends createSystem({}) {
     ctx.textAlign = 'left';
     ctx.font = `bold ${Math.round(0.0075 * px)}px sans-serif`;
     // Squeezed to end short of the Battery switch's label, which the bottom lamp's shares a line with.
-    for (const lamp of LAMPS) ctx.fillText(lamp.label, X(lamp.x + 0.01), Y(lamp.y), 0.022 * px);
+    for (const lamp of LAMPS) ctx.fillText(lamp.label, X(lamp.x + 0.01), Y(lamp.y), 0.02 * px);
     ctx.textAlign = 'center';
     for (const id of ENGINE_CONTROL_IDS) {
       const { x, label } = ENGINE_CONTROLS[id];
       ctx.fillText(label, X(x), Y(SWITCH_PANEL.labelY), 0.029 * px);
+    }
+    // Each toggle's ON over it and OFF under it, smaller.
+    ctx.font = `bold ${Math.round(0.0055 * px)}px sans-serif`;
+    for (const id of ENGINE_CONTROL_IDS) {
+      const c = ENGINE_CONTROLS[id];
+      if (c.kind !== 'toggle') continue;
+      ctx.fillText('ON', X(c.x), Y(SWITCH_PANEL.capY + c.spec.length * Math.sin(c.spec.lean) + 0.009));
+      ctx.fillText('OFF', X(c.x), Y(SWITCH_PANEL.capY - 0.012));
     }
     const texture = new CanvasTexture(canvas);
     texture.colorSpace = SRGBColorSpace;
@@ -544,7 +583,7 @@ export class DriverStationSystem extends createSystem({}) {
     }
   }
 
-  /** Turn each lever and needle to where it is now. */
+  /** Turn each lever and needle to where it is now, and show the gear engaged. */
   private draw(): void {
     for (const id of DRIVER_CONTROL_IDS) this.pivots[id].rotation.x = -this.levers[id].angle;
     const s = shownDriverState();
@@ -552,6 +591,52 @@ export class DriverStationSystem extends createSystem({}) {
     for (let i = 0; i < DIALS.length; i++) {
       this.needles[i].rotation.z = -needleAngle(DIALS[i], gaugeValue(DIALS[i], s));
     }
+    if (s.gear !== this.readoutGear || s.grinding !== this.readoutGrinding) this.paintReadout(s.gear, s.grinding);
+  }
+
+  /** The gear indicator's window in the gear plate (GEAR_READOUT); painted when the gear changes. */
+  private createReadout(): Mesh {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = Math.round((128 * GEAR_READOUT.height) / GEAR_READOUT.width);
+    this.readoutCanvas = canvas;
+    this.readoutTexture = new CanvasTexture(canvas);
+    this.readoutTexture.colorSpace = SRGBColorSpace;
+    const mesh = createGearReadout();
+    const material = mesh.material as MeshBasicMaterial;
+    material.map = this.readoutTexture;
+    const at: [number, number] = [0, 0];
+    dialCentre(GEAR_PLATE, at);
+    mesh.position.set(at[0], at[1] + GEAR_READOUT.y, 0);
+    this.faces.push(material);
+    this.paintReadout(NEUTRAL, false);
+    this.readoutGear = -1;
+    this.cleanupFuncs.push(() => {
+      this.readoutTexture.dispose();
+      mesh.geometry.dispose();
+      material.dispose();
+    });
+    return mesh;
+  }
+
+  /** The gear's letter, amber on black in a steel rim; red while the gears grind. */
+  private paintReadout(gear: Gear, grinding: boolean): void {
+    this.readoutGear = gear;
+    this.readoutGrinding = grinding;
+    const canvas = this.readoutCanvas;
+    const ctx = canvas.getContext('2d')!;
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.fillStyle = '#8c8a80';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#0d0e0a';
+    ctx.fillRect(6, 6, w - 12, h - 12);
+    ctx.fillStyle = grinding ? '#ff4a32' : '#ffb63a';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `bold ${Math.round(h * 0.78)}px sans-serif`;
+    ctx.fillText(GEARS[gear].short, w / 2, h / 2 + h * 0.04);
+    this.readoutTexture.needsUpdate = true;
   }
 
   /** The dials' faces, drawn once: numbered marks round each, its name under it, and a line on the gear lever. */
@@ -600,10 +685,13 @@ export class DriverStationSystem extends createSystem({}) {
     ctx.fillStyle = '#c9c0a0';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ['GEARS', 'R N 1 2 3 4 5', 'back  >  fwd', 'clutch L trig', 'gears R stick'].forEach((text, i) => {
-      ctx.font = `bold ${Math.round(line * (i === 0 ? 0.95 : i === 4 ? 0.7 : 0.9))}px sans-serif`;
-      ctx.fillText(text, gx, gy + (i - 2) * line * 1.1, PANEL.dialSpacing * px - 8);
-    });
+    // Round the gear indicator's window: its name over it, the lever's gate under it.
+    const readoutTop = gy - (GEAR_READOUT.y + GEAR_READOUT.height / 2) * px;
+    const readoutBottom = gy - (GEAR_READOUT.y - GEAR_READOUT.height / 2) * px;
+    ctx.font = `bold ${Math.round(line * 0.95)}px sans-serif`;
+    ctx.fillText('GEAR', gx, readoutTop - line * 0.7, PANEL.dialSpacing * px - 8);
+    ctx.font = `bold ${Math.round(line * 0.8)}px sans-serif`;
+    ctx.fillText('R N 1 2 3 4 5  >', gx, readoutBottom + line * 0.75, PANEL.dialSpacing * px - 8);
     const texture = new CanvasTexture(canvas);
     texture.colorSpace = SRGBColorSpace;
     const face = new Mesh(new PlaneGeometry(PANEL.width, PANEL.height), new MeshBasicMaterial({ map: texture, toneMapped: false }));

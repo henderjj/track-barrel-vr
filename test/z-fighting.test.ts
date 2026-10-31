@@ -172,10 +172,10 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
-  it("on the driver's station (F1.5): its levers at both ends and in their notches, its needles, and the switch strip's caps in and out (F1.17)", async () => {
+  it("on the driver's station (F1.5): its levers at both ends and in their notches, its needles, and the switch strip's caps in and out (F1.17) and its toggles both ways", async () => {
     const { Group } = await import('@iwsdk/core');
     const station = await import('../src/sim/driver-station.js');
-    const { createLamp, createNeedle } = await import('../src/scene-assets/driver-station.scene-asset.js');
+    const { createGearReadout, createLamp, createNeedle } = await import('../src/scene-assets/driver-station.scene-asset.js');
     const hull = cabin.createHull();
     for (const pose of ['min', 'rest', 'max'] as const) {
       const root = new Group();
@@ -197,6 +197,11 @@ describe('no faces that flicker through each other (z-fighting)', () => {
         needle.rotation.z = -station.needleAngle(dial, pose === 'min' ? dial.min : pose === 'max' ? dial.max : (dial.min + dial.max) / 2);
         panel.add(needle);
       });
+      // The gear indicator's window in the gear plate (headset feedback, 31 October 2026).
+      const readout = createGearReadout();
+      station.dialCentre(station.GEAR_PLATE, at);
+      readout.position.set(at[0], at[1] + station.GEAR_READOUT.y, 0);
+      panel.add(readout);
       // The switch strip: the voltmeter's needle, the lamps, and each cap out, half in (a switch on) or fully in.
       const volt = createNeedle();
       station.onSwitchPanel(station.VOLTMETER.x, 0, at);
@@ -211,12 +216,23 @@ describe('no faces that flicker through each other (z-fighting)', () => {
         panel.add(mesh);
       }
       for (const id of station.ENGINE_CONTROL_IDS) {
-        const { spec, x, color } = station.ENGINE_CONTROLS[id];
-        const cap = mechanism.createButtonCap(spec, color);
-        station.onSwitchPanel(x, station.SWITCH_PANEL.capY, at);
-        const depth = pose === 'min' ? 0 : pose === 'rest' ? spec.travel * station.SWITCH_ON_DEPTH : spec.travel;
-        cap.position.set(at[0], at[1], station.CAP_PROUD + spec.travel - depth);
-        panel.add(cap);
+        const c = station.ENGINE_CONTROLS[id];
+        station.onSwitchPanel(c.x, station.SWITCH_PANEL.capY, at);
+        if (c.kind === 'toggle') {
+          // A toggle's nut, and its bat down, straight out or up (headset feedback, 31 October 2026).
+          const nut = mechanism.createToggleNut();
+          nut.position.set(at[0], at[1], 0);
+          panel.add(nut);
+          const bat = mechanism.createToggleBat(c.spec, c.color);
+          bat.position.set(at[0], at[1], 0);
+          bat.rotation.x = pose === 'min' ? c.spec.lean : pose === 'rest' ? 0 : -c.spec.lean;
+          panel.add(bat);
+        } else {
+          const cap = mechanism.createButtonCap(c.spec, c.color);
+          const depth = pose === 'min' ? 0 : pose === 'rest' ? c.spec.travel / 2 : c.spec.travel;
+          cap.position.set(at[0], at[1], station.CAP_PROUD + c.spec.travel - depth);
+          panel.add(cap);
+        }
       }
       root.add(panel);
       root.updateMatrixWorld(true);

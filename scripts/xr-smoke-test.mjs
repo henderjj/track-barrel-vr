@@ -41,6 +41,10 @@
  *     stops it, the automatic box changes up, the Clutch's gears grind
  *     without the clutch and shift with it, the accelerator pulls away and
  *     the sticks brake (F1.16), the boulder stops it, and Back to start parks it;
+ *  6e'. John's headset notes (31 October 2026): the starter pressed by a
+ *     fingertip, the battery toggle flicked, the accelerator only from a hand
+ *     on a tiller, the gear indicator, the hand throttle cruising and Stick
+ *     shift refusing a change down at speed (driverFeedback).
  *  6e. works the driver's station (F1.5): both tillers drive the tank and
  *     the gauges read it, letting go stops it, the gear lever by hand grinds
  *     without the clutch and then shifts, and the hand throttle raises the idle;
@@ -132,9 +136,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function iwsdk(args, input) {
   // A screenshot waits for the page to draw; on a runner at a frame or more
   // a second one through the gunsight has outlasted the browser's 27 s limit
-  // and left the page stuck. Screenshots are pictures, not checks: skip them
-  // when the page is that slow.
-  if (args[1] === 'screenshot' && slowestFrameMs() > 600) {
+  // and left the page stuck. On CI the frames hover around 600 ms, and three
+  // runs in a row lost the browser to a screenshot let through at just under
+  // that (31 October 2026). Screenshots are pictures, not checks: skip them
+  // well before the page is that slow.
+  if (args[1] === 'screenshot' && slowestFrameMs() > 400) {
     console.log(`      (no screenshot for ${args.at(-1)}: the page is drawing a frame every ${Math.round(slowestFrameMs())} ms)`);
     return null;
   }
@@ -1107,6 +1113,158 @@ async function holdEngineButton(id, until, label, timeoutMs = 6000) {
 }
 
 /**
+ * 6e'. John's headset notes on the driver's controls (31 October 2026):
+ *     the starter pressed in by the index fingertip alone cranks and
+ *     starts the engine; on the Full procedure the battery toggle is
+ *     flicked up and down by a fingertip; the right trigger works the
+ *     accelerator only from the hand on a tiller (not a hand off it, nor
+ *     with the menu open); the gear indicator shows the gear engaged; the
+ *     hand throttle drives the tank with the accelerator let go; and with
+ *     Stick shift a change down too low for the speed grinds, the box
+ *     keeping its gear and the lever going back.
+ */
+async function driverFeedback() {
+  const station = () => evalInApp('window.__driverStation.state()');
+  const tank = () => evalInApp('window.__drive.state()');
+  const controls = () => evalInApp('window.__drive.controls()');
+  const box = () => evalInApp('window.__driverStation.engine()');
+  const handle = (id, deg) => evalInApp(`window.__driverStation.handle(${JSON.stringify(id)}${deg === undefined ? '' : `, ${deg}`})`);
+  const squeeze = (device, value) => iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value }] });
+  const trigger = (device, value) => iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: 0, value }] });
+  const handTo = (device, p, duration = 0.4) => iwsdk(['xr', 'animate-to'], { device, position: toOrigin(p), duration });
+  const take = async (device, id) => {
+    handTo(device, handle(id));
+    await sleep(600);
+    squeeze(device, 1);
+    const hand = device.replace('controller-', '');
+    await waitFor(`the ${hand} hand on the ${id}`, () => station().heldBy[id] === hand, 3000, 100).catch(() => {});
+  };
+  // Put the drawn index fingertip at a point: the controller moves without turning, so the tip keeps its offset from
+  // the controller's own position (which isn't its grip space's). Measured where it stands, then corrected once.
+  const settle = () => sleep(Math.max(300, 2.5 * slowestFrameMs()));
+  const tipTo = async (device, target, duration = 0.3) => {
+    const side = device.replace('controller-', '');
+    const goal = toOrigin(target);
+    for (let pass = 0; pass < 2; pass++) {
+      const tip = evalInApp(`window.__mechanisms.tip(${JSON.stringify(side)})`);
+      if (!tip) return false;
+      const at = toOrigin(tip);
+      const pos = iwsdk(['xr', 'get-transform'], { device }).result.position;
+      const to = { x: goal.x - (at.x - pos.x), y: goal.y - (at.y - pos.y), z: goal.z - (at.z - pos.z) };
+      iwsdk(['xr', 'animate-to'], { device, position: to, duration: pass === 0 ? duration : 0.1 });
+      // A slow runner draws a frame every few hundred ms: let one or two land at the point.
+      await sleep((pass === 0 ? duration : 0.1) * 1000);
+      await settle();
+      const now = toOrigin(evalInApp(`window.__mechanisms.tip(${JSON.stringify(side)})`) ?? tip);
+      if (Math.hypot(now.x - goal.x, now.y - goal.y, now.z - goal.z) < 0.002) break;
+    }
+    return true;
+  };
+  const on = (cap, out, up = 0) => [0, 1, 2].map((i) => cap.at[i] + cap.out[i] * out + cap.up[i] * up);
+
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+  evalInApp('(window.__drive.set(null), window.__drive.parkingBrake(false), window.__drive.place(0, 0, 0), window.__drive.engine("stop"), true)');
+  await waitFor('the driver\'s seat', () => station().usable, 5000).catch(() => null);
+
+  // The starter by the index fingertip alone: in front of its cap, then in.
+  const starter = evalInApp('window.__driverStation.cap("starter")');
+  const pointed = await tipTo('controller-right', on(starter, 0.03));
+  await tipTo('controller-right', on(starter, -0.006));
+  const caught = await waitFor('the engine to catch on the fingertip', () => { const t = tank(); return t.running && t; }, 6000).catch(() => tank());
+  const pressed = box();
+  check('The starter pressed in by the right index fingertip, without a squeeze, cranks the engine and it catches',
+    pointed && caught.running && pressed.presses.starter >= 1 && evalInApp('window.__mechanisms.holding().right') === null,
+    `fingertip ${pointed ? 'pointing' : 'not pointing'}, ${pressed.presses.starter} press(es), engine ${caught.running ? 'running' : 'stopped'}`);
+  await tipTo('controller-right', on(starter, 0.06));
+
+  // The battery toggle, flicked up and down by a fingertip (Engine start: Full procedure).
+  evalInApp('(window.__gameMenu.click("row-engine-2"), window.__drive.engine("stop"), true)');
+  await sleep(300);
+  const battery = evalInApp('window.__driverStation.cap("battery")');
+  const was = box();
+  await tipTo('controller-right', on(battery, 0.012, -0.014));
+  await tipTo('controller-right', on(battery, 0.012, 0.016));
+  const up = await waitFor('the battery on', () => { const b = box(); return b.on.battery && b; }, 3000).catch(() => box());
+  await tipTo('controller-right', on(battery, 0.04, 0.016));
+  await tipTo('controller-right', on(battery, 0.012, 0.016));
+  await tipTo('controller-right', on(battery, 0.012, -0.016));
+  const down = await waitFor('the battery off', () => { const b = box(); return !b.on.battery && b; }, 3000).catch(() => box());
+  check('On the Full procedure the battery toggle flicked up by a fingertip goes on (the lamps light), flicked down goes off',
+    !was.on.battery && up.on.battery && up.lamps.oil && !down.on.battery && down.presses.battery === was.presses.battery + 2,
+    `on ${up.on.battery} (lamps ${up.lamps.oil}), then on ${down.on.battery}, ${down.presses.battery - was.presses.battery} flick(s)`);
+  await tipTo('controller-right', on(battery, 0.06));
+  evalInApp('(window.__gameMenu.click("row-engine-1"), window.__drive.engine("start"), true)');
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+
+  // Stick shift in 2nd: the right trigger accelerates from the hand on the right tiller only.
+  evalInApp('(window.__gameMenu.click("row-gearbox-1"), true)');
+  await sleep(300);
+  evalInApp('(window.__drive.set({ gear: 2 }), window.__drive.set(null), true)');
+  await take('controller-left', 'tillerLeft');
+  await take('controller-right', 'tillerRight');
+  trigger('controller-right', 1);
+  const onTiller = await waitFor('the accelerator from the hand on the tiller', () => { const c = controls(); return c.accel > 0.9 && c; }, 3000).catch(() => controls());
+  trigger('controller-right', 0);
+  squeeze('controller-right', 0);
+  await waitFor('the right hand off its tiller', () => station().heldBy.tillerRight === null, 3000, 100).catch(() => null);
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin(on(starter, 0.25)), duration: 0.3 });
+  await sleep(500);
+  trigger('controller-right', 1);
+  await sleep(500);
+  const offTiller = controls();
+  trigger('controller-right', 0);
+  squeeze('controller-left', 0);
+  await menuButtonPress();
+  trigger('controller-right', 1);
+  await sleep(500);
+  const menuOpen = controls();
+  trigger('controller-right', 0);
+  await menuButtonPress();
+  check('The right trigger works the accelerator from the hand on a tiller, not from a hand off it or with the menu open',
+    onTiller.accel > 0.9 && offTiller.accel === 0 && menuOpen.accel === 0,
+    `on the tiller ${onTiller.accel.toFixed(2)}, off it (the other on its tiller) ${offTiller.accel.toFixed(2)}, menu open ${menuOpen.accel.toFixed(2)}`);
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+
+  // The gear indicator, and the hand throttle driving with the accelerator let go.
+  const shows = station();
+  check('The gear indicator shows the gear engaged', shows.readout === String(tank().gear) && shows.readout === '2',
+    `indicator "${shows.readout}" in gear ${tank().gear}`);
+  evalInApp('(window.__drive.place(0, 0, 0), true)');
+  await take('controller-left', 'throttle');
+  handTo('controller-left', handle('throttle', 20));
+  await sleep(600);
+  squeeze('controller-left', 0);
+  const cruising = await waitFor('the tank to cruise on the hand throttle', () => { const t = tank(); return t.speed > 1.2 && t.rpm > 1500 && t; }, 15000).catch(() => tank());
+  check('The hand throttle half open drives the tank in 2nd with the accelerator let go',
+    cruising.speed > 1.2 && controls().accel === 0 && cruising.rpm > 1500,
+    `${cruising.speed.toFixed(1)} m/s at ${cruising.rpm.toFixed(0)} rpm, accelerator ${controls().accel}`);
+
+  // Stick shift: from 3rd at speed, 2nd is refused with a grind, the box stays in 3rd and the lever goes back.
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+  evalInApp('(window.__drive.set({ gear: 3, accel: 1 }), true)');
+  await waitFor('3rd at speed', () => { const t = tank(); return t.gear === 3 && t.speed > 3.2 && t; }, 15000).catch(() => null);
+  const ground = station().grinds;
+  evalInApp('(window.__drive.set({ gear: 2, accel: 1 }), window.__drive.set(null), true)');
+  const refused = await waitFor('the change down refused', () => { const s = station(); const t = tank(); return s.grinds > ground && { s, t }; }, 3000).catch(() => ({ s: station(), t: tank() }));
+  await sleep(500);
+  const after = { s: station(), t: tank() };
+  check('With Stick shift a change down too low for the speed grinds: the box stays in 3rd, the indicator says 3 and the lever goes back',
+    refused.s.grinds > ground && after.t.gear === 3 && after.s.gear === 3 && after.s.readout === '3',
+    `${after.s.grinds - ground} grind(s), box in ${after.t.gear}, lever in ${after.s.gear}, indicator "${after.s.readout}"`);
+  await take('controller-left', 'throttle');
+  handTo('controller-left', handle('throttle', 0));
+  await sleep(600);
+  squeeze('controller-left', 0);
+  evalInApp('(window.__gameMenu.click("row-gearbox-0"), window.__drive.set(null), window.__drive.place(0, 0, 0), true)');
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+}
+
+/**
  * 6d'. Starting the engine (F1.17): the tank begins with its engine
  *     stopped, the oil and generator lamps lit and the voltmeter on the
  *     battery's 24 V; held in, the starter cranks it (the voltmeter
@@ -1489,11 +1647,22 @@ async function theRangeRun() {
   evalInApp("(window.__seats.ask('driver'), window.__drive.place(0, -150, 0), true)");
   await sleep(300);
   await menuButtonPress();
+  // The page notes the run, the sign, the clocks and the tank the first time it sees the countdown: on a slow
+  // runner the ray click and each call to the page take long enough for the 3 s countdown to be over before
+  // the test could look.
+  const read = '({ r: window.__rangeRun.state(), sign: window.__rangeRun.sign, clocks: window.__rangeRun.clock(), tank: window.__drive.state() })';
+  evalInApp(`(() => {
+    window.__countdownSeen = null;
+    const id = setInterval(() => {
+      const v = ${read};
+      if (v.r.phase === 'running' && v.r.clock < 0) { window.__countdownSeen = JSON.parse(JSON.stringify(v)); clearInterval(id); }
+    }, 20);
+    setTimeout(() => clearInterval(id), 20000);
+    return true;
+  })()`);
   await menuClick('menu-run-start');
-  const counting = await waitFor('the countdown', () => { const r = run(); return r.phase === 'running' && r.clock < 0 && r; }, 5000).catch(() => run());
-  const sign = evalInApp('window.__rangeRun.sign');
-  const clocks = evalInApp('window.__rangeRun.clock()');
-  const tank = evalInApp('window.__drive.state()');
+  const seen = await waitFor('the countdown', () => evalInApp('window.__countdownSeen'), 8000).catch(() => evalInApp(read));
+  const { r: counting, sign, clocks, tank } = seen;
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-run-countdown.png'], {});
   check('Practice → Range run → Start parks the tank at the start and counts down on a sign and the run clock',
     counting.phase === 'running' && counting.clock < 0 && /^Range run: [123]$/.test(sign) && clocks[0] === 'Get ready' && Math.hypot(tank.x, tank.z) < 0.5,
@@ -2422,6 +2591,8 @@ async function main() {
 
   // 6e. The driver's station (F1.5).
   await driverStation();
+  // 6e'. John's headset notes on the driver's controls (31 October 2026).
+  await driverFeedback();
   // 6f. The turret (F1.8).
   await layingTheGun();
 
