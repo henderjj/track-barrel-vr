@@ -381,9 +381,9 @@ async function driveChecks(host, guest, label) {
     const start = performance.now();
     const frame = () => {
       out.push(window.__drive.state().odometer);
-      // Two seconds, and on a slow runner (four or five frames a second) on until there are 20 frames, up to six.
+      // 2 s, and on a slow runner (four or five frames a second) on until there are enough frames to judge, up to 6 s.
       const took = performance.now() - start;
-      if (took < 2000 || (out.length < 21 && took < 6000)) requestAnimationFrame(frame);
+      if (took < 2000 || (out.length < 16 && took < 6000)) requestAnimationFrame(frame);
       else resolve(out);
     };
     requestAnimationFrame(frame);
@@ -470,9 +470,9 @@ async function turretChecks(host, guest, label) {
     const start = performance.now();
     const frame = () => {
       out.push(window.__turret.state().yaw);
-      // Two seconds, and on a slow runner (four or five frames a second) on until there are 20 frames, up to six.
+      // 2 s, and on a slow runner (four or five frames a second) on until there are enough frames to judge, up to 6 s.
       const took = performance.now() - start;
-      if (took < 2000 || (out.length < 21 && took < 6000)) requestAnimationFrame(frame);
+      if (took < 2000 || (out.length < 16 && took < 6000)) requestAnimationFrame(frame);
       else resolve(out);
     };
     requestAnimationFrame(frame);

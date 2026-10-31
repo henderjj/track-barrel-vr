@@ -29,6 +29,7 @@ import {
   POWER_GRIP,
   STATION,
   STATION_CONTROLS,
+  type StationMount,
   TRAVERSE_CRANK,
   TRUNNION,
 } from '../src/sim/turret.js';
@@ -91,7 +92,8 @@ function turretWith(yaw: number, elevation: number, turn: number, load: Loading 
   for (const key of STATION_CONTROLS) {
     const mount = new Group();
     mount.position.set(...STATION[key].at);
-    mount.rotation.x = STATION[key].tilt;
+    const m: StationMount = STATION[key];
+    mount.rotation.set(m.tilt, m.yaw ?? 0, 0, 'YXZ');
     const part = parts[key];
     if (key === 'twist') part.rotation.y = Math.max(-POWER_GRIP.max, Math.min(POWER_GRIP.max, turn / 3));
     else part.rotation.z = turn;

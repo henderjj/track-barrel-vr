@@ -129,6 +129,14 @@ const SQUEEZE = 1; // gamepad button index for proximity grab
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function iwsdk(args, input) {
+  // A screenshot waits for the page to draw; on a runner at a frame or more
+  // a second one through the gunsight has outlasted the browser's 27 s limit
+  // and left the page stuck. Screenshots are pictures, not checks: skip them
+  // when the page is that slow.
+  if (args[1] === 'screenshot' && slowestFrameMs() > 600) {
+    console.log(`      (no screenshot for ${args.at(-1)}: the page is drawing a frame every ${Math.round(slowestFrameMs())} ms)`);
+    return null;
+  }
   const argv = [CLI, ...args];
   if (input !== undefined) argv.push('--input-json', JSON.stringify(input));
   let stdout;
@@ -137,6 +145,7 @@ function iwsdk(args, input) {
     const reply = ask({ kind: 'cli', argv: argv.slice(1) });
     if (reply.error) throw new Error(`iwsdk ${args.join(' ')}: ${reply.error}`);
     stdout = reply.stdout;
+    stderr = reply.stderr ?? '';
   } else try {
     stdout = execFileSync(process.execPath, argv, {
       cwd: ROOT,
@@ -152,9 +161,19 @@ function iwsdk(args, input) {
   try {
     parsed = JSON.parse(stdout);
   } catch {
-    throw new Error(`iwsdk ${args.join(' ')}: unparseable output\n${stdout}${stderr ? `\nstderr: ${stderr.slice(-2000)}` : ''}`);
+    // A screenshot is a picture for people to look at, not a check: on a slow
+    // runner one has failed with the page still working, so say so and go on.
+    if (args[1] === 'screenshot') {
+      console.log(`      (no screenshot for ${args.at(-1)}: ${`${stdout}${stderr}`.replace(/\s+/g, ' ').slice(0, 600)})`);
+      return null;
+    }
+    throw new Error(`iwsdk ${args.join(' ')}: unparseable output\n${stdout}${stderr ? `\nstderr: ${stderr.slice(0, 2000)}` : ''}`);
   }
   if (!parsed.ok) {
+    if (args[1] === 'screenshot') {
+      console.log(`      (no screenshot for ${args.at(-1)}: ${JSON.stringify(parsed.error).slice(0, 600)})`);
+      return null;
+    }
     throw new Error(`iwsdk ${args.join(' ')} failed: ${JSON.stringify(parsed.error)}`);
   }
   return parsed.data;
@@ -163,8 +182,15 @@ function iwsdk(args, input) {
 /** Evaluate an expression in the app frame (needs --allow-browser-automation). */
 function evalInApp(expression) {
   if (worker) {
-    const reply = ask({ kind: 'eval', expression });
+    let reply = ask({ kind: 'eval', expression });
+    // Straight after a screenshot that timed out, the page can still be busy
+    // and an evaluation through the CLI comes back empty: try again.
+    for (let retry = 0; retry < 6 && !reply.error && !reply.stdout; retry++) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
+      reply = ask({ kind: 'eval', expression });
+    }
     if (reply.error) throw new Error(`evaluating ${expression.slice(0, 80)}: ${reply.error}`);
+    if (!reply.stdout) throw new Error(`evaluating ${expression.slice(0, 80)}: no answer`);
     const data = JSON.parse(reply.stdout);
     if (!data.ok) throw new Error(`iwsdk browser run failed: ${JSON.stringify(data.error)}`);
     return data.data.result?.value ?? data.data.result;
@@ -195,7 +221,10 @@ function check(name, pass, detail) {
 }
 
 async function waitFor(label, fn, timeoutMs = 60000, intervalMs = 500) {
-  const deadline = Date.now() + timeoutMs;
+  // Timeouts are set for a page drawing a few frames a second; on a runner
+  // drawing slower than that (software rendering, up to a second a frame),
+  // allow proportionally longer.
+  const deadline = Date.now() + timeoutMs * Math.min(4, Math.max(1, slowestFrameMs() / 300));
   let lastError;
   while (Date.now() < deadline) {
     try {
@@ -255,6 +284,12 @@ function elementPosition(panel, id) {
   return evalInApp(`(() => { const w = window.__debug.world; const p = w.getSceneObject('${panel}').getElementById('${id}').getWorldPosition(w.player.head.position.clone()); return [p.x, p.y, p.z]; })()`);
 }
 
+/** Set once XR has started, so the app's frame times can be read. */
+let appRunning = false;
+
+/** The slowest frame a ray click has had to wait for so far, to log when it grows. */
+let slowestClickFrameMs = 400;
+
 /** Point the right controller's ray at `target` from a little in front of the head, and pull the trigger. */
 async function rayClick(target) {
   const from = [target[0] + 0.2, target[1] - 0.45, target[2] + 0.55];
@@ -263,12 +298,52 @@ async function rayClick(target) {
   iwsdk(['xr', 'look-at'], { device: 'controller-right', target: o });
   // Clicks closer together than the slow CLI calls used to space them (a
   // couple of seconds) were sometimes lost on CI runners, so aim, wait,
-  // click and wait about as long as before. The trigger is held for half a
-  // second: software rendering can drop to a few frames a second with the
-  // menu open, and a press shorter than a frame is never seen.
-  await sleep(1000);
-  iwsdk(['xr', 'select'], { device: 'controller-right', duration: 0.5 });
-  await sleep(1000);
+  // click and wait about as long as before. Software rendering can drop to a
+  // frame or two a second with the menu open, and a press shorter than a
+  // frame is never seen, so the trigger is held for two and a half of the
+  // slowest recent frames (at least half a second; a frame can run longer
+  // than the last second's slowest), the waits stretched to match. The ray
+  // then needs a longer click window than IWSDK's 0.8 s: relaxRayClicks()
+  // opens it to 5 s.
+  const frameMs = slowestFrameMs();
+  const holdMs = Math.min(4000, Math.max(500, 2.5 * frameMs));
+  const settleMs = Math.max(1000, 3 * frameMs);
+  if (frameMs > slowestClickFrameMs + 100) {
+    slowestClickFrameMs = frameMs;
+    console.log(`      (ray clicks: frames up to ${Math.round(frameMs)} ms, so the trigger is held ${Math.round(holdMs)} ms)`);
+  }
+  await sleep(settleMs);
+  iwsdk(['xr', 'select'], { device: 'controller-right', duration: holdMs / 1000 });
+  await sleep(holdMs + settleMs);
+}
+
+/**
+ * Let a ray press count as a click for up to 5 s, on both controllers.
+ * IWSDK's ray pointer takes a press as a click only when its release lands
+ * within 0.8 s (by frame time). Software rendering on a CI runner can take
+ * 0.7 s a frame, so a press seen on one frame and its release on the next
+ * but one was dropped. A headset draws 72 frames a second, so this only
+ * matters for the emulator. Call again after any reload.
+ */
+function relaxRayClicks() {
+  evalInApp(`(() => {
+    const pointers = window.__debug.world.input.xr.multiPointers;
+    for (const side of ['left', 'right']) pointers[side].ray.pointer.options.clickThresholdMs = 5000;
+    return true;
+  })()`);
+}
+
+/** The slowest frame the page drew in its last full second, in ms (0 if not known yet). */
+function slowestFrameMs() {
+  // Not before the app is up: an evaluation during a reload can wait 20 s.
+  if (!appRunning) return 0;
+  try {
+    const ms = Number(evalInApp('window.__perf?.recorder.latest.frameMax ?? 0'));
+    // A frame over 2 s is a stall (a reload, a screenshot), not the pace to click at.
+    return Number.isFinite(ms) ? Math.min(ms, 2000) : 0;
+  } catch {
+    return 0;
+  }
 }
 
 /** The game menu's tab each of its elements is on: the page (page-<tab> in public/ui/menu.uikitml) it sits in. */
@@ -882,9 +957,15 @@ async function mechanismBench() {
 }
 
 async function menuButtonPress() {
+  const wasOpen = evalInApp('window.__gameMenu.open');
+  // A press shorter than a frame is never seen: hold Y for two and a half of
+  // the slowest recent frames (at least 0.3 s), then wait for the menu to
+  // open or close.
+  const holdMs = Math.max(300, 2.5 * slowestFrameMs());
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-left', buttons: [{ index: 4, value: 1 }] });
-  await sleep(300);
+  await sleep(holdMs);
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-left', buttons: [{ index: 4, value: 0 }] });
+  await waitFor('the game menu to open or close', () => evalInApp('window.__gameMenu.open') !== wasOpen, 3000).catch(() => null);
   await sleep(300);
 }
 
@@ -1575,9 +1656,9 @@ async function theDriversPeriscope() {
  *     the gunner's seat with a sign; the power grip twisted left traverses
  *     the turret left and the gunner's play space turns with it (the head
  *     stays put in the turret), the vignette darkening; let go, it stops;
- *     a turn of the crank traverses about 2°; a quarter turn clockwise of
- *     the elevation handwheel raises the gun about 0.75° and the trigger
- *     bar on its handle pulls; Forward puts it back.
+ *     a turn of the crank traverses about 2°; a turn clockwise of the
+ *     sideways elevation handwheel raises the gun about 0.75° and the
+ *     trigger bar on its handle pulls; Forward puts it back.
  */
 async function layingTheGun() {
   const turret = () => evalInApp('window.__turret.state()');
@@ -1659,20 +1740,20 @@ async function layingTheGun() {
     cranked.turns > 0.9 && afterCrank - yaw0 > 1.6 && afterCrank - yaw0 < 2.9, `${cranked.turns.toFixed(2)} turns: ${yaw0.toFixed(2)}° to ${afterCrank.toFixed(2)}°`);
   await letGoOf('crank');
 
-  // The elevation handwheel: taken by its handle and turned a quarter clockwise, the gun rises.
+  // The elevation handwheel: taken by its handle and turned once clockwise, the gun rises.
   const e0 = turret().elevationDeg;
   await take('elevation');
   const rr = 0.08;
   const out = 0.03;
-  for (let k = 1; k <= 6; k++) {
+  for (let k = 1; k <= 24; k++) {
     const a = -(k * Math.PI) / 12;
     iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('elevation', [-rr * Math.sin(a), rr * Math.cos(a), out])), duration: 0.15 });
     await sleep(200);
   }
-  const raised = await waitFor('the gun to rise', () => { const s = turret(); return s.elevationDeg - e0 > 0.4 && s; }, 4000).catch(() => turret());
+  const raised = await waitFor('the gun to rise', () => { const s = turret(); return s.elevationDeg - e0 > 0.6 && s; }, 4000).catch(() => turret());
   const drawn = evalInApp('window.__turret.drawn()');
-  check('A quarter turn clockwise of the elevation handwheel raises the gun about 0.75°',
-    raised.elevationDeg - e0 > 0.4 && raised.elevationDeg - e0 < 1.0 && Math.abs(drawn.elevation - raised.elevationDeg) < 0.05,
+  check('A turn clockwise of the elevation handwheel raises the gun about 0.75°',
+    raised.elevationDeg - e0 > 0.6 && raised.elevationDeg - e0 < 0.9 && Math.abs(drawn.elevation - raised.elevationDeg) < 0.05,
     `gun ${e0.toFixed(2)}° to ${raised.elevationDeg.toFixed(2)}°, drawn ${drawn.elevation.toFixed(2)}°`);
   // The trigger bar on its handle pulls like the power grip's trigger.
   const pressesBefore = state('elevation').presses;
@@ -1931,6 +2012,8 @@ async function main() {
   // from any earlier session.
   iwsdk(['xr', 'set-device-state'], {});
   iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value: 0 }] });
+  relaxRayClicks();
+  appRunning = true;
   check('XR session active', iwsdk(['xr', 'status'], {}).result.sessionActive);
   await sleep(500);
   await startScreenAndMenu();

@@ -34,16 +34,57 @@ export const POWER_TRAVERSE_TOP = MAX_TRAVERSE;
 
 /** Turret traverse for one turn of the manual crank: slow and precise. */
 export const CRANK_TRAVERSE_PER_TURN = 2 * DEG;
-/** Gun elevation for one turn of the elevation handwheel. */
-export const ELEVATION_PER_TURN = 3 * DEG;
+/**
+ * Gun elevation for one turn of the elevation handwheel: fine enough that
+ * laying between the range's targets (a few tenths of a degree apart) takes
+ * a turn or two, as John asked after his headset check (it was 3°).
+ */
+export const ELEVATION_PER_TURN = 0.75 * DEG;
 
 /** The gun's trunnions, which it elevates about: in the front plate, at the gun's height, turret space (x 0), m. */
 export const TRUNNION = { y: GUN.y, z: TURRET.front } as const;
 
-/** Where a control sits in turret space, and its tilt about X (a wheel tilted back to face the gunner). */
+/**
+ * Where a control sits in turret space, its tilt about X (a wheel tilted
+ * back to face the gunner) and its turn about Y (a wheel turned to face
+ * sideways), applied turn first: Three.js's 'YXZ' order.
+ */
 export interface StationMount {
   at: Vec3;
   tilt: number;
+  yaw?: number;
+}
+
+/** A point in a mount's space, in turret space, into `out`. */
+export function mountToTurret(mount: StationMount, p: readonly number[], out: Vec3): Vec3 {
+  const ct = Math.cos(mount.tilt);
+  const st = Math.sin(mount.tilt);
+  const cy = Math.cos(mount.yaw ?? 0);
+  const sy = Math.sin(mount.yaw ?? 0);
+  // Tilt about X, then turn about Y.
+  const y = p[1] * ct - p[2] * st;
+  const z = p[1] * st + p[2] * ct;
+  out[0] = mount.at[0] + p[0] * cy + z * sy;
+  out[1] = mount.at[1] + y;
+  out[2] = mount.at[2] - p[0] * sy + z * cy;
+  return out;
+}
+
+/** A turret-space point in a mount's space, into `out` (the inverse of mountToTurret). */
+export function turretToMount(mount: StationMount, p: readonly number[], out: Vec3): Vec3 {
+  const ct = Math.cos(mount.tilt);
+  const st = Math.sin(mount.tilt);
+  const cy = Math.cos(mount.yaw ?? 0);
+  const sy = Math.sin(mount.yaw ?? 0);
+  const dx = p[0] - mount.at[0];
+  const dy = p[1] - mount.at[1];
+  const dz = p[2] - mount.at[2];
+  const x = dx * cy - dz * sy;
+  const z = dx * sy + dz * cy;
+  out[0] = x;
+  out[1] = dy * ct + z * st;
+  out[2] = -dy * st + z * ct;
+  return out;
 }
 
 /**
@@ -60,18 +101,48 @@ export const STATION = {
   // The elevation handwheel at the traverse crank's height: turned by a handle, its handle's highest point is no nearer the eyes than the crank's.
   // Both 5 cm higher than at first for an easy reach seated, and the crank 9 cm further in so it and the hand on it
   // turn clear of the turret ring (John's headset check, docs/interior.md).
-  elevation: { at: [0.29, 1.86, -0.6], tilt: -20 * DEG },
+  // The elevation handwheel faces sideways, its handle towards the gunner, as on the Sherman (John's headset check).
+  elevation: { at: [0.29, 1.86, -0.6], tilt: 0, yaw: 90 * DEG },
   crank: { at: [0.52, 1.86, -0.52], tilt: -20 * DEG },
   twist: { at: [0.71, 1.63, -0.45], tilt: 0 },
 } as const satisfies Record<string, StationMount>;
 export type StationControl = keyof typeof STATION;
+
+/** The elevating pinion's middle, turret space: at the top of the elevation handwheel's gearbox column, under the breech's right edge. */
+const PINION: Vec3 = [0.245, 1.9, -0.8];
+const PINION_RADIUS = 0.02;
+/** The toothed arc's half-width out from its middle line, m: the pinion sits 3 mm off its outer edge, its teeth reaching in to mesh. */
+const ARC_HALF = 0.012;
+const ARC_RADIUS = Math.hypot(PINION[1] - GUN.y, PINION[2] - TURRET.front) - ARC_HALF - 0.003 - PINION_RADIUS;
+/** The pinion's direction from the trunnions, as `atan2(z, y)` (turning the gun by `e` about X adds `e` to it). */
+const PINION_ANGLE = Math.atan2(PINION[2] - TURRET.front, PINION[1] - GUN.y);
+
+/**
+ * The elevating gear the elevation handwheel drives, as on the Sherman
+ * (figure 13): a toothed arc on the gun's cradle, centred on the trunnions
+ * in the plane x = `x`, and the pinion meshing with it at the top of the
+ * handwheel's gearbox column. The arc (gun space, angles as `atan2(z, y)`)
+ * runs far enough each way to stay on the pinion at every elevation.
+ */
+export const ELEVATING_GEAR = {
+  x: PINION[0],
+  pinion: PINION,
+  pinionRadius: PINION_RADIUS,
+  radius: ARC_RADIUS,
+  half: ARC_HALF,
+  from: PINION_ANGLE - MAX_ELEVATION - 5 * DEG,
+  to: PINION_ANGLE - MIN_ELEVATION + 5 * DEG,
+} as const;
 export const STATION_CONTROLS = Object.keys(STATION) as StationControl[];
 
 /**
- * The elevation handwheel, turned by its handle like a crank (as on a Tiger
- * or a T-34): clockwise (as the gunner sees it) raises the gun, and it
- * stops at the gun's limits. A trigger bar along the handle fires the gun,
- * so the gunner can fire while laying it, as on the Tiger I.
+ * The elevation handwheel, turned by its handle like a crank: clockwise (as
+ * the gunner sees it) raises the gun, and it stops at the gun's limits. As
+ * on the Sherman (TM 9-754, figure 13) it faces sideways, towards the
+ * gunner, on a gearbox whose column carries the elevating pinion up to the
+ * toothed elevating arc on the gun (ELEVATING_GEAR). A trigger bar along the
+ * handle fires the gun, so the gunner can fire while laying it, as on the
+ * Tiger I.
  */
 export const ELEVATION_WHEEL: WheelSpec = {
   radius: 0.08,
