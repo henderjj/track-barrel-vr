@@ -5,10 +5,13 @@ import { createFingerCurls } from '../src/sim/hand-pose.js';
 import { HoldKind, LOCK_EASE, LockedHand, lockResolvers } from '../src/systems/hand-lock.js';
 
 const HANDLE = new Vector3(0.4, 1.0, -0.5);
-/** Hold kinds for the tests' own handles (a game adds its kinds to HoldKind). */
-const CRANK = 13;
-const ROPE = 14;
-const UNREGISTERED = 15;
+/**
+ * Hold kinds for the tests' own handles (a game adds its kinds to HoldKind):
+ * past the 4 bits a pose packet sends, so they never stand for a real control.
+ */
+const CRANK = 101;
+const ROPE = 102;
+const UNREGISTERED = 103;
 
 /** A crank-like handle running along X at HANDLE. */
 function registerHandle(): void {

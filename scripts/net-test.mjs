@@ -357,6 +357,12 @@ async function driveChecks(host, guest, label) {
   await guest.page.evaluate(() => window.__drive.set(null));
   check(`The guest driver's starter cranks the host's engine and it catches, both seeing it run (${label})`, started !== null && cranked,
     started ? `${started.h.rpm.toFixed(0)} rpm on the host, ${started.g.rpm.toFixed(0)} drawn by the guest` : JSON.stringify(await tank(host)));
+  // F1.18: the guest driver's parking brake reaches the host: the tank stays put and the host's lamp lights.
+  await guest.page.evaluate(() => window.__drive.set({ left: 1, right: 1, parkingBrake: true }));
+  await new Promise((r) => setTimeout(r, 1500));
+  const held = { t: await tank(host), lamp: await host.page.evaluate(() => window.__driverStation.engine().lamps.brake) };
+  check(`The guest driver's parking brake holds the host's tank against the tillers, the host's lamp lit (${label})`,
+    Math.abs(held.t.speed) < 0.01 && held.lamp, `${held.t.speed.toFixed(2)} m/s, lamp ${held.lamp}`);
   await guest.page.evaluate(() => window.__drive.set({ left: 1, right: 1 }));
   const going = await waitFor('the host\'s tank to pull away', async () => {
     const [h, g] = await Promise.all([tank(host), tank(guest)]);
@@ -979,7 +985,9 @@ async function botChecks(browser) {
   await me.page.evaluate(() => window.__drive.reset());
   await waitFor('the tank parked', async () => Math.hypot((await tank()).x, (await tank()).z) < 0.01, 8000).catch(() => null);
   // F1.17: the engine stopped and cold, the bot starts it in the Full procedure before it drives.
+  // F1.18: and its parking brake on, which it lets off.
   await me.page.evaluate(() => { window.__drive.engine('stop'); return true; });
+  await bot.page.evaluate(() => { window.__drive.parkingBrake(true); return true; });
   const botStarted = await waitFor('the bot to start the engine', async () => {
     const t = await tank();
     return t.running ? t : null;
@@ -988,6 +996,13 @@ async function botChecks(browser) {
   check('Practice crewmate: with the engine stopped, its hand works the instrument box (Full procedure) and starts it',
     botStarted !== null && botBox.presses.starter >= 1 && botBox.on.battery && botBox.on.ignition,
     `${botStarted ? `running at ${botStarted.rpm.toFixed(0)} rpm` : 'not started'}, box ${JSON.stringify(botBox)}`);
+  const brakeOff = await waitFor('the bot to let off the parking brake', async () => {
+    await crewHolds();
+    const st = await bot.page.evaluate(() => window.__driverStation.state());
+    return !st.parkingBrake && holdsSeen.has(13) ? st : null;
+  }, 20000).catch(() => null);
+  check('Practice crewmate: lets off the parking brake by its lever (the player sees its hand on it)', brakeOff !== null,
+    `hold kinds seen ${[...holdsSeen].sort((a, b) => a - b).join(', ')}, brake ${brakeOff ? 'off' : 'still on'}`);
   await me.page.evaluate(() => window.__gameMenu.click('call-advance'));
   const advancing = await waitFor('the bot to drive the tank forwards', async () => {
     await crewHolds();

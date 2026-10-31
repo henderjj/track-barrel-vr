@@ -48,8 +48,12 @@ export interface EngineControls {
   start: EngineStart;
 }
 
-/** Why the engine last stalled: nothing yet, bogged by the clutch, idling too slowly cold, the choke in too soon, or flooded. */
-export const STALL_CAUSES = ['none', 'bog', 'cold', 'choke', 'flood'] as const;
+/**
+ * Why the engine last stalled: nothing yet, bogged by the clutch, idling too
+ * slowly cold, the choke in too soon, flooded, or the clutch let out against
+ * the parking brake (F1.18).
+ */
+export const STALL_CAUSES = ['none', 'bog', 'cold', 'choke', 'flood', 'brake'] as const;
 export type StallCause = (typeof STALL_CAUSES)[number];
 
 /** The engine's part of the tank's state (all of it in TankDrive). */
@@ -238,7 +242,7 @@ function run(s: EngineState, c: GearboxControls & EngineControls, dt: number, fu
   if (s.bogging) {
     s.bogTime += dt;
     if (s.bogTime >= BOG_STALL_SECONDS + BOG_STALL_ACCEL * demandOf(c)) {
-      stopEngine(s, 'bog');
+      stopEngine(s, c.parkingBrake ? 'brake' : 'bog');
       return;
     }
   } else {

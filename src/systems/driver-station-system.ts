@@ -30,6 +30,8 @@ import {
   needleAngle,
   onSwitchPanel,
   PANEL,
+  parkingBrakeAngle,
+  parkingBrakeOf,
   GEAR_PLATE,
   SWITCH_ON_DEPTH,
   SWITCH_PANEL,
@@ -61,12 +63,14 @@ const NAMES: Record<DriverControlId, string> = {
   tillerRight: 'driver-tiller-right',
   gear: 'gear-lever',
   throttle: 'hand-throttle',
+  brake: 'parking-brake',
 };
 const KINDS: Record<DriverControlId, number> = {
   tillerLeft: HoldKind.TillerLeft,
   tillerRight: HoldKind.TillerRight,
   gear: HoldKind.GearLever,
   throttle: HoldKind.HandThrottle,
+  brake: HoldKind.ParkingBrake,
 };
 
 /** Each engine control's `handUse` name (F1.17): pressed, not held, so HoldKind.None. */
@@ -105,6 +109,9 @@ interface StationDebug {
     right: number;
     gear: number;
     throttle: number;
+    parkingBrake: boolean;
+    /** The parking brake's pawl is lifted (the holding hand's trigger). */
+    brakeFreed: boolean;
     tillersHeld: boolean;
     grinds: number;
     shifts: number;
@@ -233,6 +240,7 @@ export class DriverStationSystem extends createSystem({}) {
         return {
           angles, heldBy,
           left: drive.left, right: drive.right, gear: drive.gear, throttle: drive.throttle, tillersHeld: drive.tillersHeld,
+          parkingBrake: drive.parkingBrake, brakeFreed: self.levers.brake.freed,
           grinds: self.grinds, shifts: self.shifts, usable: self.usable(),
         };
       },
@@ -276,7 +284,7 @@ export class DriverStationSystem extends createSystem({}) {
 
   update(delta: number): void {
     const dt = Math.min(delta, 0.1);
-    const { tillerLeft, tillerRight, gear, throttle } = this.levers;
+    const { tillerLeft, tillerRight, gear, throttle, brake } = this.levers;
     const shown = shownDriverControls();
     const state = shownDriverState();
     const k = 1 - Math.exp(-FOLLOW_RATE * dt);
@@ -305,6 +313,9 @@ export class DriverStationSystem extends createSystem({}) {
       drive.left = tillerLeft.demand();
       drive.right = tillerRight.demand();
       drive.throttle = throttleOf(throttle.angle);
+      // The parking brake: the lever in a hand sets it; key P (or a test) sets it, and the lever goes there.
+      if (brake.anyHeld) drive.parkingBrake = parkingBrakeOf(brake.angle);
+      else if (parkingBrakeOf(brake.angle) !== drive.parkingBrake) brake.angle = parkingBrakeAngle(drive.parkingBrake);
       // The sticks or keys drive while no hand is on a tiller: draw the tillers where they would be.
       if (!held && shown) {
         tillerLeft.angle = tillerAngle(shown.left);
@@ -322,11 +333,13 @@ export class DriverStationSystem extends createSystem({}) {
         drive.battery = shown.battery;
         drive.ignition = shown.ignition;
         drive.choke = shown.choke;
+        drive.parkingBrake = shown.parkingBrake;
         // The crewmate drives (or nobody does): the levers follow the controls the tank runs on.
         tillerLeft.angle += (tillerAngle(shown.left) - tillerLeft.angle) * k;
         tillerRight.angle += (tillerAngle(shown.right) - tillerRight.angle) * k;
         gear.angle += (GEAR_ANGLES[leverGear(shown, state)] - gear.angle) * k;
         throttle.angle += (throttleAngle(shown.throttle) - throttle.angle) * k;
+        brake.angle += (parkingBrakeAngle(shown.parkingBrake) - brake.angle) * k;
       }
     }
     this.wasRunning = state?.running ?? this.wasRunning;
@@ -435,7 +448,7 @@ export class DriverStationSystem extends createSystem({}) {
     const stopped = s ? !s.running : true;
     this.lampLit.oil = power && stopped;
     this.lampLit.generator = power && stopped;
-    this.lampLit.brake = false;
+    this.lampLit.brake = power && (mine ? drive.parkingBrake : shown?.parkingBrake ?? false);
     for (const lamp of LAMPS) this.lamps[lamp.id].color.setHex(lamp.color).multiplyScalar(this.lampLit[lamp.id] ? 1 : LAMP_DARK);
     const target = s ? volts(s) : 0;
     this.voltsShown += (target - this.voltsShown) * (1 - Math.exp(-VOLT_RATE * dt));

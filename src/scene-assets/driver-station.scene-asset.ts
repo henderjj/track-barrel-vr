@@ -2,6 +2,7 @@ import { BoxGeometry, CylinderGeometry, Mesh, MeshBasicMaterial } from '@iwsdk/c
 import { mergeParts, type Part } from './lowpoly.js';
 import { HULL, VISION_SLIT } from '../sim/cabin.js';
 import {
+  BRAKE_POST,
   DRIVER_CONTROLS,
   GEAR_ANGLES,
   GEARBOX,
@@ -18,7 +19,7 @@ import { NEUTRAL, REVERSE } from '../sim/gearbox.js';
 /**
  * The driver's station (F1.5, docs/driver-station.md), the parts that
  * don't move: the tillers' pedestals, the gear lever's gate on the
- * gearbox's hump, the hand throttle's quadrant on the left wall, the
+ * gearbox's hump, the parking brake's post (F1.18), the hand throttle's quadrant on the left wall, the
  * instrument box on the left wall above it, and the slit's frame and brow
  * pad. They are merged into the hull's mesh (cabin.scene-asset.ts). The
  * levers and the switch strip's caps are the mechanism kit's (`createLever`,
@@ -70,6 +71,10 @@ export function driverStationParts(): Part[] {
   const reach = 0.075;
   parts.push(box([0.02, PROUD * 2.5, 0.02], [gx + 0.045, gy, gz - Math.sin(GEAR_ANGLES[NEUTRAL]) * reach], NEUTRAL_MARK));
   parts.push(box([0.02, PROUD * 2.5, 0.02], [gx - 0.045, gy, gz - Math.sin(GEAR_ANGLES[REVERSE]) * reach], REVERSE_MARK));
+  // The parking brake's post from the floor (sunk 1 cm into it), its pivot inside the top.
+  const [bx, by, bz] = DRIVER_CONTROLS.brake.pivot;
+  const postTop = by + 0.025;
+  parts.push(box([2 * BRAKE_POST.halfWidth, postTop + 0.01, BRAKE_POST.depth], [bx, (postTop - 0.01) / 2, bz], OLIVE_DARK));
   // The hand throttle's quadrant, sunk 1 cm into the left wall, its pivot inside the top.
   const [tx, ty, tz] = DRIVER_CONTROLS.throttle.pivot;
   const q = THROTTLE_QUADRANT;

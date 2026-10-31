@@ -29,7 +29,7 @@ import {
   twistForDemand,
   wheelGrip,
 } from '../sim/crew-bot.js';
-import { DRIVER_TILLER, HAND_THROTTLE, throttleAngle, tillerAngle } from '../sim/driver-station.js';
+import { DRIVER_TILLER, HAND_THROTTLE, PARKING_BRAKE, throttleAngle, tillerAngle } from '../sim/driver-station.js';
 import type { TwistGrip, Wheel } from '../sim/mechanism.js';
 import { sightLimit } from '../sim/range.js';
 import {
@@ -416,7 +416,7 @@ export class CrewBotSystem extends createSystem({}) {
 
   private driverLine(): string {
     const t = this.task;
-    if (t === null) return this.driver.describe();
+    if (t === null) return drive.parkingBrake ? 'letting off the parking brake' : this.driver.describe();
     if (t.kind === 'throttle') return 'setting the hand throttle';
     return t.id === 'starter' ? 'starting the engine' : `switching the ${t.id} ${t.id === 'choke' ? (drive.choke ? 'in' : 'out') : 'on'}`;
   }
@@ -455,10 +455,19 @@ export class CrewBotSystem extends createSystem({}) {
       { battery: drive.battery, ignition: drive.ignition, choke: drive.choke, throttle: drive.throttle, start: engineStart() },
       this.time - this.caughtAt,
     );
+    const left = this.hands.left;
+    left.trigger = 0;
     if (this.task) {
       const t = this.task;
       if (t.kind === 'press') this.onControl('left', ENGINE_NAMES[t.id], null);
       else this.onControl('left', 'hand-throttle', leverGrip(HAND_THROTTLE, throttleAngle(t.to), this.p));
+      this.onControl('right', TILLER.right, leverGrip(DRIVER_TILLER, tillerAngle(0), this.p));
+      return;
+    }
+    if (drive.parkingBrake) {
+      // The parking brake on (F1.18): the left hand takes its lever, holds the release (the trigger) and pushes it down.
+      this.onControl('left', 'parking-brake', leverGrip(PARKING_BRAKE, PARKING_BRAKE.max, this.p));
+      left.trigger = handUse.left === 'parking-brake' ? 1 : 0;
       this.onControl('right', TILLER.right, leverGrip(DRIVER_TILLER, tillerAngle(0), this.p));
       return;
     }

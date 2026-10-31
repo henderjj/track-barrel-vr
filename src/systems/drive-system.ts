@@ -86,6 +86,8 @@ export const drive = {
   choke: false,
   starter: false,
   siren: false,
+  /** The parking brake (F1.18): its lever pulled up into the ratchet, or key P. */
+  parkingBrake: false,
 };
 
 const SEND_HZ = 45;
@@ -112,6 +114,7 @@ function copyControls(from: DriverControls, to: DriverControls): void {
   to.choke = from.choke;
   to.siren = from.siren;
   to.start = from.start;
+  to.parkingBrake = from.parkingBrake;
 }
 
 /** What Back to start, a Practice shortcut or a run does with the engine: stop it (cold), leave it as it is, or start it warm. */
@@ -253,6 +256,8 @@ interface DriveDebug {
   reset(engine?: EngineReset): void;
   /** Host only: start the engine warm (as the Practice shortcuts do) or stop it, cold (tests). */
   engine(action: 'start' | 'stop'): void;
+  /** Set the parking brake on this page, as its lever (or key P) would (F1.18). */
+  parkingBrake(on: boolean): void;
   /** Host only: put the tank at rest at (x, z) facing `heading` (tests and Practice). */
   place(x: number, z: number, heading: number): void;
   /** Where a world-space point is drawn, in hull space. */
@@ -331,6 +336,7 @@ export class DriveSystem extends createSystem({}) {
   private time = 0;
   private wasGrinding = false;
   private wasBogging = false;
+  private wasPushingBrake = false;
   /** The stalls counted when last looked at (-1 before the first), and how long the starter has been held without turning, s. */
   private stallsSeen = -1;
   private starterHeld = 0;
@@ -391,6 +397,7 @@ export class DriveSystem extends createSystem({}) {
       else if (key === 'b' && !event.repeat) drive.battery = !drive.battery;
       else if (key === 'i' && !event.repeat) drive.ignition = !drive.ignition;
       else if (key === 'c' && !event.repeat) drive.choke = !drive.choke;
+      else if (key === 'p' && !event.repeat) drive.parkingBrake = !drive.parkingBrake;
       else if (key === 'e') shiftBy(1);
       else if (key === 'q') shiftBy(-1);
       else this.keys.add(key);
@@ -440,6 +447,9 @@ export class DriveSystem extends createSystem({}) {
           self.sim.rpm = 0;
           copyTankDrive(self.sim, self.shown);
         }
+      },
+      parkingBrake: (on) => {
+        drive.parkingBrake = on;
       },
       place: (x, z, heading) => self.park(x, z, heading),
       drawnAt: (x, y, z) => (self.ground ? self.ground.localToWorld(new Vector3(x, y, z)).toArray() : []),
@@ -533,7 +543,16 @@ export class DriveSystem extends createSystem({}) {
       stick: ['R trigger: go. Tillers: brakes. R stick: gears', 'W: go, S A D: brakes, E Q: gears'],
       clutch: ['Hold L trigger (clutch), flick R stick to shift', 'W: go, S A D: brakes, Shift: clutch, E Q: gears'],
     };
+    if (this.controls.parkingBrake) {
+      this.sayBrakeOn();
+      return;
+    }
     this.say(`Driving: ${GEARBOX_NAMES[this.mode].toLowerCase()}`, how[this.mode][vr ? 0 : 1]);
+  }
+
+  private sayBrakeOn(): void {
+    const vr = this.world.visibilityState.peek() !== VisibilityState.NonImmersive;
+    this.say('Parking brake on', vr ? 'Lever by your left knee: hold its trigger, push it down' : 'P: parking brake off');
   }
 
   update(delta: number): void {
@@ -599,6 +618,7 @@ export class DriveSystem extends createSystem({}) {
     c.battery = this.override?.battery ?? drive.battery;
     c.ignition = this.override?.ignition ?? drive.ignition;
     c.choke = this.override?.choke ?? drive.choke;
+    c.parkingBrake = this.override?.parkingBrake ?? drive.parkingBrake;
     c.starter = false;
     c.siren = false;
     // Spike S2's ride has the sticks while it runs.
@@ -775,9 +795,18 @@ export class DriveSystem extends createSystem({}) {
     if (grinding && !this.wasGrinding && seating.mine === 'driver') {
       this.say('Gears grinding', this.controls.clutch < 0.8 ? 'Hold the clutch (left trigger) to change gear' : 'Too fast for that gear: slow down first');
     }
-    if (bogging && !this.wasBogging && seating.mine === 'driver') this.say('Engine labouring', 'Clutch in, or a lower gear');
+    if (bogging && !this.wasBogging && seating.mine === 'driver') {
+      if (this.controls.parkingBrake) this.sayBrakeOn();
+      else this.say('Engine labouring', 'Clutch in, or a lower gear');
+    }
     this.wasGrinding = grinding;
     this.wasBogging = bogging;
+    // Asking the tank to move against the parking brake (F1.18), once each time.
+    const c = this.controls;
+    const pushing = c.parkingBrake && this.shown.running && seating.mine === 'driver' &&
+      (Math.abs(c.left) > 0.3 || Math.abs(c.right) > 0.3 || c.accel > 0.3);
+    if (pushing && !this.wasPushingBrake) this.sayBrakeOn();
+    this.wasPushingBrake = pushing;
     this.engineSigns(delta);
     if (this.sign.visible) {
       if (this.time > this.signUntil) this.sign.setVisible(false);
@@ -797,6 +826,7 @@ export class DriveSystem extends createSystem({}) {
         cold: 'Warm it up with the hand throttle at two thirds',
         choke: 'Choke in too soon: leave it out a few seconds',
         flood: 'Flooded: push the choke in once it runs',
+        brake: 'Parking brake on: hold the trigger and push its lever down',
       };
       this.say('Engine stalled', why[s.stallCause]);
     }

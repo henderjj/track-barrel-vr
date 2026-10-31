@@ -31,6 +31,8 @@ export const HoldKind = {
   TillerRight: 3,
   GearLever: 4,
   HandThrottle: 5,
+  /** The driver's parking brake lever (DriverStationSystem, F1.18). */
+  ParkingBrake: 13,
   /** A shell in the hand (LoadingSystem, F1.10): drawn in the hand, so the hand isn't locked. */
   Shell: 9,
   /** The breech lever's handle (LoadingSystem, F1.10). */
