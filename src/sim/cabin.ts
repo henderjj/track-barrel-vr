@@ -15,7 +15,7 @@
  * turret basket, so it turns with the turret.
  */
 
-import { EYES_BELOW_TOP, SEATED_EYE } from './body-height.js';
+import { SEATED_EYE } from './body-height.js';
 
 /** The hull: inner faces of the walls, the roof's underside and the armour's drawn thickness, m. */
 export const HULL = {
@@ -130,15 +130,17 @@ export interface Seat {
    */
   eye: readonly [number, number, number];
   /**
-   * The box the head is kept in, as offsets from the eye point in the
-   * seat's frame: [left, right, forward, back], m. Leaning further meets
-   * the walls, the breech or the controls, so the head stops at its edge.
+   * The box the eyes move freely in, as offsets from the eye point in the
+   * seat's frame: [left, right, forward, back], m. Each edge is where the
+   * eyes come `EYE_CLEARANCE` from a wall or the hood, so leaning past it
+   * fades the view as they meet it; where nothing stands in the way at eye
+   * height, `OPEN_LEAN` (John's headset check, 2026-10-31).
    */
   headBox: readonly [number, number, number, number];
   /**
-   * How far the eyes may rise above the eye point before the top of the
-   * head meets the roof, m (F1.2). Rising further (standing up from the
-   * chair) stops the head there.
+   * How far the eyes may rise above the eye point before they come
+   * `EYE_CLEARANCE` from the roof, m (F1.2). Rising further (standing up
+   * from the chair) fades the view.
    */
   headUp: number;
   /** Middle of the seat cushion's top, in its frame, m. */
@@ -147,20 +149,31 @@ export interface Seat {
 
 const DRIVER_FLOOR = 0;
 const GUNNER_FLOOR = TURRET.basketFloor;
-/** Room left between the top of the head and the roof when the head stops, m. */
-const HEAD_CLEARANCE = 0.02;
+/**
+ * How close the eyes come to a wall, the hood or the roof before the view
+ * starts to fade, m: black `HEAD_FADE_DEPTH` later, 5 cm from it, where the
+ * near clipping plane (iwsdk.config.json) would start to cut into it and
+ * show what is behind. About the forehead's reach ahead of the eyes, so a
+ * forehead at the brow pad is where the fade starts.
+ */
+export const EYE_CLEARANCE = 0.09;
+/** How far the eyes may move where nothing stands in the way at eye height: past it the player has left the seat, m. */
+export const OPEN_LEAN = 0.5;
 /** How far the eyes may rise in a seat whose eye point is `eyeY`, under a roof at `roofY`, m. */
-const headUpUnder = (roofY: number, eyeY: number) => roofY - EYES_BELOW_TOP - HEAD_CLEARANCE - eyeY;
+const headUpUnder = (roofY: number, eyeY: number) => roofY - EYE_CLEARANCE - eyeY;
 
 /**
  * The driver sits front left in the hull, under a hatch, with the vision
  * slit in the hood 30 cm ahead of their eyes and room under the glacis for
- * the tillers and the gear lever (F1.5); leaning 10 cm in brings the eyes
- * to 20 cm from it, the brow just short of its pad. The gunner sits in the
+ * the tillers and the gear lever (F1.5); leaning 20 cm in brings the brow
+ * to its pad, and the left wall is 60 cm away. The gunner sits in the
  * turret basket right of the gun, with the breech on their left at chest
  * height and the gunsight's eyepiece 18 cm ahead of their eyes, a short
- * lean away (F1.9, F1.10); their head stops 4 cm short of it. Both leans
- * keep the hands on the controls (docs/interior.md).
+ * lean away (F1.9, F1.10); the eyes come to its eyecup, and the turret's
+ * wall is 67 cm to their right. Both leans keep the hands on the controls
+ * (docs/interior.md). The head boxes' edges were measured from the cabin's
+ * meshes (test/interior.test.ts checks them); the periscope's and the
+ * gunsight's eyepieces are left out, as the eyes are meant to meet them.
  */
 export const SEATS: Readonly<Record<SeatId, Seat>> = {
   driver: {
@@ -169,7 +182,8 @@ export const SEATS: Readonly<Record<SeatId, Seat>> = {
     frame: 'hull',
     floorY: DRIVER_FLOOR,
     eye: [-0.5, DRIVER_FLOOR + SEATED_EYE, -1.6],
-    headBox: [0.35, 0.3, 0.1, 0.35],
+    // The left wall; the hood's brow pad; open to the right and behind.
+    headBox: [0.51, OPEN_LEAN, 0.2, OPEN_LEAN],
     // Under the hull roof (the hatch above opens in F2.1).
     headUp: headUpUnder(HULL.roof, DRIVER_FLOOR + SEATED_EYE),
     cushion: [-0.5, DRIVER_FLOOR + CUSHION_HEIGHT, -1.45],
@@ -180,7 +194,8 @@ export const SEATS: Readonly<Record<SeatId, Seat>> = {
     frame: 'turret',
     floorY: GUNNER_FLOOR,
     eye: [0.4, GUNNER_FLOOR + SEATED_EYE, -0.2],
-    headBox: [0.22, 0.35, 0.14, 0.45],
+    // Open to the left, over the breech, and behind; the turret's wall; the gunsight's eyecup 2 cm ahead of the eyes.
+    headBox: [OPEN_LEAN, 0.58, 0.16, OPEN_LEAN],
     headUp: headUpUnder(TURRET.roof, GUNNER_FLOOR + SEATED_EYE),
     cushion: [0.4, GUNNER_FLOOR + CUSHION_HEIGHT, -0.08],
   },
@@ -281,8 +296,8 @@ export const RESEAT_DISTANCE = 0.3;
 export const RESEAT_AFTER = 2;
 /** A head that moves this far in one frame has jumped (the headset recentred), m. */
 export const HEAD_JUMP = 0.2;
-/** How far past the head box's edge, or over the roof stop, the view has faded to black, m. */
-export const HEAD_FADE_DEPTH = 0.08;
+/** How far past the head box's edge, or over the roof stop, the view has faded to black, m: the eyes then 5 cm from the wall (`EYE_CLEARANCE`). */
+export const HEAD_FADE_DEPTH = 0.04;
 
 /**
  * How dark the view is with the head `depth` m past the box's edge or the
@@ -303,8 +318,8 @@ export type HeadFix = 'inside' | 'fade' | 'reseat';
  * is), and says where the head is:
  *
  * - 'inside': nothing to do (out is [0, 0]);
- * - 'fade': the head leant past the edge, into the walls, the breech or the
- *   controls, so the view fades (`headFade`); the seat stays where the
+ * - 'fade': the eyes leant past the edge, up to a wall or the hood, so
+ *   the view fades (`headFade`); the seat stays where the
  *   player calibrated it, and leaning back clears the view;
  * - 'reseat': the head is far outside (the player recentred the headset,
  *   or stood up and walked); after a jump or `RESEAT_AFTER` out there, put

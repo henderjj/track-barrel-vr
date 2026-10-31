@@ -1,7 +1,7 @@
 import { Object3D, Vector3 } from '@iwsdk/core';
 import { describe, expect, it } from 'vitest';
 import {
-  GUN,
+  EYE_CLEARANCE,
   headDrop,
   HEAD_FADE_DEPTH,
   headFade,
@@ -41,20 +41,23 @@ function boxCorners(id: 'driver' | 'gunner', turretYaw: number): [number, number
 }
 
 describe('the cabin', () => {
-  it('keeps each head box inside the armour, clear of the walls by a head\'s width', () => {
-    const head = 0.1;
+  it('lets the eyes come up to the walls, the fade starting EYE_CLEARANCE from them (John\'s headset check, 2026-10-31)', () => {
+    const e = 1e-9;
     for (const p of boxCorners('driver', 0)) {
-      expect(Math.abs(p[0])).toBeLessThan(HULL.halfWidth - head);
-      expect(p[2]).toBeGreaterThan(HULL.front + head);
-      expect(p[2]).toBeLessThan(TURRET.z - TURRET.ringRadius);
+      expect(Math.abs(p[0])).toBeLessThanOrEqual(HULL.halfWidth - EYE_CLEARANCE + e);
+      expect(p[2]).toBeGreaterThan(HULL.front + EYE_CLEARANCE);
     }
-    // The gunner's box, in turret space, stays inside the turret's walls and right of the breech.
+    // The driver's left edge is the wall.
+    expect(SEATS.driver.eye[0] - SEATS.driver.headBox[0]).toBeCloseTo(-HULL.halfWidth + EYE_CLEARANCE, 6);
+    // The gunner's box, in turret space: its right edge is the turret's wall, and the rest stays inside the turret.
     const gunner = SEATS.gunner;
     const [left, right, forward, back] = gunner.headBox;
-    expect(gunner.eye[0] + right).toBeLessThan(TURRET.halfWidth - HULL.wall - head);
-    expect(gunner.eye[0] - left).toBeGreaterThan(GUN.breechHalfWidth);
-    expect(gunner.eye[2] - forward).toBeGreaterThan(TURRET.front + HULL.wall + head);
-    expect(gunner.eye[2] + back).toBeLessThan(TURRET.rear - HULL.wall - head);
+    expect(gunner.eye[0] + right).toBeCloseTo(TURRET.halfWidth - HULL.wall - EYE_CLEARANCE, 6);
+    expect(gunner.eye[0] - left).toBeGreaterThan(-TURRET.halfWidth + HULL.wall + EYE_CLEARANCE);
+    expect(gunner.eye[2] - forward).toBeGreaterThan(TURRET.front + HULL.wall + EYE_CLEARANCE);
+    expect(gunner.eye[2] + back).toBeLessThan(TURRET.rear - HULL.wall - EYE_CLEARANCE);
+    // Black before the eyes are as near a wall as the near clipping plane (5 cm, iwsdk.config.json).
+    expect(EYE_CLEARANCE - HEAD_FADE_DEPTH).toBeGreaterThanOrEqual(0.05 - e);
   });
 
   it('gives a seated head room under the roof, and lets the gunner lean into the sight', () => {
@@ -201,12 +204,10 @@ describe('sharing the seats', () => {
 describe('the head under the roof (F1.2)', () => {
   const roofOf = (id: 'driver' | 'gunner') => (id === 'driver' ? HULL.roof : TURRET.roof);
 
-  it('stops the top of the head just under each seat\'s roof', () => {
+  it('lets the eyes rise to EYE_CLEARANCE under each seat\'s roof before the view fades', () => {
     for (const id of SEAT_IDS) {
       const seat = SEATS[id];
-      const highestEyes = seat.eye[1] + seat.headUp;
-      expect(highestEyes + EYES_BELOW_TOP).toBeLessThan(roofOf(id));
-      expect(highestEyes + EYES_BELOW_TOP).toBeGreaterThan(roofOf(id) - 0.05);
+      expect(seat.eye[1] + seat.headUp).toBeCloseTo(roofOf(id) - EYE_CLEARANCE, 6);
     }
   });
 

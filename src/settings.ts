@@ -101,11 +101,12 @@ export interface Settings {
    */
   engine: EngineStart;
   /**
-   * The cabin's look (src/sim/interior.ts's CabinLook), to find what looks
-   * best (John's headset check, 2026-10-30): which hatches stand open
-   * ('both', the default, 'driver', 'gunner' or 'none'); the ambient light
-   * inside times `cabin` (1 the default); the dome lamps times `lamps` (0
-   * off, 1 the default). The game menu's Sound and view tab changes them at once.
+   * The cabin's look (src/sim/interior.ts's CabinLook): which hatches stand
+   * open ('both', 'driver', 'gunner' or 'none', the default); the ambient
+   * light inside times `cabin` (0.5 the default); the dome lamps times
+   * `lamps` (0 off, 1 the default). The defaults are the look John picked at
+   * his headset check of 2026-10-31. The game menu's Sound and view tab
+   * changes them at once.
    */
   hatches: OpenHatches;
   cabin: number;
@@ -140,8 +141,8 @@ export const DEFAULT_SETTINGS: Settings = {
   bumps: 'full',
   gearbox: 'auto',
   engine: 'starter',
-  hatches: 'both',
-  cabin: 1,
+  hatches: 'none',
+  cabin: 0.5,
   lamps: 1,
 };
 

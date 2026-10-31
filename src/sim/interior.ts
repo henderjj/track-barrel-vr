@@ -15,7 +15,7 @@ import { DRIVER_HATCH, frontAt, HULL, SEATS, TURRET, VISION_SLIT } from './cabin
 
 export interface InteriorLight {
   /** What it is, for the tests and the design note. */
-  id: 'driver-hatch' | 'gunner-hatch' | 'slit' | 'hull-lamp' | 'turret-lamp';
+  id: 'driver-hatch' | 'gunner-hatch' | 'slit' | 'hull-lamp' | 'turret-lamp' | 'gunner-lamp';
   frame: 'hull' | 'turret';
   /** Where it shines from, in its frame, m. */
   at: readonly [number, number, number];
@@ -52,13 +52,15 @@ export const INTERIOR_LIGHTS: readonly InteriorLight[] = [
   { id: 'gunner-hatch', frame: 'turret', at: [GUNNER_HATCH_MIDDLE[0], TURRET.roof + 0.45, GUNNER_HATCH_MIDDLE[1]], color: scaled(DAY, 1.2), range: 1.2, cone: 12 },
   // A little daylight in through the slit.
   { id: 'slit', frame: 'hull', at: [VISION_SLIT.x, VISION_SLIT.y, VISION_SLIT.z - 0.1], color: scaled(DAY, 0.25), range: 0.35, cone: 0 },
-  // The dome lamps: one on the hull roof over the transmission, one on the turret roof behind the gun.
+  // The dome lamps: one on the hull roof over the transmission, one on the turret roof behind the gun, and one over the
+  // gunner's controls, ahead and right of their head and clear of their hatch (a Sherman's turret had one to three).
   { id: 'hull-lamp', frame: 'hull', at: [0.1, HULL.roof - 0.05, -1.2], color: scaled(LAMP, 0.5), range: 0.5, cone: 0 },
   { id: 'turret-lamp', frame: 'turret', at: [-0.45, TURRET.roof - 0.05, 0.45], color: scaled(LAMP, 0.5), range: 0.5, cone: 0 },
+  { id: 'gunner-lamp', frame: 'turret', at: [0.72, TURRET.roof - 0.05, -0.62], color: scaled(LAMP, 0.5), range: 0.6, cone: 0 },
 ];
 
 /** Where the dome lamps' housings hang, in their frames: the lamps' light comes from just under them. */
-export const DOME_LAMPS = INTERIOR_LIGHTS.filter((l) => l.id === 'hull-lamp' || l.id === 'turret-lamp');
+export const DOME_LAMPS = INTERIOR_LIGHTS.filter((l) => l.id.endsWith('-lamp'));
 
 /** The sky's light left inside, before any light pools: dim and a little warm, linear RGB. */
 export const INTERIOR_AMBIENT = [0.065, 0.062, 0.058] as const;
@@ -101,7 +103,7 @@ export function lookFor(hatches: OpenHatches, ambient: number, lamps: number, ou
 }
 
 /** The look in effect, which CabinLightSystem keeps to the settings. */
-export const cabinLook: CabinLook = { driverHatch: true, gunnerHatch: true, ambient: 1, lamps: 1 };
+export const cabinLook: CabinLook = { driverHatch: false, gunnerHatch: false, ambient: 0.5, lamps: 1 };
 
 /**
  * How much of the ambient is the sky's light in through each open hatch, the
@@ -125,6 +127,7 @@ export function lightScale(light: InteriorLight, look: Readonly<CabinLook>): num
       return look.gunnerHatch ? 1 : 0;
     case 'hull-lamp':
     case 'turret-lamp':
+    case 'gunner-lamp':
       return look.lamps;
     default:
       return 1;
