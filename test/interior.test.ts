@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { frontAt, GLACIS, GLACIS_SLOPE, HULL, SEATS, SIGHT_EYEPIECE, TURRET, VISION_SLIT } from '../src/sim/cabin.js';
+import { EYE_CLEARANCE, frontAt, GLACIS, GLACIS_SLOPE, HULL, OPEN_LEAN, SEATS, seatToHull, SIGHT_EYEPIECE, TURRET, VISION_SLIT } from '../src/sim/cabin.js';
 import { DRIVER_CONTROLS } from '../src/sim/driver-station.js';
 import {
   type CabinLook,
@@ -15,10 +15,11 @@ import {
 } from '../src/sim/interior.js';
 import { Lever, type Vec3, Wheel } from '../src/sim/mechanism.js';
 import { LENS } from '../src/sim/periscope.js';
-import { ELEVATION_WHEEL, STATION, TRAVERSE_CRANK } from '../src/sim/turret.js';
+import { ELEVATION_WHEEL, STATION, TRAVERSE_CRANK, TRUNNION } from '../src/sim/turret.js';
 import { interiorUniforms, setCabinLook, setInteriorTurret } from '../src/scene-assets/cabin-light.js';
-import { createHull, createTurret, HATCH_LID_NAMES } from '../src/scene-assets/cabin.scene-asset.js';
-import { Raycaster, Vector3 } from '@iwsdk/core';
+import { createGun, createHull, createTurret, HATCH_LID_NAMES } from '../src/scene-assets/cabin.scene-asset.js';
+import { DEFAULT_SETTINGS } from '../src/settings.js';
+import { type Object3D, Raycaster, Vector3 } from '@iwsdk/core';
 
 const DEG = Math.PI / 180;
 const v3 = (): [number, number, number] => [0, 0, 0];
@@ -94,8 +95,10 @@ describe('a Sherman-like front (docs/interior.md)', () => {
 
 describe('the interior lighting (docs/interior.md)', () => {
   const up = [0, 1, 0];
+  /** The look the lighting was first tuned in: both hatches open, the ambient and the lamps as set in src/sim/interior.ts. */
+  const open: CabinLook = { driverHatch: true, gunnerHatch: true, ambient: 1, lamps: 1 };
   const lit = (p: number[], n = up, yaw = 0) => {
-    const c = interiorLight(p, n, yaw, v3());
+    const c = interiorLight(p, n, yaw, v3(), open);
     return (c[0] + c[1] + c[2]) / 3;
   };
 
@@ -176,8 +179,33 @@ describe('the interior lighting (docs/interior.md)', () => {
     });
     expect(interiorUniforms.cabinAmbient.value.x).toBeCloseTo(INTERIOR_AMBIENT[0] * 0.5 * (1 - 2 * HATCH_AMBIENT_SHARE), 6);
     setCabinLook(look('both'));
-    expect(cabinLook).toEqual({ driverHatch: true, gunnerHatch: true, ambient: 1, lamps: 1 });
+    expect(cabinLook).toEqual(open);
     expect(interiorUniforms.cabinAmbient.value.x).toBeCloseTo(INTERIOR_AMBIENT[0], 6);
+    setCabinLook(lookFor(DEFAULT_SETTINGS.hatches, DEFAULT_SETTINGS.cabin, DEFAULT_SETTINGS.lamps, look('both')));
+  });
+
+  it("starts in the look John picked at his headset check of 2026-10-31: both hatches shut, the darkest cabin light then, the lamps normal", () => {
+    expect([DEFAULT_SETTINGS.hatches, DEFAULT_SETTINGS.cabin, DEFAULT_SETTINGS.lamps]).toEqual(['none', 0.5, 1]);
+    expect(lookFor(DEFAULT_SETTINGS.hatches, DEFAULT_SETTINGS.cabin, DEFAULT_SETTINGS.lamps, { ...open })).toEqual({ driverHatch: false, gunnerHatch: false, ambient: 0.5, lamps: 1 });
+  });
+
+  it("lights the gunner's controls with a lamp of their own, ahead and right of their head and clear of their hatch", () => {
+    const lamp = INTERIOR_LIGHTS.find((l) => l.id === 'gunner-lamp')!;
+    expect(lamp.frame).toBe('turret');
+    const g = SEATS.gunner;
+    // Clear of the gunner's hatch (radius 27 cm round its middle, 10 cm behind the eyes) and above the highest the eyes go.
+    expect(Math.hypot(lamp.at[0] - g.eye[0], lamp.at[2] - (g.eye[2] + 0.1))).toBeGreaterThan(0.27 + 0.1);
+    expect(lamp.at[1]).toBeGreaterThan(g.eye[1] + g.headUp);
+    // With the hatches shut and the cabin at its default, the lamps more than double the light on the elevation wheel's
+    // and the crank's hubs (the turret's other lamp, behind the gun, is over 1.4 m from them).
+    const turretLamp = INTERIOR_LIGHTS.find((l) => l.id === 'turret-lamp')!;
+    const shut = (lamps: number): CabinLook => ({ driverHatch: false, gunnerHatch: false, ambient: 0.5, lamps });
+    for (const key of ['elevation', 'crank'] as const) {
+      const at = STATION[key].at;
+      expect(Math.hypot(at[0] - turretLamp.at[0], at[1] - turretLamp.at[1], at[2] - turretLamp.at[2]), key).toBeGreaterThan(1.4);
+      const hub = turretToHull([...at], 0, v3());
+      expect(interiorLight(hub, up, 0, v3(), shut(1))[0], key).toBeGreaterThan(2 * interiorLight(hub, up, 0, v3(), shut(0))[0]);
+    }
   });
 
   it("draws each hatch's lid open by default and has a shut one ready in the hole", () => {
@@ -219,5 +247,71 @@ describe("the turret's foot (John's headset check, 2026-10-30)", () => {
         }
       }
     }
+  });
+});
+
+describe("the head boxes against the cabin's meshes (John's headset check, 2026-10-31)", () => {
+  // Rays out from a point in every direction: its distance to the nearest drawn face.
+  const dirs: Vector3[] = [];
+  for (let i = 0, n = 200; i < n; i++) {
+    const y = 1 - (2 * (i + 0.5)) / n;
+    const r = Math.sqrt(1 - y * y);
+    const t = i * Math.PI * (3 - Math.sqrt(5));
+    dirs.push(new Vector3(Math.cos(t) * r, y, Math.sin(t) * r));
+  }
+  const ray = new Raycaster();
+  ray.far = 0.5;
+  const shown = (o: Object3D | null): boolean => o === null || (o.visible && shown(o.parent));
+  const hull = createHull();
+  const turret = createTurret();
+  turret.position.set(0, 0, TURRET.z);
+  const gun = createGun();
+  gun.position.set(0, TRUNNION.y, TRUNNION.z);
+  turret.add(gun);
+  // The hatches shut, for the roof.
+  for (const [hatch, root] of [['driver', hull], ['gunner', turret]] as const) {
+    root.getObjectByName(HATCH_LID_NAMES[hatch].open)!.visible = false;
+    root.getObjectByName(HATCH_LID_NAMES[hatch].closed)!.visible = true;
+  }
+  hull.updateMatrixWorld(true);
+  turret.updateMatrixWorld(true);
+  const clearance = (p: Vec3): number => {
+    let best = Infinity;
+    for (const d of dirs) {
+      ray.set(new Vector3(...p), d);
+      const hit = ray.intersectObjects([hull, turret], true).find((h) => shown(h.object));
+      if (hit) best = Math.min(best, hit.distance);
+    }
+    return best;
+  };
+  /** A point offset from a seat's eye point in its frame, in hull space (the turret facing forward). */
+  const at = (id: 'driver' | 'gunner', dx: number, dy: number, dz: number): Vec3 =>
+    seatToHull(SEATS[id], 0, [SEATS[id].eye[0] + dx, SEATS[id].eye[1] + dy, SEATS[id].eye[2] + dz], v3()) as Vec3;
+
+  it('keeps the eyes EYE_CLEARANCE from every wall, the hood and the roof all along each box\'s edges, with the periscope and the gunsight left out', () => {
+    for (const id of ['driver', 'gunner'] as const) {
+      const [left, right, forward, back] = SEATS[id].headBox;
+      for (let k = 0; k <= 4; k++) {
+        const x = -left + ((left + right) * k) / 4;
+        const z = -forward + ((forward + back) * k) / 4;
+        for (const p of [at(id, x, 0, -forward), at(id, x, 0, back), at(id, -left, 0, z), at(id, right, 0, z), at(id, 0, SEATS[id].headUp, 0)]) {
+          expect(clearance(p), `${id} at ${p.map((v) => v.toFixed(2))}`).toBeGreaterThan(EYE_CLEARANCE - 0.01);
+        }
+      }
+    }
+  });
+
+  it('starts the fade only as the eyes come up to a wall, the hood or the roof, not before', () => {
+    // Straight out from the eye point to each edge with something there, the eyes are then about EYE_CLEARANCE from it.
+    const edges: [string, Vec3][] = [
+      ['driver left wall', at('driver', -SEATS.driver.headBox[0], 0, 0)],
+      ['driver hood', at('driver', 0, 0, -SEATS.driver.headBox[2])],
+      ['driver roof', at('driver', 0, SEATS.driver.headUp, 0)],
+      ['gunner wall', at('gunner', SEATS.gunner.headBox[1], 0, 0)],
+      ['gunner roof', at('gunner', 0, SEATS.gunner.headUp, 0)],
+    ];
+    for (const [name, p] of edges) expect(clearance(p), name).toBeLessThan(EYE_CLEARANCE + 0.015);
+    // Where nothing stands in the way, OPEN_LEAN.
+    expect([SEATS.driver.headBox[1], SEATS.driver.headBox[3], SEATS.gunner.headBox[0], SEATS.gunner.headBox[3]]).toEqual([OPEN_LEAN, OPEN_LEAN, OPEN_LEAN, OPEN_LEAN]);
   });
 });

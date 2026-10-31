@@ -22,7 +22,7 @@ The gunner looks through a magnified sight on the gun and lays the reticle's ran
 | Magnification, field | 3×, ±6° true (±18° to the eye) | Spike S1 |
 | Opens / closes | eye within 9 cm of the lens and behind it / beyond 12 cm | Spike S1 (the plan's "about 8 cm") |
 | Picture | 512² with 4× multisampling, only while open; reticle 1024² | Spike S1, pending its headset check |
-| Eyepiece | turret (0.32, 2.25, −0.38) | 18 cm ahead of a seated gunner's eyes, over the wheels ([interior.md](interior.md)); the head box stops the head 4 cm short of it |
+| Eyepiece | turret (0.32, 2.25, −0.38) | 18 cm ahead of a seated gunner's eyes, over the wheels ([interior.md](interior.md)); the view starts to fade with the eyes 2 cm short of it |
 | Arm | 4 cm round at eye height, x 0.28 to 0.36, forward to the knuckle | 14 cm right of the breech, 33 cm above the elevation wheel's rim; clear of F1.10's breech lever at x 0.17 |
 | Knuckle | turret (0.32, 2.05, −1.04), on the trunnions' line | Its drum ends inside the front plate; the objective half turns about the same line as the gun |
 | Objective | gun space (0.32, 0, −0.155): beside the bore at its height, 1 cm proud of a hood on the mantlet | Rides on the gun (the Gun mesh, which F1.10's recoiling parts are children of) |

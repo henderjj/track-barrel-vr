@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rigOffset, targetEyeHeight } from '../src/sim/body-height.js';
-import { frontAt, GLACIS, HULL, SEATS, VISION_SLIT } from '../src/sim/cabin.js';
+import { EYE_CLEARANCE, frontAt, GLACIS, HULL, SEATS, VISION_SLIT } from '../src/sim/cabin.js';
 import {
   DIALS,
   dialCentre,
@@ -309,13 +309,15 @@ describe('the driver\'s gauges (F1.5)', () => {
 });
 
 describe('the vision slit (F1.5)', () => {
-  it('keeps its frame off the opening and its brow pad just out of the head\'s reach', () => {
+  it('keeps its frame off the opening and its brow pad just out of the eyes\' reach', () => {
     const f = SLIT_FRAME;
     expect(f.inset).toBeGreaterThan(0.008);
-    // The furthest forwards the eyes go (the head box), and the forehead about 9 cm ahead of them.
+    // The furthest forwards the eyes go before the view fades (the head box): EYE_CLEARANCE from the pad's bottom edge.
     const eyes = EYE[2] - SEATS.driver.headBox[2];
     const padFace = VISION_SLIT.z + f.padDepth;
-    expect(eyes - 0.09).toBeGreaterThan(padFace);
+    const padBottom = VISION_SLIT.y + VISION_SLIT.height / 2 + f.padAbove;
+    expect(Math.hypot(eyes - padFace, padBottom - EYE[1])).toBeGreaterThan(EYE_CLEARANCE);
+    expect(eyes).toBeGreaterThan(padFace);
     // In the hood, 30 cm ahead (docs/interior.md): about 60° across from the seat, so the driver sees out
     // with their hands on the tillers, and 80° leant in.
     const across = (z: number) => (2 * Math.atan(VISION_SLIT.width / 2 / (z - VISION_SLIT.z))) / DEG;
@@ -323,7 +325,6 @@ describe('the vision slit (F1.5)', () => {
     expect(across(EYE[2])).toBeGreaterThan(55);
     expect(across(eyes)).toBeGreaterThan(75);
     // The pad's underside at the brow, above the eyes.
-    const padBottom = VISION_SLIT.y + VISION_SLIT.height / 2 + f.padAbove;
     expect(padBottom - EYE[1]).toBeGreaterThan(0.04);
     expect(padBottom - EYE[1]).toBeLessThan(0.12);
   });
