@@ -7,7 +7,7 @@ The crew's place in the tank: the hull with the driver's seat, the turret with i
 - On entering VR each player is in their seat: eyes at the seat's eye point, facing the tank's front, wherever they are in their real room. Their real floor goes at the seat's floor, with the body-height offset on top, which since F1.2 puts the calibrated eyes on the eye point ([seat-choice.md](seat-choice.md)).
 - The **driver** sits front left in the hull under an open hatch. The glacis slopes over their legs, as a Sherman's does, to the hood in front of their face with the vision slit 30 cm ahead of their eyes; in front of them are the tillers with the instrument box between them and the gear lever, on their left the hand throttle, on their right the periscope ([driver-station.md](driver-station.md), F1.5; [interior.md](interior.md)).
 - The **gunner** sits right of the gun in the turret basket, 80 cm above the hull floor. The breech is on their left at chest height, and the gunsight's eyepiece (F1.9, [gunsight.md](gunsight.md)) is 18 cm ahead of their eyes, over the wheels: leaning in opens it.
-- A player moves their head freely inside their seat. Leaning past the edge of the seat's head box, into the wall, the breech or the controls, fades the view to black over 8 cm; leaning back clears it. The seat stays where calibration put it: nothing pushes the player (John's headset check, [interior.md](interior.md)). A head far outside the box that got there in one jump (the headset recentred), or stays there two seconds (the player stood up and walked across the room), puts the player back in the seat.
+- A player moves their head freely inside their seat. Leaning past the edge of the seat's head box, as the eyes come within 9 cm of a wall, the hood or the roof, fades the whole view to black over 4 cm; leaning back clears it ([interior.md](interior.md#johns-third-headset-check-2026-10-31)). The seat stays where calibration put it: nothing pushes the player (John's headset check, [interior.md](interior.md)). A head far outside the box that got there in one jump (the headset recentred), or stays there two seconds (the player stood up and walked across the room), puts the player back in the seat.
 - The crewmate is drawn sitting in their seat: head and hands from their poses, legs bent on their seat's cushion.
 - Game menu: **Practice → Sit in Driver / Gunner** changes seats; **You → Seat → Back in my seat** puts the player back at the eye point facing forward.
 - The spikes' Practice buttons still work. Riding (S2) hides the cabin while it shows its own blockout and puts the player back in their seat when it stops. Loading (S4) is in the turret since F1.10 ([loading-firing.md](loading-firing.md)). While a spike seats the player somewhere else, the seat system leaves the play space alone (`seating.away`); choosing a seat or Back in my seat ends that.
@@ -25,11 +25,11 @@ Hull space: hull floor at y = 0, front towards −Z, +X to the right. The tank s
 | Gun axis | 2.05 m, breech mouth 45 cm behind the trunnions, 70 cm back from the front wall (F1.10; 1.3 m behind them before) | The mouth is 50 cm ahead of the gunner's eyes, where a seated player rams a shell |
 | Driver's eye point | (−0.5, 1.45, −1.6), hull | Seated eye height (1.45 m, `body-height.ts`) over a 55 cm cushion |
 | Hull front | nose plate to 1.0 m at z −2.4, glacis to 1.32 m at z −1.9 (57°), hood face upright to the roof | As a Sherman's; the slit 30 cm ahead of the driver's eyes ([interior.md](interior.md)) |
-| Driver's head box | 35 cm left, 30 cm right, 10 cm forward, 35 cm back | Up to 20 cm from the slit, short of the side wall and the turret basket |
+| Driver's head box | 51 cm left, 50 cm right, 20 cm forward, 50 cm back | The eyes 9 cm from the left wall and the brow pad at its edges; open to the right and behind |
 | Gunner's eye point | (0.4, 2.25, −0.2), turret | Right of the breech |
-| Gunner's head box | 22 cm left, 35 cm right, 14 cm forward, 45 cm back | The breech on the left; forward stops 4 cm short of the sight's lens |
+| Gunner's head box | 50 cm left, 58 cm right, 16 cm forward, 50 cm back | The turret's wall 9 cm off; forward, 2 cm short of the sight's eyecup |
 | Sight eyepiece | (0.32, 2.25, −0.38), turret | An 18 cm lean from the eye point ([interior.md](interior.md)); the sight opens within 9 cm |
-| Head fade | black 8 cm past the head box | Leaning into a plate shows nothing through it |
+| Head fade | from the head box's edge (9 cm off a wall, the hood or the roof), black 4 cm later | Black before the near plane (5 cm) cuts into the wall; the shell is 50 cm out, so the whole view goes black |
 | Reseat distance | 30 cm past the head box, after a jump of over 20 cm or 2 s there | Further than any lean, nearer than a step |
 | Ground | 0.6 m under the hull floor; the drive's rolling ground since F1.4 ([tank-drive.md](tank-drive.md)) | The tracks reach it |
 
@@ -67,10 +67,10 @@ The bot sits in the seat the player leaves free (it is a guest, so the host's `s
 On a Quest 3, with a second headset or the practice crewmate:
 
 1. Enter VR alone. You are in the driver's seat facing the vision slit, with the hatch open above. Your eyes are at a natural seated height, and the space in front of you is clear.
-2. Lean forward towards the slit, then left and right. Just before your head reaches the hood's face or the side wall the view fades to black; lean back and it clears, your seat where it was.
+2. Lean forward towards the slit, then left. Just before your eyes reach the brow pad or the side wall the whole view fades to black; lean back and it clears, your seat where it was.
 3. Stand up and take a step. You are put back in the seat.
 4. Game menu → Practice → Sit in Gunner. You are in the turret right of the gun, with the breech on your left at chest height.
-5. Lean forward into the sight. It opens before the view starts to fade, and the fade begins just short of the lens.
+5. Lean forward into the sight. It opens before the view starts to fade, and the fade begins 2 cm short of the eyecup.
 6. Look round the turret and down into the hull: no flickering faces, no gaps to see through, and every surface is lit, not black.
 7. Game menu → You → Back in my seat: you face forward at the eye point again.
 8. With a crewmate (or `?bot=1` on a PC page), the crewmate sits in the other seat with its legs on the cushion, and swaps when either of you changes seats from the menu.
