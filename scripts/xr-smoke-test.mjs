@@ -2067,6 +2067,8 @@ async function driverStation() {
   evalInApp('(window.__gameMenu.click("row-gearbox-0"), true)');
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
+  // The clutch let out in 1st at a halt stalls the engine (F1.17): start it again for the hand throttle.
+  evalInApp('(window.__drive.engine("start"), true)');
 
   // The hand throttle: forwards raises the idle, and it stays where it is left.
   await take('controller-left', 'throttle');

@@ -239,7 +239,7 @@ export class DriverStationSystem extends createSystem({}) {
       gauges: () => {
         const out = {} as Record<Dial['id'], number>;
         const s = shownDriverState();
-        if (s) for (const dial of DIALS) out[dial.id] = gaugeValue(dial, s);
+        if (s) for (const dial of [...DIALS, VOLT_DIAL]) out[dial.id] = gaugeValue(dial, s);
         return out;
       },
       engine: () => {
@@ -480,11 +480,12 @@ export class DriverStationSystem extends createSystem({}) {
     ctx.fillStyle = '#c9c0a0';
     ctx.textAlign = 'left';
     ctx.font = `bold ${Math.round(0.0075 * px)}px sans-serif`;
-    for (const lamp of LAMPS) ctx.fillText(lamp.label, X(lamp.x + 0.01), Y(lamp.y));
+    // Squeezed to end short of the Battery switch's label, which the bottom lamp's shares a line with.
+    for (const lamp of LAMPS) ctx.fillText(lamp.label, X(lamp.x + 0.01), Y(lamp.y), 0.022 * px);
     ctx.textAlign = 'center';
     for (const id of ENGINE_CONTROL_IDS) {
       const { x, label } = ENGINE_CONTROLS[id];
-      ctx.fillText(label, X(x), Y(SWITCH_PANEL.labelY), 0.034 * px);
+      ctx.fillText(label, X(x), Y(SWITCH_PANEL.labelY), 0.029 * px);
     }
     const texture = new CanvasTexture(canvas);
     texture.colorSpace = SRGBColorSpace;
