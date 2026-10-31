@@ -167,6 +167,8 @@ interface MechanismsDebug {
   toScene(name: string, point: number[]): number[] | null;
   /** What each hand holds (`handUse`). */
   holding(): Record<Side, string | null>;
+  /** The index fingertip of `side` where the grip is now, scene space, while it points (it presses buttons), else null. */
+  tip(side: Side): number[] | null;
 }
 
 /**
@@ -236,6 +238,14 @@ export class MechanismSystem extends createSystem({}) {
         return Math.hypot(fist[0] - at[0], fist[1] - at[1], fist[2] - at[2]);
       },
       holding: () => ({ ...handUse }),
+      tip: (side) => {
+        if (!this.present[side] || !this.pointing[side]) return null;
+        // From the grip space as it is now, not as the last frame read it, so a test's offset to the grip holds.
+        const space = this.player.gripSpaces[side];
+        space.updateWorldMatrix(true, false);
+        const q = space.getWorldQuaternion(new Quaternion());
+        return new Vector3().copy(this.tipGrip[side]).applyQuaternion(q).add(space.getWorldPosition(new Vector3())).toArray();
+      },
       toScene: (name, point) => {
         const control = find(name);
         if (!control) return null;
