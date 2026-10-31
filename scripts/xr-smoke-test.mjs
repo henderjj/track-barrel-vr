@@ -129,6 +129,14 @@ const SQUEEZE = 1; // gamepad button index for proximity grab
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function iwsdk(args, input) {
+  // A screenshot waits for the page to draw; on a runner at a frame or more
+  // a second one through the gunsight has outlasted the browser's 27 s limit
+  // and left the page stuck. Screenshots are pictures, not checks: skip them
+  // when the page is that slow.
+  if (args[1] === 'screenshot' && slowestFrameMs() > 600) {
+    console.log(`      (no screenshot for ${args.at(-1)}: the page is drawing a frame every ${Math.round(slowestFrameMs())} ms)`);
+    return null;
+  }
   const argv = [CLI, ...args];
   if (input !== undefined) argv.push('--input-json', JSON.stringify(input));
   let stdout;
@@ -177,8 +185,8 @@ function evalInApp(expression) {
     let reply = ask({ kind: 'eval', expression });
     // Straight after a screenshot that timed out, the page can still be busy
     // and an evaluation through the CLI comes back empty: try again.
-    for (let retry = 0; retry < 3 && !reply.error && !reply.stdout; retry++) {
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
+    for (let retry = 0; retry < 6 && !reply.error && !reply.stdout; retry++) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
       reply = ask({ kind: 'eval', expression });
     }
     if (reply.error) throw new Error(`evaluating ${expression.slice(0, 80)}: ${reply.error}`);
