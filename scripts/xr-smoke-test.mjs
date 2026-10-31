@@ -136,9 +136,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function iwsdk(args, input) {
   // A screenshot waits for the page to draw; on a runner at a frame or more
   // a second one through the gunsight has outlasted the browser's 27 s limit
-  // and left the page stuck. Screenshots are pictures, not checks: skip them
-  // when the page is that slow.
-  if (args[1] === 'screenshot' && slowestFrameMs() > 600) {
+  // and left the page stuck. On CI the frames hover around 600 ms, and three
+  // runs in a row lost the browser to a screenshot let through at just under
+  // that (31 October 2026). Screenshots are pictures, not checks: skip them
+  // well before the page is that slow.
+  if (args[1] === 'screenshot' && slowestFrameMs() > 400) {
     console.log(`      (no screenshot for ${args.at(-1)}: the page is drawing a frame every ${Math.round(slowestFrameMs())} ms)`);
     return null;
   }
