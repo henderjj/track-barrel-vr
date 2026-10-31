@@ -940,6 +940,14 @@ export interface ButtonSpec {
   latching: boolean;
 }
 
+/** A fingertip this far outside a cap's rim (or a toggle's bat) still works it, m: a drawn finger is hard to place to the millimetre. */
+export const TIP_SLACK = 0.01;
+
+/** Whether a fingertip is over a cap's face of `radius`, from 4 cm in front of it to just behind it. */
+function onFace(tip: Vec3 | null, radius: number): boolean {
+  return tip !== null && tip[2] < 0.04 && tip[2] > -0.02 && Math.hypot(tip[0], tip[1]) < radius;
+}
+
 /** A button goes in (Press) at this share of its travel, and comes back out (Release) below `BUTTON_OUT`. */
 export const BUTTON_IN = 0.7;
 export const BUTTON_OUT = 0.3;
@@ -973,6 +981,8 @@ export class Button extends Mechanism {
     if (this.held[side]) {
       return Infinity;
     }
+    // A fingertip on the cap picks it over its neighbours, so pointing at one and squeezing takes that one.
+    if (onFace(hand.tip, this.spec.radius + TIP_SLACK)) return 0;
     const [x, y, z] = hand.fist;
     return Math.hypot(x, y, z);
   }
@@ -994,7 +1004,7 @@ export class Button extends Mechanism {
       } else {
         const tip = hands[side]?.tip;
         // A fingertip over the cap, past its face but not so far it came from behind.
-        if (tip && tip[2] < 0.005 && tip[2] > -travel - 0.03 && Math.hypot(tip[0], tip[1]) < radius + 0.008) {
+        if (tip && tip[2] < 0.005 && tip[2] > -travel - 0.03 && Math.hypot(tip[0], tip[1]) < radius + TIP_SLACK) {
           d = Math.min(travel, -tip[2]);
         }
       }
@@ -1036,3 +1046,142 @@ export class Button extends Mechanism {
   }
 }
 
+
+// ---------------------------------------------------------------- Toggle
+
+export interface ToggleSpec {
+  /** The bat's length out of the face, and its radius, m. */
+  length: number;
+  radius: number;
+  /** How far the bat leans from straight out, up when on and down when off, radians. */
+  lean: number;
+}
+
+/** A fingertip flicks a toggle once it is this far past the bat's middle, up or down, m. */
+export const TOGGLE_FLICK = 0.006;
+/** How far up and down the face a fingertip across a toggle's bat counts as coming at it, m. */
+const TOGGLE_COLUMN = 0.08;
+/** The bat swings over to its new side at this rate, 1/s. */
+const TOGGLE_RATE = 40;
+
+/**
+ * A toggle switch (John's headset test, 31 October 2026: the push-on,
+ * push-off switches were hard to press): a bat standing out of the face
+ * that a fingertip flicks up (on) or down (off), or a fist squeezed on it
+ * flips. Toggle space: the bat's pivot at the origin of a face facing +Z,
+ * +Y up the face; it leans up when on. A fingertip in the box round the
+ * bat that has been level with its middle or below and moves TOGGLE_FLICK
+ * above turns it on, and from level or above to below turns it off; then
+ * the finger leaves the bat before it works it again. A squeeze flips it once and
+ * holds it; the hand isn't drawn on it.
+ */
+export class Toggle extends Mechanism {
+  on = false;
+  /** The bat's lean now, radians: + up (on). */
+  angle: number;
+  /** How many times it has been flipped. */
+  presses = 0;
+  /** The hand that flipped it last, for the buzz (-1 before any). */
+  pressedBy: HandIndex | -1 = -1;
+  /** Whether each fingertip on the bat has been level with its middle or below (to flick it up), or level or above (down), and whether it flipped it on this visit. */
+  private wasBelow: [boolean, boolean] = [false, false];
+  private wasAbove: [boolean, boolean] = [false, false];
+  private spent: [boolean, boolean] = [false, false];
+  private grabbed: [boolean, boolean] = [false, false];
+
+  constructor(readonly spec: ToggleSpec) {
+    super();
+    this.reachRadius = 0.05;
+    this.angle = -spec.lean;
+  }
+
+  reach(side: HandIndex, hand: HandInput): number {
+    if (this.held[side]) return Infinity;
+    if (this.onBat(hand.tip)) return 0;
+    const [x, y, z] = hand.fist;
+    return Math.hypot(x, y, z - this.spec.length / 2);
+  }
+
+  grab(side: HandIndex, _hand: HandInput): boolean {
+    this.held[side] = true;
+    this.grabbed[side] = true;
+    return true;
+  }
+
+  release(side: HandIndex): void {
+    super.release(side);
+    this.grabbed[side] = false;
+  }
+
+  update(dt: number, hands: readonly (HandInput | null)[]): number {
+    let events: number = MechEvent.None;
+    for (let i = 0; i < 2; i++) {
+      const side = i as HandIndex;
+      if (this.grabbed[side]) {
+        // A fresh squeeze flips it once.
+        this.grabbed[side] = false;
+        events |= this.flip(side);
+        continue;
+      }
+      const tip = this.held[side] ? null : hands[side]?.tip ?? null;
+      if (!this.inColumn(tip)) {
+        this.wasBelow[side] = false;
+        this.wasAbove[side] = false;
+        this.spent[side] = false;
+        continue;
+      }
+      const y = tip![1];
+      const below = this.wasBelow[side];
+      const above = this.wasAbove[side];
+      if (y <= 0) this.wasBelow[side] = true;
+      if (y >= 0) this.wasAbove[side] = true;
+      if (this.spent[side] || !this.onBat(tip)) continue;
+      if ((!this.on && below && y > TOGGLE_FLICK) || (this.on && above && y < -TOGGLE_FLICK)) {
+        this.spent[side] = true;
+        events |= this.flip(side);
+      }
+    }
+    const target = this.on ? this.spec.lean : -this.spec.lean;
+    this.angle += (target - this.angle) * (1 - Math.exp(-TOGGLE_RATE * dt));
+    return events;
+  }
+
+  private flip(side: HandIndex): number {
+    this.on = !this.on;
+    this.presses++;
+    this.pressedBy = side;
+    return MechEvent.Press;
+  }
+
+  /** Whether a fingertip is in the box round the bat: across it, out along it, and up or down its swing. */
+  private onBat(tip: Vec3 | null): boolean {
+    return this.inColumn(tip) && Math.abs(tip![1]) < this.spec.length + TIP_SLACK;
+  }
+
+  /**
+   * Whether a fingertip is across the bat and out along it, anywhere within
+   * TOGGLE_COLUMN up or down: where it is seen below (or above) before a
+   * flick, so a quick flick seen only once on the bat still counts.
+   */
+  private inColumn(tip: Vec3 | null): boolean {
+    if (tip === null) return false;
+    const { length, radius } = this.spec;
+    return Math.abs(tip[0]) < radius + TIP_SLACK && tip[2] > -0.002 && tip[2] < length + TIP_SLACK && Math.abs(tip[1]) < TOGGLE_COLUMN;
+  }
+
+  handle(_which: HandIndex, out: Vec3): Vec3 {
+    out[0] = 0;
+    out[1] = 0;
+    out[2] = this.spec.length / 2;
+    return out;
+  }
+
+  lock(_side: HandIndex | -1, _fist: Vec3, point: Vec3, axis: Vec3): void {
+    point[0] = 0;
+    point[1] = 0;
+    point[2] = this.spec.length / 2;
+    axis[0] = 1;
+    axis[1] = 0;
+    axis[2] = 0;
+  }
+}

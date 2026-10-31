@@ -29,7 +29,7 @@ import {
   twistForDemand,
   wheelGrip,
 } from '../sim/crew-bot.js';
-import { DRIVER_TILLER, HAND_THROTTLE, PARKING_BRAKE, throttleAngle, tillerAngle } from '../sim/driver-station.js';
+import { DRIVER_TILLER, ENGINE_NAMES, HAND_THROTTLE, PARKING_BRAKE, throttleAngle, tillerAngle, TILLER_NAMES } from '../sim/driver-station.js';
 import type { TwistGrip, Wheel } from '../sim/mechanism.js';
 import { sightLimit } from '../sim/range.js';
 import {
@@ -41,7 +41,6 @@ import {
   wrapAngle,
 } from '../sim/turret.js';
 import { drive, engineRpm, engineStart, shownDriverState, tankState } from './drive-system.js';
-import { ENGINE_NAMES } from './driver-station-system.js';
 import { lastShot } from './firing-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { handUse } from './grip-system.js';
@@ -78,7 +77,7 @@ const HALT_ASK_EVERY = 15;
 const CALL_SIGN_SECONDS = 4;
 
 /** The kit's names for the controls the bot works (DriverStationSystem's and TurretSystem's). */
-const TILLER = { left: 'driver-tiller-left', right: 'driver-tiller-right' } as const;
+const TILLER = TILLER_NAMES;
 const TWIST = 'turret-twist';
 const ELEVATION = 'turret-elevation';
 

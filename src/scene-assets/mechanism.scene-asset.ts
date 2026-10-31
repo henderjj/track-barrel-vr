@@ -1,6 +1,6 @@
 import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial, TorusGeometry } from '@iwsdk/core';
 import { beam, mergeParts, type Part } from './lowpoly.js';
-import type { ButtonSpec, LeverSpec, TwistSpec, Vec3, WheelSpec, YokeSpec } from '../sim/mechanism.js';
+import type { ButtonSpec, LeverSpec, ToggleSpec, TwistSpec, Vec3, WheelSpec, YokeSpec } from '../sim/mechanism.js';
 import { BENCH, BEZEL, type BenchMount, MOUNTS, mountToBench, TWIST } from '../sim/mechanism-bench.js';
 import { litInside } from './cabin-light.js';
 
@@ -139,6 +139,35 @@ export function createButtonCap(spec: ButtonSpec, color: number): Mesh {
   ]);
   const mesh = new Mesh(geometry, litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 })));
   mesh.name = 'Button Cap';
+  return mesh;
+}
+
+/** A toggle's nut, round the bat's pivot on the face: it stands this far proud, m. */
+export const TOGGLE_NUT = { radius: 0.008, proud: 0.004 } as const;
+
+/** A toggle switch's nut, fixed on the face at the origin (toggle space, +Z out of the face). */
+export function createToggleNut(): Mesh {
+  const mesh = new Mesh(
+    mergeParts([{ geometry: new CylinderGeometry(TOGGLE_NUT.radius, TOGGLE_NUT.radius, TOGGLE_NUT.proud, 6, 1), color: STEEL, position: [0, 0, TOGGLE_NUT.proud / 2], rotation: ALONG_Z }]),
+    material,
+  );
+  mesh.name = 'Toggle Nut';
+  return mesh;
+}
+
+/**
+ * A toggle switch's bat, from its pivot at the origin out along +Z, with a
+ * knob of `color` on its end; turn it with `rotation.x` (negative leans it
+ * up). Its own material, so the knob can glow while on (`emissive`).
+ */
+export function createToggleBat(spec: ToggleSpec, color: number): Mesh {
+  const knob = spec.radius * 1.6;
+  const geometry = mergeParts([
+    { geometry: new CylinderGeometry(spec.radius * 0.7, spec.radius, spec.length - knob, 8, 1), color: STEEL, position: [0, 0, (spec.length - knob) / 2], rotation: ALONG_Z },
+    { geometry: new CylinderGeometry(knob, knob, knob * 2, 8, 1), color, position: [0, 0, spec.length - knob], rotation: ALONG_Z },
+  ]);
+  const mesh = new Mesh(geometry, litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 })));
+  mesh.name = 'Toggle Bat';
   return mesh;
 }
 

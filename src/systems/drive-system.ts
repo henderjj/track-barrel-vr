@@ -26,6 +26,7 @@ import {
 import { onSettingChange } from '../live-settings.js';
 import { settings } from '../settings.js';
 import { type Bumps, crewBumps, groundFeel, parseBumps, vignetteLevel } from '../sim/comfort.js';
+import { pedalHandUse } from '../sim/driver-station.js';
 import { ENGINE_START_NAMES, type EngineStart, startable, startEngine as startSim, type StallCause, stopEngine } from '../sim/engine.js';
 import { GEARBOX_NAMES, type GearboxMode, nextGear, realControls } from '../sim/gearbox.js';
 import {
@@ -52,6 +53,8 @@ import { wrapTile } from '../sim/terrain.js';
 import { createVignette } from './comfort-vignette.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { gameMenu } from './game-menu-system.js';
+import { startScreen } from './start-screen-system.js';
+import { handUse } from './grip-system.js';
 import { bufferDelayMs, netLink } from './net-system.js';
 import { ride } from './ride-system.js';
 import { seating } from './seating.js';
@@ -314,6 +317,8 @@ export class DriveSystem extends createSystem({}) {
   private remoteAt = Number.NEGATIVE_INFINITY;
   private remoteSeq = -1;
   private override: Partial<DriverControls> | null = null;
+  /** The clutch pedal as it was when the menu or the start screen came up: it stays there until they go. */
+  private heldClutch = 0;
   private spare = createTankDrive();
   private buffer = new TankBuffer();
   private incoming = createTankDrive();
@@ -627,9 +632,17 @@ export class DriveSystem extends createSystem({}) {
     c.siren = this.override?.siren ?? (drive.siren || (!vr && this.keys.has('n')));
     const real = realControls(this.mode);
     if (vr) {
-      // The pedals: the left trigger the clutch, the right the accelerator (a finger each on the tillers' grips).
-      if (this.mode === 'clutch') c.clutch = Math.max(c.clutch, pads.left?.getButtonValue(InputComponent.Trigger) ?? 0);
-      if (real) c.accel = Math.max(c.accel, pads.right?.getButtonValue(InputComponent.Trigger) ?? 0);
+      // The pedals: the left trigger the clutch, the right the accelerator, a finger each on the tillers' grips. Only
+      // a hand on the driver's controls works its pedal (pedalHandUse), or, driving on the sticks, a hand holding
+      // nothing. With the menu or the start screen up the accelerator is let go and the clutch stays as it was, so
+      // picking options neither drives the tank nor lets the clutch out.
+      const pointing = gameMenu.open || startScreen.open;
+      if (this.mode === 'clutch') {
+        if (pointing) c.clutch = Math.max(c.clutch, this.heldClutch);
+        else if (pedalHandUse(handUse.left, true, drive.tillersHeld)) c.clutch = Math.max(c.clutch, pads.left?.getButtonValue(InputComponent.Trigger) ?? 0);
+      }
+      if (real && !pointing && pedalHandUse(handUse.right, false, drive.tillersHeld)) c.accel = Math.max(c.accel, pads.right?.getButtonValue(InputComponent.Trigger) ?? 0);
+      if (!pointing) this.heldClutch = c.clutch;
     }
     if (drive.tillersHeld) {
       c.left = drive.left;
@@ -663,6 +676,7 @@ export class DriveSystem extends createSystem({}) {
       c.clutch = o.clutch ?? c.clutch;
     }
   }
+
 
   /** A stick (0 left, 1 right) pushed past STICK_FLICK forwards changes up a gear, back down one; once each push. */
   private flick(i: number, y: number): void {
@@ -793,7 +807,7 @@ export class DriveSystem extends createSystem({}) {
   private signs(delta: number): void {
     const { grinding, bogging } = this.shown;
     if (grinding && !this.wasGrinding && seating.mine === 'driver') {
-      this.say('Gears grinding', this.controls.clutch < 0.8 ? 'Hold the clutch (left trigger) to change gear' : 'Too fast for that gear: slow down first');
+      this.say('Gears grinding', this.mode === 'clutch' && this.controls.clutch < 0.8 ? 'Hold the clutch (left trigger) to change gear' : 'Too fast for that gear: slow down first');
     }
     if (bogging && !this.wasBogging && seating.mine === 'driver') {
       if (this.controls.parkingBrake) this.sayBrakeOn();
@@ -823,7 +837,7 @@ export class DriveSystem extends createSystem({}) {
       const why: Record<StallCause, string> = {
         none: 'Clutch in or neutral, then the starter',
         bog: 'Clutch in, then the starter. Pull away in a lower gear',
-        cold: 'Warm it up with the hand throttle at two thirds',
+        cold: 'Warm it up with the hand throttle at a third',
         choke: 'Choke in too soon: leave it out a few seconds',
         flood: 'Flooded: push the choke in once it runs',
         brake: 'Parking brake on: hold the trigger and push its lever down',

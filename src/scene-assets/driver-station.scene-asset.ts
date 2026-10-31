@@ -1,4 +1,4 @@
-import { BoxGeometry, CylinderGeometry, Mesh, MeshBasicMaterial } from '@iwsdk/core';
+import { BoxGeometry, CylinderGeometry, Mesh, MeshBasicMaterial, PlaneGeometry } from '@iwsdk/core';
 import { mergeParts, type Part } from './lowpoly.js';
 import { HULL, VISION_SLIT } from '../sim/cabin.js';
 import {
@@ -6,6 +6,7 @@ import {
   DRIVER_CONTROLS,
   GEAR_ANGLES,
   GEARBOX,
+  GEAR_READOUT,
   LAMP,
   PANEL,
   PANEL_HOUSING,
@@ -131,6 +132,19 @@ export function createLamp(color: number): Mesh {
   (lens.material as MeshBasicMaterial).color.multiplyScalar(LAMP_DARK);
   lens.name = 'Warning Lamp';
   return lens;
+}
+
+/**
+ * The gear indicator's window (GEAR_READOUT), its middle at the origin of
+ * the gear plate standing proud of the face (+Z). DriverStationSystem
+ * paints its canvas into the material's map.
+ */
+export function createGearReadout(): Mesh {
+  const geometry = new PlaneGeometry(GEAR_READOUT.width, GEAR_READOUT.height);
+  geometry.translate(0, 0, GEAR_READOUT.proud);
+  const mesh = new Mesh(geometry, new MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
+  mesh.name = 'Gear Readout';
+  return mesh;
 }
 
 /**

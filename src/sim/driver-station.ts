@@ -15,7 +15,7 @@
 import { type Gear, LEVER_ORDER, NEUTRAL } from './gearbox.js';
 import { SEATS, VISION_SLIT } from './cabin.js';
 import { TILLER } from './lever.js';
-import type { ButtonSpec, LeverSpec } from './mechanism.js';
+import type { ButtonSpec, LeverSpec, ToggleSpec } from './mechanism.js';
 
 const DEG = Math.PI / 180;
 
@@ -94,6 +94,32 @@ export const PARKING_BRAKE_ON = 20 * DEG;
 export const PARKING_BRAKE_SET = 0;
 /** The post it stands on: its pivot inside the top, m. */
 export const BRAKE_POST = { halfWidth: 0.025, depth: 0.06 } as const;
+
+/** The tillers' and the gear lever's `handUse` names (the mechanism kit's). */
+export const TILLER_NAMES = { left: 'driver-tiller-left', right: 'driver-tiller-right' } as const;
+export const GEAR_LEVER_NAME = 'gear-lever';
+/** Each engine control's `handUse` name (F1.17): pressed, not held, so HoldKind.None. */
+export const ENGINE_NAMES = {
+  battery: 'driver-battery',
+  ignition: 'driver-ignition',
+  choke: 'driver-choke',
+  starter: 'driver-starter',
+  siren: 'driver-siren',
+} as const;
+
+/**
+ * Whether a hand on `use` (its `handUse`) works a pedal with its trigger
+ * (John's headset test, 31 October 2026: picking menu options pressed the
+ * accelerator): a hand on a tiller or the gear lever; the clutch also from
+ * a hand on the switch strip, so the engine restarts in gear with the
+ * clutch held. Not a hand on anything else (the parking brake's trigger is
+ * its release). A hand holding nothing counts only while the sticks drive.
+ */
+export function pedalHandUse(use: string | null, clutch: boolean, tillersHeld: boolean): boolean {
+  if (use === null) return !tillersHeld;
+  if (use === TILLER_NAMES.left || use === TILLER_NAMES.right || use === GEAR_LEVER_NAME) return true;
+  return clutch && (use === ENGINE_NAMES.battery || use === ENGINE_NAMES.ignition || use === ENGINE_NAMES.choke || use === ENGINE_NAMES.starter || use === ENGINE_NAMES.siren);
+}
 
 /** How far each tiller's pivot is to the side of the driver's eyes, m: outside the knees. */
 export const TILLER_SIDE = 0.21;
@@ -188,6 +214,16 @@ export const TOP_ROW = 3;
 /** The gear plate's place: the bottom row's third. */
 export const GEAR_PLATE = TOP_ROW + 2;
 
+/**
+ * The gear indicator (John's headset test, 31 October 2026: the gear is
+ * hard to judge from the lever): a lit window in the gear plate showing
+ * the gear the box has engaged (R, N, 1 to 5), its size, its middle's
+ * height above the plate's middle and how far it stands proud of the face,
+ * m (3 mm or more, test/z-fighting.test.ts). It is a game's aid: a
+ * Sherman's driver had only the lever's gate.
+ */
+export const GEAR_READOUT = { width: 0.034, height: 0.03, y: 0.003, proud: 0.004 } as const;
+
 /** Each dial's middle in panel space (x right, y up the face), m; index GEAR_PLATE is the gear plate's. */
 export function dialCentre(index: number, out: [number, number]): [number, number] {
   const row = index < TOP_ROW ? 0 : 1;
@@ -234,26 +270,37 @@ export const PANEL_HOUSING = (() => {
 export type EngineControlId = 'battery' | 'ignition' | 'choke' | 'starter' | 'siren';
 export const ENGINE_CONTROL_IDS: readonly EngineControlId[] = ['battery', 'ignition', 'choke', 'starter', 'siren'];
 
-/** A switch that stays where it is put (pressed once on, again off): small, so they are pressed on purpose. */
-export const PANEL_SWITCH: ButtonSpec = { radius: 0.01, travel: 0.006, latching: true };
-/** A button held in: the starter and the siren. */
-export const PANEL_BUTTON: ButtonSpec = { radius: 0.012, travel: 0.007, latching: false };
+/**
+ * The switches that stay where they are put (battery, ignition, choke):
+ * toggle switches since John's headset test (31 October 2026), as a
+ * Sherman's master and ignition switches were. Flicked up with a fingertip
+ * they are on, down off; a fist squeezed on one flips it.
+ */
+export const PANEL_TOGGLE: ToggleSpec = { length: 0.024, radius: 0.0032, lean: 25 * DEG };
+/** The starter: a big push button, held in with a fingertip or a fist (John's headset test: the old one was too small). */
+export const STARTER_BUTTON: ButtonSpec = { radius: 0.018, travel: 0.008, latching: false };
+/** The siren's push button, held in. */
+export const PANEL_BUTTON: ButtonSpec = { radius: 0.011, travel: 0.007, latching: false };
 
-/** Each engine control: its spec, where across the strip (panel x, m), its label and its cap's colour. */
-export const ENGINE_CONTROLS: Readonly<Record<EngineControlId, { spec: ButtonSpec; x: number; label: string; color: number }>> = {
-  battery: { spec: PANEL_SWITCH, x: -0.015, label: 'BATTERY', color: 0x3a6fa8 },
-  ignition: { spec: PANEL_SWITCH, x: 0.02, label: 'IGNITION', color: 0xc9a227 },
-  choke: { spec: PANEL_SWITCH, x: 0.055, label: 'CHOKE', color: 0xd8d2bf },
-  starter: { spec: PANEL_BUTTON, x: 0.092, label: 'STARTER', color: 0x2f8a3a },
-  siren: { spec: PANEL_BUTTON, x: 0.13, label: 'SIREN', color: 0xa83228 },
+/** An engine control: a toggle switch or a push button, where across the strip (panel x, m), its label and its colour. */
+export type EngineControl = { x: number; label: string; color: number } & (
+  | { kind: 'toggle'; spec: ToggleSpec }
+  | { kind: 'button'; spec: ButtonSpec }
+);
+
+/** The engine controls, left to right after the lamps: three toggles, the starter, the siren. */
+export const ENGINE_CONTROLS: Readonly<Record<EngineControlId, EngineControl>> = {
+  battery: { kind: 'toggle', spec: PANEL_TOGGLE, x: -0.036, label: 'BATTERY', color: 0x3a6fa8 },
+  ignition: { kind: 'toggle', spec: PANEL_TOGGLE, x: 0, label: 'IGNITION', color: 0xc9a227 },
+  choke: { kind: 'toggle', spec: PANEL_TOGGLE, x: 0.036, label: 'CHOKE', color: 0xd8d2bf },
+  starter: { kind: 'button', spec: STARTER_BUTTON, x: 0.08, label: 'STARTER', color: 0x2f8a3a },
+  siren: { kind: 'button', spec: PANEL_BUTTON, x: 0.126, label: 'SIREN', color: 0xa83228 },
 };
 /** A cap's face, out, stands this far in front of the strip's face, m: pushed fully in it stays 3 mm proud (test/z-fighting.test.ts). */
 export const CAP_PROUD = 0.004;
-/** How far in a switch that is on sits, as a share of its travel. */
-export const SWITCH_ON_DEPTH = 0.5;
 
 /** The voltmeter: a small dial at the strip's left, 0 to 32 V (F1.17). */
-export const VOLTMETER = { x: -0.112, radius: 0.024, min: 0, max: 32, marks: [0, 8, 16, 24, 32] } as const;
+export const VOLTMETER = { x: -0.12, radius: 0.024, min: 0, max: 32, marks: [0, 8, 16, 24, 32] } as const;
 /** The voltmeter as a Dial, for the needle's sums. */
 export const VOLT_DIAL: Dial = {
   id: 'volts',
@@ -272,9 +319,9 @@ export type LampId = 'oil' | 'generator' | 'brake';
  * one's height from the strip's middle, its label and lit colour.
  */
 export const LAMPS: readonly { id: LampId; x: number; y: number; label: string; color: number }[] = [
-  { id: 'oil', x: -0.068, y: 0.021, label: 'OIL', color: 0xff3b2a },
-  { id: 'generator', x: -0.068, y: 0, label: 'GEN', color: 0xff3b2a },
-  { id: 'brake', x: -0.068, y: -0.021, label: 'BRAKE', color: 0xff3b2a },
+  { id: 'oil', x: -0.086, y: 0.021, label: 'OIL', color: 0xff3b2a },
+  { id: 'generator', x: -0.086, y: 0, label: 'GEN', color: 0xff3b2a },
+  { id: 'brake', x: -0.086, y: -0.021, label: 'BRAKE', color: 0xff3b2a },
 ];
 /** A lamp's lens: its radius and how far it stands proud of the strip's face, m. */
 export const LAMP = { radius: 0.006, proud: 0.005 } as const;

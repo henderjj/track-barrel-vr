@@ -89,13 +89,19 @@ describe('gearbox (F1.16)', () => {
       expect(s.gear).toBe(3);
     });
 
-    it('waits with a change down that would over-rev the engine until the tank has slowed', () => {
+    it('a change down that would over-rev the engine grinds and stays in the gear it is in; slowed, it goes in', () => {
       const s = run(createTankDrive(), c(4, 1, 'stick'), 30);
       expect(s.speed).toBeGreaterThan(GEARS[2].top * 1.5);
       run(s, c(2, 0, 'stick'), 0.5);
-      expect(s.gear).toBe(NEUTRAL);
+      expect(s.gear).toBe(4);
+      expect(s.grinding).toBe(true);
+      // Back in 4th (the driver's lever goes back), it doesn't grind.
+      run(s, c(4, 0, 'stick'), 0.1);
       expect(s.grinding).toBe(false);
+      expect(s.gear).toBe(4);
+      // Slowed down, 2nd goes in.
       run(s, c(2, 0, 'stick', 0, -1, -1), 10);
+      expect(s.grinding).toBe(false);
       expect(s.gear).toBe(2);
     });
 
@@ -150,5 +156,43 @@ describe('gearbox (F1.16)', () => {
       expect(s.rpm).toBeGreaterThan(MAX_RPM - 100);
       expect(s.speed).toBe(0);
     });
+  });
+});
+
+describe('the hand throttle sets cruising revs (headset feedback, 31 October 2026)', () => {
+  const t = (gear: Gear, accel: number, mode: GearboxMode, throttle: number, clutch = 0): DriverControls => ({ ...c(gear, accel, mode, clutch), throttle });
+
+  it('with a Sherman\'s controls it drives the tank with the accelerator let go, at the speed its revs give in the gear', () => {
+    const s = run(createTankDrive(), t(3, 0, 'stick', 0.5), 25);
+    expect(s.gear).toBe(3);
+    // Half open: half the range above idle, 1700 rpm.
+    expect(s.rpm).toBeCloseTo(1700, -1);
+    expect(s.speed).toBeCloseTo((1700 / MAX_RPM) * GEARS[3].top, 1);
+    // With the Clutch: clutch in, 2nd, and the clutch let out slowly over 3 s.
+    const k = run(createTankDrive(), t(2, 0, 'clutch', 0.5, 1), 0.5);
+    for (let i = 0; i <= 180; i++) run(k, t(2, 0, 'clutch', 0.5, 1 - i / 180), DT);
+    run(k, t(2, 0, 'clutch', 0.5), 20);
+    expect(k.running).toBe(true);
+    expect(k.rpm).toBeCloseTo(1700, -1);
+    expect(k.speed).toBeCloseTo((1700 / MAX_RPM) * GEARS[2].top, 1);
+  });
+
+  it('the accelerator adds to it but can\'t take it below; lowering the hand throttle brings the revs down', () => {
+    const s = run(createTankDrive(), t(3, 1, 'stick', 0.5), 25);
+    expect(s.speed).toBeCloseTo(GEARS[3].top, 1);
+    // The accelerator let go: back to the hand throttle's cruise, not to idle.
+    run(s, t(3, 0, 'stick', 0.5), 20);
+    expect(s.rpm).toBeCloseTo(1700, -1);
+    // The hand throttle lowered: it slows to a creep at idle.
+    run(s, t(3, 0, 'stick', 0, 0), 20);
+    expect(s.rpm).toBeLessThan(1000);
+  });
+
+  it('wide open, it gives full revs; with the automatic box it only raises the revs and the tank stays put', () => {
+    const s = run(createTankDrive(), t(NEUTRAL, 0, 'clutch', 1), 5);
+    expect(s.rpm).toBeCloseTo(MAX_RPM, -1);
+    const auto = run(createTankDrive(), t(NEUTRAL, 0, 'auto', 1), 5);
+    expect(auto.rpm).toBeGreaterThan(MAX_RPM * 0.9);
+    expect(auto.speed).toBe(0);
   });
 });

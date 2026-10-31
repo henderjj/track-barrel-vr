@@ -8,6 +8,8 @@ import {
   MechEvent,
   OneEuro,
   rollOf,
+  Toggle,
+  type ToggleSpec,
   TwistGrip,
   type Vec3,
   Wheel,
@@ -421,6 +423,77 @@ describe('the button and the switch', () => {
       expect(sw.on).toBe(expected);
     }
     expect(sw.presses).toBe(3);
+  });
+});
+
+describe('the toggle switch (headset feedback, 31 October 2026)', () => {
+  const SPEC: ToggleSpec = { length: 0.024, radius: 0.0032, lean: 25 * DEG };
+  const tip = (x: number, y: number, z: number) => hand(x, y - 0.05, z + 0.08, { tip: [x, y, z] });
+  /** A fingertip moved through the bat's box from `from` to `to` up the face, in steps; the presses seen. */
+  const flick = (t: Toggle, from: number, to: number, x = 0, z = 0.015) => {
+    let presses = 0;
+    for (let i = 0; i <= 10; i++) if (t.update(DT, right(tip(x, from + ((to - from) * i) / 10, z))) & MechEvent.Press) presses++;
+    return presses;
+  };
+  const away = (t: Toggle) => t.update(DT, right(tip(0, 0, 0.2)));
+
+  it('a fingertip flicking it up turns it on, flicking it down turns it off, once a flick', () => {
+    const t = new Toggle(SPEC);
+    expect(t.on).toBe(false);
+    expect(flick(t, -0.012, 0.015)).toBe(1);
+    expect(t.on).toBe(true);
+    expect(t.pressedBy).toBe(1);
+    // Moving back down without leaving the bat doesn't flip it straight back.
+    flick(t, 0.015, -0.012);
+    expect(t.on).toBe(true);
+    away(t);
+    expect(flick(t, 0.012, -0.015)).toBe(1);
+    expect(t.on).toBe(false);
+    expect(t.presses).toBe(2);
+    // Its bat swings over.
+    for (let i = 0; i < 60; i++) away(t);
+    expect(t.angle).toBeCloseTo(-SPEC.lean, 3);
+  });
+
+  it('a quick flick seen once below the bat and once over it still counts', () => {
+    const t = new Toggle(SPEC);
+    t.update(DT, right(tip(0, -0.05, 0.015)));
+    expect(t.update(DT, right(tip(0, 0.012, 0.015))) & MechEvent.Press).toBeTruthy();
+    expect(t.on).toBe(true);
+  });
+
+  it('pushing it the way it already is, or a fingertip off to the side or behind the face, does nothing', () => {
+    const t = new Toggle(SPEC);
+    away(t);
+    expect(flick(t, 0.015, -0.015)).toBe(0);
+    away(t);
+    expect(flick(t, -0.012, 0.015, 0.03)).toBe(0);
+    away(t);
+    expect(flick(t, -0.012, 0.015, 0, -0.01)).toBe(0);
+    expect(t.on).toBe(false);
+  });
+
+  it('a fist squeezed on it flips it once, however long it is held', () => {
+    const t = new Toggle(SPEC);
+    const fist = hand(0, 0, 0.03);
+    expect(t.reach(0, fist)).toBeLessThan(t.reachRadius);
+    t.grab(0, fist);
+    expect(t.update(DT, [fist, null]) & MechEvent.Press).toBeTruthy();
+    for (let i = 0; i < 30; i++) t.update(DT, [fist, null]);
+    expect(t.on).toBe(true);
+    expect(t.presses).toBe(1);
+    t.release(0);
+    t.grab(0, fist);
+    t.update(DT, [fist, null]);
+    expect(t.on).toBe(false);
+  });
+
+  it('a fingertip on a toggle or a button picks it for a squeeze over a nearer fist', () => {
+    const t = new Toggle(SPEC);
+    expect(t.reach(1, hand(0.04, 0, 0.1, { tip: [0, 0.005, 0.01] }))).toBe(0);
+    const b = new Button(BUTTON);
+    expect(b.reach(1, hand(0.04, 0, 0.1, { tip: [0.005, 0, 0.01] }))).toBe(0);
+    expect(b.reach(1, hand(0.04, 0, 0.1, { tip: [0.05, 0, 0.01] }))).toBeGreaterThan(0.1);
   });
 });
 

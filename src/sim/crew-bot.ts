@@ -334,9 +334,9 @@ export class BotDriver {
  */
 export type StartTask = { kind: 'press'; id: EngineControlId; hold: boolean } | { kind: 'throttle'; to: number } | null;
 
-/** The hand throttle a little open to start on, and at two thirds (about 1300 rpm) to warm up. */
-export const START_THROTTLE = 0.3;
-export const WARM_UP_THROTTLE = 2 / 3;
+/** The hand throttle a little open to start on, and at a third (1400 rpm) to warm up. */
+export const START_THROTTLE = 0.15;
+export const WARM_UP_THROTTLE = 1 / 3;
 /** Once it runs, the choke goes in after CHOKE_HOLD and this much more, s. */
 const CHOKE_SPARE = 1.5;
 
