@@ -54,9 +54,9 @@ interface SeatDebug {
  * seat's floor, with the body-height system's offset on top.
  *
  * After that the player moves their head freely within the seat's head
- * box. Leaning past its edge, into the walls, the breech or the controls,
- * fades the view to black over 8 cm (`headFade`), and rising over the
- * roof stop does the same: the play space stays where the player was
+ * box. Leaning past its edge, as the eyes come up to a wall or the hood,
+ * fades the whole view to black over 4 cm (`headFade`), and rising up to
+ * the roof does the same: the play space stays where the player was
  * calibrated, so the seat never shifts under them, and leaning back clears
  * the view. A head that jumps far outside the box (the headset recentred),
  * or stays far outside for two seconds (the player stood up and walked),
@@ -102,8 +102,11 @@ export class SeatSystem extends createSystem({}) {
 
   init(): void {
     this.sign = new FloatingSign('Seat Sign', 0.7, [560, 160], 1.1, 0.3);
+    // Half a metre out: a shell much nearer than that crosses the near clipping plane (5 cm) towards the edges of each
+    // eye's view, which blacked out only the middle of the view (John's headset check, 2026-10-31). Drawn last, without
+    // the depth test, it covers everything nearer too.
     this.blind = new Mesh(
-      new SphereGeometry(0.1, 12, 8),
+      new SphereGeometry(0.5, 16, 12),
       new MeshBasicMaterial({ color: 0x000000, side: BackSide, transparent: true, opacity: 0, depthTest: false, depthWrite: false }),
     );
     this.blind.name = 'Head Fade';

@@ -29,7 +29,7 @@ Hull space, as in [cabin.md](cabin.md); the driver's eye point is (−0.5, 1.45,
 | Coolant | 55 °C at the start, towards 72 °C at idle and 92 °C at full revs, time constant 150 s | Moves slowly, as the plan asks |
 | Oil pressure | 1.5 bar at idle, 5 at full revs, up to 0.4 lower when hot | |
 | Fuel | full at the start; 2 h at full revs, a fifth of that rate at idle; stops at 10% | No failures in Phase 1 |
-| Brow pad | 4 cm over the slit's top, 6 cm deep from the hood's face | The head box stops the eyes 20 cm from the plate, the forehead about 5 cm short of the pad |
+| Brow pad | 4 cm over the slit's top, 6 cm deep from the hood's face | The fade starts with the eyes 10 cm from the plate, 9 cm from the pad's bottom edge ([interior.md](interior.md#johns-third-headset-check-2026-10-31)) |
 | Reach | every handle 0.45–1.4 m above a seated player's real floor and within 75 cm of the nearer shoulder, at both ends of its travel; handles at least 15 cm apart | `test/driver-station.test.ts`, as for the bench |
 
 ## Sharing

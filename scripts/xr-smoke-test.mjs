@@ -579,16 +579,17 @@ async function seatStep() {
   await sleep(500);
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-driver-seat.png'], {});
 
-  // Lean 20 cm forward in the room, 10 cm past the head box's front edge (10 cm ahead of the eye point, src/sim/cabin.ts):
-  // the view fades to black and the seat stays put; leaning back clears it.
-  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([eye[0], eye[1], eye[2] - 0.2]) });
+  // Lean 26 cm forward in the room, 6 cm past the head box's front edge (20 cm ahead of the eye point, where the eyes come
+  // up to the hood, src/sim/cabin.ts) and 2 cm past black: the view fades to black and the seat stays put; leaning back clears it.
+  const lean = 0.26;
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([eye[0], eye[1], eye[2] - lean]) });
   const leant = await waitFor('the view to fade', () => {
     const s = seated();
     return s.fixes.walls > start.fixes.walls && s.fade > 0.99 ? s : null;
   }, 5000).catch(() => seated());
   check('Leaning past the head box fades the view to black, the seat staying where it was',
-    leant.fixes.walls > start.fixes.walls && leant.fade > 0.99 && Math.abs(leant.head[2] - (eye[2] - 0.2)) < 0.01 && Math.abs(leant.rigY - start.rigY) < 1e-6,
-    `head at ${fmt(leant.head)}, fade ${leant.fade.toFixed(2)}, box edge at z ${(eye[2] - 0.1).toFixed(3)}`);
+    leant.fixes.walls > start.fixes.walls && leant.fade > 0.99 && Math.abs(leant.head[2] - (eye[2] - lean)) < 0.01 && Math.abs(leant.rigY - start.rigY) < 1e-6,
+    `head at ${fmt(leant.head)}, fade ${leant.fade.toFixed(2)}, box edge at z ${(eye[2] - 0.2).toFixed(3)}`);
   iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin([eye[0], eye[1], eye[2] - 0.05]) });
   const clear = await waitFor('the view to clear', () => {
     const s = seated();
@@ -1490,15 +1491,17 @@ async function theTestRange() {
   await menuClick('row-fog-0');
   await waitFor('the fog back on', () => evalInApp('window.__range.fog().on'), 5000).catch(() => null);
 
-  // The cabin's look (docs/interior.md): shut both hatches from the menu, then open them again.
+  // The cabin's look (docs/interior.md): the hatches start shut; open both from the menu, then shut them again.
   const interior = () => evalInApp('window.__interior.state()');
-  await menuClick('row-hatches-3');
-  const shut = await waitFor('the hatches shut', () => { const s = interior(); return !s.lids.driver && !s.lids.gunner && s; }, 5000).catch(() => interior());
+  const shutFirst = interior();
   await menuClick('row-hatches-0');
   const opened = await waitFor('the hatches open', () => { const s = interior(); return s.lids.driver && s.lids.gunner && s; }, 5000).catch(() => interior());
-  check("The menu's Open hatches shuts both lids and takes their daylight away, and opens them again",
-    !shut.lids.driver && !shut.lids.gunner && !shut.look.driverHatch && !shut.look.gunnerHatch && opened.look.driverHatch && opened.look.gunnerHatch,
-    `shut ${JSON.stringify(shut.lids)}, opened ${JSON.stringify(opened.lids)}`);
+  await menuClick('row-hatches-3');
+  const shut = await waitFor('the hatches shut', () => { const s = interior(); return !s.lids.driver && !s.lids.gunner && s; }, 5000).catch(() => interior());
+  check("The hatches start shut, and the menu's Open hatches opens both lids to let the daylight in, and shuts them again",
+    !shutFirst.lids.driver && !shutFirst.lids.gunner && opened.lids.driver && opened.lids.gunner && opened.look.driverHatch && opened.look.gunnerHatch &&
+      !shut.lids.driver && !shut.lids.gunner && !shut.look.driverHatch && !shut.look.gunnerHatch,
+    `first ${JSON.stringify(shutFirst.lids)}, opened ${JSON.stringify(opened.lids)}, shut ${JSON.stringify(shut.lids)}`);
 
   // Practice → Up the range: parked 200 m up the road facing the far target.
   await menuClick('menu-range-up');
@@ -2396,12 +2399,12 @@ async function main() {
     `head at ${raised.head[1].toFixed(3)} m for ${(raised.eye[1] + 0.05).toFixed(3)}, right hand ${(raised.hand[1] - level.hand[1]).toFixed(3)} m higher`);
   evalInApp('(window.__body.choose({ raise: 0, seated: true }), true)');
   const now1c = iwsdk(['xr', 'get-transform'], { device: 'headset' }).result.position;
-  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: now1c.x, y: now1c.y + 0.3, z: now1c.z } });
-  // Mirrors the driver's headUp in src/sim/cabin.ts: the hull roof (1.8 m) less 15 cm.
-  const top = 1.8 - 0.15;
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: now1c.x, y: now1c.y + 0.32, z: now1c.z } });
+  // Mirrors the driver's headUp in src/sim/cabin.ts: the hull roof (1.8 m) less EYE_CLEARANCE (9 cm); black 4 cm above.
+  const top = 1.8 - 0.09;
   const stood = await waitFor('the view to fade under the roof', () => { const b = bodyState(); return b.roof > level.roof && b.fade > 0.99 && b; }, 5000).catch(() => bodyState());
   check('Standing up out of the seat fades the view under the roof, the seat staying where it was',
-    stood.roof > level.roof && stood.fade > 0.99 && Math.abs(stood.head[1] - (level.head[1] + 0.3)) < 0.005,
+    stood.roof > level.roof && stood.fade > 0.99 && Math.abs(stood.head[1] - (level.head[1] + 0.32)) < 0.005,
     `head at ${stood.head[1].toFixed(3)} m, roof stop at ${top.toFixed(3)} m, fade ${stood.fade.toFixed(2)}, ${stood.roof - level.roof} time(s)`);
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);

@@ -32,6 +32,18 @@ After the second pass John found all the controls in reach. In the gunner's seat
   - **Cabin light**: the ambient times 0.5 (Darker), 1 (Normal, about 6% of the sky's), 2 (Lighter) or 4 (Bright, about the first pass's 26%) (`?cabin=`).
   - **Dome lamps**: Off, Dim (half), Normal or Bright (twice) (`?lamps=`).
 
+## John's third headset check (2026-10-31)
+
+John found the fade to black came in too early, and only the middle of the view went black. He wanted the whole view to fade just as the eyes meet something solid. Of the cabin looks, he liked the darkest cabin light best, with the lamps at Normal and both hatches shut, though the gunner's seat was then a bit dark. He asked whether the gunner should have a lamp, and what a real tank had. The fourth pass:
+
+- **The whole view fades.** The black shell round the head was 10 cm out, and the headset's near clipping plane is 5 cm away. Towards the edge of each eye's view the shell came nearer than that plane and was cut away, so only the middle went black. The shell is now 50 cm out, drawn last over everything.
+- **The fade starts at the walls.** Each seat's head box used to be a comfortable lean (the driver's eyes stopped 20 cm from the slit, the gunner's 4 cm short of the sight). Now each edge is where the eyes come within 9 cm of a wall, the hood or the roof (`EYE_CLEARANCE`), measured from the cabin's meshes. The fade is black 4 cm later (`HEAD_FADE_DEPTH`), 5 cm from the wall, just before the near plane would cut into it and show what is behind.
+  - Driver: the left wall at 51 cm; the hood's brow pad at 20 cm forward; open (50 cm, `OPEN_LEAN`) to the right and behind; the roof 26 cm up (20 before).
+  - Gunner: the turret's wall at 58 cm right; the gunsight's eyecup 16 cm forward, 2 cm short of it; open to the left over the breech and behind; the roof 41 cm up (35 before).
+  - Leaving out the periscope's and the gunsight's eyepieces is deliberate: the eyes are meant to meet them, and their lenses handle the near plane themselves.
+- **The default look** is now John's pick: both hatches shut, the cabin light at what was Darker (0.5) and the lamps at Normal. The Cabin light row is now Darker (0.25), Normal (0.5), Lighter (1) and Bright (2). A cabin light saved as 0.5 shows as Normal, with the same look.
+- **A lamp for the gunner.** A Sherman's turret had one to three dome lights, depending on its build ([The Sherman Tank Site](https://www.theshermantank.com/?p=1821)), so a gunner's lamp is authentic. A third dome lamp hangs from the turret roof ahead of and to the right of the gunner's head, over the elevation wheel, crank and power grip, clear of the hatch. With the lamps on, the hubs get more than twice the light they get with them off.
+
 ## What players experience
 
 - **The driver** sits under a sloped glacis, as in a Sherman: the front plate stands up from the floor to knee height, slopes back over the driver's legs at 57° from upright, and meets the hood's upright face, which holds the vision slit 30 cm ahead of the eyes. From the seat the slit shows about 60° of the world (24° before), so the driver can steer with both hands on the tillers and their eyes on the road; leaning 10 cm in to the brow pad opens it to 80°.
@@ -51,22 +63,23 @@ After the second pass John found all the controls in reach. In the gunner's seat
 | Glacis | from 1.0 m at z −2.4 to 1.32 m at z −1.9, 57° from upright | The Sherman's is 56°; above the tillers and the driver's knees |
 | Hood face | upright at z −1.9 from 1.32 m to the roof | The slit 30 cm ahead of the eyes |
 | Vision slit | as before (34 × 10 cm at 1.45 m), in the hood face | About 60° across from the seat, 80° leant in |
-| Driver's head box forward | 10 cm (60 cm before) | Fades the view with the eyes 20 cm from the slit, the brow 5 cm short of its pad |
-| Head fade | black 8 cm past the head box or the roof stop; more than 30 cm out, reseat after a jump of over 20 cm or 2 s | The seat stays where it was calibrated |
+| Driver's head box | 51 cm left, 50 cm right, 20 cm forward, 50 cm back; eyes up 26 cm (10 cm forward and 20 cm up before the fourth pass) | The eyes 9 cm from the left wall, the brow pad and the roof at its edges; open to the right and behind |
+| Head fade | from 9 cm off a wall, the hood or the roof (`EYE_CLEARANCE`), black 4 cm later; more than 30 cm out, reseat after a jump of over 20 cm or 2 s | Black before the near plane (5 cm) cuts into the wall; the seat stays where it was calibrated |
 | Tiller pivots | 81 cm under the eyes, 32 cm ahead (94 and 42 before); ±20° (±25°) | Handles 42 cm under the eyes, 19 to 45 cm ahead |
 | Hand throttle pivot | 0.66 m (0.8 m before) | On its quadrant by the left knee |
 | Instrument box | face's middle (−0.5, 1.1, −2.06), 28 × 16 cm, facing the eyes 57 cm away, 37° down | Between the tillers with a fist's room either side, in front of the glacis |
 | Periscope axis | 26 cm right of the eyes, 20 cm ahead (22 cm left, 37 cm ahead before) | Behind the hood face; its handles swing beside the chest when turned |
 | Driver's hatch | 50 cm square, from 10 cm ahead of the eyes to 40 cm behind them; lid open forwards | The periscope's head stands on the roof in front of it |
-| Gunsight eyepiece | turret (0.32, 2.25, −0.38), an 18 cm lean | The head stops 4 cm short of it |
-| Gunner's head box forward | 14 cm (24 cm before) | |
+| Gunsight eyepiece | turret (0.32, 2.25, −0.38), an 18 cm lean | The fade starts with the eyes 2 cm short of it |
+| Gunner's head box | 50 cm left, 58 cm right, 16 cm forward, 50 cm back; eyes up 41 cm (22, 35, 14 and 45 cm, up 35, before the fourth pass) | The turret's wall and the roof 9 cm off at its edges; open to the left over the breech and behind |
 | Elevation wheel, crank, power grip | turret (0.29, 1.86, −0.6), (0.52, 1.86, −0.52), (0.71, 1.63, −0.45) | Hubs 39 cm under the eyes; the crank's fist inside the ring; the elevation wheel faces sideways and drives a toothed arc on the gun ([turret.md](turret.md)) |
 | Turret ring | race ring 91 cm out, 4 cm tube (90 cm, 7 cm before) | Its inner edge at 87 cm, clear of the crank |
 | Turret roof | 12 cm chamfers along its edges and down its corners; round hatch 54 cm across; ventilator 24 cm across | A cast turret, not a box |
 | Interior ambient | 6% of the sky's light, a little warm, 55% of that on the hull floor | Dark, as a closed steel box is (26% read as bright) |
 | Hatch daylight | 1.2 of daylight from 45 cm above each open hatch, falling straight down (the cosine from straight down to the 12th power), half as bright 1.2 m away | A tight pool under each hatch |
 | Slit daylight | 0.25 of daylight from just inside the slit, half as bright 35 cm away | Lights the hood's inside face a little |
-| Dome lamps | warm, 0.5, half as bright 0.5 m away; hull roof over the transmission, turret roof behind the gun | Glowing lenses, no real-time light |
+| Dome lamps | warm, 0.5, half as bright 0.5 m away (the gunner's 0.6 m); hull roof over the transmission, turret roof behind the gun, and turret (0.72, 2.7, −0.62) over the gunner's controls | Glowing lenses, no real-time light |
+| Default look | hatches shut, cabin light 0.5, lamps 1 | John's pick (2026-10-31) |
 
 ## How the lighting works
 
@@ -95,13 +108,21 @@ Nothing new goes over the network: the layout is the same numbers on both pages,
 - `test/z-fighting.test.ts`: the new front, the details, the lamps and the instrument box, the turret at every tested angle.
 - `npm run test:xr`: every seat, station and sight step, on the new layout; a lean past the head box fades the view with the seat left where it was, leaning back clears it, standing up fades it under the roof. Screenshots `artifacts/xr-driver-seat.png` and `artifacts/xr-gunner-seat.png` show the lighting.
 
+- `test/interior.test.ts` (fourth pass): from every point along each head box's edges and its roof stop, rays in 200 directions find the hull, turret and gun no nearer than 9 cm (hatches shut; the eyepieces left out); straight out to the left wall, the hood, the gunner's wall and both roofs they are about 9 cm off, so the fade does not start early; the default look; the gunner's lamp clear of the hatch and above the eyes, more than doubling the light on the wheel hubs. `test/cabin.test.ts`: the boxes' edges at the walls and black before the near plane. `test/driver-station.test.ts`: the eyes 9 cm from the brow pad. `npm run test:xr`: the lean is now 26 cm to the hood, the stand 32 cm up, and the hatches start shut and open and shut from the menu.
 - `test/interior.test.ts` (third pass): a shut hatch takes its pool and its share of the ambient away and leaves the other's; the cabin light scales the ambient and the lamps only their pools; the shader's uniforms follow and go back; each hatch's open lid shown and its shut one ready; the turret's foot closed at every angle. `test/z-fighting.test.ts`: the shut lids in their holes, the turret at four angles.
 
 `window.__interior` gives `state()` (now with the look and which lids are drawn open), `setLighting(on)` (to compare with the sky's light everywhere, as before) and `light(point, normal)`.
 
 ## Headset check
 
-On a Quest 3 after the deploy, with the cache cleared, seated. Steps 1 to 4 are for the third pass; the second pass's follow.
+On a Quest 3 after the deploy, with the cache cleared, seated. Steps 1 to 4 are for the fourth pass; the third and second passes' follow.
+
+1. Driver's seat: lean slowly forward into the slit, then left to the wall, then stand up. Nothing fades until your eyes are about to touch the brow pad, the wall or the roof, and then the whole view goes black, edges and all, within 4 cm.
+2. Gunner's seat: lean right towards the turret's wall and forward to the gunsight. The wall fades the view just before you touch it; the sight opens as your eye reaches the eyecup and the fade starts only past it.
+3. With the cache cleared, the cabin starts with both hatches shut, the cabin light at Normal (your old Darker) and the lamps at Normal. In the gunner's seat a dome lamp now glows ahead and to the right of your head and lights the elevation wheel, crank and power grip. Say whether the gunner's seat is now light enough, and whether the lamp's glow is in the way when you look ahead.
+4. Perf HUD (X): the fps in both seats.
+
+The third pass's:
 
 1. Practice → Sit in → Gunner, and turn the turret a little either way with the crank. Look down into the turret's front-left and rear-right corners: a floor at the foot of the walls, no ground showing through.
 2. Settings → Sound and view → **Open hatches**: try Both, Driver's, Gunner's and None. A shut hatch has its lid down and the pool of daylight under it goes; with None the cabin is darkest. Do it in both seats.
