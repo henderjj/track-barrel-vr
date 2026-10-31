@@ -120,7 +120,8 @@ async function openPlayer(browser, query, initScript) {
     if (/^\[(Net|Seat|Bot|Drive)\]/.test(m.text())) console.log(`    ${m.text()}`);
   });
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto(`${BASE}?${QUIET}&${query}`);
+  // The engine already running (F1.17's Running setting) unless a check asks for another: these checks are about the crew.
+  await page.goto(`${BASE}?${QUIET}&${query}${query.includes('engine=') ? '' : '&engine=running'}`);
   await waitFor('the game to load', async () => (await state(page)) !== 'loading', 60000);
   return { context, page, errors };
 }
@@ -343,6 +344,19 @@ async function driveChecks(host, guest, label) {
   await waitFor('the guest in the driver\'s seat', async () => (await guest.page.evaluate(() => window.__drive.driver())) === 'me'
     && (await host.page.evaluate(() => window.__drive.driver())) === 'crew', 8000);
   await host.page.evaluate(() => window.__drive.reset());
+  // F1.17: with the engine stopped, the guest driver holds the starter; the host's engine cranks and catches, and both see it run.
+  await host.page.evaluate(() => window.__drive.engine('stop'));
+  await waitFor('both to see the engine stopped', async () => !(await tank(host)).running && !(await tank(guest)).running, 8000).catch(() => null);
+  await guest.page.evaluate(() => window.__drive.set({ starter: true }));
+  let cranked = false;
+  const started = await waitFor('the guest\'s starter to start the host\'s engine', async () => {
+    const [h, g] = await Promise.all([tank(host), tank(guest)]);
+    cranked ||= h.cranking || g.cranking;
+    return h.running && g.running ? { h, g } : null;
+  }, 10000).catch(() => null);
+  await guest.page.evaluate(() => window.__drive.set(null));
+  check(`The guest driver's starter cranks the host's engine and it catches, both seeing it run (${label})`, started !== null && cranked,
+    started ? `${started.h.rpm.toFixed(0)} rpm on the host, ${started.g.rpm.toFixed(0)} drawn by the guest` : JSON.stringify(await tank(host)));
   await guest.page.evaluate(() => window.__drive.set({ left: 1, right: 1 }));
   const going = await waitFor('the host\'s tank to pull away', async () => {
     const [h, g] = await Promise.all([tank(host), tank(guest)]);
@@ -901,7 +915,8 @@ async function lifecycleChecks(host, guest) {
 async function botChecks(browser) {
   const me = await openPlayer(browser, 'room=BOTS&name=Fay');
   await waitFor('Fay waiting in the lobby', async () => (await state(me.page)) === 'waiting');
-  const bot = await openPlayer(browser, 'room=BOTS&bot=1');
+  // The bot starts the engine the long way (F1.17): battery, ignition, choke, hand throttle, starter.
+  const bot = await openPlayer(browser, 'room=BOTS&bot=1&engine=full');
   await waitFor('the bot to join', async () => (await state(me.page)) === 'connected' && (await state(bot.page)) === 'connected');
 
   // The bot's head is at its seat's eye point, as drawn on the player's page, and its legs in that seat.
@@ -963,6 +978,16 @@ async function botChecks(browser) {
   const tank = () => me.page.evaluate(() => window.__drive.state());
   await me.page.evaluate(() => window.__drive.reset());
   await waitFor('the tank parked', async () => Math.hypot((await tank()).x, (await tank()).z) < 0.01, 8000).catch(() => null);
+  // F1.17: the engine stopped and cold, the bot starts it in the Full procedure before it drives.
+  await me.page.evaluate(() => { window.__drive.engine('stop'); return true; });
+  const botStarted = await waitFor('the bot to start the engine', async () => {
+    const t = await tank();
+    return t.running ? t : null;
+  }, 40000).catch(() => null);
+  const botBox = await bot.page.evaluate(() => ({ ...window.__driverStation.engine(), status: window.__bot.status }));
+  check('Practice crewmate: with the engine stopped, its hand works the instrument box (Full procedure) and starts it',
+    botStarted !== null && botBox.presses.starter >= 1 && botBox.on.battery && botBox.on.ignition,
+    `${botStarted ? `running at ${botStarted.rpm.toFixed(0)} rpm` : 'not started'}, box ${JSON.stringify(botBox)}`);
   await me.page.evaluate(() => window.__gameMenu.click('call-advance'));
   const advancing = await waitFor('the bot to drive the tank forwards', async () => {
     await crewHolds();

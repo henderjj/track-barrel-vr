@@ -28,7 +28,11 @@ import {
   twistAcross,
   twistForDemand,
   wheelGrip,
+  START_THROTTLE,
+  startTask,
+  WARM_UP_THROTTLE,
 } from '../src/sim/crew-bot.js';
+import { type EngineStart, stopEngine, WARM_COOLANT } from '../src/sim/engine.js';
 import { DRIVER_TILLER } from '../src/sim/driver-station.js';
 import { createDrillHand, createLoadingSnapshot, HOLD_NONE, LoadingDrill } from '../src/sim/loading.js';
 import { Lever, rollOf, TwistGrip, Wheel, wheelAngleOf } from '../src/sim/mechanism.js';
@@ -337,5 +341,58 @@ describe('practice crewmate: gunning (F1.13)', () => {
     expect(drill.rammed).toBe(true);
     play(drill, 0);
     expect(drill.loaded).toBe(true);
+  });
+});
+
+describe('practice crewmate: starting the engine (F1.17)', () => {
+  /** The bot's start-up played against the drive, each step taking `reach` s of hand movement. */
+  function start(startSetting: EngineStart, seconds: number, reach = 0.6): { s: TankDrive; steps: string[] } {
+    const s = createTankDrive();
+    stopEngine(s);
+    s.rpm = 0;
+    const c = { ...createControls(), start: startSetting };
+    const steps: string[] = [];
+    let busy = 0;
+    let caughtAt = 0;
+    let ran = false;
+    const dt = 1 / 60;
+    for (let t = 0; t < seconds; t += dt) {
+      if (s.running && !ran) caughtAt = t;
+      ran = s.running;
+      const task = startTask({ running: s.running, starterHot: s.starterRest > 0, coolant: s.coolant }, c, t - caughtAt);
+      const name = task === null ? 'drive' : task.kind === 'press' ? task.id : `throttle ${task.to.toFixed(2)}`;
+      if (steps[steps.length - 1] !== name) {
+        steps.push(name);
+        busy = reach;
+      }
+      busy -= dt;
+      c.starter = task?.kind === 'press' && task.id === 'starter' && busy <= 0;
+      if (task && busy <= 0) {
+        if (task.kind === 'throttle') c.throttle = task.to;
+        else if (task.id !== 'starter') c[task.id] = !c[task.id];
+      }
+      stepDrive(s, c, dt, []);
+    }
+    return { s, steps };
+  }
+
+  it('holds the starter until it fires with the Starter button', () => {
+    const { s, steps } = start('starter', 5);
+    expect(steps).toEqual(['starter', 'drive']);
+    expect(s.running).toBe(true);
+  });
+
+  it('works through the Full procedure in the manual\'s order, warms up and keeps it running', () => {
+    const { s, steps } = start('full', 200);
+    expect(steps.slice(0, 7)).toEqual(['battery', 'ignition', 'choke', `throttle ${START_THROTTLE.toFixed(2)}`, 'starter', 'drive', 'choke']);
+    expect(steps).toContain(`throttle ${WARM_UP_THROTTLE.toFixed(2)}`);
+    expect(steps[steps.length - 1]).toBe('drive');
+    expect(s.running).toBe(true);
+    expect(s.stalls).toBe(0);
+    expect(s.coolant).toBeGreaterThan(WARM_COOLANT);
+  });
+
+  it('leaves a hot starter to rest', () => {
+    expect(startTask({ running: false, starterHot: true, coolant: 20 }, { battery: true, ignition: true, choke: true, throttle: 0.3, start: 'full' }, 0)).toBeNull();
   });
 });

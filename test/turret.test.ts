@@ -74,6 +74,9 @@ describe('turret traverse and gun laying (F1.8)', () => {
     expect(powerTraverseRate(MAX_RPM)).toBeCloseTo(MAX_TRAVERSE, 6);
     expect(powerTraverseRate(500)).toBeCloseTo(POWER_TRAVERSE_IDLE, 6);
     expect(powerTraverseRate(4000)).toBeCloseTo(MAX_TRAVERSE, 6);
+    // The engine stopped, or only turning on the starter (F1.17): no power traverse.
+    expect(powerTraverseRate(0)).toBe(0);
+    expect(powerTraverseRate(160)).toBe(0);
     let last = 0;
     for (let rpm = IDLE_RPM; rpm <= MAX_RPM; rpm += 100) {
       expect(powerTraverseRate(rpm)).toBeGreaterThan(last);

@@ -5,7 +5,9 @@ import {
   DRIVER_CONTROLS,
   GEAR_ANGLES,
   GEARBOX,
+  LAMP,
   PANEL,
+  PANEL_HOUSING,
   panelToHull,
   SLIT_FRAME,
   THROTTLE_QUADRANT,
@@ -19,9 +21,10 @@ import { NEUTRAL, REVERSE } from '../sim/gearbox.js';
  * gearbox's hump, the hand throttle's quadrant on the left wall, the
  * instrument box on the left wall above it, and the slit's frame and brow
  * pad. They are merged into the hull's mesh (cabin.scene-asset.ts). The
- * levers are the mechanism kit's (`createLever`, mechanism.scene-asset.ts)
- * and the needles are drawn here; DriverStationSystem places and turns them
- * and draws the dials' faces. Sizes from src/sim/driver-station.ts.
+ * levers and the switch strip's caps are the mechanism kit's (`createLever`,
+ * `createButtonCap`, mechanism.scene-asset.ts) and the needles and warning
+ * lamps are drawn here; DriverStationSystem places, turns and lights them
+ * and draws the dials' and the strip's faces. Sizes from src/sim/driver-station.ts.
  */
 
 const OLIVE_DARK = 0x4a4a32;
@@ -76,11 +79,11 @@ export function driverStationParts(): Part[] {
   parts.push(box([qRight - wall, q.height, q.depth], [(qRight + wall) / 2, qTop - q.height / 2, tz], OLIVE_DARK));
   parts.push(box([0.03, PROUD * 2, q.depth - 0.04], [tx, qTop, tz], FRAME));
 
-  // The instrument box, its face FACE_GAP behind the dials' face, tilted and turned as the panel is.
+  // The instrument box round the dials and the switch strip (F1.17), its face FACE_GAP behind theirs, tilted and turned as the panel is.
   const housing: [number, number, number] = [0, 0, 0];
   const depth = 0.05;
-  panelToHull([0, 0, -FACE_GAP - depth / 2], housing);
-  const geometry = new BoxGeometry(PANEL.width + 0.03, PANEL.height + 0.03, depth);
+  panelToHull([0, PANEL_HOUSING.middle, -FACE_GAP - depth / 2], housing);
+  const geometry = new BoxGeometry(PANEL_HOUSING.width, PANEL_HOUSING.height, depth);
   geometry.rotateX(-PANEL.tilt);
   geometry.rotateY(PANEL.yaw);
   parts.push({ geometry, color: STEEL_LIGHT, position: housing });
@@ -106,6 +109,24 @@ export function driverStationParts(): Part[] {
 }
 
 const needleMaterial = new MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+
+/** A lamp's lens unlit, as a share of its lit colour. */
+export const LAMP_DARK = 0.22;
+
+/**
+ * A warning lamp's lens (F1.17), its middle at the origin on the switch
+ * strip's face, standing LAMP.proud in front of it (+Z), in a dark bezel
+ * ring. Its own material: DriverStationSystem lights it by its colour.
+ */
+export function createLamp(color: number): Mesh {
+  const depth = 0.008;
+  const lens = new Mesh(new CylinderGeometry(LAMP.radius, LAMP.radius, depth, 10, 1), new MeshBasicMaterial({ color, toneMapped: false }));
+  lens.geometry.rotateX(Math.PI / 2);
+  lens.geometry.translate(0, 0, LAMP.proud - depth / 2);
+  (lens.material as MeshBasicMaterial).color.multiplyScalar(LAMP_DARK);
+  lens.name = 'Warning Lamp';
+  return lens;
+}
 
 /**
  * A gauge's needle, pointing straight up from its dial's middle at the

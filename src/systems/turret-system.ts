@@ -17,6 +17,7 @@ import {
   extrapolateTurretState,
   lerpTurretState,
   POWER_GRIP,
+  POWER_TRAVERSE_MIN_RPM,
   STATION,
   type StationControl,
   type StationMount,
@@ -27,7 +28,7 @@ import {
   wheelForElevation,
   wrapAngle,
 } from '../sim/turret.js';
-import { engineRpm } from './drive-system.js';
+import { engineRpm, startEngine } from './drive-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { HoldKind } from './hand-lock.js';
 import { addControl } from './mechanism-system.js';
@@ -59,9 +60,10 @@ export function gunEntity(): Entity | null {
   return active?.gunEntity ?? null;
 }
 
-/** Practice → Lay the gun → Gunner: into the gunner's seat, with a sign saying how to lay the gun. */
+/** Practice → Lay the gun → Gunner: into the gunner's seat, the engine started for the power traverse (F1.17), with a sign saying how to lay the gun. */
 export function startGunning(): void {
   seating.ask('gunner');
+  startEngine();
   active?.sayHowToLay();
 }
 
@@ -190,6 +192,7 @@ export class TurretSystem extends createSystem({}) {
   private sign!: FloatingSign;
   private signText = '';
   private signUntil = 0;
+  private toldNoPower = false;
   private time = 0;
   private head = new Vector3();
 
@@ -357,6 +360,12 @@ export class TurretSystem extends createSystem({}) {
       input.traverse = 0;
     }
     const rpm = engineRpm();
+    // With the engine stopped (F1.17) the power grip does nothing: say so once, until it runs again.
+    if (rpm >= POWER_TRAVERSE_MIN_RPM) this.toldNoPower = false;
+    else if (Math.abs(input.traverse) > 0.3 && !this.toldNoPower && !ride.active) {
+      this.toldNoPower = true;
+      this.say('No power traverse', ['The engine is stopped: the driver starts it', 'The hand crank still turns the turret']);
+    }
     let first = true;
     for (let left = dt; left > 1e-6; left -= MAX_STEP) {
       // The crank's turn is applied once, in the first step.

@@ -461,6 +461,15 @@
               <Button id="row-gearbox-3" class="choice" size="sm" variant="secondary">Choice</Button>
             </div>
           </div>
+          <div id="row-engine" class="setting">
+            <div id="row-engine-label" class="label">Setting</div>
+            <div id="row-engine-choices" class="choices">
+              <Button id="row-engine-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-engine-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-engine-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-engine-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
         </div>
         <div id="menu-range" class="section">
           <div class="section-title">RANGE</div>

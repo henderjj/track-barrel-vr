@@ -20,6 +20,7 @@ import {
   renderEngineCycle,
   renderNoiseLoop,
   renderSound,
+  LOOPED,
   SOUND_IDS,
   SOUND_SECONDS,
   SoundCues,
@@ -53,6 +54,16 @@ describe('the engine', () => {
     expect(top.cutoff).toBeLessThan(1000);
     expect(top.gain).toBeGreaterThan(idle.gain);
     expect(top.gain).toBeLessThanOrEqual(1);
+  });
+
+  it('slows and fades to silence as a stopped engine runs down (F1.17)', () => {
+    const idle = engineVoice(IDLE_RPM, createEngineVoice());
+    const dying = engineVoice(IDLE_RPM / 2, createEngineVoice());
+    const stopped = engineVoice(0, createEngineVoice());
+    expect(dying.freq).toBeLessThan(idle.freq);
+    expect(dying.gain).toBeLessThan(idle.gain / 2);
+    expect(stopped.gain).toBe(0);
+    expect(stopped.rate).toBeGreaterThan(0);
   });
 
   it('renders a lumpy firing cycle that loops without a click', () => {
@@ -140,7 +151,9 @@ describe('the intercom duck', () => {
 });
 
 describe('the cues', () => {
-  const state = (over: Partial<CueState> = {}): CueState => ({ gear: 1, grinding: false, bumps: 0, lever: 0, rammed: false, ...over });
+  const state = (over: Partial<CueState> = {}): CueState => ({
+    gear: 1, grinding: false, bumps: 0, lever: 0, rammed: false, running: true, stalls: 0, coughs: 0, ...over,
+  });
   const heard = (cues: SoundCues, s: CueState, sinceShot = Infinity) => {
     const out = cues.step(s, sinceShot, createCues());
     return Object.entries(out).filter(([, on]) => on).map(([id]) => id);
@@ -182,6 +195,18 @@ describe('the cues', () => {
     expect(heard(c, state({ rammed: true, lever: 0.5 }))).toEqual(['latch']);
   });
 
+  it('fire up as the engine catches, and are heard on each cough and stall (F1.17)', () => {
+    const c = new SoundCues();
+    heard(c, state({ running: false }));
+    expect(heard(c, state({ running: false }))).toEqual([]);
+    expect(heard(c, state({ running: true }))).toEqual(['catch']);
+    expect(heard(c, state({ coughs: 1 }))).toEqual(['cough']);
+    expect(heard(c, state({ coughs: 2, stalls: 1, running: false }))).toEqual(['stall']);
+    // Switched off is no stall: the engine just runs down.
+    heard(c, state({ coughs: 2, stalls: 1, running: true }));
+    expect(heard(c, state({ coughs: 2, stalls: 1, running: false }))).toEqual([]);
+  });
+
   it('leave the breech opening after a shot to the shot', () => {
     const c = new SoundCues();
     heard(c, state({ lever: LEVER_CLOSED, rammed: true }));
@@ -207,7 +232,7 @@ describe('the short sounds', () => {
 
   it('die away to silence, the gun last and loudest', () => {
     for (const id of SOUND_IDS) {
-      if (id === 'grind') continue;
+      if (LOOPED.includes(id)) continue;
       const s = renderSound(id, RATE);
       const n = s.length;
       expect(rmsOf(s, n - 480, n)).toBeLessThan(rmsOf(s, 0, Math.min(n, 4800)) * 0.05);

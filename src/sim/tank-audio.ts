@@ -14,8 +14,15 @@ import { LEVER_CLOSED } from './loading.js';
 import { rng } from './random.js';
 import { IDLE_RPM, MAX_RPM } from './tank-drive.js';
 
-/** The short sounds: a gear going in, the gears grinding (a loop), the gun, the breech closing and opening by hand, the casing in the bin, a shell rammed home, the hull bumping into something. */
-export const SOUND_IDS = ['clunk', 'grind', 'shot', 'breech', 'latch', 'casing', 'ram', 'bump'] as const;
+/**
+ * The short sounds: a gear going in, the gears grinding (a loop), the gun,
+ * the breech closing and opening by hand, the casing in the bin, a shell
+ * rammed home, the hull bumping into something; and the engine's (F1.17):
+ * the starter cranking (a loop), the engine catching, a cough and a stall.
+ */
+export const SOUND_IDS = ['clunk', 'grind', 'shot', 'breech', 'latch', 'casing', 'ram', 'bump', 'crank', 'catch', 'cough', 'stall'] as const;
+/** The short sounds that loop while something lasts, rather than dying away. */
+export const LOOPED: readonly SoundId[] = ['grind', 'crank'];
 export type SoundId = (typeof SOUND_IDS)[number];
 
 /**
@@ -37,6 +44,11 @@ export const MIX = {
   casing: 0.28,
   ram: 0.35,
   bump: 0.5,
+  crank: 0.32,
+  catch: 0.5,
+  cough: 0.42,
+  stall: 0.45,
+  siren: 0.16,
 } as const;
 
 /**
@@ -95,12 +107,31 @@ export function revs(rpm: number): number {
   return clamp01((rpm - IDLE_RPM) / (MAX_RPM - IDLE_RPM));
 }
 
+/**
+ * Below idle (a stopped engine running down, F1.17) the beat slows and
+ * fades with the revs, to silence stopped; the starter's own sound is the 'crank'.
+ */
 export function engineVoice(rpm: number, out: EngineVoice): EngineVoice {
   const r = revs(rpm);
-  out.freq = ENGINE_IDLE_HZ + (ENGINE_TOP_HZ - ENGINE_IDLE_HZ) * r;
+  const alive = clamp01(rpm / IDLE_RPM);
+  out.freq = (ENGINE_IDLE_HZ + (ENGINE_TOP_HZ - ENGINE_IDLE_HZ) * r) * Math.max(0.2, alive);
   out.rate = out.freq / ENGINE_IDLE_HZ;
   out.cutoff = 380 + 520 * r;
-  out.gain = 0.65 + 0.35 * r;
+  out.gain = (0.65 + 0.35 * r) * alive * alive;
+  return out;
+}
+
+/**
+ * The siren (F1.17): a motor siren's wail, rising to SIREN_HZ over a
+ * second or so while the button is held and running down, fading, when
+ * let go. The target pitch and level for `on`, and how fast each glides (s).
+ */
+export const SIREN_HZ = 620;
+export const SIREN_REST_HZ = 120;
+export function sirenVoice(on: boolean, out: { freq: number; gain: number; glide: number }): { freq: number; gain: number; glide: number } {
+  out.freq = on ? SIREN_HZ : SIREN_REST_HZ;
+  out.gain = on ? 1 : 0;
+  out.glide = on ? 0.45 : 0.7;
   return out;
 }
 
@@ -177,6 +208,10 @@ export interface CueState {
   /** The breech lever's angle, rad, and whether a shell is rammed (the loading as drawn). */
   lever: number;
   rammed: boolean;
+  /** The engine runs, and its stall and cough counts (TankDrive, F1.17). */
+  running: boolean;
+  stalls: number;
+  coughs: number;
 }
 
 /** Which short sounds this frame's changes make. */
@@ -186,17 +221,21 @@ export interface Cues {
   breech: boolean;
   latch: boolean;
   ram: boolean;
+  catch: boolean;
+  cough: boolean;
+  stall: boolean;
 }
 
 export function createCues(): Cues {
-  return { clunk: false, bump: false, breech: false, latch: false, ram: false };
+  return { clunk: false, bump: false, breech: false, latch: false, ram: false, catch: false, cough: false, stall: false };
 }
 
 /**
  * Turns changes in the tank's state into short sounds, the same on both
  * pages since each reads the tank and the loading as it draws them: a gear
  * going in clunks, a bump thuds, the lever closing slams the breech and
- * opening it by hand unlatches it, a shell going home thunks. The first
+ * opening it by hand unlatches it, a shell going home thunks; the engine
+ * catching fires up, and each cough and stall is heard (F1.17). The first
  * frame only takes note. Allocation free.
  */
 export class SoundCues {
@@ -205,6 +244,9 @@ export class SoundCues {
   private bumps = 0;
   private closed = false;
   private rammed = false;
+  private running = false;
+  private stalls = 0;
+  private coughs = 0;
 
   /** `sinceShot` is how long ago the gun fired, s: the breech opening by itself then makes no sound of its own (the shot has it). */
   step(s: CueState, sinceShot: number, out: Cues): Cues {
@@ -214,11 +256,17 @@ export class SoundCues {
     out.breech = this.primed && closed && !this.closed;
     out.latch = this.primed && !closed && this.closed && !(sinceShot < AUTO_OPEN_WINDOW);
     out.ram = this.primed && s.rammed && !this.rammed;
+    out.catch = this.primed && s.running && !this.running;
+    out.stall = this.primed && s.stalls !== this.stalls && !s.running;
+    out.cough = this.primed && s.coughs !== this.coughs && !out.stall;
     // Neutral while grinding isn't a shift: the clunk comes when the gear goes in.
     if (!s.grinding) this.gear = s.gear;
     this.bumps = s.bumps;
     this.closed = closed;
     this.rammed = s.rammed;
+    this.running = s.running;
+    this.stalls = s.stalls;
+    this.coughs = s.coughs;
     this.primed = true;
     return out;
   }
@@ -239,7 +287,14 @@ export const SOUND_SECONDS: Record<SoundId, number> = {
   casing: 1.1,
   ram: 0.35,
   bump: 0.7,
+  crank: 0.5,
+  catch: 0.9,
+  cough: 0.4,
+  stall: 1,
 };
+
+/** The starter's compression beat, Hz: a whole number of beats in the crank's loop, so it loops without a click. */
+export const CRANK_BEAT_HZ = 4;
 
 /** The grind's tooth beat, Hz: a whole number of beats in its loop, so it loops without a click. */
 export const GRIND_TEETH_HZ = 60;
@@ -373,9 +428,51 @@ export function renderSound(id: SoundId, rate: number): Float32Array<ArrayBuffer
       noise(out, rate, 0, 0.7, 0.08, 400, random);
       partial(out, rate, 0, 230, 0.2, 0.08);
       break;
+    case 'crank': {
+      // The starter motor's whirr, labouring against each cylinder's compression: CRANK_BEAT_HZ heaves a second.
+      const a = 1 - Math.exp((-TAU * 600) / rate);
+      let lp = 0;
+      for (let i = 0; i < out.length; i++) {
+        const t = i / rate;
+        const heave = Math.sin(Math.PI * CRANK_BEAT_HZ * t) ** 2;
+        const whirr = 0.45 * Math.sin(TAU * 96 * t) + 0.25 * Math.sin(TAU * 192 * t) + 0.12 * Math.sin(TAU * 288 * t);
+        const x = random() * 2 - 1;
+        lp += a * (x - lp);
+        out[i] = heave * (whirr * (0.6 + 0.4 * heave) + 0.5 * lp);
+      }
+      break;
+    }
+    case 'catch':
+      // Firing up: a ragged run of firings, quickening, and a puff of black smoke's roar.
+      for (let k = 0; k < 9; k++) {
+        const at = 0.02 + k * (0.11 - k * 0.007) + (random() - 0.5) * 0.01;
+        const a = 0.6 + 0.5 * random();
+        thump(out, rate, at, 130, 70, a, 0.025);
+        noise(out, rate, at, 0.8 * a, 0.03, 300, random);
+      }
+      noise(out, rate, 0.1, 0.5, 0.35, 180, random);
+      break;
+    case 'cough':
+      // A misfire: a hollow pop and a splutter.
+      thump(out, rate, 0, 110, 60, 1, 0.03);
+      noise(out, rate, 0, 0.9, 0.04, 500, random);
+      noise(out, rate, 0.07, 0.5, 0.05, 350, random);
+      thump(out, rate, 0.13, 90, 55, 0.5, 0.03);
+      break;
+    case 'stall':
+      // Dying: a few slowing, weakening firings, then the block shuddering to rest.
+      for (let k = 0; k < 5; k++) {
+        const at = 0.02 + k * 0.08 + k * k * 0.02;
+        const a = 1 - k * 0.17;
+        thump(out, rate, at, 120, 65, a, 0.03);
+        noise(out, rate, at, 0.7 * a, 0.035, 280, random);
+      }
+      thump(out, rate, 0.62, 60, 35, 0.8, 0.12);
+      partial(out, rate, 0.62, 210, 0.15, 0.08);
+      break;
   }
   normalise(out, MIX[id]);
-  return id === 'grind' ? out : fadeOut(out, rate, 0.03);
+  return LOOPED.includes(id) ? out : fadeOut(out, rate, 0.03);
 }
 
 /**

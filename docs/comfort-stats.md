@@ -22,6 +22,7 @@ Each page counts what its own player does while a range run's clock runs (F1.11:
 | `result`, `time_s` | done, stopped or restarted, and the crew's time for three hits (or the clock when stopped) |
 | `shots`, `targets`, `assisted` | As the run clock showed them; assisted if Ready to fire was used |
 | `grinds` | Times the gears ground (the tank's, so both players' rows agree) |
+| `stalls` | Times this player stalled the engine while driving (F1.17, [engine.md](engine.md)); 0 in a gunner's row and in rows saved before F1.17 |
 | `fumbles`, `fumbles_<control>`, `most_fumbled` | This player's fumbles, in total and per control: tillers, gear, throttle, power_traverse, crank, elevation, periscope, breech, shell, other |
 | `driver_s`, `gunner_s` | Seconds this player spent in each seat (seats can be swapped mid-run) |
 | `talk_s`, `crew_talk_s` | Seconds this player's microphone, and the crewmate's voice, were above the intercom's speaking level (gaps under 0.3 s between words count as talking; a muted microphone reads silent) |

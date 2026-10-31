@@ -1,6 +1,7 @@
 import { clampEyeRaise } from './sim/body-height.js';
 import { parseSeat, type SeatId } from './sim/cabin.js';
 import { type Bumps, parseBumps, VIGNETTE_STRENGTHS } from './sim/comfort.js';
+import { type EngineStart, parseEngineStart } from './sim/engine.js';
 import { type GearboxMode, parseGearbox } from './sim/gearbox.js';
 import { type OpenHatches, parseHatches } from './sim/interior.js';
 
@@ -92,6 +93,14 @@ export interface Settings {
    */
   gearbox: GearboxMode;
   /**
+   * How much of the engine's start-up this player does as the driver
+   * (F1.17, src/sim/engine.ts): 'running' (the engine is already running),
+   * 'starter' (the default; hold the starter button) or 'full' (battery,
+   * ignition, choke, hand throttle and starter, then a warm-up). The game
+   * menu's Driving section changes it at once.
+   */
+  engine: EngineStart;
+  /**
    * The cabin's look (src/sim/interior.ts's CabinLook), to find what looks
    * best (John's headset check, 2026-10-30): which hatches stand open
    * ('both', the default, 'driver', 'gunner' or 'none'); the ambient light
@@ -130,6 +139,7 @@ export const DEFAULT_SETTINGS: Settings = {
   vignette: VIGNETTE_STRENGTHS.normal,
   bumps: 'full',
   gearbox: 'auto',
+  engine: 'starter',
   hatches: 'both',
   cabin: 1,
   lamps: 1,
@@ -186,6 +196,7 @@ export function parseSettings(search: string): Settings {
     vignette: num(params, 'vignette', d.vignette, 0, 1),
     bumps: parseBumps(params.get('bumps'), d.bumps),
     gearbox: parseGearbox(params.get('gearbox'), d.gearbox),
+    engine: parseEngineStart(params.get('engine'), d.engine),
     hatches: parseHatches(params.get('hatches'), d.hatches),
     cabin: num(params, 'cabin', d.cabin, 0.1, 8),
     lamps: num(params, 'lamps', d.lamps, 0, 4),

@@ -77,6 +77,8 @@ export function sum(values: readonly number[]): number {
 export interface RunTally {
   fumbles: number[];
   grinds: number;
+  /** Times the engine stalled while this player drove (F1.17). */
+  stalls: number;
   /** Seconds in each seat. */
   driver: number;
   gunner: number;
@@ -90,18 +92,19 @@ export interface RunTally {
 }
 
 export function createTally(): RunTally {
-  return { fumbles: FUMBLE_GROUPS.map(() => 0), grinds: 0, driver: 0, gunner: 0, talk: 0, crewTalk: 0, queasy: 0, talkHold: 0, crewHold: 0 };
+  return { fumbles: FUMBLE_GROUPS.map(() => 0), grinds: 0, stalls: 0, driver: 0, gunner: 0, talk: 0, crewTalk: 0, queasy: 0, talkHold: 0, crewHold: 0 };
 }
 
 export function resetTally(t: RunTally): RunTally {
   t.fumbles.fill(0);
-  t.grinds = t.driver = t.gunner = t.talk = t.crewTalk = t.queasy = t.talkHold = t.crewHold = 0;
+  t.grinds = t.stalls = t.driver = t.gunner = t.talk = t.crewTalk = t.queasy = t.talkHold = t.crewHold = 0;
   return t;
 }
 
 export function copyTally(from: RunTally, to: RunTally): RunTally {
   for (let i = 0; i < to.fumbles.length; i++) to.fumbles[i] = from.fumbles[i] ?? 0;
   to.grinds = from.grinds;
+  to.stalls = from.stalls;
   to.driver = from.driver;
   to.gunner = from.gunner;
   to.talk = from.talk;
@@ -209,6 +212,7 @@ export interface CrewStats {
   driver: number;
   gunner: number;
   grinds: number;
+  stalls: number;
   fumbles: number[];
   /** The crewmate is the practice crewmate. */
   bot: boolean;
@@ -216,20 +220,22 @@ export interface CrewStats {
 
 /** The `run-stats` event each page sends its crewmate when a run ends. */
 export function crewStatsEvent(run: number, t: RunTally, bot: boolean): { t: 'run-stats' } & Record<string, unknown> {
-  return { t: 'run-stats', run, driver: t.driver, gunner: t.gunner, grinds: t.grinds, fumbles: [...t.fumbles], bot };
+  return { t: 'run-stats', run, driver: t.driver, gunner: t.gunner, grinds: t.grinds, stalls: t.stalls, fumbles: [...t.fumbles], bot };
 }
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 /** Read a `run-stats` event: the run's id and the crewmate's stats, or null if it isn't one. */
 export function readCrewStats(e: Record<string, unknown>): { run: number; crew: CrewStats } | null {
-  const { run, driver, gunner, grinds, fumbles, bot } = e;
+  const { run, driver, gunner, grinds, stalls, fumbles, bot } = e;
   if (!finite(run) || !finite(driver) || !finite(gunner) || !finite(grinds) || !Array.isArray(fumbles)) return null;
   const counts = FUMBLE_GROUPS.map((_, i) => {
     const n = fumbles[i];
     return finite(n) && n >= 0 ? Math.floor(n) : 0;
   });
-  return { run, crew: { driver: Math.max(0, driver), gunner: Math.max(0, gunner), grinds: Math.max(0, Math.floor(grinds)), fumbles: counts, bot: bot === true } };
+  return { run, crew: { driver: Math.max(0, driver), gunner: Math.max(0, gunner), grinds: Math.max(0, Math.floor(grinds)),
+    // A page from before F1.17 sends no stalls.
+    stalls: finite(stalls) ? Math.max(0, Math.floor(stalls)) : 0, fumbles: counts, bot: bot === true } };
 }
 
 /** A run, a "feeling queasy" mark, or (added to the CSV when it is saved) the whole visit so far. */
@@ -254,6 +260,7 @@ export interface StatsRow {
   targets: number;
   assisted: boolean;
   grinds: number;
+  stalls: number;
   fumbles: number[];
   driver: number;
   gunner: number;
@@ -276,7 +283,7 @@ export function runRow(end: RunEnd, context: RowContext): StatsRow {
   const t = end.tally;
   return {
     kind: 'run', run: end.run, at: context.at, seat: context.seat, crewmate: context.crewmate, result: end.result,
-    time: end.time, shots: end.shots, targets: end.targets, assisted: end.assisted, grinds: t.grinds, fumbles: [...t.fumbles],
+    time: end.time, shots: end.shots, targets: end.targets, assisted: end.assisted, grinds: t.grinds, stalls: t.stalls, fumbles: [...t.fumbles],
     driver: t.driver, gunner: t.gunner, talk: t.talk, crewTalk: t.crewTalk, crew: null, queasy: t.queasy,
     vignette: context.vignette, bumps: context.bumps, speed: Number.NaN, turn: Number.NaN, label: context.label,
   };
@@ -286,7 +293,7 @@ export function runRow(end: RunEnd, context: RowContext): StatsRow {
 export function queasyRow(run: number, clock: number, speed: number, turnRate: number, context: RowContext): StatsRow {
   return {
     kind: 'queasy', run, at: context.at, seat: context.seat, crewmate: context.crewmate, result: '', time: clock,
-    shots: 0, targets: 0, assisted: false, grinds: 0, fumbles: FUMBLE_GROUPS.map(() => 0), driver: 0, gunner: 0, talk: 0,
+    shots: 0, targets: 0, assisted: false, grinds: 0, stalls: 0, fumbles: FUMBLE_GROUPS.map(() => 0), driver: 0, gunner: 0, talk: 0,
     crewTalk: 0, crew: null, queasy: 1, vignette: context.vignette, bumps: context.bumps, speed: speed * 3.6,
     turn: (turnRate * 180) / Math.PI, label: context.label,
   };
@@ -296,7 +303,7 @@ export function queasyRow(run: number, clock: number, speed: number, turnRate: n
 export function visitRow(t: RunTally, seconds: number, context: RowContext): StatsRow {
   return {
     kind: 'visit', run: 0, at: context.at, seat: context.seat, crewmate: context.crewmate, result: '', time: seconds,
-    shots: 0, targets: 0, assisted: false, grinds: t.grinds, fumbles: [...t.fumbles], driver: t.driver, gunner: t.gunner,
+    shots: 0, targets: 0, assisted: false, grinds: t.grinds, stalls: t.stalls, fumbles: [...t.fumbles], driver: t.driver, gunner: t.gunner,
     talk: t.talk, crewTalk: t.crewTalk, crew: null, queasy: t.queasy, vignette: context.vignette, bumps: context.bumps,
     speed: Number.NaN, turn: Number.NaN, label: context.label,
   };
@@ -319,7 +326,7 @@ export function wallClock(d: Date): string {
 }
 
 export const STATS_CSV_HEADER = [
-  'kind', 'run', 'at', 'seat', 'crewmate', 'result', 'time_s', 'shots', 'targets', 'assisted', 'grinds', 'fumbles',
+  'kind', 'run', 'at', 'seat', 'crewmate', 'result', 'time_s', 'shots', 'targets', 'assisted', 'grinds', 'stalls', 'fumbles',
   ...FUMBLE_GROUPS.map((g) => `fumbles_${g}`),
   'most_fumbled', 'driver_s', 'gunner_s', 'talk_s', 'crew_talk_s', 'crew_driver_s', 'crew_gunner_s', 'crew_fumbles',
   'crew_most_fumbled', 'queasy', 'vignette', 'bumps', 'speed_kmh', 'turn_dps', 'label',
@@ -336,7 +343,7 @@ export function csvLine(r: StatsRow): string {
   const crew = r.crew;
   return [
     r.kind, r.run, r.at, r.seat, r.crewmate, r.result, secs(r.time),
-    run ? r.shots : '', run ? r.targets : '', run ? (r.assisted ? 1 : 0) : '', tally ? r.grinds : '', tally ? sum(r.fumbles) : '',
+    run ? r.shots : '', run ? r.targets : '', run ? (r.assisted ? 1 : 0) : '', tally ? r.grinds : '', tally ? r.stalls : '', tally ? sum(r.fumbles) : '',
     ...r.fumbles.map((n) => (tally ? n : '')),
     tally ? mostFumbled(r.fumbles) : '', tally ? secs(r.driver) : '', tally ? secs(r.gunner) : '', tally ? secs(r.talk) : '',
     tally && r.crewmate !== 'none' ? secs(r.crewTalk) : '',
@@ -442,7 +449,7 @@ export function readRow(item: unknown): StatsRow | null {
   const crewmate = r.crewmate === 'player' || r.crewmate === 'bot' ? r.crewmate : 'none';
   return {
     kind: r.kind, run: num(r.run), at: str(r.at), seat: str(r.seat), crewmate, result: str(r.result), time: num(r.time, -1),
-    shots: num(r.shots), targets: num(r.targets), assisted: r.assisted === true, grinds: num(r.grinds), fumbles,
+    shots: num(r.shots), targets: num(r.targets), assisted: r.assisted === true, grinds: num(r.grinds), stalls: num(r.stalls), fumbles,
     driver: num(r.driver), gunner: num(r.gunner), talk: num(r.talk), crewTalk: num(r.crewTalk), crew: crewEvent?.crew ?? null,
     queasy: num(r.queasy), vignette: num(r.vignette), bumps: str(r.bumps), speed: num(r.speed, Number.NaN),
     turn: num(r.turn, Number.NaN), label: str(r.label),
@@ -461,6 +468,7 @@ export function lastRunLine(log: StatsLog): string {
   const how = row.result === 'done' ? formatRunTime(row.time) : `${row.result} at ${formatRunTime(row.time)}`;
   return (
     `Last: run ${row.run} ${how}, ${row.shots} shot${row.shots === 1 ? '' : 's'}, ${row.grinds} grind${row.grinds === 1 ? '' : 's'}, ` +
+    (row.stalls > 0 ? `${row.stalls} stall${row.stalls === 1 ? '' : 's'}, ` : '') +
     `${fumbles} fumble${fumbles === 1 ? '' : 's'}${most ? ` (most: ${most.replace('_', ' ')})` : ''}. ${kept}.`
   );
 }

@@ -26,9 +26,12 @@ import {
 import { onSettingChange } from '../live-settings.js';
 import { settings } from '../settings.js';
 import { type Bumps, crewBumps, groundFeel, parseBumps, vignetteLevel } from '../sim/comfort.js';
+import { ENGINE_START_NAMES, type EngineStart, startable, startEngine as startSim, type StallCause, stopEngine } from '../sim/engine.js';
 import { GEARBOX_NAMES, type GearboxMode, nextGear, realControls } from '../sim/gearbox.js';
 import {
   angleDelta,
+  COOLANT_IDLE,
+  copyEngine,
   copyTankDrive,
   createControls,
   createTankDrive,
@@ -73,6 +76,16 @@ export const drive = {
   left: 0,
   right: 0,
   tillersHeld: false,
+  /**
+   * The instrument box (F1.17): the battery and ignition switches and the
+   * choke where they are set (the station's switches, keys B, I and C), and
+   * the starter and siren buttons held in on the station.
+   */
+  battery: false,
+  ignition: false,
+  choke: false,
+  starter: false,
+  siren: false,
 };
 
 const SEND_HZ = 45;
@@ -93,7 +106,16 @@ function copyControls(from: DriverControls, to: DriverControls): void {
   to.throttle = from.throttle;
   to.clutch = from.clutch;
   to.mode = from.mode;
+  to.battery = from.battery;
+  to.ignition = from.ignition;
+  to.starter = from.starter;
+  to.choke = from.choke;
+  to.siren = from.siren;
+  to.start = from.start;
 }
+
+/** What Back to start, a Practice shortcut or a run does with the engine: stop it (cold), leave it as it is, or start it warm. */
+type EngineReset = 'off' | 'keep' | 'warm';
 
 /** A thumbstick pushed this far forwards or back changes gear, once, until it comes back within STICK_REARM of the middle. */
 const STICK_FLICK = 0.7;
@@ -105,9 +127,27 @@ export function startDriving(): void {
   active?.sayHowToDrive();
 }
 
-/** Practice → Back to start: the tank parked where it began (the host does it; a guest asks). */
-export function resetTank(): void {
-  active?.reset();
+/**
+ * Practice → Back to start: the tank parked where it began (the host does
+ * it; a guest asks), its engine stopped and cold (F1.17) unless the
+ * driver's Engine start is Running; a range run keeps it as it was
+ * (`engine` 'keep'), and Ready to fire starts it warm ('warm').
+ */
+export function resetTank(engine: EngineReset = 'off'): void {
+  active?.reset(engine);
+}
+
+/**
+ * Start the engine, warm, for a Practice shortcut that needs it running
+ * (Lay the gun, Ready to fire: the power traverse runs off it). The host
+ * does it; a guest asks.
+ */
+export function startEngine(): void {
+  if (!netLink.isHost) {
+    netLink.sendEvent({ t: 'engine-start' });
+    return;
+  }
+  active?.warmStart();
 }
 
 /** Where a guest asks the host to park the tank (Practice shortcuts, F1.7). */
@@ -168,9 +208,14 @@ export function shownDriverState(): TankDrive | null {
   return active?.shown ?? null;
 }
 
-/** The engine's RPM as drawn on this page (the host's, or the guest's copy of it): the turret's power traverse runs off it (F1.8). */
+/** The engine's RPM as drawn on this page (the host's, or the guest's copy of it): the turret's power traverse runs off it (F1.8), so has nothing with the engine stopped (F1.17). */
 export function engineRpm(): number {
   return active?.shown.rpm ?? IDLE_RPM;
+}
+
+/** How this page's driver starts the engine (F1.17): the Engine start setting, or a test's. */
+export function engineStart(): EngineStart {
+  return active?.start ?? settings.engine;
 }
 
 /** The bumps the tank rides on (F1.14): reduced if either player asked for it in their Comfort settings. */
@@ -189,7 +234,8 @@ export function driveStatus(): string {
   if (s == null) return '';
   const who = seating.mine === 'driver' ? 'You drive' : netLink.connected && seating.crew === 'driver' ? 'Your crewmate drives' : 'Nobody drives';
   const gear = s.grinding ? 'grinding' : s.gear === NEUTRAL ? 'neutral' : `${GEARS[s.gear].name.toLowerCase()} gear`;
-  return `${who}: ${kmh(s)} km/h${s.speed < -0.05 ? ' backwards' : ''}, ${gear}, ${Math.round(s.rpm / 10) * 10} rpm`;
+  const engine = s.running ? `${Math.round(s.rpm / 10) * 10} rpm` : s.cranking ? 'cranking' : 'engine off';
+  return `${who}: ${kmh(s)} km/h${s.speed < -0.05 ? ' backwards' : ''}, ${gear}, ${engine}`;
 }
 
 interface DriveDebug {
@@ -201,9 +247,12 @@ interface DriveDebug {
   shownControls(): DriverControls;
   /** Who drives, as this page sees it. */
   driver(): 'me' | 'crew' | 'nobody';
-  /** Drive as if from the sticks (tests): tillers, accelerator, clutch, lever and gearbox mode, or null to go back to the real ones. */
+  /** Drive as if from the sticks (tests): tillers, accelerator, clutch, lever, gearbox mode, the engine's switches and start setting, or null to go back to the real ones. */
   set(controls: Partial<DriverControls> | null): void;
-  reset(): void;
+  /** Back to the start: the engine kept as it is unless `engine` says (the menu's Back to start stops it). */
+  reset(engine?: EngineReset): void;
+  /** Host only: start the engine warm (as the Practice shortcuts do) or stop it, cold (tests). */
+  engine(action: 'start' | 'stop'): void;
   /** Host only: put the tank at rest at (x, z) facing `heading` (tests and Practice). */
   place(x: number, z: number, heading: number): void;
   /** Where a world-space point is drawn, in hull space. */
@@ -260,6 +309,7 @@ export class DriveSystem extends createSystem({}) {
   private remoteAt = Number.NEGATIVE_INFINITY;
   private remoteSeq = -1;
   private override: Partial<DriverControls> | null = null;
+  private spare = createTankDrive();
   private buffer = new TankBuffer();
   private incoming = createTankDrive();
   private header: TankHeader = { seq: 0, timeMs: 0 };
@@ -281,6 +331,12 @@ export class DriveSystem extends createSystem({}) {
   private time = 0;
   private wasGrinding = false;
   private wasBogging = false;
+  /** The stalls counted when last looked at (-1 before the first), and how long the starter has been held without turning, s. */
+  private stallsSeen = -1;
+  private starterHeld = 0;
+  private crankHeld = 0;
+  /** This page's driver's Engine start setting (engineStart). */
+  start: EngineStart = settings.engine;
   /** This page's driver's gearbox mode (gearboxMode). */
   mode: GearboxMode = settings.gearbox;
   /** Each stick (left, right) has flicked and not yet come back: no further shift until it does. */
@@ -294,6 +350,9 @@ export class DriveSystem extends createSystem({}) {
 
   init(): void {
     active = this;
+    // The tank begins with its engine stopped and cold, unless this player's Engine start is Running (F1.17).
+    if (settings.engine !== 'running') this.stopCold(this.sim);
+    copyTankDrive(this.sim, this.shown);
     this.ground = this.world.getSceneEntity('ground')?.object3D ?? null;
     if (this.ground == null) console.warn('[Drive] no ground in the scene');
     else if (!settings.ground) this.ground.visible = false;
@@ -305,8 +364,12 @@ export class DriveSystem extends createSystem({}) {
 
     netLink.handlers.set(PacketType.TankState, (view) => this.onTankState(view));
     netLink.handlers.set(PacketType.DriverControls, (view) => this.onDriverControls(view));
-    netLink.events.set('drive-reset', () => {
-      if (netLink.isHost) this.reset();
+    netLink.events.set('drive-reset', (data) => {
+      const engine = (data as { engine?: unknown }).engine;
+      if (netLink.isHost) this.reset(engine === 'keep' || engine === 'warm' ? engine : 'off');
+    });
+    netLink.events.set('engine-start', () => {
+      if (netLink.isHost) this.warmStart();
     });
     netLink.events.set('comfort', (data) => {
       this.theirBumps = parseBumps((data as { bumps?: unknown }).bumps);
@@ -324,6 +387,10 @@ export class DriveSystem extends createSystem({}) {
       const key = event.key.toLowerCase();
       if (key >= '0' && key <= '5' && key.length === 1) setGear(Number(key) as Gear);
       else if (key === 'r') setGear(REVERSE);
+      // The instrument box's switches (F1.17); Space holds the starter and N the siren.
+      else if (key === 'b' && !event.repeat) drive.battery = !drive.battery;
+      else if (key === 'i' && !event.repeat) drive.ignition = !drive.ignition;
+      else if (key === 'c' && !event.repeat) drive.choke = !drive.choke;
       else if (key === 'e') shiftBy(1);
       else if (key === 'q') shiftBy(-1);
       else this.keys.add(key);
@@ -343,6 +410,7 @@ export class DriveSystem extends createSystem({}) {
       () => netLink.handlers.delete(PacketType.TankState),
       () => netLink.handlers.delete(PacketType.DriverControls),
       () => netLink.events.delete('drive-reset'),
+      () => netLink.events.delete('engine-start'),
       () => netLink.events.delete('drive-place'),
       () => netLink.events.delete('comfort'),
       onSettingChange((key) => {
@@ -363,7 +431,16 @@ export class DriveSystem extends createSystem({}) {
         self.override = controls === null ? null : { ...controls };
         if (controls?.gear !== undefined) setGear(controls.gear);
       },
-      reset: () => self.reset(),
+      // The tests put the tank back without stopping its engine, unless they ask.
+      reset: (engine = 'keep') => self.reset(engine),
+      engine: (action) => {
+        if (action === 'start') self.warmStart();
+        else if (netLink.isHost) {
+          stopEngine(self.sim);
+          self.sim.rpm = 0;
+          copyTankDrive(self.sim, self.shown);
+        }
+      },
       place: (x, z, heading) => self.park(x, z, heading),
       drawnAt: (x, y, z) => (self.ground ? self.ground.localToWorld(new Vector3(x, y, z)).toArray() : []),
       get vignetteAlpha() { return self.vignette.material.uniforms.uAlpha.value as number; },
@@ -394,27 +471,63 @@ export class DriveSystem extends createSystem({}) {
     return netLink.connected && seating.crew === 'driver' ? 'crew' : 'nobody';
   }
 
-  /** Host only: the tank at rest at (x, z) facing `heading`, settled on the ground. */
+  /** Host only: the tank at rest at (x, z) facing `heading`, settled on the ground, its engine as it was. */
   park(x: number, z: number, heading: number): void {
     if (!netLink.isHost) return;
-    Object.assign(this.sim, createTankDrive(x, z, heading), { gear: this.sim.gear });
+    const was = copyTankDrive(this.sim, this.spare);
+    Object.assign(this.sim, createTankDrive(x, z, heading), { gear: was.gear });
+    copyEngine(was, this.sim);
     settle(this.sim, groundFeel(this.bumps));
     copyTankDrive(this.sim, this.shown);
   }
 
-  reset(): void {
+  reset(engine: EngineReset = 'off'): void {
     if (!netLink.isHost) {
-      netLink.sendEvent({ t: 'drive-reset' });
+      const event = { t: 'drive-reset', engine };
+      netLink.sendEvent(event);
       return;
     }
-    const gear = this.sim.gear;
-    Object.assign(this.sim, createTankDrive(), { gear });
+    const was = copyTankDrive(this.sim, this.spare);
+    Object.assign(this.sim, createTankDrive(), { gear: was.gear });
+    if (engine === 'keep') copyEngine(was, this.sim);
+    else if (engine === 'warm') this.sim.coolant = COOLANT_IDLE;
+    else if (this.shownControls.start !== 'running') this.stopCold(this.sim);
+    // The stall count carries on (the stats count its changes).
+    this.sim.stalls = was.stalls;
+    this.sim.coughs = was.coughs;
     copyTankDrive(this.sim, this.shown);
-    console.info('[Drive] back at the start');
+    console.info(`[Drive] back at the start, engine ${engine === 'keep' ? 'as it was' : this.sim.running ? 'running' : 'off'}`);
+  }
+
+  /** Host only: the engine running and warm, at once (a Practice shortcut that needs the power traverse). */
+  warmStart(): void {
+    if (!netLink.isHost) return;
+    if (!this.sim.running) {
+      startSim(this.sim);
+      this.sim.rpm = IDLE_RPM;
+    }
+    this.sim.coolant = Math.max(this.sim.coolant, COOLANT_IDLE);
+    copyTankDrive(this.sim, this.shown);
+    console.info('[Drive] engine started for a Practice shortcut');
+  }
+
+  /** The engine stopped and run down, at the air's temperature: as the tank is found. */
+  private stopCold(s: TankDrive): void {
+    stopEngine(s);
+    s.rpm = 0;
   }
 
   sayHowToDrive(): void {
     const vr = this.world.visibilityState.peek() !== VisibilityState.NonImmersive;
+    if (!this.shown.running) {
+      const how: Record<EngineStart, [string, string]> = {
+        running: ['Hold the starter (instrument box)', 'Hold Space: the starter'],
+        starter: ['Hold the starter (instrument box)', 'Hold Space: the starter'],
+        full: ['Battery, ignition, choke, starter', 'B, I, C, then hold Space'],
+      };
+      this.say(`Start the engine: ${ENGINE_START_NAMES[this.start].toLowerCase()}`, how[this.start][vr ? 0 : 1]);
+      return;
+    }
     const how: Record<GearboxMode, [string, string]> = {
       auto: ['Grip the tillers and push', 'W A S D to drive'],
       stick: ['R trigger: go. Tillers: brakes. R stick: gears', 'W: go, S A D: brakes, E Q: gears'],
@@ -473,15 +586,25 @@ export class DriveSystem extends createSystem({}) {
     const pads = this.input.xr.gamepads;
     // The practice crewmate drives the tillers only; tracked hands have no triggers to squeeze.
     this.mode = this.override?.mode ?? (settings.bot || (vr && pads.left == null && pads.right == null) ? 'auto' : settings.gearbox);
+    this.start = this.override?.start ?? settings.engine;
     c.mode = this.mode;
+    c.start = this.start;
     c.gear = drive.gear;
     c.throttle = drive.throttle;
     c.left = 0;
     c.right = 0;
     c.accel = drive.accel;
     c.clutch = drive.clutch;
+    // The switches stay where they were set; the buttons are held only by whoever sits in the seat.
+    c.battery = this.override?.battery ?? drive.battery;
+    c.ignition = this.override?.ignition ?? drive.ignition;
+    c.choke = this.override?.choke ?? drive.choke;
+    c.starter = false;
+    c.siren = false;
     // Spike S2's ride has the sticks while it runs.
     if (seating.mine !== 'driver' || ride.active) return;
+    c.starter = this.override?.starter ?? (drive.starter || (!vr && this.keys.has(' ')));
+    c.siren = this.override?.siren ?? (drive.siren || (!vr && this.keys.has('n')));
     const real = realControls(this.mode);
     if (vr) {
       // The pedals: the left trigger the clutch, the right the accelerator (a finger each on the tillers' grips).
@@ -543,6 +666,8 @@ export class DriveSystem extends createSystem({}) {
         source.left = 0;
         source.right = 0;
         source.accel = 0;
+        source.starter = false;
+        source.siren = false;
       }
     } else if (driver === 'nobody') {
       // An empty seat: tillers let go, the lever where it was left, the automatic box holding the tank still.
@@ -552,12 +677,16 @@ export class DriveSystem extends createSystem({}) {
       source.clutch = 0;
       source.gear = this.sim.gear;
       source.mode = 'auto';
+      source.starter = false;
+      source.siren = false;
     }
     if (crewPresence.paused) {
       // The crew is on hold (its sign says why): the tank rolls to a stop.
       source.left = 0;
       source.right = 0;
       source.accel = 0;
+      source.starter = false;
+      source.siren = false;
     }
     const feel = groundFeel(this.bumps);
     for (let left = dt; left > 1e-6; left -= MAX_STEP) {
@@ -649,9 +778,41 @@ export class DriveSystem extends createSystem({}) {
     if (bogging && !this.wasBogging && seating.mine === 'driver') this.say('Engine labouring', 'Clutch in, or a lower gear');
     this.wasGrinding = grinding;
     this.wasBogging = bogging;
+    this.engineSigns(delta);
     if (this.sign.visible) {
       if (this.time > this.signUntil) this.sign.setVisible(false);
       else this.sign.follow(this.world.visibilityState.peek() !== VisibilityState.NonImmersive ? this.player.head : this.camera, delta);
+    }
+  }
+
+  /** The engine's signs for the driver (F1.17): a stall and why, and why the starter won't turn or the engine won't fire. */
+  private engineSigns(delta: number): void {
+    const s = this.shown;
+    const stalls = s.stalls;
+    const mine = seating.mine === 'driver';
+    if (this.stallsSeen >= 0 && stalls !== this.stallsSeen && !s.running && mine) {
+      const why: Record<StallCause, string> = {
+        none: 'Clutch in or neutral, then the starter',
+        bog: 'Clutch in, then the starter. Pull away in a lower gear',
+        cold: 'Warm it up with the hand throttle at two thirds',
+        choke: 'Choke in too soon: leave it out a few seconds',
+        flood: 'Flooded: push the choke in once it runs',
+      };
+      this.say('Engine stalled', why[s.stallCause]);
+    }
+    this.stallsSeen = stalls;
+    const c = this.controls;
+    const holding = mine && c.starter && !s.running;
+    this.starterHeld = holding && !s.cranking ? this.starterHeld + delta : 0;
+    this.crankHeld = holding && s.cranking ? this.crankHeld + delta : 0;
+    if (this.starterHeld > 0.4 && this.starterHeld - delta <= 0.4) {
+      const full = c.start === 'full';
+      if (full && !c.battery) this.say('Nothing turns', 'Battery switch on first');
+      else if (s.starterRest > 0) this.say('Starter too hot', 'Let it cool for a while');
+      else if (!startable(s, c)) this.say('In gear', this.mode === 'clutch' ? 'Clutch in, or neutral, to start' : 'Neutral to start');
+    }
+    if (this.crankHeld > 4 && this.crankHeld - delta <= 4) {
+      this.say('It won\'t fire', c.start === 'full' && !c.ignition ? 'Ignition on' : 'Choke out and the hand throttle a little open');
     }
   }
 

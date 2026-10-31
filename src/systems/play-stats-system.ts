@@ -89,6 +89,8 @@ export class PlayStatsSystem extends createSystem({}) {
   private visit = createTally();
   private seconds = 0;
   private wasGrinding = false;
+  /** The tank's stall count when last looked at (-1 before the first). */
+  private stallsSeen = -1;
   private sent = 0;
   private received = 0;
   private lastMark = '';
@@ -148,6 +150,13 @@ export class PlayStatsSystem extends createSystem({}) {
       if (this.recorder.counting) this.recorder.tally.grinds++;
     }
     this.wasGrinding = grinding;
+    // The engine stalling while this player drives (F1.17): the count's changes, as a guest's wraps at 256.
+    const stalls = shownDriverState()?.stalls ?? -1;
+    if (this.stallsSeen >= 0 && stalls >= 0 && stalls !== this.stallsSeen && seating.mine === 'driver') {
+      this.visit.stalls++;
+      if (this.recorder.counting) this.recorder.tally.stalls++;
+    }
+    this.stallsSeen = stalls;
 
     const end = this.recorder.watch(shownRun());
     if (end) {

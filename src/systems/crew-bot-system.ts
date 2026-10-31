@@ -21,13 +21,15 @@ import {
   pathAt,
   pathLength,
   restingHandInSeat,
+  type StartTask,
+  startTask,
   stepTowards,
   traverseDemand,
   twistAcross,
   twistForDemand,
   wheelGrip,
 } from '../sim/crew-bot.js';
-import { DRIVER_TILLER, tillerAngle } from '../sim/driver-station.js';
+import { DRIVER_TILLER, HAND_THROTTLE, throttleAngle, tillerAngle } from '../sim/driver-station.js';
 import type { TwistGrip, Wheel } from '../sim/mechanism.js';
 import { sightLimit } from '../sim/range.js';
 import {
@@ -38,7 +40,8 @@ import {
   wheelForElevation,
   wrapAngle,
 } from '../sim/turret.js';
-import { engineRpm, shownDriverState, tankState } from './drive-system.js';
+import { drive, engineRpm, engineStart, shownDriverState, tankState } from './drive-system.js';
+import { ENGINE_NAMES } from './driver-station-system.js';
 import { lastShot } from './firing-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { handUse } from './grip-system.js';
@@ -178,6 +181,10 @@ export class CrewBotSystem extends createSystem({}) {
   private driver = new BotDriver();
   private wish = createDriveWish();
   private tank = { x: 0, z: 0, heading: 0, speed: 0, gear: 1 as 0 | 1 | 2 };
+  /** The engine ran last frame, when it last caught (s on this.time), and the start-up step under way (F1.17). */
+  private engineRan = false;
+  private caughtAt = 0;
+  private task: StartTask = null;
 
   // The gunner.
   private phase: 'load' | 'lay' | 'result' = 'load';
@@ -400,11 +407,18 @@ export class CrewBotSystem extends createSystem({}) {
     // Looked at once a second (the line is a new string each time).
     if (this.time - this.statusSentAt < 1) return;
     this.statusSentAt = this.time;
-    const line = seating.mine === 'driver' ? this.driver.describe() : this.gunnerLine();
+    const line = seating.mine === 'driver' ? this.driverLine() : this.gunnerLine();
     if (line === this.status) return;
     this.status = line;
     const event = { t: 'bot-status', line };
     netLink.sendEvent(event);
+  }
+
+  private driverLine(): string {
+    const t = this.task;
+    if (t === null) return this.driver.describe();
+    if (t.kind === 'throttle') return 'setting the hand throttle';
+    return t.id === 'starter' ? 'starting the engine' : `switching the ${t.id} ${t.id === 'choke' ? (drive.choke ? 'in' : 'out') : 'on'}`;
   }
 
   private gunnerLine(): string {
@@ -433,6 +447,21 @@ export class CrewBotSystem extends createSystem({}) {
     tank.z = s.z;
     tank.heading = s.heading;
     tank.speed = s.speed;
+    // The engine first (F1.17): its left hand works the instrument box and the hand throttle, the right holds its tiller.
+    if (s.running && !this.engineRan) this.caughtAt = this.time;
+    this.engineRan = s.running;
+    this.task = startTask(
+      { running: s.running, starterHot: s.starterRest > 0, coolant: s.coolant },
+      { battery: drive.battery, ignition: drive.ignition, choke: drive.choke, throttle: drive.throttle, start: engineStart() },
+      this.time - this.caughtAt,
+    );
+    if (this.task) {
+      const t = this.task;
+      if (t.kind === 'press') this.onControl('left', ENGINE_NAMES[t.id], null);
+      else this.onControl('left', 'hand-throttle', leverGrip(HAND_THROTTLE, throttleAngle(t.to), this.p));
+      this.onControl('right', TILLER.right, leverGrip(DRIVER_TILLER, tillerAngle(0), this.p));
+      return;
+    }
     // It drives with the automatic box (DriveSystem gives the crewmate's page no other), so its hands stay on the tillers.
     const wish = this.driver.update(dt, tank, this.wish);
     this.onControl('left', TILLER.left, leverGrip(DRIVER_TILLER, tillerAngle(wish.left), this.p));

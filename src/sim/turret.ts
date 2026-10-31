@@ -186,8 +186,12 @@ export function elevationForWheel(wheel: number): number {
   return clamp((-wheel / TURN) * ELEVATION_PER_TURN, MIN_ELEVATION, MAX_ELEVATION);
 }
 
-/** How fast full power traverse turns the turret with the engine at `rpm`, rad/s. */
+/** Below this the engine has stopped (or is only turning on the starter): no power traverse, only the hand crank (F1.17), rpm. */
+export const POWER_TRAVERSE_MIN_RPM = IDLE_RPM / 2;
+
+/** How fast full power traverse turns the turret with the engine at `rpm`, rad/s: none with the engine stopped. */
 export function powerTraverseRate(rpm: number): number {
+  if (rpm < POWER_TRAVERSE_MIN_RPM) return 0;
   const engine = clamp((rpm - IDLE_RPM) / (MAX_RPM - IDLE_RPM), 0, 1);
   return POWER_TRAVERSE_IDLE + (POWER_TRAVERSE_TOP - POWER_TRAVERSE_IDLE) * engine;
 }
