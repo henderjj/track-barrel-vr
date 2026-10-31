@@ -40,8 +40,12 @@ export interface EngineControls {
   ignition: boolean;
   /** The starter button, held in. */
   starter: boolean;
-  /** The choke pulled out: only the Full procedure reads it. */
-  choke: boolean;
+  /**
+   * How far the choke knob is pulled out, 0 (in) to 1 (out); the engine
+   * reads it as in, half out or out (chokeLevel). Only the Full procedure
+   * reads it.
+   */
+  choke: number;
   /** The siren button, held in: heard on both pages, nothing else. */
   siren: boolean;
   /** How much of the start-up the driver does. */
@@ -129,7 +133,7 @@ export const RUNNING_VOLTS = 28;
 
 /** The Full procedure's engine controls all off, as a tank found cold. */
 export function createEngineControls(): EngineControls {
-  return { battery: false, ignition: false, starter: false, choke: false, siren: false, start: 'starter' };
+  return { battery: false, ignition: false, starter: false, choke: 0, siren: false, start: 'starter' };
 }
 
 /**
@@ -143,6 +147,18 @@ export function startable(s: Pick<EngineState, 'gear'>, c: GearboxControls): boo
 }
 
 /**
+ * The choke as the engine reads it: in, half out or out, from how far the
+ * knob is pulled (John, 31 October 2026: a WWII choke was a pull knob,
+ * pulled out to start and eased in as the engine warmed).
+ */
+export function chokeLevel(choke: number): 0 | 0.5 | 1 {
+  return choke < 0.25 ? 0 : choke < 0.75 ? 0.5 : 1;
+}
+
+/** Half out, the choke helps a cold start this much less than fully out, s. */
+export const HALF_CHOKE_CATCH = 0.4;
+
+/**
  * How long the starter cranks before the engine fires, s: CATCH_SECONDS,
  * but in the Full procedure 1 to 3 s: slower cold without the choke, and
  * with the hand throttle shut or wide open rather than a little open.
@@ -150,7 +166,8 @@ export function startable(s: Pick<EngineState, 'gear'>, c: GearboxControls): boo
 export function catchSeconds(s: Pick<EngineState, 'coolant'>, c: EngineControls & { throttle: number }): number {
   if (c.start !== 'full') return CATCH_SECONDS;
   let t = 1;
-  if (s.coolant < CHOKE_COOLANT && !c.choke) t += 1.2;
+  const choke = chokeLevel(c.choke);
+  if (s.coolant < CHOKE_COOLANT) t += choke === 0 ? 1.2 : choke === 0.5 ? HALF_CHOKE_CATCH : 0;
   if (c.throttle < 0.05 || c.throttle > 0.7) t += 0.8;
   return t;
 }
@@ -252,13 +269,18 @@ function run(s: EngineState, c: GearboxControls & EngineControls, dt: number, fu
   }
   if (full) {
     const needed = s.coldStart ? CHOKE_HOLD : 0;
-    if (c.choke) {
+    const choke = chokeLevel(c.choke);
+    if (choke === 1) {
       s.chokeTime += dt;
       if (s.chokeTime > needed) s.rough = true;
       if (s.chokeTime > needed + FLOOD_SECONDS) {
         stopEngine(s, 'flood');
         return;
       }
+    } else if (choke === 0.5) {
+      // Half out it never floods: it runs smoothly while the engine is cold, and rich (rough) once it is warm enough not to need it.
+      s.chokeTime += dt;
+      if (s.coolant >= CHOKE_COOLANT) s.rough = true;
     } else {
       // Pushed in too soon on a cold engine, it coughs and dies.
       if (s.coldStart && s.chokeTime > 0 && s.chokeTime < CHOKE_HOLD) {

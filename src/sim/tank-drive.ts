@@ -137,7 +137,7 @@ export type DriverControls = GearboxControls & EngineControls;
 export function createControls(): DriverControls {
   return {
     left: 0, right: 0, accel: 0, gear: NEUTRAL, throttle: 0, clutch: 0, mode: 'auto',
-    battery: false, ignition: false, starter: false, choke: false, siren: false, start: 'starter', parkingBrake: false,
+    battery: false, ignition: false, starter: false, choke: 0, siren: false, start: 'starter', parkingBrake: false,
   };
 }
 

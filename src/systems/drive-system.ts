@@ -27,7 +27,7 @@ import { onSettingChange } from '../live-settings.js';
 import { settings } from '../settings.js';
 import { type Bumps, crewBumps, groundFeel, parseBumps, vignetteLevel } from '../sim/comfort.js';
 import { pedalHandUse } from '../sim/driver-station.js';
-import { ENGINE_START_NAMES, type EngineStart, startable, startEngine as startSim, type StallCause, stopEngine } from '../sim/engine.js';
+import { chokeLevel, ENGINE_START_NAMES, type EngineStart, startable, startEngine as startSim, type StallCause, stopEngine } from '../sim/engine.js';
 import { GEARBOX_NAMES, type GearboxMode, nextGear, realControls } from '../sim/gearbox.js';
 import {
   angleDelta,
@@ -81,12 +81,13 @@ export const drive = {
   tillersHeld: false,
   /**
    * The instrument box (F1.17): the battery and ignition switches and the
-   * choke where they are set (the station's switches, keys B, I and C), and
-   * the starter and siren buttons held in on the station.
+   * choke knob where they are set (the station's switches and knob, keys
+   * B, I and C; the choke 0 in to 1 out), and the starter and siren
+   * buttons held in on the station.
    */
   battery: false,
   ignition: false,
-  choke: false,
+  choke: 0,
   starter: false,
   siren: false,
   /** The parking brake (F1.18): its lever pulled up into the ratchet, or key P. */
@@ -401,7 +402,8 @@ export class DriveSystem extends createSystem({}) {
       // The instrument box's switches (F1.17); Space holds the starter and N the siren.
       else if (key === 'b' && !event.repeat) drive.battery = !drive.battery;
       else if (key === 'i' && !event.repeat) drive.ignition = !drive.ignition;
-      else if (key === 'c' && !event.repeat) drive.choke = !drive.choke;
+      // C steps the choke knob: out, half out, in.
+      else if (key === 'c' && !event.repeat) drive.choke = chokeLevel(drive.choke) === 0 ? 1 : chokeLevel(drive.choke) === 1 ? 0.5 : 0;
       else if (key === 'p' && !event.repeat) drive.parkingBrake = !drive.parkingBrake;
       else if (key === 'e') shiftBy(1);
       else if (key === 'q') shiftBy(-1);
@@ -538,7 +540,7 @@ export class DriveSystem extends createSystem({}) {
       const how: Record<EngineStart, [string, string]> = {
         running: ['Hold the starter (instrument box)', 'Hold Space: the starter'],
         starter: ['Hold the starter (instrument box)', 'Hold Space: the starter'],
-        full: ['Battery, ignition, choke, starter', 'B, I, C, then hold Space'],
+        full: ['Battery, ignition, choke out, starter', 'B, I, C, then hold Space'],
       };
       this.say(`Start the engine: ${ENGINE_START_NAMES[this.start].toLowerCase()}`, how[this.start][vr ? 0 : 1]);
       return;
@@ -838,8 +840,8 @@ export class DriveSystem extends createSystem({}) {
         none: 'Clutch in or neutral, then the starter',
         bog: 'Clutch in, then the starter. Pull away in a lower gear',
         cold: 'Warm it up with the hand throttle at a third',
-        choke: 'Choke in too soon: leave it out a few seconds',
-        flood: 'Flooded: push the choke in once it runs',
+        choke: 'Choke in too soon: ease it in, half out first',
+        flood: 'Flooded: push the choke half in once it runs',
         brake: 'Parking brake on: hold the trigger and push its lever down',
       };
       this.say('Engine stalled', why[s.stallCause]);

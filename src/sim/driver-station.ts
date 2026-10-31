@@ -15,7 +15,7 @@
 import { type Gear, LEVER_ORDER, NEUTRAL } from './gearbox.js';
 import { SEATS, VISION_SLIT } from './cabin.js';
 import { TILLER } from './lever.js';
-import type { ButtonSpec, LeverSpec, ToggleSpec } from './mechanism.js';
+import type { ButtonSpec, LeverSpec, PullSpec, ToggleSpec } from './mechanism.js';
 
 const DEG = Math.PI / 180;
 
@@ -271,12 +271,20 @@ export type EngineControlId = 'battery' | 'ignition' | 'choke' | 'starter' | 'si
 export const ENGINE_CONTROL_IDS: readonly EngineControlId[] = ['battery', 'ignition', 'choke', 'starter', 'siren'];
 
 /**
- * The switches that stay where they are put (battery, ignition, choke):
- * toggle switches since John's headset test (31 October 2026), as a
- * Sherman's master and ignition switches were. Flicked up with a fingertip
- * they are on, down off; a fist squeezed on one flips it.
+ * The switches that stay where they are put (battery, ignition): toggle
+ * switches since John's headset test (31 October 2026), as a Sherman's
+ * master and ignition switches were. Flicked up with a fingertip they are
+ * on, down off; a fist squeezed on one flips it.
  */
 export const PANEL_TOGGLE: ToggleSpec = { length: 0.024, radius: 0.0032, lean: 25 * DEG };
+/**
+ * The choke (John, 31 October 2026): a pull-out knob, as on a WWII petrol
+ * engine, pulled out to start cold and eased in as it warms; it clicks
+ * half out and stays wherever it is left.
+ */
+export const CHOKE_KNOB: PullSpec = { radius: 0.011, depth: 0.012, travel: 0.03, detents: [0.5] };
+/** The knob's back stands this far proud of the strip's face pushed in, m (test/z-fighting.test.ts). */
+export const KNOB_PROUD = 0.003;
 /** The starter: a big push button, held in with a fingertip or a fist (John's headset test: the old one was too small). */
 export const STARTER_BUTTON: ButtonSpec = { radius: 0.018, travel: 0.008, latching: false };
 /** The siren's push button, held in. */
@@ -286,13 +294,14 @@ export const PANEL_BUTTON: ButtonSpec = { radius: 0.011, travel: 0.007, latching
 export type EngineControl = { x: number; label: string; color: number } & (
   | { kind: 'toggle'; spec: ToggleSpec }
   | { kind: 'button'; spec: ButtonSpec }
+  | { kind: 'pull'; spec: PullSpec }
 );
 
-/** The engine controls, left to right after the lamps: three toggles, the starter, the siren. */
+/** The engine controls, left to right after the lamps: two toggles, the choke knob, the starter, the siren. */
 export const ENGINE_CONTROLS: Readonly<Record<EngineControlId, EngineControl>> = {
   battery: { kind: 'toggle', spec: PANEL_TOGGLE, x: -0.036, label: 'BATTERY', color: 0x3a6fa8 },
   ignition: { kind: 'toggle', spec: PANEL_TOGGLE, x: 0, label: 'IGNITION', color: 0xc9a227 },
-  choke: { kind: 'toggle', spec: PANEL_TOGGLE, x: 0.036, label: 'CHOKE', color: 0xd8d2bf },
+  choke: { kind: 'pull', spec: CHOKE_KNOB, x: 0.036, label: 'CHOKE', color: 0xd8d2bf },
   starter: { kind: 'button', spec: STARTER_BUTTON, x: 0.08, label: 'STARTER', color: 0x2f8a3a },
   siren: { kind: 'button', spec: PANEL_BUTTON, x: 0.126, label: 'SIREN', color: 0xa83228 },
 };
