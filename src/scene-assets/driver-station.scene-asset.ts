@@ -10,6 +10,8 @@ import {
   LAMP,
   PANEL,
   PANEL_HOUSING,
+  SWITCH_PANEL,
+  CHOKE_PLATE,
   panelToHull,
   SLIT_FRAME,
   THROTTLE_QUADRANT,
@@ -93,6 +95,17 @@ export function driverStationParts(): Part[] {
   geometry.rotateX(-PANEL.tilt);
   geometry.rotateY(PANEL.yaw);
   parts.push({ geometry, color: STEEL_LIGHT, position: housing });
+  // The choke's plate under the strip's left end (John's headset test, 1 November 2026), as deep as the housing
+  // and run 5 mm up into it, its face level with the housing's.
+  const plate = CHOKE_PLATE;
+  const plateTop = SWITCH_PANEL.y + plate.y + plate.height / 2 + 0.005;
+  const plateBottom = SWITCH_PANEL.y + plate.y - plate.height / 2;
+  const plateAt: [number, number, number] = [0, 0, 0];
+  panelToHull([plate.x, (plateTop + plateBottom) / 2, -FACE_GAP - depth / 2], plateAt);
+  const plateGeometry = new BoxGeometry(plate.width, plateTop - plateBottom, depth);
+  plateGeometry.rotateX(-PANEL.tilt);
+  plateGeometry.rotateY(PANEL.yaw);
+  parts.push({ geometry: plateGeometry, color: STEEL_LIGHT, position: plateAt });
 
   // The vision slit's frame: four bars round the opening, back from its edges, and a brow pad over it.
   const s = VISION_SLIT;

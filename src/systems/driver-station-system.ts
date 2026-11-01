@@ -14,6 +14,8 @@ import { createGearReadout, createLamp, createNeedle, LAMP_DARK } from '../scene
 import { createButtonCap, createLever, createPullKnob, createToggleBat, createToggleNut } from '../scene-assets/mechanism.scene-asset.js';
 import {
   CAP_PROUD,
+  CHOKE_PLATE,
+  DRIVER_TILLER,
   KNOB_PROUD,
   type Dial,
   dialCentre,
@@ -47,7 +49,7 @@ import {
 } from '../sim/driver-station.js';
 import { chokeLevel, volts } from '../sim/engine.js';
 import { Button, Lever, MechEvent, PullKnob, Toggle } from '../sim/mechanism.js';
-import { type Gear, GEARS, gearFits, NEUTRAL } from '../sim/gearbox.js';
+import { type Gear, GEARS, gearFits, NEUTRAL, realControls } from '../sim/gearbox.js';
 import { type DriverControls, oilPressure, type TankDrive } from '../sim/tank-drive.js';
 import { drive, engineStart, gearboxMode, shownDriverState, shownDriverControls } from './drive-system.js';
 import { handUse } from './grip-system.js';
@@ -304,6 +306,9 @@ export class DriverStationSystem extends createSystem({}) {
     const shown = shownDriverControls();
     const state = shownDriverState();
     const k = 1 - Math.exp(-FOLLOW_RATE * dt);
+    // With a Sherman's controls the tillers are brakes: they rest against a forward stop and only pull back.
+    const brakesOnly = realControls(seating.mine === 'driver' ? gearboxMode() : (shown?.mode ?? 'auto'));
+    tillerLeft.forwardStop = tillerRight.forwardStop = brakesOnly ? DRIVER_TILLER.rest : null;
     if (seating.mine === 'driver') {
       const auto = gearboxMode() === 'auto';
       if (auto) {
@@ -338,8 +343,8 @@ export class DriverStationSystem extends createSystem({}) {
       else if (parkingBrakeOf(brake.angle) !== drive.parkingBrake) brake.angle = parkingBrakeAngle(drive.parkingBrake);
       // The sticks or keys drive while no hand is on a tiller: draw the tillers where they would be.
       if (!held && shown) {
-        tillerLeft.angle = tillerAngle(shown.left);
-        tillerRight.angle = tillerAngle(shown.right);
+        tillerLeft.angle = tillerAngle(shown.left, brakesOnly);
+        tillerRight.angle = tillerAngle(shown.right, brakesOnly);
       }
     } else {
       drive.tillersHeld = false;
@@ -355,8 +360,8 @@ export class DriverStationSystem extends createSystem({}) {
         drive.choke = shown.choke;
         drive.parkingBrake = shown.parkingBrake;
         // The crewmate drives (or nobody does): the levers follow the controls the tank runs on.
-        tillerLeft.angle += (tillerAngle(shown.left) - tillerLeft.angle) * k;
-        tillerRight.angle += (tillerAngle(shown.right) - tillerRight.angle) * k;
+        tillerLeft.angle += (tillerAngle(shown.left, brakesOnly) - tillerLeft.angle) * k;
+        tillerRight.angle += (tillerAngle(shown.right, brakesOnly) - tillerRight.angle) * k;
         gear.angle += (GEAR_ANGLES[leverGear(shown, state)] - gear.angle) * k;
         throttle.angle += (throttleAngle(shown.throttle) - throttle.angle) * k;
         brake.angle += (parkingBrakeAngle(shown.parkingBrake) - brake.angle) * k;
@@ -408,6 +413,7 @@ export class DriverStationSystem extends createSystem({}) {
   /** The switch strip: its face, the voltmeter's needle, the lamps, and a kit button on a mount for each switch (F1.17). */
   private addSwitchPanel(panel: Group): void {
     panel.add(this.createStripFace());
+    panel.add(this.createChokeFace());
     const at: [number, number] = [0, 0];
     this.voltNeedle = createNeedle();
     onSwitchPanel(VOLTMETER.x, 0, at);
@@ -429,10 +435,10 @@ export class DriverStationSystem extends createSystem({}) {
     for (const id of ENGINE_CONTROL_IDS) {
       const c = ENGINE_CONTROLS[id];
       const mount = new Group();
-      onSwitchPanel(c.x, SWITCH_PANEL.capY, at);
+      onSwitchPanel(c.x, c.y ?? SWITCH_PANEL.capY, at);
       let mech: Button | Toggle | PullKnob;
       if (c.kind === 'pull') {
-        // The mount is the knob's space: its shaft out of the strip's face (the knob KNOB_PROUD clear of it pushed in).
+        // The mount is the handle's space: its shaft out of its plate's face (the handle KNOB_PROUD clear of it pushed in).
         this.choke = mech = new PullKnob(c.spec);
         mount.position.set(at[0], at[1], KNOB_PROUD);
         this.caps[id] = createPullKnob(c.spec, c.color);
@@ -517,6 +523,42 @@ export class DriverStationSystem extends createSystem({}) {
   }
 
   /** The switch strip's face, drawn once: the voltmeter's dial, the lamps' and switches' labels. */
+  /** The choke plate's face, level with the strip's, its label under the handle (John's headset test, 1 November 2026). */
+  private createChokeFace(): Mesh {
+    const { x, y, width, height, handleY, labelY } = CHOKE_PLATE;
+    const canvas = document.createElement('canvas');
+    const pxPerM = STRIP_PX_W / SWITCH_PANEL.width;
+    canvas.width = Math.round(width * pxPerM);
+    canvas.height = Math.round(height * pxPerM);
+    const ctx = canvas.getContext('2d')!;
+    const Y = (v: number) => canvas.height / 2 - (v - y) * pxPerM;
+    ctx.fillStyle = '#26281f';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // A ring round the shaft, and the label.
+    ctx.strokeStyle = '#8d8a78';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(canvas.width / 2, Y(handleY), 0.007 * pxPerM, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.fillStyle = '#c9c0a0';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `bold ${Math.round(0.0075 * pxPerM)}px sans-serif`;
+    ctx.fillText('CHOKE: PULL', canvas.width / 2, Y(labelY), width * 0.9 * pxPerM);
+    const texture = new CanvasTexture(canvas);
+    texture.colorSpace = SRGBColorSpace;
+    const material = new MeshBasicMaterial({ map: texture, toneMapped: false });
+    const face = new Mesh(new PlaneGeometry(width, height), material);
+    face.position.set(x, SWITCH_PANEL.y + y, 0);
+    face.name = 'Choke Plate Face';
+    this.cleanupFuncs.push(() => {
+      face.geometry.dispose();
+      texture.dispose();
+      material.dispose();
+    });
+    return face;
+  }
+
   private createStripFace(): Mesh {
     const canvas = document.createElement('canvas');
     canvas.width = STRIP_PX_W;
@@ -557,8 +599,9 @@ export class DriverStationSystem extends createSystem({}) {
     for (const lamp of LAMPS) ctx.fillText(lamp.label, X(lamp.x + 0.01), Y(lamp.y), 0.02 * px);
     ctx.textAlign = 'center';
     for (const id of ENGINE_CONTROL_IDS) {
-      const { x, label } = ENGINE_CONTROLS[id];
-      ctx.fillText(label, X(x), Y(SWITCH_PANEL.labelY), 0.029 * px);
+      const { x, y, label } = ENGINE_CONTROLS[id];
+      // The choke's is on its own plate.
+      if (y === undefined) ctx.fillText(label, X(x), Y(SWITCH_PANEL.labelY), 0.029 * px);
     }
     // Each toggle's ON over it and OFF under it, smaller.
     ctx.font = `bold ${Math.round(0.0055 * px)}px sans-serif`;

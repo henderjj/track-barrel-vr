@@ -1116,8 +1116,9 @@ async function holdEngineButton(id, until, label, timeoutMs = 6000) {
  * 6e'. John's headset notes on the driver's controls (31 October 2026):
  *     the starter pressed in by the index fingertip alone cranks and
  *     starts the engine; on the Full procedure the battery toggle is
- *     flicked up and down by a fingertip, and the choke knob is drawn half
- *     out by a fist and pushed in by a fingertip; the right trigger works the
+ *     flicked up and down by a fingertip, and the choke's T-handle is drawn
+ *     half out by a fist, isn't moved by a fingertip, and is pushed in by a
+ *     fist; with Stick shift the tillers can't be pushed forwards; the right trigger works the
  *     accelerator only from the hand on a tiller (not a hand off it, nor
  *     with the menu open); the gear indicator shows the gear engaged; the
  *     hand throttle drives the tank with the accelerator let go; and with
@@ -1196,35 +1197,46 @@ async function driverFeedback() {
     `on ${up.on.battery} (lamps ${up.lamps.oil}), then on ${down.on.battery}, ${down.presses.battery - was.presses.battery} flick(s)`);
   await tipTo('controller-right', on(battery, 0.06));
 
-  // The choke knob (John, 31 October 2026): a fist on it draws it half out, and it stays; a fingertip pushes it in.
+  // The choke's T-handle (John, 31 October 2026; on its own plate, gripped both ways, 1 November): a fist draws it half
+  // out and it stays; a fingertip doesn't move it; a fist pushes it back in.
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
   const knobName = evalInApp('window.__driverStation.engine().names.choke');
   const knob = evalInApp('window.__driverStation.cap("choke")');
-  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: rightGripFor(evalInApp(`window.__mechanisms.handle(${JSON.stringify(knobName)}, 1)`)), duration: 0.3 });
-  await sleep(600);
-  squeeze('controller-right', 1);
-  await waitFor('the right hand on the choke', () => evalInApp('window.__mechanisms.holding().right') === knobName, 3000, 100).catch(() => null);
-  const from = iwsdk(['xr', 'get-transform'], { device: 'controller-right' }).result.position;
-  const a0 = toOrigin(knob.at);
-  const a1 = toOrigin(on(knob, 0.015));
-  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: { x: from.x + a1.x - a0.x, y: from.y + a1.y - a0.y, z: from.z + a1.z - a0.z }, duration: 0.4 });
-  await sleep(700);
-  await settle();
-  squeeze('controller-right', 0);
-  await settle();
+  const travel = 0.05;
+  const depth = 0.016;
+  // Grip the handle, then move the controller `by` metres out of the plate, and let go.
+  const drawChoke = async (by) => {
+    iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: rightGripFor(evalInApp(`window.__mechanisms.handle(${JSON.stringify(knobName)}, 1)`)), duration: 0.3 });
+    await sleep(600);
+    squeeze('controller-right', 1);
+    const held = await waitFor('the right hand on the choke', () => evalInApp('window.__mechanisms.holding().right') === knobName, 3000, 100).catch(() => false);
+    const from = iwsdk(['xr', 'get-transform'], { device: 'controller-right' }).result.position;
+    const a0 = toOrigin(knob.at);
+    const a1 = toOrigin(on(knob, by));
+    iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: { x: from.x + a1.x - a0.x, y: from.y + a1.y - a0.y, z: from.z + a1.z - a0.z }, duration: 0.4 });
+    await sleep(700);
+    await settle();
+    squeeze('controller-right', 0);
+    await settle();
+    iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin(on(knob, 0.2)), duration: 0.3 });
+    await sleep(500);
+    return held;
+  };
+  const tookChoke = await drawChoke(travel / 2);
   const pulled = { box: box(), c: controls() };
-  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: from, duration: 0.3 });
-  await sleep(500);
   const share = pulled.box.choke;
-  const face = (z) => on(knob, share * 0.03 + 0.012 + z);
+  const face = (z) => on(knob, share * travel + depth + z);
   await tipTo('controller-right', face(0.01));
-  await tipTo('controller-right', face(-0.025));
+  await tipTo('controller-right', face(-0.02));
+  const tipped = box();
+  await tipTo('controller-right', face(0.06));
+  await drawChoke(-share * travel - 0.01);
   const pushed = { box: box(), c: controls() };
-  check('The choke knob drawn out by a fist stays half out when let go; a fingertip on its face pushes it back in',
-    share > 0.35 && share < 0.65 && Math.abs(pulled.c.choke - share) < 0.01 && pushed.box.choke < 0.05 && pushed.c.choke < 0.05,
-    `out ${(share * 100).toFixed(0)}% (choke ${pulled.c.choke.toFixed(2)}), pushed in to ${(pushed.box.choke * 100).toFixed(0)}%`);
-  await tipTo('controller-right', face(0.05));
+  check('The choke\'s T-handle drawn out by a fist stays half out; a fingertip doesn\'t move it; a fist pushes it back in',
+    tookChoke && share > 0.35 && share < 0.65 && Math.abs(pulled.c.choke - share) < 0.01 && Math.abs(tipped.choke - share) < 0.01 &&
+      pushed.box.choke < 0.05 && pushed.c.choke < 0.05,
+    `out ${(share * 100).toFixed(0)}% (choke ${pulled.c.choke.toFixed(2)}), after a fingertip ${(tipped.choke * 100).toFixed(0)}%, pushed in to ${(pushed.box.choke * 100).toFixed(0)}%`);
   evalInApp('(window.__gameMenu.click("row-engine-1"), window.__drive.engine("start"), true)');
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
@@ -1235,6 +1247,19 @@ async function driverFeedback() {
   evalInApp('(window.__drive.set({ gear: 2 }), window.__drive.set(null), true)');
   await take('controller-left', 'tillerLeft');
   await take('controller-right', 'tillerRight');
+  // With a Sherman's controls the tillers only brake: pushed forwards they stay against their stop (1 November 2026).
+  handTo('controller-left', handle('tillerLeft', 20));
+  handTo('controller-right', handle('tillerRight', 20));
+  await sleep(700);
+  await settle();
+  const pushedTillers = station();
+  check('With Stick shift the tillers rest against a forward stop: pushed forwards they stay upright and ask nothing',
+    pushedTillers.heldBy.tillerLeft === 'left' && pushedTillers.heldBy.tillerRight === 'right' &&
+      pushedTillers.angles.tillerLeft < 0.5 && pushedTillers.angles.tillerRight < 0.5 && pushedTillers.left === 0 && pushedTillers.right === 0,
+    `held by ${pushedTillers.heldBy.tillerLeft} and ${pushedTillers.heldBy.tillerRight}, at ${pushedTillers.angles.tillerLeft.toFixed(1)}° and ${pushedTillers.angles.tillerRight.toFixed(1)}°, asking ${pushedTillers.left} and ${pushedTillers.right}`);
+  handTo('controller-left', handle('tillerLeft', 0));
+  handTo('controller-right', handle('tillerRight', 0));
+  await sleep(500);
   trigger('controller-right', 1);
   const onTiller = await waitFor('the accelerator from the hand on the tiller', () => { const c = controls(); return c.accel > 0.9 && c; }, 3000).catch(() => controls());
   trigger('controller-right', 0);

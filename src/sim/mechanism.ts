@@ -320,6 +320,11 @@ export class Lever extends Mechanism {
   overshoot = 0;
   /** A ratchet's pawl is lifted: the holding hand's trigger is pulled (`spec.ratchet`). */
   freed = false;
+  /**
+   * A stop short of `spec.max` the lever can't be pushed past, radians, or null for none: a
+   * Sherman's tillers rest against one and are only pulled back (John's headset test, 1 November 2026).
+   */
+  forwardStop: number | null = null;
   private holder: HandIndex | -1 = -1;
   private offset = 0;
   private readonly hand = new HandAngle();
@@ -361,7 +366,8 @@ export class Lever extends Mechanism {
   }
 
   update(dt: number, hands: readonly (HandInput | null)[]): number {
-    const { min, max, ratchet } = this.spec;
+    const { min, ratchet } = this.spec;
+    const max = this.forwardStop === null ? this.spec.max : Math.min(this.spec.max, this.forwardStop);
     const before = this.angle;
     let events: number = MechEvent.None;
     if (this.holder !== -1) {
@@ -383,6 +389,7 @@ export class Lever extends Mechanism {
       this.strain[this.holder] = Math.abs(this.overshoot);
     } else {
       this.angle += (this.settle() - this.angle) * (1 - Math.exp(-this.spec.spring * dt));
+      if (this.angle > max) this.angle = max;
       this.overshoot = 0;
     }
     if (this.bump.step(this.angle, min, max)) {
@@ -1195,6 +1202,11 @@ export interface PullSpec {
   travel: number;
   /** Where it clicks on the way, as shares of its travel (a half-out notch, say). */
   detents: readonly number[];
+  /**
+   * A T-handle's bar, its length across (along X), m; `radius` and `depth` are then the bar's
+   * radius and thickness. A T-handle is gripped to pull it and to push it: a fingertip doesn't move it.
+   */
+  bar?: number;
 }
 
 /**
@@ -1232,10 +1244,13 @@ export class PullKnob extends Mechanism {
 
   reach(side: HandIndex, hand: HandInput): number {
     if (this.held[side] || this.held[side === 0 ? 1 : 0]) return Infinity;
-    const face = this.out + this.spec.depth;
-    if (onFace(hand.tip && [hand.tip[0], hand.tip[1], hand.tip[2] - face], this.spec.radius + TIP_SLACK)) return 0;
+    const { bar, depth, radius } = this.spec;
+    const face = this.out + depth;
+    if (!bar && onFace(hand.tip && [hand.tip[0], hand.tip[1], hand.tip[2] - face], radius + TIP_SLACK)) return 0;
     const [x, y, z] = hand.fist;
-    return Math.hypot(x, y, z - this.out - this.spec.depth / 2);
+    // A T-handle's bar is taken anywhere along it.
+    const along = bar ? Math.max(0, Math.abs(x) - bar / 2) : x;
+    return Math.hypot(along, y, z - this.out - depth / 2);
   }
 
   grab(side: HandIndex, hand: HandInput): boolean {
@@ -1257,7 +1272,7 @@ export class PullKnob extends Mechanism {
         const want = hand.fist[2] + this.offset;
         to = Math.min(travel, Math.max(0, want));
         this.strain[side] = Math.abs(want - to) > 0.01 ? Math.abs(want - to) * 10 : 0;
-      } else {
+      } else if (!this.spec.bar) {
         // A fingertip on the knob's face pushes it in.
         const tip = hand?.tip;
         if (tip && Math.hypot(tip[0], tip[1]) < radius + TIP_SLACK && tip[2] < to + depth + 0.002 && tip[2] > to + depth - 0.03) {
