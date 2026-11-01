@@ -217,9 +217,9 @@ describe('no faces that flicker through each other (z-fighting)', () => {
       }
       for (const id of station.ENGINE_CONTROL_IDS) {
         const c = station.ENGINE_CONTROLS[id];
-        station.onSwitchPanel(c.x, station.SWITCH_PANEL.capY, at);
+        station.onSwitchPanel(c.x, c.y ?? station.SWITCH_PANEL.capY, at);
         if (c.kind === 'pull') {
-          // The choke's knob pushed in, half out and out (31 October 2026).
+          // The choke's T-handle on its plate pushed in, half out and out (31 October 2026; the handle 1 November).
           const knob = mechanism.createPullKnob(c.spec, c.color);
           knob.position.set(at[0], at[1], station.KNOB_PROUD + (pose === 'min' ? 0 : pose === 'rest' ? c.spec.travel / 2 : c.spec.travel));
           panel.add(knob);

@@ -2,7 +2,7 @@ import { Vector3 } from '@iwsdk/core';
 import { describe, expect, it } from 'vitest';
 import { lerpAvatar } from '../src/net/pose-buffer.js';
 import { createAvatarPose, decodePose, encodePose, POSE_PACKET_BYTES, POSE_PACKET_MIN_BYTES } from '../src/net/pose-codec.js';
-import { HAND_BONES, PosedHand, staticHandGeometry } from '../src/scene-assets/hand.scene-asset.js';
+import { HAND_BONES, INDEX_TIP, indexTip, PosedHand, staticHandGeometry } from '../src/scene-assets/hand.scene-asset.js';
 import { JOINT_COUNT } from '../src/sim/hand-grip.js';
 import {
   type ControllerFingers,
@@ -195,6 +195,24 @@ describe('the posed hand model', () => {
     const index = hand.boneOrigin(INDEX_DISTAL, tip).distanceTo(wrist);
     const middle = hand.boneOrigin(MIDDLE_DISTAL, knuckle).distanceTo(wrist);
     expect(index).toBeGreaterThan(middle + 0.04);
+  });
+
+  it('presses with the fingertip where it is drawn, curled or not (John\'s headset test, 1 November 2026)', () => {
+    const at = new Vector3();
+    const end = new Vector3();
+    for (const side of ['left', 'right'] as const) {
+      const hand = new PosedHand(0x2f6db3, side);
+      for (const [index, grip] of [[0, 0], [0.12, 1], [0.4, 1], [0.6, 0.3]]) {
+        hand.pose(createFingerCurls(index, grip, 1));
+        // The last joint is where the hand's skeleton puts it, and the tip is a segment on from it.
+        hand.boneOrigin(INDEX_DISTAL, knuckle);
+        expect(indexTip(index, grip, side, at, 0).distanceTo(knuckle)).toBeLessThan(1e-6);
+        expect(indexTip(index, grip, side, end).distanceTo(at)).toBeCloseTo(0.022, 6);
+      }
+    }
+    // Straight, it is the straight finger's tip (but for the open hand's spread); lifted off the trigger (pointing), nearly 3 cm short of it.
+    expect(indexTip(0, 0, 'right', at).distanceTo(new Vector3(...INDEX_TIP))).toBeLessThan(0.01);
+    expect(indexTip(0.12, 1, 'right', at).distanceTo(new Vector3(...INDEX_TIP))).toBeGreaterThan(0.02);
   });
 
   it('draws the left hand as the right one mirrored', () => {

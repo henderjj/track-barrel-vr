@@ -22,6 +22,13 @@ import {
   tillerAngle,
   TILLER_PEDESTAL,
   GEAR_PLATE,
+  CHOKE_KNOB,
+  CHOKE_PLATE,
+  ENGINE_CONTROL_IDS,
+  ENGINE_CONTROLS,
+  KNOB_PROUD,
+  PANEL_HOUSING,
+  SWITCH_PANEL,
 } from '../src/sim/driver-station.js';
 import { type HandInput, Lever, type Vec3 } from '../src/sim/mechanism.js';
 import {
@@ -250,6 +257,53 @@ describe('the driver\'s gauges (F1.5)', () => {
       for (const p of places) expect(Math.hypot(at[0] - p[0], at[1] - p[1])).toBeGreaterThan(2 * PANEL.dialRadius + 0.005);
       places.push([at[0], at[1]]);
     }
+  });
+
+  it('hangs the choke\'s T-handle on a plate of its own under the strip, clear of the switches and the hands on the levers (1 November 2026)', () => {
+    const plate = CHOKE_PLATE;
+    const choke = ENGINE_CONTROLS.choke;
+    expect(choke.kind).toBe('pull');
+    const bar = CHOKE_KNOB.bar!;
+    // On its plate, under the housing, inside its width.
+    expect(SWITCH_PANEL.y + plate.y + plate.height / 2).toBeLessThanOrEqual(PANEL_HOUSING.bottom + 1e-9);
+    expect(Math.abs(plate.x) + plate.width / 2).toBeLessThanOrEqual(PANEL_HOUSING.width / 2);
+    expect(Math.abs(choke.x - plate.x) + bar / 2).toBeLessThan(plate.width / 2);
+    expect(choke.y! - CHOKE_KNOB.radius).toBeGreaterThan(plate.y - plate.height / 2);
+    expect(plate.labelY).toBeLessThan(choke.y! - CHOKE_KNOB.radius);
+    // 4 cm or more from every switch and button on the strip: a fist on it doesn't touch them.
+    for (const id of ENGINE_CONTROL_IDS) {
+      const c = ENGINE_CONTROLS[id];
+      if (id === 'choke') continue;
+      const dx = Math.max(0, Math.abs(c.x - choke.x) - bar / 2);
+      expect(Math.hypot(dx, SWITCH_PANEL.capY - choke.y!), id).toBeGreaterThan(0.04);
+    }
+    // The plate's corners in front of the glacis.
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        const c = panelToHull([plate.x + (sx * plate.width) / 2, SWITCH_PANEL.y + plate.y + (sy * plate.height) / 2, -0.056], [0, 0, 0]);
+        expect(c[2]).toBeGreaterThan(frontAt(c[1]) + 0.005);
+      }
+    }
+    // The bar's ends, in or out, a fist's room (6 cm) from the tillers' handles wherever they stand.
+    for (const out of [0, CHOKE_KNOB.travel]) {
+      for (const end of [-1, 1]) {
+        const p = panelToHull([choke.x + (end * bar) / 2, SWITCH_PANEL.y + choke.y!, KNOB_PROUD + out + CHOKE_KNOB.depth / 2], [0, 0, 0]);
+        for (const id of ['tillerLeft', 'tillerRight'] as const) {
+          const { spec } = DRIVER_CONTROLS[id];
+          for (const angle of [spec.min, 0, spec.max]) {
+            const h = handleAt(id, angle);
+            expect(Math.hypot(h[0] - p[0], h[1] - p[1], h[2] - p[2]), `${id} at ${(angle / DEG).toFixed(0)}°`).toBeGreaterThan(0.06);
+          }
+        }
+      }
+    }
+  });
+
+  it('draws the tillers with a Sherman\'s controls only braking: never forwards of upright (1 November 2026)', () => {
+    expect(tillerAngle(1)).toBeCloseTo(DRIVER_TILLER.max);
+    expect(tillerAngle(1, true)).toBe(DRIVER_TILLER.rest);
+    expect(tillerAngle(-1, true)).toBeCloseTo(DRIVER_TILLER.min);
+    expect(tillerAngle(-0.5, true)).toBeCloseTo(tillerAngle(-0.5));
   });
 
   it('can be read past the tillers and the gear lever from the seat', () => {

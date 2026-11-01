@@ -4,6 +4,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   CylinderGeometry,
+  Euler,
   Matrix4,
   MeshStandardMaterial,
   Object3D,
@@ -113,6 +114,38 @@ export const INDEX_TIP: readonly [number, number, number] = (() => {
   const tip = new Vector3(index.base[0], index.base[1], index.base[2] - length).applyMatrix4(WRIST_IN_GRIP);
   return [tip.x, tip.y, tip.z] as const;
 })();
+
+const tipMatrix = new Matrix4();
+const tipLocal = new Matrix4();
+const tipEuler = new Euler(0, 0, 0, 'YXZ');
+const tipQuat = new Quaternion();
+const tipPos = new Vector3();
+const ONE = new Vector3(1, 1, 1);
+
+/**
+ * The index fingertip as the hand is drawn at `index` and `grip` curls (see
+ * poseBones), in `side`'s grip space, into `out`: `along` metres along its
+ * last segment from its joint (the end of the finger by default). For
+ * pressing buttons where the drawn finger is, curled or not (John's headset
+ * test, 1 November 2026: the drawn finger is never quite straight, and
+ * INDEX_TIP's straight one was 3 cm off it with the finger lifted off the
+ * trigger, 8 cm with it resting there). No allocation.
+ */
+export function indexTip(index: number, grip: number, side: 'left' | 'right', out: Vector3, along?: number): Vector3 {
+  const finger = FINGERS[0];
+  const splay = finger.splay * (1 - (1 - CLOSED_SPLAY) * grip);
+  tipMatrix.copy(WRIST_IN_GRIP);
+  for (let s = 0; s < 3; s++) {
+    if (s === 0) tipPos.set(finger.base[0], finger.base[1], finger.base[2]);
+    else tipPos.set(0, 0, -finger.lengths[s - 1]);
+    tipEuler.set(-index * FINGER_BEND[s], s === 0 ? splay : 0, 0, 'YXZ');
+    tipLocal.compose(tipPos, tipQuat.setFromEuler(tipEuler), ONE);
+    tipMatrix.multiply(tipLocal);
+  }
+  out.set(0, 0, -(along ?? finger.lengths[2])).applyMatrix4(tipMatrix);
+  if (side === 'left') out.x = -out.x;
+  return out;
+}
 
 const xAxis = new Vector3();
 const yAxis = new Vector3();

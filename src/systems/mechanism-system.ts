@@ -1,5 +1,5 @@
 import { createSystem, Matrix4, type Object3D, Quaternion, Vector3 } from '@iwsdk/core';
-import { FIST_AXIS, FIST_CENTRE, INDEX_TIP } from '../scene-assets/hand.scene-asset.js';
+import { FIST_AXIS, FIST_CENTRE, INDEX_TIP, indexTip } from '../scene-assets/hand.scene-asset.js';
 import { type HandIndex, type HandInput, MechEvent, type Mechanism, type Vec3 } from '../sim/mechanism.js';
 import { MISS_REACH } from '../sim/play-stats.js';
 import { reportFumble, squeezeNear } from './fumbles.js';
@@ -371,6 +371,8 @@ export class MechanismSystem extends createSystem({}) {
     space.getWorldQuaternion(this.tmpQuat);
     this.fist[side].copy(this.centre[side]).applyQuaternion(this.tmpQuat).add(this.gripPos);
     this.across[side].copy(this.acrossGrip[side]).applyQuaternion(this.tmpQuat);
+    // The fingertip where the hand is drawn: a finger resting on the trigger is a little bent.
+    indexTip(handCurls[side].index, handCurls[side].grip, side, this.tipGrip[side]);
     this.tip[side].copy(this.tipGrip[side]).applyQuaternion(this.tmpQuat).add(this.gripPos);
     // A hand holding something, or with its finger curled, doesn't press buttons.
     this.pointing[side] = handUse[side] === null && handCurls[side].index < POINTING;

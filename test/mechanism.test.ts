@@ -539,6 +539,64 @@ describe('the pull knob (the choke, 31 October 2026)', () => {
   });
 });
 
+describe('the T-handle (the choke, John\'s headset test, 1 November 2026)', () => {
+  const SPEC: PullSpec = { radius: 0.008, depth: 0.016, travel: 0.05, detents: [0.5], bar: 0.07 };
+
+  it('is taken anywhere along its bar, pulled out and pushed in by the fist, and stays where it is let go', () => {
+    const k = new PullKnob(SPEC);
+    // At the bar's end as near as at its middle; past it, further.
+    expect(k.reach(1, hand(0.03, 0, 0.008))).toBeCloseTo(0, 6);
+    expect(k.reach(1, hand(0.06, 0, 0.008))).toBeCloseTo(0.025, 6);
+    k.grab(1, hand(0.03, 0, 0.008));
+    for (let i = 0; i <= 20; i++) k.update(DT, right(hand(0.03, 0, 0.008 + (0.05 * i) / 20)));
+    expect(k.share).toBeCloseTo(1, 3);
+    for (let i = 0; i <= 20; i++) k.update(DT, right(hand(0.03, 0, 0.058 - (0.025 * i) / 20)));
+    k.release(1);
+    for (let i = 0; i < 30; i++) k.update(DT, [null, null]);
+    expect(k.share).toBeCloseTo(0.5, 3);
+  });
+
+  it('a fingertip neither takes it nor pushes it in', () => {
+    const k = new PullKnob(SPEC);
+    k.share = 1;
+    const face = SPEC.travel + SPEC.depth;
+    const tip = (z: number) => hand(0, -0.1, z + 0.1, { tip: [0, 0, z] });
+    expect(k.reach(1, tip(face))).toBeGreaterThan(k.reachRadius);
+    for (const z of [face + 0.001, face - 0.01, face - 0.03]) k.update(DT, right(tip(z)));
+    expect(k.share).toBe(1);
+  });
+});
+
+describe('a lever with a forward stop (a Sherman\'s tillers, John\'s headset test, 1 November 2026)', () => {
+  it('can\'t be pushed past the stop, and pulls back as before', () => {
+    const lever = new Lever(TILLER);
+    lever.forwardStop = 0;
+    lever.grab(1, leverHand(0));
+    let limits = 0;
+    for (let i = 0; i <= 40; i++) if (lever.update(DT, right(leverHand(i * 0.5))) & MechEvent.Limit) limits++;
+    expect(lever.angle).toBe(0);
+    expect(lever.demand()).toBe(0);
+    expect(lever.overshoot / DEG).toBeGreaterThan(15);
+    expect(limits).toBe(1);
+    for (let i = 0; i <= 80; i++) lever.update(DT, right(leverHand(-i * 0.5)));
+    for (let i = 0; i < 30; i++) lever.update(DT, right(leverHand(-40)));
+    expect(lever.angle).toBeCloseTo(TILLER.min);
+    expect(lever.demand()).toBe(-1);
+  });
+
+  it('let go forwards of a stop put in, it goes back to the stop', () => {
+    const lever = new Lever(TILLER);
+    lever.angle = 15 * DEG;
+    lever.forwardStop = 0;
+    lever.update(DT, [null, null]);
+    expect(lever.angle).toBeLessThanOrEqual(0);
+    lever.forwardStop = null;
+    lever.angle = 15 * DEG;
+    lever.update(DT, [null, null]);
+    expect(lever.angle).toBeGreaterThan(10 * DEG);
+  });
+});
+
 describe('the test bench', () => {
   it('puts every handle in reach from a chair, between knee and chest height', () => {
     // As test/body-height.test.ts: a seated player's hands reach from about

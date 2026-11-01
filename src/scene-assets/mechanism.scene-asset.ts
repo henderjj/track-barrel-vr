@@ -174,13 +174,24 @@ export function createToggleBat(spec: ToggleSpec, color: number): Mesh {
 /**
  * A pull knob and its shaft, the knob's back at the origin facing out
  * along +Z and the shaft running back `travel` into the face; move it out
- * with `position.z`. Its own material, so it can glow while out.
+ * with `position.z`. With `spec.bar`, a T-handle: a bar across X on a stem.
+ * Its own material, so it can glow while out.
  */
 export function createPullKnob(spec: PullSpec, color: number): Mesh {
-  const geometry = mergeParts([
-    { geometry: new CylinderGeometry(spec.radius, spec.radius * 0.9, spec.depth, 10, 1), color, position: [0, 0, spec.depth / 2], rotation: ALONG_Z },
-    { geometry: new CylinderGeometry(0.003, 0.003, spec.travel, 6, 1), color: STEEL, position: [0, 0, -spec.travel / 2], rotation: ALONG_Z },
-  ]);
+  const { bar, radius, depth, travel } = spec;
+  const geometry = mergeParts(
+    bar
+      ? [
+          // A T-handle: the bar across, rounded ends, on a stem that runs back through the plate.
+          { geometry: new CylinderGeometry(radius, radius, bar, 10, 1), color, position: [0, 0, depth / 2], rotation: [0, 0, Math.PI / 2] },
+          // Back 2 cm past its travel, so pulled fully out it still goes into the plate.
+          { geometry: new CylinderGeometry(0.005, 0.005, depth / 2 + travel + 0.02, 8, 1), color: STEEL, position: [0, 0, (depth / 2 - travel - 0.02) / 2], rotation: ALONG_Z },
+        ]
+      : [
+          { geometry: new CylinderGeometry(radius, radius * 0.9, depth, 10, 1), color, position: [0, 0, depth / 2], rotation: ALONG_Z },
+          { geometry: new CylinderGeometry(0.003, 0.003, travel, 6, 1), color: STEEL, position: [0, 0, -travel / 2], rotation: ALONG_Z },
+        ],
+  );
   const mesh = new Mesh(geometry, litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 })));
   mesh.name = 'Pull Knob';
   return mesh;

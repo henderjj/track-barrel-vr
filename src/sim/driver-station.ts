@@ -278,30 +278,43 @@ export const ENGINE_CONTROL_IDS: readonly EngineControlId[] = ['battery', 'ignit
  */
 export const PANEL_TOGGLE: ToggleSpec = { length: 0.024, radius: 0.0032, lean: 25 * DEG };
 /**
- * The choke (John, 31 October 2026): a pull-out knob, as on a WWII petrol
- * engine, pulled out to start cold and eased in as it warms; it clicks
- * half out and stays wherever it is left.
+ * The choke (John, 31 October 2026): pulled out, as on a WWII petrol
+ * engine, to start cold and eased in as it warms; it clicks half out and
+ * stays wherever it is left. Since John's headset test (1 November 2026) a
+ * T-handle 7 cm across with 5 cm of travel, gripped to pull it and to push
+ * it, on a plate of its own under the strip's left end.
  */
-export const CHOKE_KNOB: PullSpec = { radius: 0.011, depth: 0.012, travel: 0.03, detents: [0.5] };
-/** The knob's back stands this far proud of the strip's face pushed in, m (test/z-fighting.test.ts). */
+export const CHOKE_KNOB: PullSpec = { radius: 0.008, depth: 0.016, travel: 0.05, detents: [0.5], bar: 0.07 };
+/** The handle's back stands this far proud of its plate's face pushed in, m (test/z-fighting.test.ts). */
 export const KNOB_PROUD = 0.003;
+/**
+ * The choke's plate, hung from the instrument box's housing under the
+ * strip's left end, apart from the switches: its middle (strip x, and y
+ * from the strip's middle), size and how deep it is, m; its face is level
+ * with the strip's. The handle stands out of it at `handleY`, its label
+ * painted under it at `labelY`.
+ */
+export const CHOKE_PLATE = { x: -0.1, y: -0.08, width: 0.1, height: 0.06, depth: 0.012, handleY: -0.075, labelY: -0.1 } as const;
 /** The starter: a big push button, held in with a fingertip or a fist (John's headset test: the old one was too small). */
 export const STARTER_BUTTON: ButtonSpec = { radius: 0.018, travel: 0.008, latching: false };
 /** The siren's push button, held in. */
 export const PANEL_BUTTON: ButtonSpec = { radius: 0.011, travel: 0.007, latching: false };
 
-/** An engine control: a toggle switch or a push button, where across the strip (panel x, m), its label and its colour. */
-export type EngineControl = { x: number; label: string; color: number } & (
+/**
+ * An engine control: a toggle switch or a push button, where across the strip (panel x, m) and,
+ * off the strip's row, how far up from its middle, its label and its colour.
+ */
+export type EngineControl = { x: number; y?: number; label: string; color: number } & (
   | { kind: 'toggle'; spec: ToggleSpec }
   | { kind: 'button'; spec: ButtonSpec }
   | { kind: 'pull'; spec: PullSpec }
 );
 
-/** The engine controls, left to right after the lamps: two toggles, the choke knob, the starter, the siren. */
+/** The engine controls, left to right after the lamps: two toggles, the starter and the siren; and the choke on its plate under them. */
 export const ENGINE_CONTROLS: Readonly<Record<EngineControlId, EngineControl>> = {
   battery: { kind: 'toggle', spec: PANEL_TOGGLE, x: -0.036, label: 'BATTERY', color: 0x3a6fa8 },
   ignition: { kind: 'toggle', spec: PANEL_TOGGLE, x: 0, label: 'IGNITION', color: 0xc9a227 },
-  choke: { kind: 'pull', spec: CHOKE_KNOB, x: 0.036, label: 'CHOKE', color: 0xd8d2bf },
+  choke: { kind: 'pull', spec: CHOKE_KNOB, x: CHOKE_PLATE.x, y: CHOKE_PLATE.handleY, label: 'CHOKE', color: 0xd8d2bf },
   starter: { kind: 'button', spec: STARTER_BUTTON, x: 0.08, label: 'STARTER', color: 0x2f8a3a },
   siren: { kind: 'button', spec: PANEL_BUTTON, x: 0.126, label: 'SIREN', color: 0xa83228 },
 };
@@ -387,9 +400,10 @@ export function throttleAngle(throttle: number): number {
  * of Lever.demand() outside its deadband, upright for none. For drawing
  * the crewmate's tillers, and this player's while the sticks drive.
  */
-export function tillerAngle(demand: number): number {
+export function tillerAngle(demand: number, brakesOnly = false): number {
   const { rest, min, max, deadband } = DRIVER_TILLER;
-  const d = Math.min(1, Math.max(-1, demand));
+  // With a Sherman's controls the tillers only brake: they rest against their forward stop.
+  const d = Math.min(brakesOnly ? 0 : 1, Math.max(-1, demand));
   if (d === 0) return rest;
   return d > 0 ? rest + deadband + d * (max - rest - deadband) : rest - deadband + d * (rest - min - deadband);
 }
