@@ -279,7 +279,7 @@ jobs:
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment-retry.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -293,8 +293,24 @@ jobs:
           # The crew lobby the lobby job just deployed (wss://...), or the
           # LOBBY_URL Actions variable when the lobby is hosted elsewhere.
           VITE_LOBBY_URL: ${{ needs.lobby.outputs.url || vars.LOBBY_URL }}
+      # Artifacts from earlier attempts stay on the run, and deploy-pages
+      # refuses to pick between two of the same name, so each attempt names
+      # its own. Without this, "Re-run failed jobs" can never deploy.
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
+          name: github-pages-${{ github.run_attempt }}
       - id: deployment
         uses: actions/deploy-pages@v5
+        # The deploy has failed on GitHub's side ("Failed to get ID Token ...
+        # socket hang up"). Try once more before failing the job.
+        continue-on-error: true
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
+      - if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+      - id: deployment-retry
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v5
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
