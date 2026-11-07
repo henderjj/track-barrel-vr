@@ -45,8 +45,21 @@ export const WINDOW = { width: 0.14, height: 0.05 } as const;
 /** The window's glass stands this far proud of the box's back face, m. */
 export const WINDOW_PROUD = 0.004;
 
-/** The head on the roof: its width and depth, and how far it stands over the roof, m. */
+/**
+ * The eyepiece (box, window and all) is tipped forwards this far, radians,
+ * so its window faces down towards the seat as well as back (John's headset
+ * note, 2026-11-07: sitting up 12 to 14 cm to a window facing straight back
+ * was too far). The eyes look up into it and see the view out of the head,
+ * level: the picture is at infinity along the window's axis. So the eyes meet
+ * it lower and nearer, 5 to 9 cm above the eye point instead of 12 to 14,
+ * while the box stays as high, clear of the slit's view and the gunsight.
+ */
+export const EYEPIECE_TILT = 30 * DEG;
+
+/** The head on the roof: its width and depth, and how far the driver's stands over the roof, m (under the gun as it sweeps over the hull). */
 export const HEAD_SIZE = { width: 0.1, depth: 0.1, height: 0.08 } as const;
+/** How far the gunner's head stands over the turret roof, m: high enough to look over the roof ahead of it to the gun and the ground (John, 2026-11-07: lower, the roof filled the bottom of its view). */
+export const GUNNER_HEAD_HEIGHT = 0.15;
 /** The shaft between the eyepiece and the head, its radius, m. */
 export const SHAFT_RADIUS = 0.022;
 /** The head looks this far down from level, radians: the nose (or the turret's roof) at the bottom of the view, the ground from about 15 m out. */
@@ -109,6 +122,8 @@ export interface PeriscopeSpec {
   roofTop: number;
   /** The window's middle, frame space, m. */
   lens: Vec3;
+  /** The way the window faces, towards the eyes looking in: back and down by EYEPIECE_TILT, a unit vector in the frame. */
+  facing: Vec3;
   /** The head on the roof: its bottom (inside the roof plate) and top, frame y, m. */
   head: { bottom: number; top: number };
   /** The head's camera, frame y, m: where its window looks out. */
@@ -126,11 +141,12 @@ function spec(
   roof: number,
   rise: number,
   ahead: number,
+  headHeight: number = HEAD_SIZE.height,
 ): PeriscopeSpec {
   const roofTop = roof + HULL.wall;
   const eye = SEATS[id].eye;
   const lens: Vec3 = [axis[0], eye[1] + rise, eye[2] - ahead];
-  const head = { bottom: roofTop - 0.01, top: roofTop + HEAD_SIZE.height };
+  const head = { bottom: roofTop - 0.01, top: roofTop + headHeight };
   return {
     id,
     label,
@@ -140,6 +156,7 @@ function spec(
     roof,
     roofTop,
     lens,
+    facing: [0, -Math.sin(EYEPIECE_TILT), Math.cos(EYEPIECE_TILT)],
     head,
     cameraY: (head.bottom + head.top) / 2 + 0.005,
     crank: [lens[0] + CRANK_FROM_WINDOW[0], lens[1] + CRANK_FROM_WINDOW[1], lens[2] + CRANK_FROM_WINDOW[2]],
@@ -148,24 +165,34 @@ function spec(
 
 /**
  * The driver's: in the hull roof ahead of their hatch, over the vision slit
- * (as a Sherman driver's periscope was in his hatch). Its window is 12 cm
- * above the eyes and 15 cm ahead: sit up a little and lean in to look, sit
- * back to see through the slit, which it stays clear of, behind the slit's
- * brow pad. Its head stands on the roof just behind the hood's face, ahead
+ * (as a Sherman driver's periscope was in his hatch). Its window is 10 cm
+ * above the eyes and 13.5 cm ahead, tipped to face down towards them: sit up
+ * a little and lean in to look up into it, sit back to see through the
+ * slit, which it stays clear of, behind the slit's brow pad. Its head stands on the roof just behind the hood's face, ahead
  * of the hatch's lid standing open in front of the hole.
  */
-export const DRIVER_PERISCOPE = spec('driver', "driver's", 'periscope', 'hull', [SEATS.driver.eye[0], -1.86], HULL.roof, 0.12, 0.15);
+export const DRIVER_PERISCOPE = spec('driver', "driver's", 'periscope', 'hull', [SEATS.driver.eye[0], -1.86], HULL.roof, 0.1, 0.135);
 
 /**
  * The gunner's: in the turret roof ahead of their hatch, right over the
  * gunsight's eyepiece (where a Sherman's gunner's and commander's periscopes
- * were). Its window is 14 cm over the sight's: sit up from the sight to look
- * round, drop back to it to shoot. It turns with the turret, so its angle is
+ * were). Its window is 12 cm over the sight's, tipped to face down towards
+ * the eyes: sit up from the sight to look round, drop back to it to shoot.
+ * Whichever window the eyes are nearer has them (the sight's and this one
+ * never both open). It turns with the turret, so its angle is
  * from the gun's line.
  */
-export const GUNNER_PERISCOPE = spec('gunner', "gunner's", 'gunner-periscope', 'turret', [0.32, -0.49], TURRET.roof, 0.14, 0.196);
+export const GUNNER_PERISCOPE = spec('gunner', "gunner's", 'gunner-periscope', 'turret', [0.32, -0.49], TURRET.roof, 0.12, 0.196, GUNNER_HEAD_HEIGHT);
 
 export const PERISCOPES: Readonly<Record<PeriscopeId, PeriscopeSpec>> = { driver: DRIVER_PERISCOPE, gunner: GUNNER_PERISCOPE };
+
+/** Where the eyes look in from, `back` m out from window `s`'s middle along the way it faces, into `out`. */
+export function lookingIn(s: PeriscopeSpec, back: number, out: Vec3): Vec3 {
+  out[0] = s.lens[0] + s.facing[0] * back;
+  out[1] = s.lens[1] + s.facing[1] * back;
+  out[2] = s.lens[2] + s.facing[2] * back;
+  return out;
+}
 
 /** The periscope's angle for a crank turned to `crank` radians (unwrapped). */
 export function periscopeAngle(crank: number): number {

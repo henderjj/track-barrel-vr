@@ -136,6 +136,15 @@ export class LensPlacer {
     return open;
   }
 
+  /** How far the nearer of the eyes in `mask` is from the lens's middle at rest, m. Call after `update`. */
+  eyeDistance(mask: number): number {
+    let nearest = Infinity;
+    this.eyes.forEach((eye, i) => {
+      if ((mask & (1 << i)) !== 0) nearest = Math.min(nearest, eye.length());
+    });
+    return nearest;
+  }
+
   /** Where the lens rests, world space. */
   restAt(out: Vector3): Vector3 {
     const parent = this.lens.parent;

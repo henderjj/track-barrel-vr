@@ -12,11 +12,11 @@ F1.6 gave only the driver a periscope, with its window at eye height 26 cm to th
 
 ## What players experience
 
-- **Where.** Each periscope's **eyepiece** is a steel box hanging from the roof, its window (wide enough for both eyes, in a rubber surround) facing the seat:
-  - the driver's 15 cm ahead of the eyes and 12 cm above them, behind the slit's brow pad, so the slit's view is clear from the seat and leant in to it;
-  - the gunner's straight above the gunsight's eyepiece, 14 cm higher.
+- **Where.** Each periscope's **eyepiece** is a steel box hanging from the roof, tipped forwards 30° so its window (wide enough for both eyes, in a rubber surround) faces down towards the seat:
+  - the driver's 13.5 cm ahead of the eyes and 10 cm above them, behind the slit's brow pad, so the slit's view is clear from the seat and leant in to it;
+  - the gunner's straight above the gunsight's eyepiece, 12 cm higher.
   A neck rises from the eyepiece into a housing under the roof that runs forwards to the upright, and through the roof the **head**, a small armoured box with a window on its front, turns. The driver's head stands just behind the hood, ahead of the hatch (and its lid, standing open in front of it); the gunner's on the turret roof ahead of their hatch, turning with the turret.
-- **Look.** Sit up and lean in until the eyes are within about 9 cm of the window and it lights up with the view out of the head, life size: 40° across and 16° up and down. Lean back past 12 cm and it goes dark and stops drawing. Both eyes see the picture at infinity, as through the gunsight. The bottom of the view shows the hull's nose (the turret's roof for the gunner's); the ground starts about 15 m out. The gunner's sight and periscope never both open: over the sight, the sight has the eye.
+- **Look.** Sit up a little, lean in and look up into the window: with the eyes within about 9 cm of it, it lights up with the view out of the head, life size and level: 40° across and 16° up and down. The eyes meet it 5 to 9 cm above where they sit (see [Reach](#reach)). Lean back past 12 cm and it goes dark and stops drawing. Both eyes see the picture at infinity, as through the gunsight. The bottom of the view shows the hull's nose (the turret's roof for the gunner's); the ground starts about 15 m out. The gunner's sight and periscope never both open: whichever window the eyes are nearer has them.
 - **Turn.** A small crank on the eyepiece's right turns the head: a quarter of the way round for each turn of the crank, with a tick every 15° the head turns. Turn the knob anticlockwise (as you see it) to look left. The eyepiece stays where it is, as on a panoramic sight, so the eye stays at the window while the view swings. It turns for ever and stays where it is let go. The gunner's turns with the turret too, so it keeps its angle from the gun.
 - **Crewmate.** Each player sees the other's crank turn with their hand on its knob, and the head turn on the roof.
 - Game menu, **Sights → Periscopes**:
@@ -30,16 +30,30 @@ Frame space: hull space ([cabin.md](cabin.md)) for the driver's, turret space fo
 
 | What | Driver's | Gunner's | Why |
 | --- | --- | --- | --- |
-| Window's middle | (−0.5, 1.57, −1.75): 15 cm ahead, 12 cm up | (0.32, 2.39, −0.396): 20 cm ahead, 14 cm up, 8 cm left, over the sight's eyepiece | Just above the main view: a short sit-up and lean, inside the head box and under its roof stop (tested) |
+| Window's middle | (−0.5, 1.55, −1.735): 13.5 cm ahead, 10 cm up | (0.32, 2.37, −0.396): 20 cm ahead, 12 cm up, 8 cm left, over the sight's eyepiece | Just above the main view: a short sit-up and lean, inside the head box and under its roof stop (tested) |
+| Window's tilt | 30° forwards, facing down towards the seat | the same | The eyes looking in 6 cm out are 7 cm (driver) and 9 cm (gunner) above the eye point, 4 and 5.5 cm at the opening distance; the picture stays level ([Reach](#reach)) |
 | Upright (head on the roof) | x −0.5, z −1.86 | x 0.32, z −0.49 | Driver's: behind the hood's face, ahead of the hatch's open lid, outside the turret's sweep, under the level barrel. Gunner's: ahead of the hatch and clear of its collar, inside the roof's chamfers |
-| Eyepiece | box 18 × 9 × 8 cm round the window | the same | The driver's behind the slit's brow pad; the gunner's 4 cm or more above the sight's hood |
+| Eyepiece | box 18 × 9 × 8 cm round the window, tipped with it | the same | The driver's behind the slit's brow pad, 5.5 cm or more from the eyes leant in to the slit; the gunner's 2.5 cm or more above the sight's hood |
 | Window | 14 × 5 cm, 4 mm proud of the box | the same | Wide enough for both eyes (6.4 cm apart) |
 | Crank | hub 19 cm right of the window, 2 cm up, its face 2 cm ahead of it; 5.5 cm to the knob, knob 5 cm long | the same | In easy reach of the right shoulder; a fist on the knob stays 10 cm from the eyes at the window and, on the driver's, out of the slit's view all the way round (tested) |
 | Turn | 90° a crank turn, for ever, a tick every 15° | the same | Quick to swing round, fine to aim (1° of hand is ¼° of view) |
-| Opens / closes | an eye within 9 cm of the window and behind it / beyond 12 cm | the same | The gunsight's numbers |
+| Opens / closes | an eye within 9 cm of the window and behind it / beyond 12 cm | the same; and the gunsight shut, which stays shut while the eyes are nearer this window than its own | The gunsight's numbers |
 | Power, field | 1×, ±20° by ±8° | the same | A Sherman's M6 periscopes had no magnification (see [Power](#power)); a wide field for driving and looking round; a rectangular field stop like a real periscope's window |
 | Picture | 1024 × 395, 4× multisampling, only while open | the same | About 25 texels a degree, the Quest 3's display's own |
-| Head | 10 × 10 cm, 8 cm over the roof, the camera looking 2° down | the same | |
+| Head | 10 × 10 cm, 8 cm over the roof, the camera looking 2° down | 15 cm over the roof, the same | The driver's under the gun as it sweeps over the hull; the gunner's high enough to look over the turret roof ahead to the gun and the ground |
+| Camera | near plane 5 cm, far 1500 m | the same | Near enough to draw the roof in the bottom of the view and the driver's open hatch lid behind (0.3 m cut them away, so the view saw through the tank: John, 2026-11-07) |
+
+## Reach
+
+John's headset note (2026-11-07): it was hard to get the head up high enough to see out of the periscopes, with their windows 12 cm (driver's) and 14 cm (gunner's) above the eyes and facing straight back. He set his eyes 5 cm higher so he could drop to the slit and the sight and rise to the periscopes.
+
+The eyepieces can't simply come down: the driver's would cut into the top of the slit's view and come within the near plane of the eyes leant in to the slit, and the gunner's sits over the sight's hood with the forehead under it while sighting. So each eyepiece is **tipped forwards 30°** about its window's middle, its window facing down towards the seat, and lowered 2 cm. The eyes meet the window lower and nearer: looking up into it 6 cm out they are 7 cm (driver's) or 9 cm (gunner's) above the eye point, where before they were 12 or 14. The picture is at infinity along the window's axis, so looking up into it shows the view out of the head level, as a real periscope's tilted eyepiece prism does.
+
+Tipped, the gunner's window brings the eyes looking into it within 9 cm of the sight's lens below. So instead of the sight always having the eye, **whichever window the eyes are nearer has them**: PeriscopeSystem tells SightSystem how far the eyes are from its window (`sightStats.periscopeEye`), and the sight stays shut while they are nearer the periscope's.
+
+## What blocks the view
+
+John asked (2026-11-07) whether the driver's periscope should be stopped from turning, since the turret blocks its view behind. It isn't: a Sherman driver's M6 sat in a mount that turned all the way round, and looking back meant looking at the turret, or here at the open hatch lid just behind the head. The tank itself was clipped out of the view, though, because the camera cut away everything within 30 cm of it: the roof in the bottom of the view and the lid behind. The near plane is now 5 cm, and the gunner's head stands 15 cm over the turret roof so the roof fills only the bottom of its view.
 
 ## Power
 
@@ -80,11 +94,11 @@ Everything: each periscope is its seat's own. Alone, the player can sit in eithe
 
 ## Headset check
 
-On a Quest 3 after the deploy, with the cache cleared (Ctrl+Shift+R, or close and reopen the tab), seated (menu → You → Seated). Turn the perf HUD on with X. Stop at once if you feel unwell.
+On a Quest 3 after the deploy, with the cache cleared (Ctrl+Shift+R, or close and reopen the tab), seated (menu → You → Seated), with the eye height back at 0 cm (menu → You). Turn the perf HUD on with X. Stop at once if you feel unwell.
 
 1. Game menu (Y) → **Sights → Periscopes → Driver's**. You are in the driver's seat with the periscope's window a little above and ahead. Sit back: the slit's view is clear, and nothing is in the way to the right any more. Lean right in to the slit: the eyepiece is over your forehead, out of the view. Nothing on it flickers.
-2. Sit up and lean in until the window lights up. You see the range ahead life size, with the tank's nose at the bottom. Say whether the sit-up is comfortable, and how far you had to rise.
-3. Take the **crank** on its right and turn it anticlockwise: the view swings left, a quarter of the way round each turn, with a tick every 15°, and your eye stays at the window. Turn it all the way round. Say whether the crank is easy to find and turn with your eye at the window, and whether the speed suits.
+2. Sit up a little, lean in and look up into the window until it lights up. You see the range ahead life size and level, with the tank's nose at the bottom. Say whether the sit-up is comfortable now (it should be about half what it was), and whether looking up into the window to see level feels odd.
+3. Take the **crank** on its right and turn it anticlockwise, letting your hand wander a little towards its middle (it should no longer jump): the view swings left, a quarter of the way round each turn, with a tick every 15°, and your eye stays at the window. Turn it all the way round. Say whether the crank is easy to find and turn with your eye at the window, and whether the speed suits.
 4. **Sights → Periscopes → Gunner's**. You are in the gunner's seat with the periscope's window over the gunsight. Lean in to the sight: it opens and the periscope stays dark. Sit up to the periscope: it opens and the sight goes dark. Turn it to look left of the gun, then traverse the turret: the periscope keeps its angle from the gun.
 5. **Ahead** turns both back. Look at a target far down the range through a periscope, then through the gunsight: say whether the periscope's picture is sharp enough to spot it, and whether it looks as sharp as the slit's view.
 6. With the practice crewmate (`?bot=1`) or a second headset driving, look round through the gunner's periscope on the move. Report the HUD's fps and the `g.periscope` line (cpu, calls, triangles) with it open.
