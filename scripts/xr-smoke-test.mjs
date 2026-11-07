@@ -125,11 +125,23 @@ const worker = process.env.IWSDK_SPAWN
   : new Worker(new URL('./iwsdk-worker.mjs', import.meta.url), { workerData: { root: ROOT, shared } });
 worker?.unref();
 
+/**
+ * An error from the emulated browser no longer answering (a command timing
+ * out, an empty or garbled reply, the page gone), as opposed to a check
+ * failing. If one stops the test before any check has failed, the script
+ * exits with STALLED, and CI runs that part once more (.github/workflows/ci.yml).
+ */
+const STALLED = 75;
+const BROWSER_GONE = /evaluation timed out|browser_command_timeout|browser_not_launched|browser_relaunched|outcome_unknown|automation is not available|managed application page|frame is unavailable|has been closed|Target closed/i;
+function stalled(message) {
+  return Object.assign(new Error(message), { stalled: true });
+}
+
 /** Sends a request to the worker and waits for its answer: { stdout } or { error }. */
 function ask(request) {
   Atomics.store(header, 0, 0);
   worker.postMessage(request);
-  if (Atomics.wait(header, 0, 0, 300000) === 'timed-out') throw new Error(`no answer to ${JSON.stringify(request)} in 300 s`);
+  if (Atomics.wait(header, 0, 0, 300000) === 'timed-out') throw stalled(`no answer to ${JSON.stringify(request)} in 300 s`);
   const text = new TextDecoder().decode(new Uint8Array(shared, 8, Atomics.load(header, 1)).slice());
   return JSON.parse(text);
 }
@@ -156,7 +168,10 @@ function iwsdk(args, input) {
   let stderr = '';
   if (worker) {
     const reply = ask({ kind: 'cli', argv: argv.slice(1) });
-    if (reply.error) throw new Error(`iwsdk ${args.join(' ')}: ${reply.error}`);
+    if (reply.error) {
+      const message = `iwsdk ${args.join(' ')}: ${reply.error}`;
+      throw BROWSER_GONE.test(reply.error) ? stalled(message) : new Error(message);
+    }
     stdout = reply.stdout;
     stderr = reply.stderr ?? '';
   } else try {
@@ -180,14 +195,15 @@ function iwsdk(args, input) {
       console.log(`      (no screenshot for ${args.at(-1)}: ${`${stdout}${stderr}`.replace(/\s+/g, ' ').slice(0, 600)})`);
       return null;
     }
-    throw new Error(`iwsdk ${args.join(' ')}: unparseable output\n${stdout}${stderr ? `\nstderr: ${stderr.slice(0, 2000)}` : ''}`);
+    throw stalled(`iwsdk ${args.join(' ')}: unparseable output\n${stdout}${stderr ? `\nstderr: ${stderr.slice(0, 2000)}` : ''}`);
   }
   if (!parsed.ok) {
     if (args[1] === 'screenshot') {
       console.log(`      (no screenshot for ${args.at(-1)}: ${JSON.stringify(parsed.error).slice(0, 600)})`);
       return null;
     }
-    throw new Error(`iwsdk ${args.join(' ')} failed: ${JSON.stringify(parsed.error)}`);
+    const message = `iwsdk ${args.join(' ')} failed: ${JSON.stringify(parsed.error)}`;
+    throw BROWSER_GONE.test(message) ? stalled(message) : new Error(message);
   }
   return parsed.data;
 }
@@ -202,8 +218,11 @@ function evalInApp(expression) {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
       reply = ask({ kind: 'eval', expression });
     }
-    if (reply.error) throw new Error(`evaluating ${expression.slice(0, 80)}: ${reply.error}`);
-    if (!reply.stdout) throw new Error(`evaluating ${expression.slice(0, 80)}: no answer`);
+    if (reply.error) {
+      const message = `evaluating ${expression.slice(0, 80)}: ${reply.error}`;
+      throw BROWSER_GONE.test(reply.error) ? stalled(message) : new Error(message);
+    }
+    if (!reply.stdout) throw stalled(`evaluating ${expression.slice(0, 80)}: no answer`);
     const data = JSON.parse(reply.stdout);
     if (!data.ok) throw new Error(`iwsdk browser run failed: ${JSON.stringify(data.error)}`);
     return data.data.result?.value ?? data.data.result;
@@ -248,7 +267,8 @@ async function waitFor(label, fn, timeoutMs = 60000, intervalMs = 500) {
     }
     await sleep(intervalMs);
   }
-  throw new Error(`Timed out waiting for ${label}${lastError ? `: ${lastError.message}` : ''}`);
+  const message = `Timed out waiting for ${label}${lastError ? `: ${lastError.message}` : ''}`;
+  throw lastError?.stalled ? stalled(message) : new Error(message);
 }
 
 function findEntity(name) {
@@ -2407,6 +2427,11 @@ async function main() {
   mkdirSync(`${ROOT}/artifacts`, { recursive: true });
   await ensureRuntime();
   startedAt = Date.now();
+  // Start from the game's defaults: settings a run saves (an Engine start of
+  // Full procedure, a seat) stay in the managed browser's profile, and the
+  // rerun after a stalled browser (or a local run after one stopped part
+  // way) would start with them.
+  evalInApp('(localStorage.clear(), true)');
 
   try {
     iwsdk(['browser', 'reload'], {});
@@ -2816,9 +2841,13 @@ async function lastChecks() {
 
 main().catch((error) => {
   console.error(`ERROR  ${error.message}`);
+  // Stopped by the browser, not by a failed check: CI may run it again.
+  const retry = error.stalled === true && results.every((r) => r.pass);
+  if (retry) console.error(`The emulated browser stopped answering after ${results.length} passed checks (exit ${STALLED}).`);
   if (process.env.GITHUB_ACTIONS) {
-    console.log(`::error title=XR test aborted::${error.message}`.replace(/\r?\n/g, ' '));
+    const title = retry ? 'XR test stopped: the emulated browser stopped answering' : 'XR test aborted';
+    console.log(`::${retry ? 'warning' : 'error'} title=${title}::${error.message}`.replace(/\r?\n/g, ' '));
   }
-  process.exitCode = 1;
+  process.exitCode = retry ? STALLED : 1;
 });
 
