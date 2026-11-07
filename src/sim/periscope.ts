@@ -52,16 +52,23 @@ export const SHAFT_RADIUS = 0.022;
 /** The head looks this far down from level, radians: the nose (or the turret's roof) at the bottom of the view, the ground from about 15 m out. */
 export const PITCH = -2 * DEG;
 
-/** How much bigger things look, by default, and the Practice menu's choices. */
-export const PERISCOPE_POWER = 2;
-export const PERISCOPE_POWERS = [1, 2, 3] as const;
-export type PeriscopePower = (typeof PERISCOPE_POWERS)[number];
+/**
+ * How much bigger things look: none. A Sherman's M6 periscopes were plain
+ * unity-power prisms (only the gunner's sight magnified: its telescope was
+ * 3×, as the gunsight here is), and at 1× the view moves with the head as
+ * the world outside does, which is easiest on the stomach while driving.
+ */
+export const PERISCOPE_POWER = 1;
 
-/** Half the true field across and up, radians: the eye sees ±40° by ±16° at 2×. */
+/** Half the field across and up, radians: ±20° by ±8°, the same to the eye at 1×. */
 export const HALF_FIELD_X = 20 * DEG;
 export const HALF_FIELD_Y = 8 * DEG;
-/** The picture's texels across; it is as many up as keep them square. */
-export const PICTURE_WIDTH = 768;
+/**
+ * The picture's texels across; it is as many up as keep them square. 1024
+ * over the 40° the eye sees is about 25 a degree, the Quest 3's display
+ * (John's note, 2026-11-07: 768 at 2× and 3× looked low-res).
+ */
+export const PICTURE_WIDTH = 1024;
 export const PICTURE_HEIGHT = Math.round((PICTURE_WIDTH * Math.tan(HALF_FIELD_Y)) / Math.tan(HALF_FIELD_X));
 
 /** How far the periscope turns for each turn of its crank, radians: a quarter of the way round. */

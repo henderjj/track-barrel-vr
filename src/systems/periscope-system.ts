@@ -35,10 +35,8 @@ import {
   PERISCOPE_CRANK,
   PERISCOPE_IDS,
   PERISCOPE_POWER,
-  PERISCOPE_POWERS,
   type PeriscopeId,
   periscopeAngle,
-  type PeriscopePower,
   PERISCOPES,
   periscopesLine,
   type PeriscopeSpec,
@@ -56,7 +54,6 @@ import {
   createScopeTarget,
   LensPlacer,
   renderScope,
-  setLensMagnification,
   watchLensView,
 } from './scope-lens.js';
 import { type PracticeButton, sightStats } from './sight-system.js';
@@ -94,9 +91,8 @@ interface ScopeStats {
 
 const newStats = (): ScopeStats => ({ open: false, renders: 0, lastRender: 0, cpuMs: 0, gpuMs: Number.NaN, calls: 0, triangles: 0 });
 
-/** What the periscopes are doing, for the perf HUD and the tests. Power is shared by both. */
+/** What the periscopes are doing, for the perf HUD and the tests. */
 export const periscopeStats = {
-  power: PERISCOPE_POWER as PeriscopePower,
   driver: newStats(),
   gunner: newStats(),
 };
@@ -107,7 +103,7 @@ export function periscopeSummary(now: number): string | null {
   const s = periscopeStats[id];
   if (now - s.lastRender > 1000) return null;
   const gpu = Number.isNaN(s.gpuMs) ? '-' : `${s.gpuMs.toFixed(2)}`;
-  return `${id === 'driver' ? 'periscope' : 'g.periscope'} ${PICTURE_WIDTH}×${PICTURE_HEIGHT} ${periscopeStats.power}× cpu ${s.cpuMs.toFixed(2)} gpu ${gpu} ms ${s.calls} calls ${(s.triangles / 1000).toFixed(0)}k`;
+  return `${id === 'driver' ? 'periscope' : 'g.periscope'} ${PICTURE_WIDTH}×${PICTURE_HEIGHT} cpu ${s.cpuMs.toFixed(2)} gpu ${gpu} ms ${s.calls} calls ${(s.triangles / 1000).toFixed(0)}k`;
 }
 
 let active: PeriscopeSystem | null = null;
@@ -117,20 +113,16 @@ export function periscopeStatus(): string {
   return active?.status() ?? '';
 }
 
-const next = <T>(list: readonly T[], value: T): T => list[(list.indexOf(value) + 1) % list.length];
-
 /** The game menu's Sights buttons for the periscopes. */
 export const PERISCOPE_BUTTONS: readonly PracticeButton[] = [
   { id: 'menu-periscope-driver', label: () => "Driver's", press: () => active?.goTo('driver'), closes: true },
   { id: 'menu-periscope-gunner', label: () => "Gunner's", press: () => active?.goTo('gunner'), closes: true },
   { id: 'menu-periscope-ahead', label: () => 'Ahead', press: () => active?.ahead() },
-  { id: 'menu-periscope-power', label: () => `Power ${periscopeStats.power}x`, press: () => active?.setPower(next(PERISCOPE_POWERS, periscopeStats.power)) },
 ];
 
 interface ScopeDebug {
   /** Its turn (degrees, positive left; and as a bearing), the crank's, who holds it, whether it is open, and what it has sent and received. */
   state(): ScopeStats & {
-    power: PeriscopePower;
     angleDeg: number;
     bearingDeg: number;
     crankDeg: number;
@@ -160,7 +152,6 @@ interface ScopeDebug {
 interface PeriscopeDebug {
   driver: ScopeDebug;
   gunner: ScopeDebug;
-  setPower(power: PeriscopePower): void;
   /** The menu's line. */
   status(): string;
 }
@@ -213,7 +204,7 @@ class Scope {
 
     this.target = createScopeTarget(PICTURE_WIDTH, PICTURE_HEIGHT);
     this.material = createLensMaterial(this.target, {
-      magnification: periscopeStats.power,
+      magnification: PERISCOPE_POWER,
       halfFieldX: HALF_FIELD_X,
       halfFieldY: HALF_FIELD_Y,
       reticle: null,
@@ -260,7 +251,7 @@ class Scope {
  * mechanism-kit Wheel; HoldKind 8 the driver's, 14 the gunner's), a quarter
  * of the way round for each turn. Put an eye within about 9 cm of a window
  * and a camera in its head renders the view into a texture that the window
- * shows at 2× (spike S1's lens, src/systems/scope-lens.ts, with a
+ * shows at 1× (spike S1's lens, src/systems/scope-lens.ts, with a
  * rectangular field stop); further away it is dark glass and nothing extra
  * is drawn.
  *
@@ -321,7 +312,6 @@ export class PeriscopeSystem extends createSystem({}) {
       return {
         state: () => ({
           ...scope.stats,
-          power: periscopeStats.power,
           angleDeg: scope.angle / DEG,
           bearingDeg: bearing(scope.angle),
           crankDeg: scope.crank.angle / DEG,
@@ -363,7 +353,6 @@ export class PeriscopeSystem extends createSystem({}) {
     (window as unknown as { __periscope: PeriscopeDebug }).__periscope = {
       driver: debug('driver'),
       gunner: debug('gunner'),
-      setPower: (power) => this.setPower(power),
       status: () => this.status(),
     };
   }
@@ -434,11 +423,6 @@ export class PeriscopeSystem extends createSystem({}) {
   /** Practice → Ahead: both periscopes straight ahead (the gunner's along the gun). */
   ahead(): void {
     for (const id of PERISCOPE_IDS) this.turn(id, 0);
-  }
-
-  setPower(power: PeriscopePower): void {
-    periscopeStats.power = PERISCOPE_POWERS.includes(power) ? power : PERISCOPE_POWER;
-    for (const id of PERISCOPE_IDS) setLensMagnification(this.scopes[id].material, periscopeStats.power);
   }
 
   /**

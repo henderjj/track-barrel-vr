@@ -604,7 +604,6 @@
               <Button id="menu-periscope-driver" class="choice" size="sm" variant="secondary">Driver's</Button>
               <Button id="menu-periscope-gunner" class="choice" size="sm" variant="secondary">Gunner's</Button>
               <Button id="menu-periscope-ahead" class="choice" size="sm" variant="secondary">Ahead</Button>
-              <Button id="menu-periscope-power" class="choice" size="sm" variant="secondary">Power 2x</Button>
             </div>
           </div>
           <div id="menu-periscope-status" class="hint">Sit up and lean in to a periscope's window to look; turn it with the crank on its right</div>

@@ -1979,20 +1979,18 @@ async function thePeriscopes() {
     await sleep(300);
   }
 
-  // The menu: Ahead turns both back, Power cycles 2× → 3×.
+  // The menu: Ahead turns both back.
   await menuButtonPress();
   await menuClick('menu-periscope-ahead');
-  await menuClick('menu-periscope-power');
   await menuButtonPress();
   const ahead = await waitFor('both periscopes ahead', () => {
     const d = evalInApp('window.__periscope.driver.state()');
     const g = evalInApp('window.__periscope.gunner.state()');
     return Math.abs(d.angleDeg) < 0.01 && Math.abs(g.angleDeg) < 0.01 && { d, g };
   }, 4000).catch(() => ({ d: evalInApp('window.__periscope.driver.state()'), g: evalInApp('window.__periscope.gunner.state()') }));
-  check('Sights → Periscopes → Ahead turns both straight ahead and Power steps to 3×',
-    Math.abs(ahead.d.angleDeg) < 0.01 && Math.abs(ahead.g.angleDeg) < 0.01 && ahead.d.power === 3,
-    `driver's ${ahead.d.angleDeg.toFixed(2)}°, gunner's ${ahead.g.angleDeg.toFixed(2)}°, power ${ahead.d.power}×, "${evalInApp('window.__periscope.status()')}"`);
-  evalInApp('(window.__periscope.setPower(2), true)');
+  check('Sights → Periscopes → Ahead turns both straight ahead',
+    Math.abs(ahead.d.angleDeg) < 0.01 && Math.abs(ahead.g.angleDeg) < 0.01,
+    `driver's ${ahead.d.angleDeg.toFixed(2)}°, gunner's ${ahead.g.angleDeg.toFixed(2)}°, "${evalInApp('window.__periscope.status()')}"`);
   evalInApp('(window.__seats.reseat(), true)');
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);

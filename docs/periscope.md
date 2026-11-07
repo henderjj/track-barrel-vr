@@ -1,6 +1,6 @@
 # Periscopes (F1.6, F1.19)
 
-Both crew have a periscope: the driver's in the hull roof ahead of their hatch, over the vision slit, and the gunner's in the turret roof over the gunsight. Each turns all the way round with a small crank and shows the view at 2×. They reuse the gunsight's lens and renderer (spike S1, [gunsight.md](gunsight.md)), shared in [`src/systems/scope-lens.ts`](../src/systems/scope-lens.ts). The numbers are in [`src/sim/periscope.ts`](../src/sim/periscope.ts), the model is [`src/scene-assets/periscope.scene-asset.ts`](../src/scene-assets/periscope.scene-asset.ts) and the system [`src/systems/periscope-system.ts`](../src/systems/periscope-system.ts).
+Both crew have a periscope: the driver's in the hull roof ahead of their hatch, over the vision slit, and the gunner's in the turret roof over the gunsight. Each turns all the way round with a small crank and shows the view at 1×, as a Sherman's did. They reuse the gunsight's lens and renderer (spike S1, [gunsight.md](gunsight.md)), shared in [`src/systems/scope-lens.ts`](../src/systems/scope-lens.ts). The numbers are in [`src/sim/periscope.ts`](../src/sim/periscope.ts), the model is [`src/scene-assets/periscope.scene-asset.ts`](../src/scene-assets/periscope.scene-asset.ts) and the system [`src/systems/periscope-system.ts`](../src/systems/periscope-system.ts).
 
 ## Why two (F1.19)
 
@@ -16,13 +16,13 @@ F1.6 gave only the driver a periscope, with its window at eye height 26 cm to th
   - the driver's 15 cm ahead of the eyes and 12 cm above them, behind the slit's brow pad, so the slit's view is clear from the seat and leant in to it;
   - the gunner's straight above the gunsight's eyepiece, 14 cm higher.
   A neck rises from the eyepiece into a housing under the roof that runs forwards to the upright, and through the roof the **head**, a small armoured box with a window on its front, turns. The driver's head stands just behind the hood, ahead of the hatch (and its lid, standing open in front of it); the gunner's on the turret roof ahead of their hatch, turning with the turret.
-- **Look.** Sit up and lean in until the eyes are within about 9 cm of the window and it lights up with the view out of the head at 2×: about 40° across and 16° up and down to the eye (20° by 8° of the world). Lean back past 12 cm and it goes dark and stops drawing. Both eyes see the picture at infinity, as through the gunsight. The bottom of the view shows the hull's nose (the turret's roof for the gunner's); the ground starts about 15 m out. The gunner's sight and periscope never both open: over the sight, the sight has the eye.
+- **Look.** Sit up and lean in until the eyes are within about 9 cm of the window and it lights up with the view out of the head, life size: 40° across and 16° up and down. Lean back past 12 cm and it goes dark and stops drawing. Both eyes see the picture at infinity, as through the gunsight. The bottom of the view shows the hull's nose (the turret's roof for the gunner's); the ground starts about 15 m out. The gunner's sight and periscope never both open: over the sight, the sight has the eye.
 - **Turn.** A small crank on the eyepiece's right turns the head: a quarter of the way round for each turn of the crank, with a tick every 15° the head turns. Turn the knob anticlockwise (as you see it) to look left. The eyepiece stays where it is, as on a panoramic sight, so the eye stays at the window while the view swings. It turns for ever and stays where it is let go. The gunner's turns with the turret too, so it keeps its angle from the gun.
 - **Crewmate.** Each player sees the other's crank turn with their hand on its knob, and the head turn on the roof.
 - Game menu, **Sights → Periscopes**:
   - **Driver's** and **Gunner's** put the player in that seat with their head 15 cm behind its window, facing it (from the other seat it asks to change seats first; in a crew that is a swap both must agree to). Sit up a little to look in.
   - **Ahead** turns both straight ahead (the gunner's along the gun). Either player can press it: each seat's page turns its own.
-  - **Power 2×** steps through 1×, 2× and 3× for both. The line under the row says where each looks.
+  - The line under the row says where each looks.
 
 ## Numbers
 
@@ -37,9 +37,17 @@ Frame space: hull space ([cabin.md](cabin.md)) for the driver's, turret space fo
 | Crank | hub 19 cm right of the window, 2 cm up, its face 2 cm ahead of it; 5.5 cm to the knob, knob 5 cm long | the same | In easy reach of the right shoulder; a fist on the knob stays 10 cm from the eyes at the window and, on the driver's, out of the slit's view all the way round (tested) |
 | Turn | 90° a crank turn, for ever, a tick every 15° | the same | Quick to swing round, fine to aim (1° of hand is ¼° of view) |
 | Opens / closes | an eye within 9 cm of the window and behind it / beyond 12 cm | the same | The gunsight's numbers |
-| Power, field | 2× (1× and 3× in Practice), ±20° by ±8° true | the same | A wide field for driving and looking round; a rectangular field stop like a real periscope's window |
-| Picture | 768 × 296, 4× multisampling, only while open | the same | About the gunsight's 512² in texels |
+| Power, field | 1×, ±20° by ±8° | the same | A Sherman's M6 periscopes had no magnification (see [Power](#power)); a wide field for driving and looking round; a rectangular field stop like a real periscope's window |
+| Picture | 1024 × 395, 4× multisampling, only while open | the same | About 25 texels a degree, the Quest 3's display's own |
 | Head | 10 × 10 cm, 8 cm over the roof, the camera looking 2° down | the same | |
+
+## Power
+
+John's note (2026-11-07): the picture looked low-res, worst at 3×; what power should a periscope have, and is a zoomed view worth drawing?
+
+- **A Sherman's periscopes didn't magnify.** The driver's, co-driver's, loader's and commander's M6 periscopes were plain prisms at 1×, for looking round and driving. Magnification was the gunner's job: his M70 telescope beside the gun was 3× with a 12° field (the gunsight here, [gunsight.md](gunsight.md)), and his M4 periscopic sight had a 1.44× telescope next to its plain window.
+- **So the periscopes are 1×, with no Power button.** A zoomed periscope would do the gunsight's job while making driving through it harder: at 1× things outside move as the head does, at 2× or 3× the picture swings twice or three times as fast as the head and the hull's pitching.
+- **The low-res look** was the picture's texels spread over the zoom: 768 across shown 2× bigger was 9.6 texels a degree to the eye, and at 3× 6.4, where the Quest 3 shows about 25 pixels a degree. At 1× the 40° field now has 1024 texels, about 25 a degree, so the picture is as sharp as the headset can show. It draws about twice the texels of the gunsight's 512², still only while a window is open.
 
 ## Sharing
 
@@ -65,21 +73,21 @@ Everything: each periscope is its seat's own. Alone, the player can sit in eithe
 - `test/periscope.test.ts`: each window 10 to 15 cm above its eye point and within a sit-up and lean, reachable inside its head box by both eyes, wide enough for both; the driver's slit clear of the eyepiece, the crank and a fist on the knob from the seat and leant in, the eyes leant in to the slit 6 cm or more under the eyepiece; the gunner's eyepiece over the sight's with room between, an eye at one beyond the other's opening distance; each knob in reach of the right shoulder, 10 cm from the eyes at the window, under the roof, and clear of the driver's levers and the gunner's wheels, grip and breech lever; the driver's head ahead of the hatch and its open lid, behind the hood, outside the turret's sweep and under the barrel, the eyepiece behind the brow pad; the gunner's head ahead of its hatch and clear of its collar, inside the roof's chamfers; which way it looks for each turn and the crank's gearing; the picture's texels square; five turns of the crank turning it 450°; both packets' round trips, wrapping, and each turning away the other's and short ones.
 - `test/z-fighting.test.ts`: both periscopes turned seven ways with their cranks, the gunner's in the turret turned four ways.
 - `test/interior.test.ts`: the driver's window within the short lean of the interior's layout.
-- `npm run test:xr`, step 6l: Sights → Periscopes → Driver's puts the head just behind the window and below it; sitting up renders the view (`artifacts/xr-periscope-driver-ahead.png`); a turn of the crank turns it 90° left, the view with it, the window still (`artifacts/xr-periscope-driver-left.png`). Then Gunner's: the same in the gunner's seat, the gunsight under it shut, half a turn looking 45° left of the gun. Ahead turns both back and Power steps to 3×.
+- `npm run test:xr`, step 6l: Sights → Periscopes → Driver's puts the head just behind the window and below it; sitting up renders the view (`artifacts/xr-periscope-driver-ahead.png`); a turn of the crank turns it 90° left, the view with it, the window still (`artifacts/xr-periscope-driver-left.png`). Then Gunner's: the same in the gunner's seat, the gunsight under it shut, half a turn looking 45° left of the gun. Ahead turns both back.
 - `npm run test:net` (in the drive checks, `ONLY_DRIVE=1` or `=lag`): the guest driver's periscope turned 60° is drawn so on the host's page, and the host gunner's turned 40° right on the guest's; the host's Ahead turns both ahead on both pages. Clean link and 150 ms RTT.
 
-`window.__periscope.driver` and `.gunner` each give `state()` (angle in degrees and as a bearing, the crank's angle, whether it is held, open, render stats, owner, packets sent and received, where it looks), `goTo()`, `turn(degrees)`, `knob(crankDegrees?)`, `lens()`, `view()`, `head()` and `pictureSpread()`; `window.__periscope.setPower(p)` and `.status()` cover both. The perf HUD's sight line shows a periscope's own cost while it renders (`g.periscope` for the gunner's).
+`window.__periscope.driver` and `.gunner` each give `state()` (angle in degrees and as a bearing, the crank's angle, whether it is held, open, render stats, owner, packets sent and received, where it looks), `goTo()`, `turn(degrees)`, `knob(crankDegrees?)`, `lens()`, `view()`, `head()` and `pictureSpread()`; `window.__periscope.status()` gives the menu's line. The perf HUD's sight line shows a periscope's own cost while it renders (`g.periscope` for the gunner's).
 
 ## Headset check
 
 On a Quest 3 after the deploy, with the cache cleared (Ctrl+Shift+R, or close and reopen the tab), seated (menu → You → Seated). Turn the perf HUD on with X. Stop at once if you feel unwell.
 
 1. Game menu (Y) → **Sights → Periscopes → Driver's**. You are in the driver's seat with the periscope's window a little above and ahead. Sit back: the slit's view is clear, and nothing is in the way to the right any more. Lean right in to the slit: the eyepiece is over your forehead, out of the view. Nothing on it flickers.
-2. Sit up and lean in until the window lights up. You see the range ahead at 2×, with the tank's nose at the bottom. Say whether the sit-up is comfortable, and how far you had to rise.
+2. Sit up and lean in until the window lights up. You see the range ahead life size, with the tank's nose at the bottom. Say whether the sit-up is comfortable, and how far you had to rise.
 3. Take the **crank** on its right and turn it anticlockwise: the view swings left, a quarter of the way round each turn, with a tick every 15°, and your eye stays at the window. Turn it all the way round. Say whether the crank is easy to find and turn with your eye at the window, and whether the speed suits.
 4. **Sights → Periscopes → Gunner's**. You are in the gunner's seat with the periscope's window over the gunsight. Lean in to the sight: it opens and the periscope stays dark. Sit up to the periscope: it opens and the sight goes dark. Turn it to look left of the gun, then traverse the turret: the periscope keeps its angle from the gun.
-5. **Ahead** turns both back; **Power** tries 1× and 3×. Say which power you'd keep.
+5. **Ahead** turns both back. Look at a target far down the range through a periscope, then through the gunsight: say whether the periscope's picture is sharp enough to spot it, and whether it looks as sharp as the slit's view.
 6. With the practice crewmate (`?bot=1`) or a second headset driving, look round through the gunner's periscope on the move. Report the HUD's fps and the `g.periscope` line (cpu, calls, triangles) with it open.
 7. With a second headset: each of you turns your periscope and sees the other's crank turn with their hand on it, and its head turn on the roof.
 
-Report: whether sitting up to the periscopes is comfortable, whether the cranks are easy to use, the power you'd keep, and the fps with a periscope open.
+Report: whether sitting up to the periscopes is comfortable, whether the cranks are easy to use, whether the picture is sharp enough, and the fps with a periscope open.
