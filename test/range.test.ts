@@ -132,16 +132,17 @@ describe('test range (F1.7)', () => {
     expect(onRoad(TILE, -250)).toBe(true);
   });
 
-  it('fogs the distance so the ground\'s drawn edge is never seen, and the 500 m target still is', () => {
+  it('fogs the distance so the ground\'s drawn edge is never seen, and every target is clear', () => {
     expect(fogAmount(0)).toBe(0);
     expect(fogAmount(FOG.near)).toBe(0);
     expect(fogAmount(FOG.far)).toBe(1);
-    // The plan's "about 600 m": by then three quarters of a target is fog.
-    expect(sightLimit()).toBeGreaterThan(550);
-    expect(sightLimit()).toBeLessThan(680);
-    // The 500 m target is hazy but there to be found; the ground's edge, a tile away, is gone.
-    expect(fogAmount(500)).toBeGreaterThan(0.3);
-    expect(fogAmount(500)).toBeLessThan(0.7);
+    // About 700 m: by then three quarters of a target is fog.
+    expect(sightLimit()).toBeGreaterThan(650);
+    expect(sightLimit()).toBeLessThan(750);
+    // John's play test: the far target must be easy to see. The nearer two are clear of the fog altogether.
+    expect(fogAmount(250)).toBe(0);
+    expect(fogAmount(500)).toBeLessThan(0.25);
+    // The ground's edge, a tile away at the nearest, is gone.
     expect(fogAmount(TILE)).toBe(1);
   });
 

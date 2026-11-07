@@ -172,14 +172,18 @@ export function markerFoot(range: number): [number, number] {
 }
 
 /**
- * The fog (plan §4.7): it hides the drawn ground's edge, keeps the far
- * distance cheap to look at and pushes the crew to talk about what they can
- * make out. Linear, as three.js's `Fog`: nothing is fogged nearer than
- * `near`, everything is sky colour beyond `far`. Its colour is the sky
+ * The fog (plan §4.7): it hides the drawn ground's edge and gives the far
+ * distance some depth. Linear, as three.js's `Fog`: nothing is fogged nearer
+ * than `near`, everything is sky colour beyond `far`. Its colour is the sky
  * dome's horizon (the scene's DomeGradient equator), so the fogged distance
  * and the sky meet without a seam.
+ *
+ * It starts at 450 m, past the range's far target, so every target is clear
+ * (John's play test, 2026-11-07: from 150 m it hid the 500 m target). `far`
+ * stays short of the ground's edge, 800 m away at the nearest, so the edge is
+ * still never seen. Fog as a gameplay condition is F5.11's, on top of this.
  */
-export const FOG = { color: 0xd9e0e6, near: 150, far: 780 } as const;
+export const FOG = { color: 0xd9e0e6, near: 450, far: 780 } as const;
 
 /** How much of what is `distance` m away is fog, 0 to 1. */
 export function fogAmount(distance: number): number {
@@ -187,7 +191,7 @@ export function fogAmount(distance: number): number {
   return t < 0 ? 0 : t > 1 ? 1 : t;
 }
 
-/** How far the crew can still make something out, m: where the fog has taken three quarters of it (the plan's "about 600 m"). */
+/** How far the crew can still make something out, m: where the fog has taken three quarters of it (about 700 m). */
 export function sightLimit(): number {
   return FOG.near + 0.75 * (FOG.far - FOG.near);
 }
