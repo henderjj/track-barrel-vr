@@ -125,7 +125,8 @@ jobs:
       matrix:
         part: [1, 2, 3]
     name: xr (part ${{ matrix.part }})
-    timeout-minutes: 35
+    # Twice a part's 12 minutes when one is rerun (see the test step).
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -135,7 +136,22 @@ jobs:
       - run: npm ci
       - uses: ./.github/actions/playwright-chromium
       - name: Emulated-headset test
-        run: npm run test:xr
+        # Exit 75: the emulated browser stopped answering before any check
+        # failed (it has on slow runners, e.g. 30 and 31 October 2026), so
+        # the part runs once more on a fresh runtime. A check that fails,
+        # or a second stop, fails the job.
+        run: |
+          set +e
+          npm run test:xr
+          code=$?
+          if [ "$code" -eq 75 ]; then
+            echo "::warning title=XR part ${XR_PART} rerun::The emulated browser stopped answering, so this part runs once more."
+            npx iwsdk dev down
+            rm -f artifacts/*.png
+            npm run test:xr
+            code=$?
+          fi
+          exit "$code"
         env:
           XR_PART: ${{ matrix.part }}
           # Runners have a display device (/dev/dri/card1) but no GPU. IWSDK
