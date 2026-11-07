@@ -1532,8 +1532,8 @@ async function theTestRange() {
     laid.targets.map((t) => t.range).join() === '100,250,500' && laid.markers.join() === '100,200,300,400,500,600' &&
       laid.tank.nearest === 0 && Math.abs(laid.tank.distance - 100) < 12,
     `targets ${laid.targets.map((t) => `${t.kind} at ${t.range} m`).join(', ')}; nearest ${Math.round(laid.tank.distance)} m away; markers ${laid.markers.join(', ')} m`);
-  check('The fog is on, thick enough to hide the ground\'s drawn edge and thin enough to leave the 500 m target to be found',
-    laid.fog.on && laid.fog.at500 > 0.3 && laid.fog.at500 < 0.7 && laid.fog.limit > 550 && laid.fog.limit < 680,
+  check('The fog is on, thick enough to hide the ground\'s drawn edge and thin enough to leave the 500 m target clear',
+    laid.fog.on && laid.fog.at500 < 0.25 && laid.fog.far < 800 && laid.fog.limit > 650 && laid.fog.limit < 750,
     `fog ${laid.fog.near}–${laid.fog.far} m, ${(laid.fog.at500 * 100).toFixed(0)}% of the 500 m target, seen to about ${Math.round(laid.fog.limit)} m`);
 
   // Look down the range from the gunner's seat and photograph it.
