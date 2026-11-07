@@ -125,6 +125,8 @@ class HandAngle {
   private readonly filter = new OneEuro(CONTROLLER_FILTER.minCutoff, CONTROLLER_FILTER.beta);
   private last = 0;
   private unwrapped = 0;
+  private lastX = 0;
+  private lastY = 0;
 
   /** The hand takes hold at `angle` (not NaN); returns it. */
   start(angle: number, tracked: boolean): number {
@@ -148,20 +150,40 @@ class HandAngle {
   }
 
   /**
+   * Round a wheel's axle: the hand takes hold at (x, y) in wheel space,
+   * reading as `angle` (not NaN); returns its steadied angle.
+   */
+  startAround(x: number, y: number, angle: number, tracked: boolean): number {
+    this.lastX = x;
+    this.lastY = y;
+    return this.start(angle, tracked);
+  }
+
+  /**
    * Round a wheel's axle: the hand is at (x, y) in wheel space now, `dt`
    * after the last; its steadied, unwrapped angle. The angle moves on by how
-   * far the hand went round as seen from where it was, never more than
-   * `near` from the axle, so a hand that cuts in close to the axle (a crank
-   * turned in a circle a little off its axle) turns it less there, instead
-   * of stopping it and then jumping on, or back.
+   * far the hand moved round since the last frame (John's headset note,
+   * 2026-11-07): its move along the way round, divided by its distance from
+   * the axle but never by less than `lever`. So a hand going round the knob's
+   * circle turns it as far as it goes, one going round a little off the axle
+   * or inside the circle turns it a little less, and a hand drifting over the
+   * middle of a small crank turns it only by how far it moved (a centimetre
+   * is a centimetre on the knob's circle), instead of its angle round the
+   * axle swinging and the crank jumping.
    */
-  stepAround(x: number, y: number, near: number, dt: number): number {
-    const c = Math.cos(this.unwrapped);
-    const s = Math.sin(this.unwrapped);
-    // The hand's offset along the way round (anticlockwise) and out from the axle, at the angle it was at.
-    const along = -x * c - y * s;
-    const out = y * c - x * s;
-    this.unwrapped += Math.atan2(along, out > near ? out : near);
+  stepAround(x: number, y: number, lever: number, dt: number): number {
+    const dx = x - this.lastX;
+    const dy = y - this.lastY;
+    // The middle of the move, and the way round (anticlockwise) there.
+    const mx = x - dx / 2;
+    const my = y - dy / 2;
+    const m = Math.hypot(mx, my);
+    if (m > 1e-9) {
+      const along = (dy * mx - dx * my) / m;
+      this.unwrapped += along / (m > lever ? m : lever);
+    }
+    this.lastX = x;
+    this.lastY = y;
     return this.filter.filter(this.unwrapped, dt);
   }
 }
@@ -483,8 +505,8 @@ export interface WheelSpec {
   trigger?: boolean;
 }
 
-/** Nearer a wheel's axle than this share of its radius, a hand turns it less the nearer it is (`HandAngle.stepAround`). */
-const NEAR_AXLE = 0.5;
+/** Nearer a wheel's axle than this share of its radius, a hand's move round turns it as if made this far out: less the nearer it is (`HandAngle.stepAround`). */
+const NEAR_AXLE = 0.8;
 
 /** The angle round a wheel's axle of a point at (x, y) in wheel space: 0 at the top, positive anticlockwise seen from the front, or NaN near the axle. */
 export function wheelAngleOf(x: number, y: number): number {
@@ -500,11 +522,13 @@ export function wheelAngleOf(x: number, y: number): number {
  * is positive anticlockwise as they see it (as Three.js turns about +Z), 0
  * with the crank's knob at the top.
  *
- * A held wheel follows the hand's angle round the axle, unwrapped so it can
- * turn many times, keeping the difference there was at taking hold. Each
- * frame's turn is read from where the hand was, so a hand going round a
- * little off the axle (as hands turning a crank do) still turns it smoothly. Two
- * hands on a rim turn it by the mean of where each would take it. It stops
+ * A held wheel follows the hand's movement round the axle, unwrapped so it
+ * can turn many times: each frame it turns by how far the hand moved round
+ * since the last (`HandAngle.stepAround`), so where the hand took hold
+ * doesn't matter, a hand going round a little off the axle (as hands
+ * turning a crank do) still turns it smoothly, and one drifting over the
+ * middle doesn't make it jump. Two hands on a rim turn it by the mean of
+ * where each would take it. It stops
  * at its limits like a lever; a wheel let go stays where it is. A crank
  * with a `trigger` reads its holding hand's trigger as `firing`, like a
  * twist grip.
@@ -558,7 +582,7 @@ export class Wheel extends Mechanism {
     // A fist too near the axle to read its angle (on a small crank) is taken to be on the knob, and turns it from there.
     let a = wheelAngleOf(hand.fist[0], hand.fist[1]);
     if (Number.isNaN(a)) a = this.angle;
-    this.offset[side] = this.angle - this.hands[side].start(a, hand.tracked);
+    this.offset[side] = this.angle - this.hands[side].startAround(hand.fist[0], hand.fist[1], a, hand.tracked);
     this.spot[side] = this.spec.grip === 'crank' ? 0 : wrap(a - this.angle);
     return true;
   }
@@ -863,7 +887,7 @@ export class Yoke extends Mechanism {
     if (Number.isNaN(a)) {
       return false;
     }
-    this.offset[side] = this.angle - this.hands[side].start(a, hand.tracked);
+    this.offset[side] = this.angle - this.hands[side].startAround(hand.fist[0], hand.fist[1], a, hand.tracked);
     this.grips[side] = dir;
     this.held[side] = true;
     return true;

@@ -77,7 +77,8 @@
  *     stops the clock on the crew's time (marked assisted); Stop clears it;
  *  6l. turns both crew's periscopes (F1.6, F1.19): Sights → Periscopes →
  *     Driver's (then Gunner's) sits the player in that seat behind its
- *     window, above the eyes; sitting up renders the view (the gunner's
+ *     window, above the eyes and facing down to them; sitting up and
+ *     looking up into it renders the view (the gunner's
  *     with the gunsight under it shut); the crank on its right turns it,
  *     a quarter of the way round a turn, the view and the head on the roof
  *     with it while the window stays still; Ahead works from the menu
@@ -1992,11 +1993,11 @@ async function thePeriscopes() {
       return s.mine === id && behindLens(s.head, lens) > 0.1 && behindLens(s.head, lens) < 0.2 ? s : null;
     }, 8000).catch(() => seated());
     const lens0 = scope('lens()');
-    check(`Sights → Periscopes → ${id === 'driver' ? "Driver's" : "Gunner's"} sits the player in the ${label} seat just behind its window, above the eyes`,
-      there.mine === id && behindLens(there.head, lens0) > 0.1 && behindLens(there.head, lens0) < 0.2 && lens0.at[1] - there.eye[1] > 0.1,
+    check(`Sights → Periscopes → ${id === 'driver' ? "Driver's" : "Gunner's"} sits the player in the ${label} seat just behind its window, above the eyes and facing down to them`,
+      there.mine === id && behindLens(there.head, lens0) > 0.1 && behindLens(there.head, lens0) < 0.2 && lens0.at[1] - there.eye[1] > 0.07 && lens0.facing[1] < -0.3,
       `${there.mine}, head ${fmt(there.head)}, eye point ${fmt(there.eye)}, window ${fmt(lens0.at)}`);
 
-    // Sit up and lean in: the window opens on the view.
+    // Sit up and lean in, looking up into the window (it faces down towards the seat): it opens on the view.
     const rendersBefore = scope('state()').renders;
     iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(lens0.at.map((v, i) => v + lens0.facing[i] * 0.06)) });
     iwsdk(['xr', 'look-at'], { device: 'headset', target: toRig(lens0.at.map((v, i) => v - lens0.facing[i] * 20)) });

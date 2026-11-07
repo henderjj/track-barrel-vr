@@ -16,12 +16,14 @@ import {
   DRIVER_LID_FRONT,
   DRIVER_PERISCOPE,
   EYEPIECE_BOX,
+  EYEPIECE_TILT,
   GUNNER_PERISCOPE,
   HALF_FIELD_X,
   HALF_FIELD_Y,
   HEAD_SIZE,
   knobMiddle,
   lookDirection,
+  lookingIn,
   lookText,
   PERISCOPE_CRANK,
   PERISCOPE_IDS,
@@ -76,14 +78,41 @@ function segmentHitsBox(a: P, b: P, lo: P, hi: P): boolean {
   return true;
 }
 
-/** The eyepiece box's corners in its frame (with the window's surround behind it). */
-function eyepieceBox(id: 'driver' | 'gunner'): [Vec3, Vec3] {
-  const s = PERISCOPES[id];
-  const { width, height, depth } = EYEPIECE_BOX;
-  return [
-    [s.lens[0] - width / 2, s.lens[1] - height / 2, s.lens[2] - WINDOW_PROUD - depth],
-    [s.lens[0] + width / 2, s.lens[1] + height / 2, s.lens[2] + 0.012],
-  ];
+/** The eyepiece box (with the window's surround behind it) in its own space: the window's middle at the origin, facing +Z, before it is tipped. */
+const EYEPIECE_LO: Vec3 = [-EYEPIECE_BOX.width / 2, -EYEPIECE_BOX.height / 2, -WINDOW_PROUD - EYEPIECE_BOX.depth];
+const EYEPIECE_HI: Vec3 = [EYEPIECE_BOX.width / 2, EYEPIECE_BOX.height / 2, 0.012];
+
+/** A point in periscope `id`'s frame taken into its eyepiece's own space (untipped about the window's middle). */
+function toEyepiece(id: 'driver' | 'gunner', p: P): Vec3 {
+  const l = PERISCOPES[id].lens;
+  const c = Math.cos(EYEPIECE_TILT);
+  const n = Math.sin(EYEPIECE_TILT);
+  const y = p[1] - l[1];
+  const z = p[2] - l[2];
+  return [p[0] - l[0], y * c + z * n, -y * n + z * c];
+}
+
+/** The eyepiece box's eight corners in the frame. */
+function eyepieceCorners(id: 'driver' | 'gunner'): Vec3[] {
+  const l = PERISCOPES[id].lens;
+  const c = Math.cos(EYEPIECE_TILT);
+  const n = Math.sin(EYEPIECE_TILT);
+  const out: Vec3[] = [];
+  for (const x of [EYEPIECE_LO[0], EYEPIECE_HI[0]])
+    for (const y of [EYEPIECE_LO[1], EYEPIECE_HI[1]])
+      for (const z of [EYEPIECE_LO[2], EYEPIECE_HI[2]]) out.push([l[0] + x, l[1] + y * c - z * n, l[2] + y * n + z * c]);
+  return out;
+}
+
+/** Whether the segment a-b passes through periscope `id`'s eyepiece. */
+function segmentHitsEyepiece(id: 'driver' | 'gunner', a: P, b: P): boolean {
+  return segmentHitsBox(toEyepiece(id, a), toEyepiece(id, b), EYEPIECE_LO, EYEPIECE_HI);
+}
+
+/** How far point p is from periscope `id`'s eyepiece (0 inside it). */
+function eyepieceDistance(id: 'driver' | 'gunner', p: P): number {
+  const q = toEyepiece(id, p);
+  return Math.hypot(...[0, 1, 2].map((k) => Math.max(EYEPIECE_LO[k] - q[k], 0, q[k] - EYEPIECE_HI[k])));
 }
 
 /** The crank and its gearbox as a box in the frame: everything that sticks out of the eyepiece's right side. */
@@ -117,20 +146,31 @@ function eyesAt(lens: P, back: number): Vec3[] {
   return [-1, 1].map((side): Vec3 => [lens[0] + side * HALF_IPD, lens[1], lens[2] + back]);
 }
 
+/** The eyes looking into periscope `id`'s window: both `back` m out from its middle along the way it faces (up and into it). */
+function eyesInto(id: 'driver' | 'gunner', back: number): Vec3[] {
+  const at = lookingIn(PERISCOPES[id], back, [0, 0, 0]);
+  return [-1, 1].map((side): Vec3 => [at[0] + side * HALF_IPD, at[1], at[2]]);
+}
+
 describe('the crew periscopes (F1.6, F1.19)', () => {
   it('puts each window just above its seat\'s main view: a short sit-up and lean, reachable inside the head box', () => {
     for (const id of PERISCOPE_IDS) {
       const s = PERISCOPES[id];
       const eye = SEATS[id].eye;
       const [left, right, forward] = SEATS[id].headBox;
-      // 10 to 15 cm above the eye point, straight ahead of it give or take 10 cm, 15 to 30 cm away all told.
-      expect(s.lens[1] - eye[1], id).toBeGreaterThan(0.1);
+      // The window 8 to 15 cm above the eye point, straight ahead of it give or take 10 cm, 15 to 30 cm away all told.
+      expect(s.lens[1] - eye[1], id).toBeGreaterThan(0.08);
       expect(s.lens[1] - eye[1], id).toBeLessThan(0.15);
       expect(Math.abs(s.lens[0] - eye[0]), id).toBeLessThan(0.1);
       expect(dist(s.lens, eye), id).toBeGreaterThan(0.15);
       expect(dist(s.lens, eye), id).toBeLessThan(0.3);
-      // The head can bring both eyes within the opening distance: 6 cm behind the window, inside the head box and under its roof stop.
-      for (const e of eyesAt(s.lens, 0.06)) {
+      // Tipped to face down towards the eyes, so they meet it a short sit-up above the eye point (John, 2026-11-07: 12 to 14 cm was too far).
+      expect(s.facing[1], id).toBeLessThan(-0.4);
+      expect(s.facing[2], id).toBeGreaterThan(0.8);
+      expect(lookingIn(s, 0.06, [0, 0, 0])[1] - eye[1], id).toBeLessThan(0.1);
+      expect(lookingIn(s, OPEN_DISTANCE, [0, 0, 0])[1] - eye[1], id).toBeLessThan(0.09);
+      // The head can bring both eyes within the opening distance: 6 cm out from the window, inside the head box and under its roof stop.
+      for (const e of eyesInto(id, 0.06)) {
         expect(e[0], id).toBeGreaterThan(eye[0] - left);
         expect(e[0], id).toBeLessThan(eye[0] + right);
         expect(e[2], id).toBeGreaterThan(eye[2] - forward);
@@ -146,13 +186,15 @@ describe('the crew periscopes (F1.6, F1.19)', () => {
 
   it("leaves the driver's vision slit clear from the seat and leant in to it, crank and all, however the crank is turned", () => {
     const eye = SEATS.driver.eye;
-    const boxes = [eyepieceBox('driver'), crankBox('driver')];
+    const [cranklo, crankhi] = crankBox('driver');
     const corners = [-1, 1].flatMap((sx) => [-1, 1].map((sy) => [VISION_SLIT.x + (sx * VISION_SLIT.width) / 2, VISION_SLIT.y + (sy * VISION_SLIT.height) / 2, VISION_SLIT.z]));
     for (const z of [eye[2], eye[2] - SEATS.driver.headBox[2]]) {
       for (const side of [-1, 1]) {
         const e = [eye[0] + side * HALF_IPD, eye[1], z];
         for (const c of corners) {
-          for (const [lo, hi] of boxes) expect(segmentHitsBox(e, c, lo, hi), `eye ${e.map((v) => v.toFixed(2))} to ${c.map((v) => v.toFixed(2))}`).toBe(false);
+          const label = `eye ${e.map((v) => v.toFixed(2))} to ${c.map((v) => v.toFixed(2))}`;
+          expect(segmentHitsEyepiece('driver', e, c), label).toBe(false);
+          expect(segmentHitsBox(e, c, cranklo, crankhi), label).toBe(false);
           // A hand on the knob anywhere round stays out of the view too.
           for (const crank of CRANKS) {
             const knob = knobMiddle(DRIVER_PERISCOPE, crank, [0, 0, 0]);
@@ -161,26 +203,32 @@ describe('the crew periscopes (F1.6, F1.19)', () => {
         }
       }
     }
-    // Leant right in to the slit, the eyes stay further than the near plane from the eyepiece over them.
-    const [lo, hi] = eyepieceBox('driver');
-    const leant = [eye[0], eye[1], eye[2] - SEATS.driver.headBox[2]];
-    expect(lo[1] - leant[1]).toBeGreaterThan(0.06);
-    expect(leant[2]).toBeGreaterThan(lo[2]);
-    expect(hi[2]).toBeGreaterThan(leant[2]);
+    // Leant right in to the slit, the eyes stay further than the near plane (5 cm) from the eyepiece over them.
+    for (const side of [-1, 1]) {
+      const leant = [eye[0] + side * HALF_IPD, eye[1], eye[2] - SEATS.driver.headBox[2]];
+      expect(eyepieceDistance('driver', leant)).toBeGreaterThan(0.055);
+      expect(Math.min(...eyepieceCorners('driver').map((p) => p[2]))).toBeLessThan(leant[2]);
+    }
   });
 
   it("keeps the gunner's eyepiece and crank clear of the gunsight, and only one of them opens", () => {
-    const [lo, hi] = eyepieceBox('gunner');
+    const corners = eyepieceCorners('gunner');
     // Over the sight's eyepiece (its hood 10 cm high, 11 cm wide), with room between.
-    expect(lo[1] - (EYEPIECE[1] + 0.05)).toBeGreaterThan(0.04);
+    expect(Math.min(...corners.map((p) => p[1])) - (EYEPIECE[1] + 0.05)).toBeGreaterThan(0.025);
     expect(Math.abs(GUNNER_PERISCOPE.lens[0] - EYEPIECE[0])).toBeLessThan(0.01);
-    // An eye at the sight is beyond the periscope's opening distance, and one at the periscope beyond the sight's.
-    for (const e of eyesAt(EYEPIECE, 0.05)) expect(dist(e, GUNNER_PERISCOPE.lens)).toBeGreaterThan(OPEN_DISTANCE + 0.03);
-    for (const e of eyesAt(GUNNER_PERISCOPE.lens, 0.05)) expect(dist(e, EYEPIECE)).toBeGreaterThan(OPEN_DISTANCE + 0.03);
+    // An eye at the sight is beyond the periscope's opening distance, and nearer the sight's lens than the periscope's window.
+    for (const e of eyesAt(EYEPIECE, 0.05)) {
+      expect(dist(e, GUNNER_PERISCOPE.lens)).toBeGreaterThan(OPEN_DISTANCE + 0.03);
+      expect(dist(e, GUNNER_PERISCOPE.lens) - dist(e, EYEPIECE)).toBeGreaterThan(0.05);
+    }
+    // The eyes looking up into the periscope are nearer its window than the sight's lens, so the periscope has them (SightSystem yields).
+    for (const back of [0.05, 0.07, OPEN_DISTANCE - 0.005]) {
+      for (const e of eyesInto('gunner', back)) expect(dist(e, EYEPIECE) - dist(e, GUNNER_PERISCOPE.lens), `${back}`).toBeGreaterThan(0.01);
+    }
     // The eyes at the sight sit under the eyepiece, clear of it: the forehead 9 cm over them.
     const atSight = [EYEPIECE[0], EYEPIECE[1], EYEPIECE[2] + 0.05];
-    expect(lo[1] - (atSight[1] + 0.09)).toBeGreaterThan(0.005);
-    expect(hi[2]).toBeLessThan(atSight[2] - 0.02);
+    expect(eyepieceDistance('gunner', [atSight[0], atSight[1] + 0.09, atSight[2]])).toBeGreaterThan(0.005);
+    expect(Math.max(...corners.map((p) => p[2]))).toBeLessThan(atSight[2] - 0.02);
   });
 
   it('puts each crank in reach of the right hand, clear of the face at the window and of the other controls', () => {
@@ -195,7 +243,7 @@ describe('the crew periscopes (F1.6, F1.19)', () => {
         expect(dist(knob, shoulder), label).toBeLessThan(0.5);
         expect(knob[1] - eye[1], label).toBeLessThan(0.25);
         // Clear of the face with the eyes at the window: the fist stays 10 cm from each eye.
-        for (const e of eyesAt(s.lens, 0.06)) expect(dist(knob, e), label).toBeGreaterThan(0.1);
+        for (const e of eyesInto(id, 0.06)) expect(dist(knob, e), label).toBeGreaterThan(0.1);
         // Under the roof and in front of the seat.
         expect(knob[1] + FIST, label).toBeLessThan(s.roof - 0.02);
         expect(knob[2], label).toBeLessThan(eye[2]);
@@ -236,8 +284,8 @@ describe('the crew periscopes (F1.6, F1.19)', () => {
     expect(Math.abs(s.axis[0]) + reach).toBeLessThan(HULL.halfWidth);
     expect(s.axis[1] - reach).toBeGreaterThan(GLACIS.face - HULL.wall);
     // The eyepiece hangs behind the slit's leather brow pad (SLIT_FRAME), the housing over the pad's top.
-    const [lo] = eyepieceBox('driver');
-    expect(lo[2] - (VISION_SLIT.z - 0.005 + SLIT_FRAME.padDepth)).toBeGreaterThan(0.01);
+    const front = Math.min(...eyepieceCorners('driver').map((p) => p[2]));
+    expect(front - (VISION_SLIT.z - 0.005 + SLIT_FRAME.padDepth)).toBeGreaterThan(0.01);
     expect(s.roof - RELAY.depth - (VISION_SLIT.y + VISION_SLIT.height / 2 + SLIT_FRAME.padAbove + SLIT_FRAME.padHeight)).toBeGreaterThan(0.1);
     expect(s.axis[1] - 0.035).toBeGreaterThan(GLACIS.face);
   });

@@ -27,6 +27,7 @@ import { Wheel } from '../sim/mechanism.js';
 import {
   bearing,
   crankFor,
+  EYEPIECE_TILT,
   HALF_FIELD_X,
   HALF_FIELD_Y,
   HEAD_SIZE,
@@ -213,6 +214,7 @@ class Scope {
     this.lens = new Mesh(createPeriscopeWindowGeometry(), this.material);
     this.lens.name = `Periscope Window ${spec.id}`;
     this.lens.position.set(...lensInPeriscope(spec));
+    this.lens.rotation.x = EYEPIECE_TILT;
     watchLensView(this.lens, this.material);
     this.mount.add(this.lens);
     this.placer = new LensPlacer(this.lens, this.material);
@@ -383,8 +385,10 @@ export class PeriscopeSystem extends createSystem({}) {
       gpu?.poll();
       if (gpu && !Number.isNaN(gpu.ms)) s.gpuMs = Number.isNaN(s.gpuMs) ? gpu.ms : s.gpuMs * 0.9 + gpu.ms * 0.1;
       scope.placer.update(this.player.head, 3);
+      // Over the gunsight, whichever window the eyes are nearer has them: the sight (SightSystem, before this) yields
+      // to this one when the eyes are nearer it, and this one stays shut while the sight is open. Only one draws.
+      if (id === 'gunner') sightStats.periscopeEye = scope.placer.eyeDistance(3);
       const was = s.open;
-      // Over the gunsight, the sight (SightSystem, before this) has the eye first: only one of them draws.
       const open = !ride.active && !(id === 'gunner' && sightStats.open) && scope.placer.eyesAt(3, was);
       s.open = open;
       scope.material.uniforms.uOpen.value = open ? 1 : 0;
