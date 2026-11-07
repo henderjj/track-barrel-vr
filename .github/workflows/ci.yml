@@ -18,13 +18,16 @@ concurrency:
 # requires, so keep its name. See docs/testing.md for how to run each part.
 jobs:
   plan:
-    # Decides what needs to run.
-    # - Pull request touching only Markdown, docs/ or LICENSE: the browser
-    #   tests are skipped (nothing they load changed).
-    # - Push to main whose files are exactly a tree a pull request already
-    #   passed every test on (main didn't move between that run and the
-    #   merge): the tests are skipped and the deploy goes straight out.
-    #   Otherwise main runs everything before it deploys.
+    # Decides what needs to run. Docs are Markdown, docs/ and LICENSE: no
+    # test, build or page loads them.
+    # - A change that touches only docs (a pull request against its base, or
+    #   a push to main against the main it replaced): the browser tests are
+    #   skipped (nothing they load changed).
+    # - Push to main whose code (every file but the docs) is exactly code a
+    #   pull request already passed every test on: the tests are skipped and
+    #   the deploy goes straight out. Docs merged to main in between don't
+    #   matter; any other change on main since that run does, and then main
+    #   runs everything before it deploys.
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,7 +35,7 @@ jobs:
     outputs:
       tests: ${{ steps.plan.outputs.tests }}
       browser: ${{ steps.plan.outputs.browser }}
-      tree: ${{ steps.plan.outputs.tree }}
+      code: ${{ steps.plan.outputs.code }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -43,27 +46,47 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
         run: |
+          docs='(^docs/|\.md$|^LICENSE$)'
           tree=$(git rev-parse 'HEAD^{tree}')
-          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          # The code's fingerprint: every file but the docs, by content.
+          code=$(git ls-tree -r --full-tree HEAD | DOCS="$docs" awk -F'\t' '$2 !~ ENVIRON["DOCS"]' | sha256sum | cut -c1-40)
+          echo "code=$code" >> "$GITHUB_OUTPUT"
           tests=true
           browser=true
-          if [ "$EVENT" = pull_request ]; then
-            git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed.txt"
+          # What this run changes: a pull request against its base, a push
+          # against the commit main was on before it.
+          base=HEAD^1
+          if [ "$EVENT" = push ]; then
+            base=
+            if [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] &&
+               git fetch --quiet --depth=1 origin "$BEFORE"; then
+              base=$BEFORE
+            fi
+          fi
+          if [ -n "$base" ] && git diff --name-only "$base" HEAD > "$RUNNER_TEMP/changed.txt"; then
             echo "Changed files:"; cat "$RUNNER_TEMP/changed.txt"
-            if [ -s "$RUNNER_TEMP/changed.txt" ] && ! grep -qvE '(^docs/|\.md$|^LICENSE$)' "$RUNNER_TEMP/changed.txt"; then
+            if [ -s "$RUNNER_TEMP/changed.txt" ] && ! grep -qvE "$docs" "$RUNNER_TEMP/changed.txt"; then
               browser=false
               echo "::notice::Only docs changed: the browser tests are skipped."
             fi
-          else
+          fi
+          if [ "$EVENT" = push ]; then
             # Only a run of this repository's own branches counts (a fork's
-            # pull request could name an artifact anything).
-            passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=tested-tree-$tree&per_page=20" \
-              --jq '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_repository_id != null and .workflow_run.head_repository_id == .workflow_run.repository_id)] | length' || echo 0)
+            # pull request could name an artifact anything). tested-tree-*
+            # is the name pull requests tested before 7 November 2026 left
+            # (whole trees, docs included): drop it once those have expired.
+            found() {
+              gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$1&per_page=20" \
+                --jq '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_repository_id != null and .workflow_run.head_repository_id == .workflow_run.repository_id)] | length' || echo 0
+            }
+            passed=$(found "tested-code-$code")
+            [ "${passed:-0}" -gt 0 ] || passed=$(found "tested-tree-$tree")
             if [ "${passed:-0}" -gt 0 ]; then
               tests=false
               browser=false
-              echo "::notice::These exact files already passed every test on their pull request: deploying without running them again."
+              echo "::notice::This exact code already passed every test on its pull request: deploying without running them again."
             fi
           fi
           echo "tests=$tests" >> "$GITHUB_OUTPUT"
@@ -94,8 +117,9 @@ jobs:
     needs: plan
     if: needs.plan.outputs.browser == 'true'
     runs-on: ubuntu-latest
-    # About 22 minutes on a quick runner; slower runners draw half as fast.
-    timeout-minutes: 40
+    # About 35 minutes: the runners draw a frame every 0.5 to 1 s in software.
+    # Runs reach 36 minutes and every feature adds steps: leave headroom.
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -186,7 +210,7 @@ jobs:
             echo "::error::A test job failed or was cancelled (see the jobs above)."
             exit 1
           fi
-      # Records that these exact files passed every test, so main can deploy
+      # Records that this exact code passed every test, so main can deploy
       # this merge without testing it again (see the plan job).
       - name: Mark these files as tested
         if: github.event_name == 'pull_request' && needs.plan.outputs.browser == 'true'
@@ -194,7 +218,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: github.event_name == 'pull_request' && needs.plan.outputs.browser == 'true'
         with:
-          name: tested-tree-${{ needs.plan.outputs.tree }}
+          name: tested-code-${{ needs.plan.outputs.code }}
           path: tested.txt
           retention-days: 30
           overwrite: true
