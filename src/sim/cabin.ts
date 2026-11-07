@@ -101,6 +101,7 @@ export const GUN = {
    * ram a shell home (F1.10, spike S4's reach).
    */
   breechHalfWidth: 0.14,
+  breechHalfHeight: 0.15,
   breechBack: -0.7,
   /** From the mantlet to the muzzle. */
   barrelLength: 4.4,

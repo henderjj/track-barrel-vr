@@ -68,15 +68,19 @@ export const BORE: Readonly<Vec3> = [0, 0, -1];
 
 /**
  * The breech lever turns about an axis along X at its pivot, on the
- * breech's right side (towards the gunner), gun space. Open, its handle
+ * breech's left side (away from the gunner), gun space. Open, its handle
  * points up; pulled back towards the gunner a quarter turn, the breech is
- * closed.
+ * closed. It was on the breech's right side, as on the Sherman's 75 mm gun,
+ * but there the hand on it met the hand on the elevation handwheel and the
+ * elevating gear between them (John's play test, 2026-11-07). On the left,
+ * the ramming hand finds it just past the mouth, a lean over the breech
+ * away. Its pivot is near the breech's back, to keep that lean short.
  */
-export const LEVER_PIVOT: Readonly<Vec3> = [GUN.breechHalfWidth + 0.025, 0, BREECH_MOUTH[2] - 0.06];
+export const LEVER_PIVOT: Readonly<Vec3> = [-(GUN.breechHalfWidth + 0.025), 0, BREECH_MOUTH[2] - 0.03];
 /** From the pivot to the middle of the handle, m... */
 export const LEVER_LENGTH = 0.16;
-/** ...which sticks out this far towards the gunner (+X) from the arm, m. */
-export const LEVER_HANDLE_X = 0.04;
+/** ...which sticks out this far along X from the arm: to the left (-X), away from the breech and the gunner, as John asked, m. */
+export const LEVER_HANDLE_X = -0.04;
 /** The lever's angle when closed, rad (0 open). */
 export const LEVER_CLOSED = Math.PI / 2;
 /** Beyond this the breech block covers the mouth, so a shell can't go in; and with a shell part-way in, the lever stops here (the block meets the case), rad. */

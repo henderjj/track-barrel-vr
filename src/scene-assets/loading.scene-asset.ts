@@ -144,10 +144,11 @@ export function breechFittings(halfWidth: number): Part[] {
   return [
     box([0.02, 0.33, 0.06], [-BLOCK.width / 2 - 0.015, MY - 0.085, MZ + 0.02], STEEL_DARK),
     box([0.02, 0.33, 0.06], [BLOCK.width / 2 + 0.015, MY - 0.085, MZ + 0.02], STEEL_DARK),
+    // The lever is on the breech's left (-X) side.
     {
-      geometry: new CylinderGeometry(0.01, 0.01, LEVER_PIVOT[0] - 0.01 - (halfWidth - 0.02), 6, 1),
+      geometry: new CylinderGeometry(0.01, 0.01, -LEVER_PIVOT[0] - 0.01 - (halfWidth - 0.02), 6, 1),
       color: STEEL_DARK,
-      position: [(LEVER_PIVOT[0] - 0.01 + halfWidth - 0.02) / 2, LEVER_PIVOT[1], LEVER_PIVOT[2]],
+      position: [(LEVER_PIVOT[0] + 0.01 - halfWidth + 0.02) / 2, LEVER_PIVOT[1], LEVER_PIVOT[2]],
       rotation: ALONG_X,
     },
   ];
@@ -207,8 +208,9 @@ export function createBreechBlock(): Mesh {
 
 /**
  * The breech lever, in its pivot's frame: a hub on the axle, an arm up +Y
- * to the handle, and the handle sticking out towards the gunner (+X). The
- * system turns it about X by the lever's angle.
+ * to the handle, and the handle sticking out LEVER_HANDLE_X along X (to the
+ * left, away from the breech). The system turns it about X by the lever's
+ * angle.
  */
 export function createBreechLever(): Mesh {
   const mesh = new Mesh(
@@ -216,7 +218,7 @@ export function createBreechLever(): Mesh {
       { geometry: new CylinderGeometry(0.022, 0.022, 0.03, 8, 1), color: STEEL_DARK, rotation: ALONG_X },
       box([0.016, LEVER_LENGTH, 0.022], [0, LEVER_LENGTH / 2, 0], LEVER_RED),
       {
-        geometry: new CylinderGeometry(0.017, 0.017, 2 * LEVER_HANDLE_X + 0.01, 8, 1),
+        geometry: new CylinderGeometry(0.017, 0.017, 2 * Math.abs(LEVER_HANDLE_X) + 0.01, 8, 1),
         color: LEVER_RED,
         position: [LEVER_HANDLE_X, LEVER_LENGTH, 0],
         rotation: ALONG_X,

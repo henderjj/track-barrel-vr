@@ -639,7 +639,7 @@ function gunRecoilParts(): Part[] {
   const length = back - front;
   const mid = (front + back) / 2;
   const w = GUN.breechHalfWidth;
-  const h = 0.15;
+  const h = GUN.breechHalfHeight;
   const hole = BREECH_HOLE;
   parts.push(box([2 * w, h - hole, length], [0, (h + hole) / 2, mid], STEEL));
   parts.push(box([2 * w, h - hole, length], [0, -(h + hole) / 2, mid], STEEL));
