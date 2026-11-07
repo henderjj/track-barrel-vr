@@ -127,14 +127,17 @@ Short experiments before the features that depend on them, each written up in `d
 
 ## 6. Phases
 
-The concept's five phases, with a Phase 0 for groundwork. The [roadmap](roadmap.md) breaks them into features.
+The concept's five phases, with a Phase 0 for groundwork and a Phase 6 for polish. The [roadmap](roadmap.md) breaks them into features.
 
 - **Phase 0, groundwork:** rename the template to Track & Barrel VR, bring in the concept, this plan and the roadmap, and run spikes S1–S4.
 - **Phase 1, core controls prototype (current priority):** the cabin and seats, the mechanism kit, driving, the turret, the gunsight, loading and firing, the test range with static targets, tank audio, the practice crewmate in both seats, comfort options and play-test stats. Ends with the concept's Phase 1 play-test questions answered (§14 there).
-- **Phase 2, communication aids:** hatches, signal lamps and buttons, turret position dial, hull direction indicator, firing lamp, push-to-talk, and a voice-only versus voice-plus-signals comparison.
-- **Phase 3, combat and damage:** ammunition types with distinct effects, enemies that shoot back, damage, and repair tasks.
-- **Phase 4, training:** the turret travel lock, autoloader, simplified gears and startup, and the five training stages, with optional AI commander callouts.
-- **Phase 5, content and replay:** realism tiers, scenarios, biathlon and medals, ghosts, after-action replay, per-role stats, randomisation and weather, crew ranks.
+- **Phase 2, crew indicators and the first game mode:** turret position dial, hull direction indicator, firing lamp, the callout vocabulary card, and the tank biathlon (F5.3, brought forward so the controls are played in a game mode before any combat).
+- **Phase 3, combat and damage:** ammunition types with distinct effects, enemies that shoot back, damage, and repair tasks inside the tank.
+- **Phase 4, training:** the five training stages and the callouts taught in them. The turret travel lock and autoloader are parked until play tests show they are needed.
+- **Phase 5, content and replay:** realism tiers, hatches, scenarios, ghosts, after-action replay, per-role stats, randomisation and weather, crew ranks.
+- **Phase 6, polish:** sound and graphics past Phase 1's placeholders, and WWII tank crew avatars.
+
+After John's play test of Phase 1 (2026-11-07) the hatches moved from Phase 2 to Phase 5; the signal lamps, push-to-talk, the signals comparison, the outside track repair and the AI commander callouts were dropped; and the biathlon moved up from Phase 5 to Phase 2. The roadmap's Ideas list game modes that could follow each combat feature as it lands.
 
 ## 7. Questions still open
 

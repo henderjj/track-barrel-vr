@@ -44,7 +44,7 @@ Nothing new in the packets. The crewmate's page is an ordinary second player: as
 
 - No new model, Practice button or XR step: the crewmate needs a second page, so its checks are in the net test, and the Calls section is its way in.
 - The crewmate uses the power traverse only, not the crank, for its aim: it can twist the grip finely enough, and its right hand would otherwise move between three things.
-- Calls are buttons for now; voice recognition is not planned. F2.2's signal lamps and F2.6's callout card may grow out of them.
+- Calls are buttons for now; voice recognition is not planned. F2.6's callout card may grow out of them (F2.2's signal lamps were dropped).
 
 ## Tests
 
