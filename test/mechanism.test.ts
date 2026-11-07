@@ -217,10 +217,10 @@ describe('the wheel and the crank', () => {
   });
 
   it('turns smoothly with the hand going round a circle off the axle, never stopping or jumping', () => {
-    // A hand circling 4 cm off the crank's axle passes 4 cm from it, too near to read its angle there.
-    for (const [ox, oy] of [[0.04, 0], [0, 0.04], [-0.03, -0.03]]) {
+    // A hand circling 4 cm off the crank's axle passes 4 cm from it, too near to read its angle there; or circling inside the knob's circle, 0.7 of it.
+    for (const [ox, oy, k] of [[0.04, 0, 1], [0, 0.04, 1], [-0.03, -0.03, 1], [0, 0, 0.7]]) {
       const crank = new Wheel(CRANK);
-      const r = CRANK.radius;
+      const r = CRANK.radius * k;
       const at = (deg: number) => hand(ox - r * Math.sin(deg * DEG), oy + r * Math.cos(deg * DEG), 0.04);
       expect(crank.grab(1, at(0))).toBe(true);
       let before = crank.angle;
@@ -234,8 +234,7 @@ describe('the wheel and the crank', () => {
         biggest = Math.max(biggest, step);
       }
       expect(biggest / DEG).toBeLessThan(15);
-      // Where it passes inside the knob's circle a move round turns it a little less (by its length on that circle).
-      expect(crank.turns).toBeGreaterThan(1.75);
+      expect(crank.turns).toBeGreaterThan(1.9);
       expect(crank.turns).toBeLessThan(2.1);
     }
   });

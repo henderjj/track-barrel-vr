@@ -117,6 +117,13 @@ function smoothing(dt: number, cutoff: number): number {
 export const CONTROLLER_FILTER = { minCutoff: 8, beta: 0.5 } as const;
 export const TRACKED_HAND_FILTER = { minCutoff: 1.5, beta: 4 } as const;
 
+/** Nearer a wheel's axle than this share of its radius, a hand's move round turns it as if made this far out: less the nearer it is (`HandAngle.stepAround`). */
+const NEAR_AXLE = 0.8;
+/** From this share of a wheel's radius out (fully from NEAR_AXLE), its angle eases towards the hand's angle round the axle. */
+const STEADY_FROM = 0.5;
+/** How quickly it eases there, s: quick enough that a hand going round off the axle keeps up, slow enough not to jump. */
+const CATCH_UP = 0.15;
+
 /**
  * A hand's angle round a mechanism's axis, unwrapped (so a crank can go
  * round and round) and steadied by a one-euro filter.
@@ -164,23 +171,31 @@ class HandAngle {
    * after the last; its steadied, unwrapped angle. The angle moves on by how
    * far the hand moved round since the last frame (John's headset note,
    * 2026-11-07): its move along the way round, divided by its distance from
-   * the axle but never by less than `lever`. So a hand going round the knob's
-   * circle turns it as far as it goes, one going round a little off the axle
-   * or inside the circle turns it a little less, and a hand drifting over the
-   * middle of a small crank turns it only by how far it moved (a centimetre
-   * is a centimetre on the knob's circle), instead of its angle round the
-   * axle swinging and the crank jumping.
+   * the axle but never by less than `NEAR_AXLE` of `radius`. So a hand
+   * drifting over the middle of a small crank turns it only by how far it
+   * moved (a centimetre is a centimetre on the knob's circle), instead of its
+   * angle round the axle swinging and the crank jumping. Out near the rim,
+   * where the hand's angle round the axle is steady, the angle is also eased
+   * towards it (`CATCH_UP`), so a hand going round a circle off the axle, or
+   * inside the knob's, still turns it as far as it goes round.
    */
-  stepAround(x: number, y: number, lever: number, dt: number): number {
+  stepAround(x: number, y: number, radius: number, dt: number): number {
     const dx = x - this.lastX;
     const dy = y - this.lastY;
     // The middle of the move, and the way round (anticlockwise) there.
     const mx = x - dx / 2;
     const my = y - dy / 2;
     const m = Math.hypot(mx, my);
+    const lever = NEAR_AXLE * radius;
     if (m > 1e-9) {
       const along = (dy * mx - dx * my) / m;
       this.unwrapped += along / (m > lever ? m : lever);
+    }
+    // Out from STEADY_FROM of the radius (fully at NEAR_AXLE), ease towards the hand's angle round the axle.
+    const r = Math.hypot(x, y);
+    const steady = Math.min(1, Math.max(0, (r - STEADY_FROM * radius) / ((NEAR_AXLE - STEADY_FROM) * radius)));
+    if (steady > 0) {
+      this.unwrapped += steady * (1 - Math.exp(-dt / CATCH_UP)) * wrap(Math.atan2(-x, y) - this.unwrapped);
     }
     this.lastX = x;
     this.lastY = y;
@@ -505,8 +520,7 @@ export interface WheelSpec {
   trigger?: boolean;
 }
 
-/** Nearer a wheel's axle than this share of its radius, a hand's move round turns it as if made this far out: less the nearer it is (`HandAngle.stepAround`). */
-const NEAR_AXLE = 0.8;
+
 
 /** The angle round a wheel's axle of a point at (x, y) in wheel space: 0 at the top, positive anticlockwise seen from the front, or NaN near the axle. */
 export function wheelAngleOf(x: number, y: number): number {
@@ -596,7 +610,7 @@ export class Wheel extends Mechanism {
       if (!this.held[i]) continue;
       const hand = hands[i];
       if (!hand) continue;
-      sum += this.hands[i].stepAround(hand.fist[0], hand.fist[1], NEAR_AXLE * this.spec.radius, dt) + this.offset[i];
+      sum += this.hands[i].stepAround(hand.fist[0], hand.fist[1], this.spec.radius, dt) + this.offset[i];
       count++;
     }
     let overshoot = 0;
