@@ -17,6 +17,7 @@ import {
   HOLD_NONE,
   LEVER_BLOCKED,
   LEVER_CLOSED,
+  LEVER_HANDLE_X,
   LEVER_LENGTH,
   LEVER_PIVOT as PIVOT_GUN,
   lerpLoadingSnapshot,
@@ -33,7 +34,7 @@ import {
   type Vec3,
 } from '../src/sim/loading.js';
 import { decodeLoadingState, encodeLoadingState, LOADING_STATE_BYTES } from '../src/net/loading-codec.js';
-import { TURRET } from '../src/sim/cabin.js';
+import { GUN, SEATS, TURRET } from '../src/sim/cabin.js';
 
 /** The breech mouth and the lever's pivot in turret space with the gun level: the drill works in turret space. */
 const BREECH_MOUTH = gunToTurret(MOUTH_GUN, 0, 0, [0, 0, 0]);
@@ -124,6 +125,17 @@ class Rig {
 }
 
 describe('loading the gun (F1.10, after spike S4)', () => {
+  it("puts the breech lever on the breech's far side from the gunner, its handle sticking out to the left, clear of the breech (John's play test)", () => {
+    expect(SEATS.gunner.eye[0]).toBeGreaterThan(0);
+    const HANDLE_RADIUS = 0.017;
+    // The arm (1.6 cm wide) and the whole handle, which sticks out to the left, stay outside the breech's side.
+    expect(PIVOT_GUN[0] + 0.008).toBeLessThan(-GUN.breechHalfWidth - 0.01);
+    expect(LEVER_HANDLE_X).toBeLessThan(0);
+    // Closed, the handle is behind the closed breech block.
+    expect(PIVOT_GUN[2] + LEVER_LENGTH - HANDLE_RADIUS).toBeGreaterThan(MOUTH_GUN[2] + 0.06);
+  });
+
+
   it('loads a shell: grab from the rack, swing to the breech, ram, close; then the trigger fires it and the breech opens', () => {
     const rig = new Rig();
     rig.toMouth(0);
