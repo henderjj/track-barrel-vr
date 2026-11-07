@@ -20,7 +20,7 @@ One feature is one pull request against `main` (never stacked on another PR bran
 5. **Network** messages for anything both players must agree on (see below).
 6. **Practice shortcut** in the game menu's Practice tab (or its Sights or Test rigs tab; `public/ui/menu.uikitml`, `src/systems/game-menu-system.ts`, tabs in `MENU_TABS` in `src/game-flow.ts`) that jumps straight to the situation a headset check needs, so the person never plays five minutes to test one thing.
 7. **Practice crewmate** (`src/systems/crew-bot-system.ts`, sums in `src/sim/crew-bot.ts`): teach the bot its half of any two-player job, so one person can test it with the bot's page on a PC. It plays through the same scripted hands the tests use.
-8. **Test hook** `window.__<feature>` (state, actions, any sign text), then a step in `scripts/xr-smoke-test.mjs` and, for anything shared, a check in `scripts/net-test.mjs` (clean link and 150 ms RTT).
+8. **Test hook** `window.__<feature>` (state, actions, any sign text), then a step in `scripts/xr-smoke-test.mjs` (in `partOne`, `partTwo` or `partThree`, whichever is shortest on CI: CI runs the three at once) and, for anything shared, a check in `scripts/net-test.mjs` (clean link and 150 ms RTT).
 9. **Headset check** at the end of the design note: a short numbered list naming the Practice shortcut, what to do, and what should happen. The person runs it after the deploy (with the cache cleared: Ctrl+Shift+R).
 10. **Records**: update the running record of progress and plans (`docs/progress.md`; start it if there is none) and, if the project keeps them, project memory and the roadmap card.
 
@@ -87,7 +87,7 @@ PC VR over Link and Air Link: Chrome or Edge only, Meta Horizon Link as the acti
 Read `docs/testing.md` first. While developing:
 
 1. Always `npm run typecheck` (type errors can stop systems initialising without a console error) and `npm test`.
-2. Then the browser test that covers the change: `npm run test:xr` for one player's hands, controls, physics and flow; `npm run build && npm run test:net` for anything shared, narrowed with `ONLY_SEATS=1` (or `=lag`), `ONLY_BOT=1` or `ONLY_LIFECYCLE=1`.
+2. Then the browser test that covers the change: `npm run test:xr` for one player's hands, controls, physics and flow (`XR_PART=1`, `2` or `3` runs only the part with your steps); `npm run build && npm run test:net` for anything shared, narrowed with `ONLY_SEATS=1` (or `=lag`), `ONLY_BOT=1` or `ONLY_LIFECYCLE=1`.
 3. Both browser tests before marking a PR ready.
 
 Habits that kept CI green:
