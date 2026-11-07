@@ -29,7 +29,7 @@
     target; start or stop a range run, and ready to fire on each target,
     parked at the start, laid and loaded. Sights: go to the gunsight, lay the
     gun on a target's range mark, the sight's render choices; go to the
-    periscope, turn it ahead, its power. Test rigs: ride the tank (spike
+    driver's or the gunner's periscope, turn both ahead, their power. Test rigs: ride the tank (spike
     S2), the lever test and the mechanism kit.
 -->
 <style>
@@ -599,14 +599,15 @@
             </div>
           </div>
           <div class="setting">
-            <div class="label">Periscope</div>
+            <div class="label">Periscopes</div>
             <div class="choices">
-              <Button id="menu-periscope-go" class="choice" size="sm" variant="secondary">Go to it</Button>
+              <Button id="menu-periscope-driver" class="choice" size="sm" variant="secondary">Driver's</Button>
+              <Button id="menu-periscope-gunner" class="choice" size="sm" variant="secondary">Gunner's</Button>
               <Button id="menu-periscope-ahead" class="choice" size="sm" variant="secondary">Ahead</Button>
               <Button id="menu-periscope-power" class="choice" size="sm" variant="secondary">Power 2x</Button>
             </div>
           </div>
-          <div id="menu-periscope-status" class="hint">Lean in to the window to look; turn it with both handles</div>
+          <div id="menu-periscope-status" class="hint">Sit up and lean in to a periscope's window to look; turn it with the crank on its right</div>
         </div>
       </div>
       <div id="page-rigs" class="page" style="display: none">

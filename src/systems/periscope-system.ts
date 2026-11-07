@@ -1,28 +1,50 @@
-import { createSystem, Group, Mesh, type Object3D, PerspectiveCamera, Quaternion, type ShaderMaterial, Vector3, type WebGLRenderTarget } from '@iwsdk/core';
-import { decodePeriscopeState, encodePeriscopeState, PERISCOPE_STATE_BYTES } from '../net/periscope-codec.js';
+import {
+  createSystem,
+  type Entity,
+  Group,
+  Mesh,
+  type Object3D,
+  PerspectiveCamera,
+  Quaternion,
+  type ShaderMaterial,
+  Vector3,
+  type WebGLRenderTarget,
+} from '@iwsdk/core';
+import { decodePeriscopeState, encodePeriscopeState, PERISCOPE_STATE_BYTES, type PeriscopePacket } from '../net/periscope-codec.js';
 import { PacketType } from '../net/pose-codec.js';
 import type { TankHeader } from '../net/tank-codec.js';
 import { GpuTimer } from '../perf/gpu-timer.js';
-import { createPeriscopeBody, createPeriscopeTurning, createPeriscopeWindowGeometry } from '../scene-assets/periscope.scene-asset.js';
-import { turnAboutHead } from '../sim/cabin.js';
-import { Yoke } from '../sim/mechanism.js';
+import { createWheel } from '../scene-assets/mechanism.scene-asset.js';
 import {
-  AXIS,
+  createPeriscopeBody,
+  createPeriscopeTurning,
+  createPeriscopeWindowGeometry,
+  crankInPeriscope,
+  lensInPeriscope,
+} from '../scene-assets/periscope.scene-asset.js';
+import { turnAboutHead } from '../sim/cabin.js';
+import { Wheel } from '../sim/mechanism.js';
+import {
   bearing,
-  bearingText,
-  CAMERA_Y,
+  crankFor,
   HALF_FIELD_X,
   HALF_FIELD_Y,
-  HEAD,
-  LENS,
+  HEAD_SIZE,
+  knobMiddle,
+  lookText,
+  PERISCOPE_CRANK,
+  PERISCOPE_IDS,
   PERISCOPE_POWER,
   PERISCOPE_POWERS,
-  PERISCOPE_YOKE,
+  type PeriscopeId,
+  periscopeAngle,
   type PeriscopePower,
+  PERISCOPES,
+  periscopesLine,
+  type PeriscopeSpec,
   PICTURE_HEIGHT,
   PICTURE_WIDTH,
   PITCH,
-  YOKE_Y,
 } from '../sim/periscope.js';
 import { angleDelta } from '../sim/turret.js';
 import { HoldKind } from './hand-lock.js';
@@ -37,7 +59,7 @@ import {
   setLensMagnification,
   watchLensView,
 } from './scope-lens.js';
-import type { PracticeButton } from './sight-system.js';
+import { type PracticeButton, sightStats } from './sight-system.js';
 import { seating } from './seating.js';
 
 const DEG = Math.PI / 180;
@@ -46,71 +68,85 @@ const NEAR = 0.3;
 const FAR = 1500;
 /** How far behind the window "Go to it" puts the head, m: lean in 6 cm and it opens. */
 const APPROACH = 0.15;
-/** Packets a second from the driver's page. */
+/** Packets a second from the owning page. */
 const SEND_HZ = 45;
 /** The other page's periscope eases to where the packets put it at this rate, 1/s. */
 const FOLLOW_RATE = 20;
-/** The yoke's handle name in handUse and `window.__mechanisms`. */
-const NAME = 'periscope';
 
-/** What the periscope is doing, for the perf HUD and the tests. */
-export const periscopeStats = {
-  power: PERISCOPE_POWER as PeriscopePower,
-  /** An eye is at the window. */
-  open: false,
-  renders: 0,
-  /** performance.now() of the last render, ms. */
-  lastRender: 0,
-  /** Main-thread and GPU time of its render, ms (smoothed; GPU NaN without timer queries). */
-  cpuMs: 0,
-  gpuMs: Number.NaN,
-  calls: 0,
-  triangles: 0,
+/** Each periscope's packet type, reliable "turn it" event and hold kind. */
+const WIRE: Record<PeriscopeId, { packet: PeriscopePacket; turnEvent: string; kind: number }> = {
+  driver: { packet: PacketType.PeriscopeState, turnEvent: 'periscope-turn', kind: HoldKind.Periscope },
+  gunner: { packet: PacketType.GunnerPeriscopeState, turnEvent: 'gunner-periscope-turn', kind: HoldKind.GunnerPeriscope },
 };
 
-/** One line for the perf HUD while the periscope renders (within the last second), or null. */
+interface ScopeStats {
+  /** An eye is at the window. */
+  open: boolean;
+  renders: number;
+  /** performance.now() of the last render, ms. */
+  lastRender: number;
+  /** Main-thread and GPU time of its render, ms (smoothed; GPU NaN without timer queries). */
+  cpuMs: number;
+  gpuMs: number;
+  calls: number;
+  triangles: number;
+}
+
+const newStats = (): ScopeStats => ({ open: false, renders: 0, lastRender: 0, cpuMs: 0, gpuMs: Number.NaN, calls: 0, triangles: 0 });
+
+/** What the periscopes are doing, for the perf HUD and the tests. Power is shared by both. */
+export const periscopeStats = {
+  power: PERISCOPE_POWER as PeriscopePower,
+  driver: newStats(),
+  gunner: newStats(),
+};
+
+/** One line for the perf HUD while a periscope renders (within the last second), or null. */
 export function periscopeSummary(now: number): string | null {
-  const s = periscopeStats;
+  const id = periscopeStats.driver.lastRender >= periscopeStats.gunner.lastRender ? 'driver' : 'gunner';
+  const s = periscopeStats[id];
   if (now - s.lastRender > 1000) return null;
   const gpu = Number.isNaN(s.gpuMs) ? '-' : `${s.gpuMs.toFixed(2)}`;
-  return `periscope ${PICTURE_WIDTH}×${PICTURE_HEIGHT} ${s.power}× cpu ${s.cpuMs.toFixed(2)} gpu ${gpu} ms ${s.calls} calls ${(s.triangles / 1000).toFixed(0)}k`;
+  return `${id === 'driver' ? 'periscope' : 'g.periscope'} ${PICTURE_WIDTH}×${PICTURE_HEIGHT} ${periscopeStats.power}× cpu ${s.cpuMs.toFixed(2)} gpu ${gpu} ms ${s.calls} calls ${(s.triangles / 1000).toFixed(0)}k`;
 }
 
 let active: PeriscopeSystem | null = null;
 
-/** One line for the menu: where the periscope looks. */
+/** One line for the menu: where both periscopes look. */
 export function periscopeStatus(): string {
   return active?.status() ?? '';
 }
 
 const next = <T>(list: readonly T[], value: T): T => list[(list.indexOf(value) + 1) % list.length];
 
-/** The game menu's Practice buttons for the periscope. */
+/** The game menu's Sights buttons for the periscopes. */
 export const PERISCOPE_BUTTONS: readonly PracticeButton[] = [
-  { id: 'menu-periscope-go', label: () => 'Go to it', press: () => active?.goTo(), closes: true },
-  { id: 'menu-periscope-ahead', label: () => 'Ahead', press: () => active?.turn(0) },
+  { id: 'menu-periscope-driver', label: () => "Driver's", press: () => active?.goTo('driver'), closes: true },
+  { id: 'menu-periscope-gunner', label: () => "Gunner's", press: () => active?.goTo('gunner'), closes: true },
+  { id: 'menu-periscope-ahead', label: () => 'Ahead', press: () => active?.ahead() },
   { id: 'menu-periscope-power', label: () => `Power ${periscopeStats.power}x`, press: () => active?.setPower(next(PERISCOPE_POWERS, periscopeStats.power)) },
 ];
 
-interface PeriscopeDebug {
-  /** Its turn (degrees, positive left; and as a bearing), who holds which handle, whether it is open, and what it has sent and received. */
-  state(): typeof periscopeStats & {
+interface ScopeDebug {
+  /** Its turn (degrees, positive left; and as a bearing), the crank's, who holds it, whether it is open, and what it has sent and received. */
+  state(): ScopeStats & {
+    power: PeriscopePower;
     angleDeg: number;
     bearingDeg: number;
-    heldBy: 'left' | 'right' | 'both' | null;
-    strain: number[];
+    crankDeg: number;
+    held: boolean;
     owner: boolean;
     usable: boolean;
     status: string;
     sent: number;
     received: number;
   };
+  /** Practice: sit in its seat with the head just behind its window. */
   goTo(): void;
-  /** Turn it to `degrees` (positive left), unless a hand holds it; the other page asks the driver's. */
+  /** Turn it to `degrees` (positive left), unless a hand holds it; the other page asks the owner's. */
   turn(degrees: number): void;
-  setPower(power: PeriscopePower): void;
-  /** The middle of handle `which` (0 left, 1 right) in scene space: where it is, or where it would be at `degrees`. */
-  handle(which: 0 | 1, degrees?: number): number[];
+  /** The middle of the crank's knob in scene space: where it is, or where it would be with the crank at `crankDegrees`. */
+  knob(crankDegrees?: number): number[];
   /** The window's middle and the way it faces (towards the eye), world space. */
   lens(): { at: number[]; facing: number[] };
   /** The camera's position and the way it looks, world space. */
@@ -121,60 +157,59 @@ interface PeriscopeDebug {
   pictureSpread(): number;
 }
 
-/**
- * The driver's periscope (F1.6, docs/periscope.md). Its eyepiece is fixed
- * in the hull right of the vision slit; its head on the roof and the yoke
- * under the eyepiece turn together about an upright, so turning the yoke
- * swings the view while the eye stays at the window, as on a panoramic
- * sight. The yoke is a mechanism-kit Yoke (HoldKind 8): quick in both
- * hands, slower in one. Put an eye within about 9 cm of the window and a
- * camera in the head renders the view into a texture that the window shows
- * at 2× (spike S1's lens, src/systems/scope-lens.ts, with a rectangular
- * field stop); further away it is dark glass and nothing extra is drawn.
- *
- * The driver's page owns the periscope (alone, this page does): it sends
- * the yoke's angle 45 times a second (PacketType 9), and the other page
- * eases its periscope there, so each sees the other's hands turn it and
- * the head turn on the roof. Each page draws its own view.
- */
-export class PeriscopeSystem extends createSystem({}) {
-  private yoke = new Yoke(PERISCOPE_YOKE);
-  private mount = new Group();
-  private turning!: Mesh;
-  private lens!: Mesh;
-  private material!: ShaderMaterial;
-  private target!: WebGLRenderTarget;
-  private camera3 = new PerspectiveCamera(2 * HALF_FIELD_Y / DEG, Math.tan(HALF_FIELD_X) / Math.tan(HALF_FIELD_Y), NEAR, FAR);
-  private gpu: GpuTimer | null = null;
-  private lensAt = new Vector3();
-  private placer!: LensPlacer;
-  private head = new Vector3();
-  private headQuat = new Quaternion();
-  private forward = new Vector3();
-  private turned: [number, number] = [0, 0];
-  private tmp = new Vector3();
-  private header: TankHeader = { seq: 0, timeMs: 0 };
-  private packet = new ArrayBuffer(PERISCOPE_STATE_BYTES);
-  private seq = 0;
-  private sendAccumulator = 0;
-  private sent = 0;
-  private received = 0;
-  /** Where the driver's page says it looks (NaN before its first packet). */
-  private shownAngle = Number.NaN;
-  private pixels = new Uint8Array(4 * 9);
-  /** "Go to it" is waiting for the seat system to sit the player in the driver's seat (the placement count it waits to pass), or -1. */
-  private approachAfter = -1;
+interface PeriscopeDebug {
+  driver: ScopeDebug;
+  gunner: ScopeDebug;
+  setPower(power: PeriscopePower): void;
+  /** The menu's line. */
+  status(): string;
+}
 
-  init(): void {
-    active = this;
-    this.mount.name = 'Periscope';
-    this.mount.position.set(AXIS[0], YOKE_Y, AXIS[1]);
-    this.mount.add(createPeriscopeBody());
-    this.turning = createPeriscopeTurning();
+/** One periscope: its crank, model, lens, camera and what it sends. */
+class Scope {
+  readonly crank = new Wheel(PERISCOPE_CRANK);
+  /** Periscope space: the upright at the window's height, in the hull or the turret. */
+  readonly mount = new Group();
+  /** The crank's mechanism space (the kit's frame). */
+  readonly crankMount = new Group();
+  readonly crankPart: Mesh;
+  readonly turning: Mesh;
+  readonly lens: Mesh;
+  readonly material: ShaderMaterial;
+  readonly target: WebGLRenderTarget;
+  readonly camera = new PerspectiveCamera((2 * HALF_FIELD_Y) / DEG, Math.tan(HALF_FIELD_X) / Math.tan(HALF_FIELD_Y), NEAR, FAR);
+  readonly placer: LensPlacer;
+  readonly stats: ScopeStats;
+  readonly wire: (typeof WIRE)[PeriscopeId];
+  gpu: GpuTimer | null = null;
+  header: TankHeader = { seq: 0, timeMs: 0 };
+  packet = new ArrayBuffer(PERISCOPE_STATE_BYTES);
+  seq = 0;
+  sendAccumulator = 0;
+  sent = 0;
+  received = 0;
+  /** Where the owner's page says it looks (NaN before its first packet). */
+  shownAngle = Number.NaN;
+  /** "Go to it" is waiting for the seat system to sit the player in this seat (the placement count it waits to pass), or -1. */
+  approachAfter = -1;
+
+  constructor(readonly spec: PeriscopeSpec) {
+    this.stats = periscopeStats[spec.id];
+    this.wire = WIRE[spec.id];
+    this.mount.name = `Periscope ${spec.id}`;
+    this.mount.position.set(spec.axis[0], spec.lens[1], spec.axis[1]);
+    this.mount.add(createPeriscopeBody(spec));
+    this.turning = createPeriscopeTurning(spec);
     this.mount.add(this.turning);
-    this.camera3.position.set(0, CAMERA_Y - YOKE_Y, -HEAD.depth / 2 - 0.006);
-    this.camera3.rotation.x = PITCH;
-    this.turning.add(this.camera3);
+    this.camera.position.set(0, spec.cameraY - spec.lens[1], -HEAD_SIZE.depth / 2 - 0.006);
+    this.camera.rotation.x = PITCH;
+    this.turning.add(this.camera);
+
+    this.crankMount.name = `Periscope ${spec.id} crank mount`;
+    this.crankMount.position.set(...crankInPeriscope(spec));
+    this.crankPart = createWheel(PERISCOPE_CRANK);
+    this.crankMount.add(this.crankPart);
+    this.mount.add(this.crankMount);
 
     this.target = createScopeTarget(PICTURE_WIDTH, PICTURE_HEIGHT);
     this.material = createLensMaterial(this.target, {
@@ -185,135 +220,195 @@ export class PeriscopeSystem extends createSystem({}) {
       stop: 'rectangle',
     });
     this.lens = new Mesh(createPeriscopeWindowGeometry(), this.material);
-    this.lens.name = 'Periscope Window';
-    this.lens.position.set(0, LENS[1] - YOKE_Y, LENS[2] - AXIS[1]);
+    this.lens.name = `Periscope Window ${spec.id}`;
+    this.lens.position.set(...lensInPeriscope(spec));
     watchLensView(this.lens, this.material);
     this.mount.add(this.lens);
     this.placer = new LensPlacer(this.lens, this.material);
-    this.world.createTransformEntity(this.mount);
+  }
 
-    this.cleanupFuncs.push(addControl({
-      name: NAME,
-      mech: this.yoke,
-      frame: this.mount,
-      kind: HoldKind.Periscope,
-      active: () => this.usable(),
-    }));
+  /** Which way it looks, radians, positive left (from the hull's nose, or the gun's line). */
+  get angle(): number {
+    return periscopeAngle(this.crank.angle);
+  }
 
-    netLink.handlers.set(PacketType.PeriscopeState, (view) => this.onPacket(view));
-    netLink.events.set('periscope-turn', (event) => {
-      const angle = (event as { angle?: unknown }).angle;
-      if (this.isOwner() && typeof angle === 'number' && Number.isFinite(angle)) this.turn(angle);
-    });
+  /** This seat's page owns it; alone, this page owns both, whichever seat it sits in. */
+  isOwner(): boolean {
+    return !netLink.connected || seating.mine === this.spec.id;
+  }
+
+  /** This player can turn it: in its seat, not riding or sat somewhere else. */
+  usable(): boolean {
+    return seating.mine === this.spec.id && !seating.away && !ride.active;
+  }
+
+  dispose(): void {
+    this.target.dispose();
+    this.material.dispose();
+    this.lens.geometry.dispose();
+    this.gpu?.dispose();
+  }
+}
+
+/**
+ * The crew's periscopes (F1.6, both crew since F1.19, docs/periscope.md):
+ * the driver's in the hull roof ahead of their hatch, the gunner's in the
+ * turret roof over the gunsight. Each has an eyepiece fixed under the roof
+ * just above the station's main view; its head on the roof turns about an
+ * upright, so turning it swings the view while the eye stays at the window,
+ * as on a panoramic sight. A crank on the eyepiece's right turns it (a
+ * mechanism-kit Wheel; HoldKind 8 the driver's, 14 the gunner's), a quarter
+ * of the way round for each turn. Put an eye within about 9 cm of a window
+ * and a camera in its head renders the view into a texture that the window
+ * shows at 2× (spike S1's lens, src/systems/scope-lens.ts, with a
+ * rectangular field stop); further away it is dark glass and nothing extra
+ * is drawn.
+ *
+ * Each seat's page owns its periscope (alone, this page owns both): it sends
+ * the angle 45 times a second (PacketType 9 the driver's, 10 the gunner's),
+ * and the other page eases its periscope there, so each sees the other's
+ * hand turn it and the head turn on the roof. Each page draws its own view.
+ */
+export class PeriscopeSystem extends createSystem({}) {
+  private scopes!: Record<PeriscopeId, Scope>;
+  private head = new Vector3();
+  private headQuat = new Quaternion();
+  private forward = new Vector3();
+  private lensAt = new Vector3();
+  private turned: [number, number] = [0, 0];
+  private tmp: [number, number, number] = [0, 0, 0];
+  private pixels = new Uint8Array(4 * 9);
+
+  init(): void {
+    active = this;
+    this.scopes = { driver: new Scope(PERISCOPES.driver), gunner: new Scope(PERISCOPES.gunner) };
     const gl = this.renderer.getContext();
-    if (typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext) {
-      this.gpu = new GpuTimer(gl);
-    }
-    this.cleanupFuncs.push(
-      () => {
-        if (active === this) active = null;
-      },
-      () => netLink.handlers.delete(PacketType.PeriscopeState),
-      () => netLink.events.delete('periscope-turn'),
-      () => {
-        this.target.dispose();
-        this.material.dispose();
-        this.lens.geometry.dispose();
-        this.gpu?.dispose();
-      },
-    );
+    const timers = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
+    // The gunner's turns with the turret (TurretSystem, before this, turns its entity).
+    const turret: Entity | null = this.world.getSceneEntity('turret') ?? null;
+    if (turret == null) console.warn("[Periscope] no turret in the scene: the gunner's periscope stands still in the hull");
 
-    const self = this;
+    for (const id of PERISCOPE_IDS) {
+      const scope = this.scopes[id];
+      if (timers) scope.gpu = new GpuTimer(gl as WebGL2RenderingContext);
+      this.world.createTransformEntity(scope.mount, id === 'gunner' && turret ? { parent: turret } : undefined);
+      this.cleanupFuncs.push(
+        addControl({
+          name: scope.spec.control,
+          mech: scope.crank,
+          frame: scope.crankMount,
+          kind: scope.wire.kind,
+          active: () => scope.usable(),
+        }),
+      );
+      netLink.handlers.set(scope.wire.packet, (view) => this.onPacket(scope, view));
+      netLink.events.set(scope.wire.turnEvent, (event) => {
+        const angle = (event as { angle?: unknown }).angle;
+        if (scope.isOwner() && typeof angle === 'number' && Number.isFinite(angle)) this.turn(id, angle);
+      });
+      this.cleanupFuncs.push(
+        () => netLink.handlers.delete(scope.wire.packet),
+        () => netLink.events.delete(scope.wire.turnEvent),
+        () => scope.dispose(),
+      );
+    }
+    this.cleanupFuncs.push(() => {
+      if (active === this) active = null;
+    });
+
+    const debug = (id: PeriscopeId): ScopeDebug => {
+      const scope = this.scopes[id];
+      return {
+        state: () => ({
+          ...scope.stats,
+          power: periscopeStats.power,
+          angleDeg: scope.angle / DEG,
+          bearingDeg: bearing(scope.angle),
+          crankDeg: scope.crank.angle / DEG,
+          held: scope.crank.anyHeld,
+          owner: scope.isOwner(),
+          usable: scope.usable(),
+          status: lookText(scope.spec, scope.angle),
+          sent: scope.sent,
+          received: scope.received,
+        }),
+        goTo: () => this.goTo(id),
+        turn: (degrees) => this.turn(id, degrees * DEG),
+        knob: (crankDegrees) => {
+          const p = knobMiddle(scope.spec, crankDegrees === undefined ? scope.crank.angle : crankDegrees * DEG, this.tmp);
+          // The knob in the frame, through the mount (periscope space) into the scene.
+          scope.mount.updateWorldMatrix(true, false);
+          return new Vector3(p[0] - scope.spec.axis[0], p[1] - scope.spec.lens[1], p[2] - scope.spec.axis[1]).applyMatrix4(scope.mount.matrixWorld).toArray();
+        },
+        lens: () => {
+          const at = scope.placer.restAt(new Vector3());
+          return { at: at.toArray(), facing: worldPose(scope.lens, new Vector3(0, 0, 1)).facing };
+        },
+        view: () => {
+          scope.camera.updateWorldMatrix(true, false);
+          return {
+            at: new Vector3().setFromMatrixPosition(scope.camera.matrixWorld).toArray(),
+            looking: scope.camera.getWorldDirection(new Vector3()).toArray(),
+          };
+        },
+        head: () => {
+          scope.turning.updateWorldMatrix(true, false);
+          const at = new Vector3(0, (scope.spec.head.bottom + scope.spec.head.top) / 2 - scope.spec.lens[1], 0).applyMatrix4(scope.turning.matrixWorld);
+          const facing = new Vector3(0, 0, -1).transformDirection(scope.turning.matrixWorld);
+          return { at: at.toArray(), facing: facing.toArray() };
+        },
+        pictureSpread: () => this.pictureSpread(scope),
+      };
+    };
     (window as unknown as { __periscope: PeriscopeDebug }).__periscope = {
-      state: () => {
-        const y = self.yoke;
-        return {
-          ...periscopeStats,
-          angleDeg: y.angle / DEG,
-          bearingDeg: bearing(y.angle),
-          heldBy: y.held[0] && y.held[1] ? 'both' : y.held[0] ? 'left' : y.held[1] ? 'right' : null,
-          strain: [y.strain[0] / DEG, y.strain[1] / DEG],
-          owner: self.isOwner(),
-          usable: self.usable(),
-          status: self.status(),
-          sent: self.sent,
-          received: self.received,
-        };
-      },
-      goTo: () => self.goTo(),
-      turn: (degrees) => self.turn(degrees * DEG),
-      setPower: (power) => self.setPower(power),
-      handle: (which, degrees) => {
-        const r = (PERISCOPE_YOKE.inner + PERISCOPE_YOKE.outer) / 2;
-        const a = degrees === undefined ? self.yoke.angle : degrees * DEG;
-        const dir = which === 0 ? -1 : 1;
-        self.mount.updateWorldMatrix(true, false);
-        return self.tmp.set(r * Math.cos(a) * dir, 0, -r * Math.sin(a) * dir).applyMatrix4(self.mount.matrixWorld).toArray();
-      },
-      lens: () => worldPose(self.lens, new Vector3(0, 0, 1)),
-      view: () => {
-        self.camera3.updateWorldMatrix(true, false);
-        return {
-          at: new Vector3().setFromMatrixPosition(self.camera3.matrixWorld).toArray(),
-          looking: self.camera3.getWorldDirection(new Vector3()).toArray(),
-        };
-      },
-      head: () => {
-        self.turning.updateWorldMatrix(true, false);
-        const at = new Vector3(0, (HEAD.bottom + HEAD.top) / 2 - YOKE_Y, 0).applyMatrix4(self.turning.matrixWorld);
-        const facing = new Vector3(0, 0, -1).transformDirection(self.turning.matrixWorld);
-        return { at: at.toArray(), facing: facing.toArray() };
-      },
-      pictureSpread: () => self.pictureSpread(),
+      driver: debug('driver'),
+      gunner: debug('gunner'),
+      setPower: (power) => this.setPower(power),
+      status: () => this.status(),
     };
   }
 
-  /** The driver's page owns the periscope; alone, this page does whichever seat it sits in. */
-  isOwner(): boolean {
-    return !netLink.connected || seating.mine === 'driver';
-  }
-
-  /** This player can turn it: in the driver's seat, not riding or sat somewhere else. */
-  private usable(): boolean {
-    return seating.mine === 'driver' && !seating.away && !ride.active;
-  }
-
   status(): string {
-    return `The periscope looks ${bearingText(this.yoke.angle)}`;
+    return periscopesLine(this.scopes.driver.angle, this.scopes.gunner.angle);
   }
 
   update(delta: number): void {
     const dt = Math.min(delta, 0.1);
-    if (this.approachAfter >= 0 && seating.mine === 'driver' && seating.placements > this.approachAfter) {
-      this.approachAfter = -1;
-      this.approach();
-    }
-    if (this.isOwner()) {
-      this.send(delta);
-    } else if (!Number.isNaN(this.shownAngle) && !this.yoke.anyHeld) {
-      // The driver turns it: follow their packets.
-      this.yoke.angle += angleDelta(this.yoke.angle, this.shownAngle) * (1 - Math.exp(-FOLLOW_RATE * dt));
-    }
-    this.turning.rotation.y = this.yoke.angle;
+    for (const id of PERISCOPE_IDS) {
+      const scope = this.scopes[id];
+      if (scope.approachAfter >= 0 && seating.mine === id && seating.placements > scope.approachAfter) {
+        scope.approachAfter = -1;
+        this.approach(scope);
+      }
+      if (scope.isOwner()) {
+        this.send(scope, delta);
+      } else if (!Number.isNaN(scope.shownAngle) && !scope.crank.anyHeld) {
+        // Its seat's player turns it: follow their packets.
+        scope.crank.angle += crankFor(angleDelta(scope.angle, scope.shownAngle)) * (1 - Math.exp(-FOLLOW_RATE * dt));
+      }
+      scope.turning.rotation.y = scope.angle;
+      scope.crankPart.rotation.z = scope.crank.angle;
 
-    this.gpu?.poll();
-    if (this.gpu && !Number.isNaN(this.gpu.ms)) {
-      periscopeStats.gpuMs = Number.isNaN(periscopeStats.gpuMs) ? this.gpu.ms : periscopeStats.gpuMs * 0.9 + this.gpu.ms * 0.1;
+      const gpu = scope.gpu;
+      const s = scope.stats;
+      gpu?.poll();
+      if (gpu && !Number.isNaN(gpu.ms)) s.gpuMs = Number.isNaN(s.gpuMs) ? gpu.ms : s.gpuMs * 0.9 + gpu.ms * 0.1;
+      scope.placer.update(this.player.head, 3);
+      const was = s.open;
+      // Over the gunsight, the sight (SightSystem, before this) has the eye first: only one of them draws.
+      const open = !ride.active && !(id === 'gunner' && sightStats.open) && scope.placer.eyesAt(3, was);
+      s.open = open;
+      scope.material.uniforms.uOpen.value = open ? 1 : 0;
+      if (open !== was) console.info(`[Periscope] ${id}'s ${open ? 'open' : 'closed'}`);
+      if (open) this.render(scope);
     }
-    this.placer.update(this.player.head, 3);
-    const was = periscopeStats.open;
-    const open = !ride.active && this.placer.eyesAt(3, was);
-    periscopeStats.open = open;
-    this.material.uniforms.uOpen.value = open ? 1 : 0;
-    if (open !== was) console.info(`[Periscope] ${open ? 'open' : 'closed'}`);
-    if (open) this.render();
   }
 
-  private render(): void {
+  private render(scope: Scope): void {
     const renderer = this.renderer;
     // The camera sits in the head: leave the turning part out of its picture.
-    const cpu = renderScope(renderer, this.world.scene, this.camera3, this.target, [this.lens, this.turning], this.gpu);
-    const s = periscopeStats;
+    const cpu = renderScope(renderer, this.world.scene, scope.camera, scope.target, [scope.lens, scope.turning], scope.gpu);
+    const s = scope.stats;
     // The first render compiles the scene's shaders for the texture, so start averaging from the second.
     s.cpuMs = s.renders < 2 ? cpu : s.cpuMs * 0.9 + cpu * 0.1;
     s.calls = renderer.info.render.calls;
@@ -323,82 +418,90 @@ export class PeriscopeSystem extends createSystem({}) {
   }
 
   /**
-   * Turn the periscope to `angle` (radians, positive left) unless a hand
-   * holds it. The driver's page turns it; the other page asks that one.
+   * Turn periscope `id` to `angle` (radians, positive left) unless a hand
+   * holds its crank. Its seat's page turns it; the other page asks that one.
    */
-  turn(angle: number): void {
-    if (!this.isOwner()) {
-      netLink.sendEvent({ t: 'periscope-turn', angle } as { t: string });
+  turn(id: PeriscopeId, angle: number): void {
+    const scope = this.scopes[id];
+    if (!scope.isOwner()) {
+      netLink.sendEvent({ t: scope.wire.turnEvent, angle } as { t: string });
       return;
     }
-    if (!this.yoke.anyHeld) this.yoke.angle = angle;
-    console.info(`[Periscope] turned ${bearingText(angle)}`);
+    if (!scope.crank.anyHeld) scope.crank.angle = crankFor(angle);
+    console.info(`[Periscope] ${id}'s turned ${lookText(scope.spec, angle)}`);
+  }
+
+  /** Practice → Ahead: both periscopes straight ahead (the gunner's along the gun). */
+  ahead(): void {
+    for (const id of PERISCOPE_IDS) this.turn(id, 0);
   }
 
   setPower(power: PeriscopePower): void {
     periscopeStats.power = PERISCOPE_POWERS.includes(power) ? power : PERISCOPE_POWER;
-    setLensMagnification(this.material, periscopeStats.power);
+    for (const id of PERISCOPE_IDS) setLensMagnification(this.scopes[id].material, periscopeStats.power);
   }
 
   /**
-   * Practice: sit the player in the driver's seat with their head just
-   * behind the window, facing it. From the gunner's seat it waits for the
-   * seat system to move them first (in a crew, the host swaps both).
+   * Practice: sit the player in periscope `id`'s seat with their head just
+   * behind its window, facing it. From the other seat it waits for the seat
+   * system to move them first (in a crew, the host swaps both).
    */
-  goTo(): void {
-    if (seating.mine === 'driver') {
-      this.approach();
+  goTo(id: PeriscopeId): void {
+    const scope = this.scopes[id];
+    if (seating.mine === id) {
+      this.approach(scope);
       return;
     }
-    this.approachAfter = seating.placements;
-    seating.ask('driver');
+    scope.approachAfter = seating.placements;
+    seating.ask(id);
   }
 
-  private approach(): void {
+  private approach(scope: Scope): void {
     const player = this.player;
     player.head.getWorldPosition(this.head);
     player.head.getWorldQuaternion(this.headQuat);
     this.forward.set(0, 0, -1).applyQuaternion(this.headQuat);
     const headYaw = Math.atan2(-this.forward.x, -this.forward.z);
-    // The window faces straight back down the hull.
-    const turn = -headYaw;
+    // The window faces straight back down the hull, or down the turret for the gunner's.
+    const yaw = scope.spec.frame === 'turret' ? seating.turretYaw : 0;
+    const turn = yaw - headYaw;
     turnAboutHead(player.position.x, player.position.z, this.head.x, this.head.z, turn, this.turned);
     player.rotateY(turn);
     player.position.x = this.turned[0];
     player.position.z = this.turned[1];
-    this.placer.restAt(this.lensAt);
-    player.position.x += this.lensAt.x - this.head.x;
-    player.position.z += this.lensAt.z + APPROACH - this.head.z;
-    console.info('[Periscope] player moved to the eyepiece');
+    scope.placer.restAt(this.lensAt);
+    player.position.x += this.lensAt.x + Math.sin(yaw) * APPROACH - this.head.x;
+    player.position.z += this.lensAt.z + Math.cos(yaw) * APPROACH - this.head.z;
+    console.info(`[Periscope] player moved to the ${scope.spec.label} eyepiece`);
   }
 
-  /** 45 times a second, the driver's page sends where the periscope looks. */
-  private send(delta: number): void {
+  /** 45 times a second, the owning page sends where its periscope looks. */
+  private send(scope: Scope, delta: number): void {
     if (!netLink.connected) return;
-    this.sendAccumulator += delta;
-    if (this.sendAccumulator < 1 / SEND_HZ) return;
-    this.sendAccumulator = Math.min(this.sendAccumulator - 1 / SEND_HZ, 1 / SEND_HZ);
-    netLink.send(this.packet, encodePeriscopeState(this.packet, this.seq, performance.now(), this.yoke.angle));
-    this.seq = (this.seq + 1) & 0xffff;
-    this.sent++;
+    scope.sendAccumulator += delta;
+    if (scope.sendAccumulator < 1 / SEND_HZ) return;
+    scope.sendAccumulator = Math.min(scope.sendAccumulator - 1 / SEND_HZ, 1 / SEND_HZ);
+    netLink.send(scope.packet, encodePeriscopeState(scope.packet, scope.seq, performance.now(), scope.angle, scope.wire.packet));
+    scope.seq = (scope.seq + 1) & 0xffff;
+    scope.sent++;
   }
 
-  private onPacket(view: DataView): void {
-    if (this.isOwner()) return;
-    const angle = decodePeriscopeState(view, this.header);
+  private onPacket(scope: Scope, view: DataView): void {
+    if (scope.isOwner()) return;
+    const angle = decodePeriscopeState(view, scope.header, scope.wire.packet);
     if (Number.isNaN(angle)) return;
-    this.received++;
-    this.shownAngle = angle;
+    scope.received++;
+    scope.shownAngle = angle;
   }
 
   /** For the tests: how much the brightness varies over nine texels across the picture's middle (0 for a blank one). */
-  private pictureSpread(): number {
+  private pictureSpread(scope: Scope): number {
     let min = 255;
     let max = 0;
     for (let i = 0; i < 9; i++) {
       const x = Math.round(PICTURE_WIDTH * (0.1 + 0.1 * i));
       const y = Math.round(PICTURE_HEIGHT * (0.3 + 0.05 * i));
-      this.renderer.readRenderTargetPixels(this.target, x, y, 1, 1, this.pixels.subarray(i * 4, i * 4 + 4));
+      this.renderer.readRenderTargetPixels(scope.target, x, y, 1, 1, this.pixels.subarray(i * 4, i * 4 + 4));
       const v = this.pixels[i * 4] + this.pixels[i * 4 + 1] + this.pixels[i * 4 + 2];
       min = Math.min(min, v);
       max = Math.max(max, v);

@@ -2,55 +2,58 @@ import { describe, expect, it } from 'vitest';
 import { decodePeriscopeState, encodePeriscopeState, PERISCOPE_STATE_BYTES } from '../src/net/periscope-codec.js';
 import { PacketType } from '../src/net/pose-codec.js';
 import type { TankHeader } from '../src/net/tank-codec.js';
-import { GRIP_RADIUS } from '../src/scene-assets/mechanism.scene-asset.js';
-import { rigOffset, targetEyeHeight } from '../src/sim/body-height.js';
-import { DRIVER_HATCH, frontAt, GLACIS, HULL, SEATS, TURRET, VISION_SLIT } from '../src/sim/cabin.js';
-import { DIALS, dialCentre, DRIVER_CONTROL_IDS, DRIVER_CONTROLS, PANEL, panelToHull } from '../src/sim/driver-station.js';
-import { type HandInput, Lever, type Vec3, Yoke } from '../src/sim/mechanism.js';
+import { DRIVER_HATCH, GLACIS, HULL, SEATS, TURRET, VISION_SLIT } from '../src/sim/cabin.js';
+import { DRIVER_CONTROL_IDS, DRIVER_CONTROLS, SLIT_FRAME } from '../src/sim/driver-station.js';
+import { EYEPIECE } from '../src/sim/gunsight.js';
+import { LEVER_PIVOT } from '../src/sim/loading.js';
+import { type HandInput, Lever, type Vec3, Wheel } from '../src/sim/mechanism.js';
 import {
-  AXIS,
   BARREL_UNDERSIDE,
   bearing,
   bearingText,
-  CAMERA_Y,
+  CRANK_RATIO,
+  crankFor,
+  DRIVER_LID_FRONT,
+  DRIVER_PERISCOPE,
   EYEPIECE_BOX,
+  GUNNER_PERISCOPE,
   HALF_FIELD_X,
   HALF_FIELD_Y,
-  HEAD,
-  handleMiddle,
-  LENS,
+  HEAD_SIZE,
+  knobMiddle,
   lookDirection,
-  PERISCOPE_YOKE,
+  lookText,
+  PERISCOPE_CRANK,
+  PERISCOPE_IDS,
+  periscopeAngle,
+  PERISCOPES,
+  periscopesLine,
   PICTURE_HEIGHT,
   PICTURE_WIDTH,
-  periscopeToHull,
-  SHAFT_RADIUS,
+  RELAY,
   WINDOW,
-  YOKE_Y,
+  WINDOW_PROUD,
 } from '../src/sim/periscope.js';
 import { HALF_IPD, OPEN_DISTANCE } from '../src/sim/sight.js';
+import { STATION, STATION_CONTROLS, TRUNNION } from '../src/sim/turret.js';
 
 const DEG = Math.PI / 180;
 const DT = 1 / 90;
-const EYE = SEATS.driver.eye;
-const ANGLES = Array.from({ length: 24 }, (_, i) => i * 15 * DEG);
+/** Crank angles all the way round, every 15°. */
+const CRANKS = Array.from({ length: 24 }, (_, i) => i * 15 * DEG);
+/** A fist round a knob, m. */
+const FIST = 0.045;
 
 type P = readonly number[];
 const sub = (a: P, b: P) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a: P, b: P) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const dist = (a: P, b: P) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
-/** The shortest distance between segments a0-a1 and b0-b1 (sampled finely: plenty for these sizes). */
-function segmentGap(a0: P, a1: P, b0: P, b1: P): number {
-  let best = Infinity;
-  const n = 60;
-  for (let i = 0; i <= n; i++) {
-    const p = [0, 1, 2].map((k) => a0[k] + ((a1[k] - a0[k]) * i) / n);
-    const d = sub(b1, b0);
-    const t = Math.max(0, Math.min(1, dot(sub(p, b0), d) / dot(d, d)));
-    best = Math.min(best, dist(p, [b0[0] + d[0] * t, b0[1] + d[1] * t, b0[2] + d[2] * t]));
-  }
-  return best;
+/** The shortest distance from point p to the segment a-b. */
+function pointSegment(p: P, a: P, b: P): number {
+  const d = sub(b, a);
+  const t = Math.max(0, Math.min(1, dot(sub(p, a), d) / dot(d, d)));
+  return dist(p, [a[0] + d[0] * t, a[1] + d[1] * t, a[2] + d[2] * t]);
 }
 
 /** Whether the segment a-b passes through the box with corners lo and hi (slab test). */
@@ -73,13 +76,24 @@ function segmentHitsBox(a: P, b: P, lo: P, hi: P): boolean {
   return true;
 }
 
-/** A handle's two ends in hull space at yoke angle `angle`. */
-function handleEnds(dir: -1 | 1, angle: number): [Vec3, Vec3] {
-  const a: Vec3 = [0, 0, 0];
-  const b: Vec3 = [0, 0, 0];
-  periscopeToHull([dir * PERISCOPE_YOKE.inner, 0, 0], angle, a);
-  periscopeToHull([dir * PERISCOPE_YOKE.outer, 0, 0], angle, b);
-  return [a, b];
+/** The eyepiece box's corners in its frame (with the window's surround behind it). */
+function eyepieceBox(id: 'driver' | 'gunner'): [Vec3, Vec3] {
+  const s = PERISCOPES[id];
+  const { width, height, depth } = EYEPIECE_BOX;
+  return [
+    [s.lens[0] - width / 2, s.lens[1] - height / 2, s.lens[2] - WINDOW_PROUD - depth],
+    [s.lens[0] + width / 2, s.lens[1] + height / 2, s.lens[2] + 0.012],
+  ];
+}
+
+/** The crank and its gearbox as a box in the frame: everything that sticks out of the eyepiece's right side. */
+function crankBox(id: 'driver' | 'gunner'): [Vec3, Vec3] {
+  const s = PERISCOPES[id];
+  const r = PERISCOPE_CRANK.radius + 0.012;
+  return [
+    [s.lens[0] + EYEPIECE_BOX.width / 2, s.crank[1] - r, s.crank[2] - 0.06],
+    [s.crank[0] + r, s.crank[1] + r, s.crank[2] + PERISCOPE_CRANK.knobLength],
+  ];
 }
 
 /** A driver's lever's handle middle in hull space at its angle `angle`. */
@@ -91,135 +105,189 @@ function leverHandle(id: (typeof DRIVER_CONTROL_IDS)[number], angle: number): Ve
   return [pivot[0] + p[0], pivot[1] + p[1], pivot[2] + p[2]];
 }
 
-/** A controller hand at `deg` round the yoke on handle `dir`, `r` out, in periscope space. */
-function yokeHand(dir: -1 | 1, deg: number, r = 0.12): HandInput {
+/** A hand on the crank's knob at `deg` round it (0 at the top, anticlockwise as the player sees it), in wheel space. */
+function knobHand(deg: number): HandInput {
   const a = deg * DEG;
-  return { fist: [r * Math.cos(a) * dir, 0, -r * Math.sin(a) * dir], across: [1, 0, 0], tip: null, trigger: 0, tracked: false };
+  const r = PERISCOPE_CRANK.radius;
+  return { fist: [-r * Math.sin(a), r * Math.cos(a), 0.03], across: [0, 0, 1], tip: null, trigger: 0, tracked: false };
 }
 
-describe('the periscope (F1.6)', () => {
-  it('puts both handles in reach from a chair, between knee and chest height, however it is turned', () => {
-    // As test/driver-station.test.ts: a seated player's hands reach from about 0.45 m to 1.4 m above their real floor.
-    const raised = rigOffset(targetEyeHeight({ raise: 0, seated: true }), 1.2);
-    for (const angle of ANGLES) {
-      for (const dir of [-1, 1] as const) {
-        const [x, y, z] = handleMiddle(dir, angle, [0, 0, 0]);
-        const label = `${dir < 0 ? 'left' : 'right'} handle at ${(angle / DEG).toFixed(0)}°`;
-        expect(y - raised, label).toBeGreaterThan(0.45);
-        expect(y - raised, label).toBeLessThan(1.4);
-        // Ahead of the chest (which is behind the eyes), and within an arm's length of the nearer shoulder (20 cm under the eyes, 18 cm to the side).
-        // Since the Sherman interior (docs/interior.md) it stands 20 cm ahead of the eyes, so a handle turned back comes 10 cm closer than before.
-        expect(EYE[2] - z, label).toBeGreaterThan(0.07);
-        const shoulder = EYE[0] + (x < EYE[0] ? -0.18 : 0.18);
-        expect(Math.hypot(x - shoulder, y - (EYE[1] - 0.2), z - EYE[2]), label).toBeLessThan(0.75);
-        // Clear of the face, and inside the hull clear of its walls and the front plate.
-        expect(dist([x, y, z], EYE), label).toBeGreaterThan(0.25);
-        expect(Math.abs(x) + PERISCOPE_YOKE.outer - (PERISCOPE_YOKE.inner + PERISCOPE_YOKE.outer) / 2, label).toBeLessThan(HULL.halfWidth - 0.05);
-        expect(z, label).toBeGreaterThan(frontAt(y) + 0.1);
+/** The eyes looking into a window: both eyes `back` m behind its middle, level with it. */
+function eyesAt(lens: P, back: number): Vec3[] {
+  return [-1, 1].map((side): Vec3 => [lens[0] + side * HALF_IPD, lens[1], lens[2] + back]);
+}
+
+describe('the crew periscopes (F1.6, F1.19)', () => {
+  it('puts each window just above its seat\'s main view: a short sit-up and lean, reachable inside the head box', () => {
+    for (const id of PERISCOPE_IDS) {
+      const s = PERISCOPES[id];
+      const eye = SEATS[id].eye;
+      const [left, right, forward] = SEATS[id].headBox;
+      // 10 to 15 cm above the eye point, straight ahead of it give or take 10 cm, 15 to 30 cm away all told.
+      expect(s.lens[1] - eye[1], id).toBeGreaterThan(0.1);
+      expect(s.lens[1] - eye[1], id).toBeLessThan(0.15);
+      expect(Math.abs(s.lens[0] - eye[0]), id).toBeLessThan(0.1);
+      expect(dist(s.lens, eye), id).toBeGreaterThan(0.15);
+      expect(dist(s.lens, eye), id).toBeLessThan(0.3);
+      // The head can bring both eyes within the opening distance: 6 cm behind the window, inside the head box and under its roof stop.
+      for (const e of eyesAt(s.lens, 0.06)) {
+        expect(e[0], id).toBeGreaterThan(eye[0] - left);
+        expect(e[0], id).toBeLessThan(eye[0] + right);
+        expect(e[2], id).toBeGreaterThan(eye[2] - forward);
+        expect(e[1] - eye[1], id).toBeLessThan(SEATS[id].headUp);
+        expect(dist(e, s.lens), id).toBeLessThan(OPEN_DISTANCE);
       }
+      // Wide enough for both eyes to look through at once.
+      expect(WINDOW.width).toBeGreaterThan(4 * HALF_IPD);
+      expect(WINDOW.width).toBeLessThan(EYEPIECE_BOX.width);
+      expect(WINDOW.height).toBeLessThan(EYEPIECE_BOX.height);
     }
   });
 
-  it("keeps its handles further from the driver's levers than a hand reaches, so a squeeze takes the one meant", () => {
-    for (const angle of ANGLES) {
-      for (const dir of [-1, 1] as const) {
-        const p = handleMiddle(dir, angle, [0, 0, 0]);
-        for (const id of DRIVER_CONTROL_IDS) {
-          const { spec } = DRIVER_CONTROLS[id];
-          for (const a of [spec.min, 0, spec.max]) {
-            expect(dist(p, leverHandle(id, a)), `${id} to the periscope at ${(angle / DEG).toFixed(0)}°`).toBeGreaterThan(0.15);
-          }
-        }
-      }
-    }
-  });
-
-  it('puts the window a lean ahead and to the left, with room to lean in to it inside the head box', () => {
-    const [left, , forward] = SEATS.driver.headBox;
-    // 25 to 40 cm from the eye point: a lean, not a reach.
-    expect(dist(LENS, EYE)).toBeGreaterThan(0.25);
-    expect(dist(LENS, EYE)).toBeLessThan(0.4);
-    // The head can get both eyes within the opening distance: the head box lets it reach a point 6 cm behind the window.
-    const head = [LENS[0], EYE[1], LENS[2] + 0.06];
-    expect(head[0]).toBeGreaterThan(EYE[0] - left);
-    expect(head[2]).toBeGreaterThan(EYE[2] - forward);
-    expect(Math.hypot(HALF_IPD, 0.06, LENS[1] - EYE[1])).toBeLessThan(OPEN_DISTANCE);
-    // Wide enough for both eyes to look through at once.
-    expect(WINDOW.width).toBeGreaterThan(4 * HALF_IPD);
-    expect(WINDOW.width).toBeLessThan(EYEPIECE_BOX.width);
-    expect(WINDOW.height).toBeLessThan(EYEPIECE_BOX.height);
-  });
-
-  it('leaves the vision slit clear from the seat and when leaning in to it', () => {
-    const lo = [AXIS[0] - EYEPIECE_BOX.width / 2, EYEPIECE_BOX.y - EYEPIECE_BOX.height / 2, AXIS[1] - EYEPIECE_BOX.depth / 2];
-    const hi = [AXIS[0] + EYEPIECE_BOX.width / 2, EYEPIECE_BOX.y + EYEPIECE_BOX.height / 2, AXIS[1] + EYEPIECE_BOX.depth / 2 + 0.012];
+  it("leaves the driver's vision slit clear from the seat and leant in to it, crank and all, however the crank is turned", () => {
+    const eye = SEATS.driver.eye;
+    const boxes = [eyepieceBox('driver'), crankBox('driver')];
     const corners = [-1, 1].flatMap((sx) => [-1, 1].map((sy) => [VISION_SLIT.x + (sx * VISION_SLIT.width) / 2, VISION_SLIT.y + (sy * VISION_SLIT.height) / 2, VISION_SLIT.z]));
-    for (const z of [EYE[2], EYE[2] - SEATS.driver.headBox[2]]) {
+    for (const z of [eye[2], eye[2] - SEATS.driver.headBox[2]]) {
       for (const side of [-1, 1]) {
-        const eye = [EYE[0] + side * HALF_IPD, EYE[1], z];
-        for (const c of corners) expect(segmentHitsBox(eye, c, lo, hi), `eye ${eye.map((v) => v.toFixed(2))} to ${c.map((v) => v.toFixed(2))}`).toBe(false);
-      }
-    }
-    // Leaning straight in to the slit, the head (8 cm either side of the eyes) passes the eyepiece, which is to its right.
-    expect(VISION_SLIT.x + 0.08).toBeLessThan(lo[0] - 0.02);
-  });
-
-  it('can read the gauges past the yoke and its shaft, however it is turned', () => {
-    const at: [number, number] = [0, 0];
-    const shaft = [[AXIS[0], YOKE_Y, AXIS[1]], [AXIS[0], EYEPIECE_BOX.y, AXIS[1]]];
-    for (let i = 0; i < DIALS.length; i++) {
-      dialCentre(i, at);
-      for (const dy of [-PANEL.dialRadius, 0, PANEL.dialRadius]) {
-        for (const dx of [-PANEL.dialRadius, 0, PANEL.dialRadius]) {
-          const dial = panelToHull([at[0] + dx, at[1] + dy, 0], [0, 0, 0]);
-          expect(segmentGap(EYE, dial, shaft[0], shaft[1]), `the shaft over dial ${i}`).toBeGreaterThan(SHAFT_RADIUS + 0.01);
-          for (const angle of ANGLES) {
-            for (const dir of [-1, 1] as const) {
-              const [a, b] = handleEnds(dir, angle);
-              expect(segmentGap(EYE, dial, a, b), `handle ${dir} at ${(angle / DEG).toFixed(0)}° over dial ${i}`).toBeGreaterThan(GRIP_RADIUS + 0.01);
-            }
+        const e = [eye[0] + side * HALF_IPD, eye[1], z];
+        for (const c of corners) {
+          for (const [lo, hi] of boxes) expect(segmentHitsBox(e, c, lo, hi), `eye ${e.map((v) => v.toFixed(2))} to ${c.map((v) => v.toFixed(2))}`).toBe(false);
+          // A hand on the knob anywhere round stays out of the view too.
+          for (const crank of CRANKS) {
+            const knob = knobMiddle(DRIVER_PERISCOPE, crank, [0, 0, 0]);
+            expect(pointSegment(knob, e, c), `the knob at ${(crank / DEG).toFixed(0)}°`).toBeGreaterThan(FIST);
           }
         }
       }
     }
+    // Leant right in to the slit, the eyes stay further than the near plane from the eyepiece over them.
+    const [lo, hi] = eyepieceBox('driver');
+    const leant = [eye[0], eye[1], eye[2] - SEATS.driver.headBox[2]];
+    expect(lo[1] - leant[1]).toBeGreaterThan(0.06);
+    expect(leant[2]).toBeGreaterThan(lo[2]);
+    expect(hi[2]).toBeGreaterThan(leant[2]);
   });
 
-  it('stands its head on the roof ahead of the hatch, outside the turret ring and under the gun', () => {
-    const roofTop = HULL.roof + HULL.wall;
-    expect(HEAD.bottom).toBeLessThan(roofTop);
-    expect(HEAD.bottom).toBeGreaterThan(HULL.roof);
-    expect(CAMERA_Y).toBeGreaterThan(roofTop + 0.03);
-    expect(CAMERA_Y).toBeLessThan(HEAD.top);
+  it("keeps the gunner's eyepiece and crank clear of the gunsight, and only one of them opens", () => {
+    const [lo, hi] = eyepieceBox('gunner');
+    // Over the sight's eyepiece (its hood 10 cm high, 11 cm wide), with room between.
+    expect(lo[1] - (EYEPIECE[1] + 0.05)).toBeGreaterThan(0.04);
+    expect(Math.abs(GUNNER_PERISCOPE.lens[0] - EYEPIECE[0])).toBeLessThan(0.01);
+    // An eye at the sight is beyond the periscope's opening distance, and one at the periscope beyond the sight's.
+    for (const e of eyesAt(EYEPIECE, 0.05)) expect(dist(e, GUNNER_PERISCOPE.lens)).toBeGreaterThan(OPEN_DISTANCE + 0.03);
+    for (const e of eyesAt(GUNNER_PERISCOPE.lens, 0.05)) expect(dist(e, EYEPIECE)).toBeGreaterThan(OPEN_DISTANCE + 0.03);
+    // The eyes at the sight sit under the eyepiece, clear of it: the forehead 9 cm over them.
+    const atSight = [EYEPIECE[0], EYEPIECE[1], EYEPIECE[2] + 0.05];
+    expect(lo[1] - (atSight[1] + 0.09)).toBeGreaterThan(0.005);
+    expect(hi[2]).toBeLessThan(atSight[2] - 0.02);
+  });
+
+  it('puts each crank in reach of the right hand, clear of the face at the window and of the other controls', () => {
+    for (const id of PERISCOPE_IDS) {
+      const s = PERISCOPES[id];
+      const eye = SEATS[id].eye;
+      const shoulder = [eye[0] + 0.18, eye[1] - 0.2, eye[2]];
+      for (const crank of CRANKS) {
+        const knob = knobMiddle(s, crank, [0, 0, 0]);
+        const label = `${id}'s knob at ${(crank / DEG).toFixed(0)}°`;
+        // At face height: a raised hand, within an easy reach of the right shoulder (a departure from knee-to-chest height, docs/periscope.md).
+        expect(dist(knob, shoulder), label).toBeLessThan(0.5);
+        expect(knob[1] - eye[1], label).toBeLessThan(0.25);
+        // Clear of the face with the eyes at the window: the fist stays 10 cm from each eye.
+        for (const e of eyesAt(s.lens, 0.06)) expect(dist(knob, e), label).toBeGreaterThan(0.1);
+        // Under the roof and in front of the seat.
+        expect(knob[1] + FIST, label).toBeLessThan(s.roof - 0.02);
+        expect(knob[2], label).toBeLessThan(eye[2]);
+      }
+    }
+    // Further from the driver's levers, and from the gunner's wheels, grip and breech lever, than a hand reaches.
+    for (const crank of CRANKS) {
+      const knob = knobMiddle(DRIVER_PERISCOPE, crank, [0, 0, 0]);
+      for (const id of DRIVER_CONTROL_IDS) {
+        const { spec } = DRIVER_CONTROLS[id];
+        for (const a of [spec.min, 0, spec.max]) expect(dist(knob, leverHandle(id, a)), `${id}`).toBeGreaterThan(0.15);
+      }
+      const gknob = knobMiddle(GUNNER_PERISCOPE, crank, [0, 0, 0]);
+      for (const key of STATION_CONTROLS) expect(dist(gknob, STATION[key].at), key).toBeGreaterThan(0.25);
+      const lever = [LEVER_PIVOT[0], TRUNNION.y + LEVER_PIVOT[1], TRUNNION.z + LEVER_PIVOT[2]];
+      expect(dist(gknob, lever)).toBeGreaterThan(0.25);
+    }
+    // The cranks are inside the hull's and the turret's walls.
+    expect(DRIVER_PERISCOPE.crank[0] + PERISCOPE_CRANK.radius).toBeLessThan(HULL.halfWidth - 0.1);
+    expect(GUNNER_PERISCOPE.crank[0] + PERISCOPE_CRANK.radius).toBeLessThan(TURRET.halfWidth - 0.2);
+  });
+
+  it("stands the driver's head on the hull roof ahead of the hatch and its open lid, outside the turret's sweep and under the gun", () => {
+    const s = DRIVER_PERISCOPE;
+    expect(s.head.bottom).toBeLessThan(s.roofTop);
+    expect(s.head.bottom).toBeGreaterThan(HULL.roof);
+    expect(s.cameraY).toBeGreaterThan(s.roofTop + 0.03);
+    expect(s.cameraY).toBeLessThan(s.head.top);
     // Under the barrel with the gun level, as it sweeps over the hull (the lid 1 cm over the head's top).
-    expect(HEAD.top + 0.01).toBeLessThan(BARREL_UNDERSIDE);
-    // The driver's hatch is 50 cm square over their head (DRIVER_HATCH): the shaft and the head go through the roof ahead of it.
-    const reach = Math.hypot(HEAD.width / 2, HEAD.depth / 2);
-    expect(AXIS[1] + reach).toBeLessThan(DRIVER_HATCH[1]);
+    expect(s.head.top + 0.01).toBeLessThan(BARREL_UNDERSIDE);
+    // Ahead of the hatch's hole and of its lid standing open in front of it.
+    const reach = Math.hypot(HEAD_SIZE.width / 2, HEAD_SIZE.depth / 2);
+    expect(s.axis[1] + reach).toBeLessThan(DRIVER_HATCH[1]);
+    expect(s.axis[1] + reach).toBeLessThan(DRIVER_LID_FRONT - 0.003);
     // Clear of the turret's walls however it turns (their corners are 1.63 m from the ring's middle).
-    expect(Math.hypot(AXIS[0], AXIS[1] - TURRET.z) - reach).toBeGreaterThan(Math.hypot(TURRET.halfWidth, TURRET.front) + 0.1);
-    // Inside the hull's sides and front.
-    expect(Math.abs(AXIS[0]) + reach).toBeLessThan(HULL.halfWidth);
-    expect(AXIS[1] - reach).toBeGreaterThan(GLACIS.face - HULL.wall);
+    expect(Math.hypot(s.axis[0], s.axis[1] - TURRET.z) - reach).toBeGreaterThan(Math.hypot(TURRET.halfWidth, TURRET.front) + 0.1);
+    // Inside the hull's sides and behind the hood's face.
+    expect(Math.abs(s.axis[0]) + reach).toBeLessThan(HULL.halfWidth);
+    expect(s.axis[1] - reach).toBeGreaterThan(GLACIS.face - HULL.wall);
+    // The eyepiece hangs behind the slit's leather brow pad (SLIT_FRAME), the housing over the pad's top.
+    const [lo] = eyepieceBox('driver');
+    expect(lo[2] - (VISION_SLIT.z - 0.005 + SLIT_FRAME.padDepth)).toBeGreaterThan(0.01);
+    expect(s.roof - RELAY.depth - (VISION_SLIT.y + VISION_SLIT.height / 2 + SLIT_FRAME.padAbove + SLIT_FRAME.padHeight)).toBeGreaterThan(0.1);
+    expect(s.axis[1] - 0.035).toBeGreaterThan(GLACIS.face);
   });
 
-  it('looks the way the yoke turns: ahead at 0, left for a positive turn, a little down', () => {
-    const out: [number, number, number] = [0, 0, 0];
+  it("stands the gunner's head on the turret roof ahead of the hatch, clear of its collar, inside the roof's edges", () => {
+    const s = GUNNER_PERISCOPE;
+    expect(s.roof).toBe(TURRET.roof);
+    expect(s.head.bottom).toBeLessThan(s.roofTop);
+    expect(s.head.bottom).toBeGreaterThan(TURRET.roof);
+    expect(s.cameraY).toBeGreaterThan(s.roofTop + 0.03);
+    // The hatch (cabin.scene-asset.ts): a 27 cm hole over the gunner's eyes, 10 cm behind them, with a collar 3 cm round it under the roof.
+    const hatch = [SEATS.gunner.eye[0], SEATS.gunner.eye[2] + 0.1];
+    const collar = 0.045;
+    expect(Math.hypot(s.axis[0] - hatch[0], s.axis[1] - hatch[1]) - collar).toBeGreaterThan(0.27 + 0.06);
+    // Inside the roof's chamfered edges (12 cm), and ahead of the hatch.
+    const reach = Math.hypot(HEAD_SIZE.width / 2, HEAD_SIZE.depth / 2);
+    expect(Math.abs(s.axis[0]) + reach).toBeLessThan(TURRET.halfWidth - 0.12);
+    expect(s.axis[1] - reach).toBeGreaterThan(TURRET.front + 0.12);
+    expect(s.axis[1]).toBeLessThan(hatch[1] - 0.27);
+    // The eyepiece hangs from the roof, clear of the gun's breech below (the breech's top at most 20 cm over the trunnions' line).
+    expect(s.lens[1] - EYEPIECE_BOX.height / 2).toBeGreaterThan(TRUNNION.y + 0.2);
+  });
+
+  it('looks the way the crank turns: ahead at 0, left for an anticlockwise turn, a quarter of the way round a turn', () => {
+    const out: Vec3 = [0, 0, 0];
     lookDirection(0, out);
     expect(out[2]).toBeCloseTo(-Math.cos(2 * DEG), 9);
     expect(out[1]).toBeLessThan(0);
     lookDirection(90 * DEG, out);
     expect(out[0]).toBeCloseTo(-Math.cos(2 * DEG), 9);
     expect(Math.hypot(...out)).toBeCloseTo(1, 9);
-    // The right handle pushed forwards turns it left.
-    const right0 = handleMiddle(1, 0, [0, 0, 0]);
-    const right30 = handleMiddle(1, 30 * DEG, [0, 0, 0]);
-    expect(right30[2]).toBeLessThan(right0[2]);
+    expect(CRANK_RATIO).toBeCloseTo(4, 9);
+    expect(periscopeAngle(2 * Math.PI)).toBeCloseTo(90 * DEG, 9);
+    expect(crankFor(periscopeAngle(1.234))).toBeCloseTo(1.234, 9);
+    // A tick every 15° of the periscope.
+    expect(PERISCOPE_CRANK.tickEvery).toBeCloseTo(60 * DEG, 9);
+    // Anticlockwise as the player sees it moves the knob from the top to the left.
+    const top = knobMiddle(DRIVER_PERISCOPE, 0, [0, 0, 0]);
+    const quarter = knobMiddle(DRIVER_PERISCOPE, 90 * DEG, [0, 0, 0]);
+    expect(quarter[0]).toBeLessThan(top[0]);
+    expect(quarter[1]).toBeLessThan(top[1]);
     expect(bearing(370 * DEG)).toBeCloseTo(10, 9);
     expect(bearing(-Math.PI)).toBe(180);
     expect(bearingText(0.01)).toBe('ahead');
     expect(bearingText(40 * DEG)).toBe('40° left');
     expect(bearingText(-90 * DEG)).toBe('90° right');
     expect(bearingText(Math.PI)).toBe('behind');
+    expect(lookText(GUNNER_PERISCOPE, 0)).toBe('along the gun');
+    expect(lookText(GUNNER_PERISCOPE, -30 * DEG)).toBe('30° right of the gun');
+    expect(periscopesLine(40 * DEG, 0)).toBe("The driver's periscope looks 40° left, the gunner's along the gun");
   });
 
   it('draws its picture with square texels over a field wider than tall', () => {
@@ -227,41 +295,44 @@ describe('the periscope (F1.6)', () => {
     expect(HALF_FIELD_X).toBeGreaterThan(HALF_FIELD_Y);
   });
 
-  it('turns quickly in both hands and at 30°/s in one, all the way round', () => {
-    const both = new Yoke(PERISCOPE_YOKE);
-    expect(both.grab(0, yokeHand(-1, 0))).toBe(true);
-    expect(both.grab(1, yokeHand(1, 0))).toBe(true);
-    for (let i = 1; i <= 90; i++) both.update(DT, [yokeHand(-1, i * 4), yokeHand(1, i * 4)]);
-    expect(both.angle / DEG).toBeGreaterThan(355);
-    const one = new Yoke(PERISCOPE_YOKE);
-    expect(one.grab(1, yokeHand(1, 0))).toBe(true);
-    for (let i = 1; i <= 90; i++) one.update(DT, [null, yokeHand(1, i)]);
-    expect(one.angle / DEG).toBeCloseTo(30, 0);
-    expect(one.strain[1] / DEG).toBeGreaterThan(50);
+  it('turns with the hand on the crank, all the way round and on', () => {
+    const crank = new Wheel(PERISCOPE_CRANK);
+    expect(crank.grab(1, knobHand(0))).toBe(true);
+    // Five turns anticlockwise, 4° a frame: the periscope goes 450° left (the crank a frame behind the hand).
+    for (let i = 1; i <= 450; i++) crank.update(DT, [null, knobHand(i * 4)]);
+    expect(Math.abs(crank.angle / DEG - 1800)).toBeLessThan(5);
+    expect(Math.abs(periscopeAngle(crank.angle) / DEG - 450)).toBeLessThan(1.5);
+    expect(Math.abs(bearing(periscopeAngle(crank.angle)) - 90)).toBeLessThan(1.5);
   });
 });
 
-describe('the periscope packet (F1.6)', () => {
-  it('uses its own packet type and round-trips the angle, wrapped', () => {
+describe('the periscope packets (F1.6, F1.19)', () => {
+  it('use a packet type each and round-trip the angle, wrapped', () => {
     expect(PacketType.PeriscopeState).toBe(9);
+    expect(PacketType.GunnerPeriscopeState).toBe(10);
     const buffer = new ArrayBuffer(PERISCOPE_STATE_BYTES);
     const header: TankHeader = { seq: 0, timeMs: 0 };
-    for (const angle of [0, 0.5, -2.9, Math.PI, 7.5]) {
-      const length = encodePeriscopeState(buffer, 65537, 123456.7, angle);
-      expect(length).toBe(PERISCOPE_STATE_BYTES);
-      const got = decodePeriscopeState(new DataView(buffer, 0, length), header);
-      const want = Math.atan2(Math.sin(angle), Math.cos(angle));
-      expect(Math.abs(Math.atan2(Math.sin(got - want), Math.cos(got - want)))).toBeLessThan(1e-4);
-      expect(header.seq).toBe(1);
-      expect(header.timeMs).toBe(123456);
+    for (const type of [PacketType.PeriscopeState, PacketType.GunnerPeriscopeState] as const) {
+      for (const angle of [0, 0.5, -2.9, Math.PI, 7.5]) {
+        const length = encodePeriscopeState(buffer, 65537, 123456.7, angle, type);
+        expect(length).toBe(PERISCOPE_STATE_BYTES);
+        const got = decodePeriscopeState(new DataView(buffer, 0, length), header, type);
+        const want = Math.atan2(Math.sin(angle), Math.cos(angle));
+        expect(Math.abs(Math.atan2(Math.sin(got - want), Math.cos(got - want)))).toBeLessThan(1e-4);
+        expect(header.seq).toBe(1);
+        expect(header.timeMs).toBe(123456);
+      }
     }
   });
 
-  it('turns away other packets and short ones', () => {
+  it("turn away other packets and short ones, so the gunner's is never taken for the driver's (as an older page would)", () => {
     const header: TankHeader = { seq: 0, timeMs: 0 };
     const buffer = new ArrayBuffer(PERISCOPE_STATE_BYTES);
     encodePeriscopeState(buffer, 1, 0, 1);
     expect(decodePeriscopeState(new DataView(buffer, 0, PERISCOPE_STATE_BYTES - 1), header)).toBeNaN();
+    expect(decodePeriscopeState(new DataView(buffer), header, PacketType.GunnerPeriscopeState)).toBeNaN();
+    encodePeriscopeState(buffer, 1, 0, 1, PacketType.GunnerPeriscopeState);
+    expect(decodePeriscopeState(new DataView(buffer), header)).toBeNaN();
     new DataView(buffer).setUint8(0, PacketType.TurretState);
     expect(decodePeriscopeState(new DataView(buffer), header)).toBeNaN();
   });

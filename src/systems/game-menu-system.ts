@@ -554,7 +554,7 @@ export class GameMenuSystem extends createSystem({}) {
     for (const button of PERISCOPE_BUTTONS) {
       ui.setText(button.id, button.label());
     }
-    ui.setText('menu-periscope-status', `${periscopeStatus()}. Lean in to the window to look; turn it with both handles`);
+    ui.setText('menu-periscope-status', `${periscopeStatus()}. Sit up and lean in to its window to look; turn it with the crank on its right`);
     ui.setText('height-value', raiseShown(body.choice.raise));
     this.select('height-own', body.choice.raise === 0);
     ui.setText('menu-swap', SWAP_LABELS[seating.swap]);

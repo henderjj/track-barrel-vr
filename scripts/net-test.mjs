@@ -379,22 +379,26 @@ async function driveChecks(host, guest, label) {
   }, 5000).catch(() => null);
   check(`The host's page draws the guest driver's tillers where the guest pushed them (${label})`, hostSees !== null,
     hostSees ? `${hostSees.angles.tillerLeft.toFixed(1)}° and ${hostSees.angles.tillerRight.toFixed(1)}°` : JSON.stringify(await host.page.evaluate(() => window.__driverStation.state().angles)));
-  // The periscope (F1.6): the guest driver's page owns it; the host's page draws it turned the same way, and the host's Ahead asks the guest's page.
-  const periscope = (p) => p.page.evaluate(() => window.__periscope.state());
-  await guest.page.evaluate(() => window.__periscope.turn(60));
-  const scoped = await waitFor('the host to draw the guest\'s periscope turned', async () => {
-    const [h, g] = await Promise.all([periscope(host), periscope(guest)]);
-    return g.owner && !h.owner && Math.abs(h.angleDeg - 60) < 0.5 && Math.abs(g.angleDeg - 60) < 0.01 ? { h, g } : null;
+  // The periscopes (F1.6, F1.19): each seat's page owns its own. The guest driver's is drawn turned on the host's page and
+  // the host gunner's on the guest's; the host's Ahead turns its own and asks the guest's page to turn the driver's.
+  const periscope = (p, id) => p.page.evaluate((which) => window.__periscope[which].state(), id);
+  await guest.page.evaluate(() => window.__periscope.driver.turn(60));
+  await host.page.evaluate(() => window.__periscope.gunner.turn(-40));
+  const scoped = await waitFor('each page to draw the other\'s periscope turned', async () => {
+    const [hd, gd, hg, gg] = await Promise.all([periscope(host, 'driver'), periscope(guest, 'driver'), periscope(host, 'gunner'), periscope(guest, 'gunner')]);
+    return gd.owner && !hd.owner && hg.owner && !gg.owner && Math.abs(hd.angleDeg - 60) < 0.5 && Math.abs(gd.angleDeg - 60) < 0.01 && Math.abs(gg.angleDeg + 40) < 0.5 && Math.abs(hg.angleDeg + 40) < 0.01
+      ? { hd, gd, hg, gg } : null;
   }, 5000).catch(() => null);
-  check(`The host's page draws the guest driver's periscope turned where the guest turned it (${label})`, scoped !== null,
-    scoped ? `${scoped.h.angleDeg.toFixed(2)}° for the driver's ${scoped.g.angleDeg.toFixed(2)}°, ${scoped.h.received} packets` : JSON.stringify(await Promise.all([periscope(host), periscope(guest)])));
+  check(`Each page draws the other seat's periscope turned where its owner turned it (${label})`, scoped !== null,
+    scoped ? `the host draws the driver's at ${scoped.hd.angleDeg.toFixed(2)}° for ${scoped.gd.angleDeg.toFixed(2)}° (${scoped.hd.received} packets), the guest the gunner's at ${scoped.gg.angleDeg.toFixed(2)}° for ${scoped.hg.angleDeg.toFixed(2)}° (${scoped.gg.received} packets)`
+      : JSON.stringify(await Promise.all([periscope(host, 'driver'), periscope(guest, 'driver'), periscope(host, 'gunner'), periscope(guest, 'gunner')])));
   await host.page.evaluate(() => window.__gameMenu.click('menu-periscope-ahead'));
   const scopeAhead = await waitFor('both periscopes ahead', async () => {
-    const [h, g] = await Promise.all([periscope(host), periscope(guest)]);
-    return Math.abs(g.angleDeg) < 0.01 && Math.abs(h.angleDeg) < 0.5 ? h : null;
+    const [hd, gd, hg, gg] = await Promise.all([periscope(host, 'driver'), periscope(guest, 'driver'), periscope(host, 'gunner'), periscope(guest, 'gunner')]);
+    return Math.abs(gd.angleDeg) < 0.01 && Math.abs(hd.angleDeg) < 0.5 && Math.abs(hg.angleDeg) < 0.01 && Math.abs(gg.angleDeg) < 0.5 ? hd : null;
   }, 5000).catch(() => null);
-  check(`The gunner's Practice → Periscope → Ahead turns the driver's periscope ahead on both pages (${label})`, scopeAhead !== null,
-    scopeAhead ? '' : JSON.stringify(await Promise.all([periscope(host), periscope(guest)])));
+  check(`The gunner's Sights → Periscopes → Ahead turns both periscopes ahead on both pages (${label})`, scopeAhead !== null,
+    scopeAhead ? '' : JSON.stringify(await Promise.all([periscope(host, 'driver'), periscope(guest, 'driver'), periscope(host, 'gunner'), periscope(guest, 'gunner')])));
   // How smoothly the guest draws it: the distance driven, frame by frame, never goes back or jumps.
   const steps = await guest.page.evaluate(() => new Promise((resolve) => {
     const out = [];

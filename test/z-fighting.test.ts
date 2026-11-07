@@ -245,23 +245,42 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
-  it("on the driver's periscope (F1.6): its eyepiece and window fixed in the hull, its yoke, shaft and head turned every way", async () => {
+  it("on the crew's periscopes (F1.6, F1.19): eyepieces, windows and cranks fixed, shafts and heads turned every way, the gunner's in the turning turret", async () => {
     const periscope = await import('../src/scene-assets/periscope.scene-asset.js');
-    const { AXIS, LENS, YOKE_Y } = await import('../src/sim/periscope.js');
-    const hull = cabin.createHull();
-    for (const angle of [0, 0.4, Math.PI / 4, Math.PI / 2, 2.2, Math.PI, -1.1]) {
+    const { PERISCOPE_CRANK, PERISCOPES } = await import('../src/sim/periscope.js');
+    const build = (id: 'driver' | 'gunner', angle: number, crank: number): Group => {
+      const s = PERISCOPES[id];
       const mount = new Group();
-      mount.position.set(AXIS[0], YOKE_Y, AXIS[1]);
-      mount.add(periscope.createPeriscopeBody());
+      mount.position.set(s.axis[0], s.lens[1], s.axis[1]);
+      mount.add(periscope.createPeriscopeBody(s));
       const window = mesh(periscope.createPeriscopeWindowGeometry(), 'Periscope Window');
-      window.position.set(0, LENS[1] - YOKE_Y, LENS[2] - AXIS[1]);
+      window.position.set(...periscope.lensInPeriscope(s));
       mount.add(window);
-      const turning = periscope.createPeriscopeTurning();
+      const turning = periscope.createPeriscopeTurning(s);
       turning.rotation.y = angle;
       mount.add(turning);
-      mount.updateMatrixWorld(true);
-      // With the turret turned so the gun passes over the head.
-      expectNone([hull, turretWith(0.32, 0, 0), mount], CABIN_GAP);
+      const wheel = mechanism.createWheel(PERISCOPE_CRANK);
+      wheel.position.set(...periscope.crankInPeriscope(s));
+      wheel.rotation.z = crank;
+      mount.add(wheel);
+      return mount;
+    };
+    const hull = cabin.createHull();
+    for (const angle of [0, 0.4, Math.PI / 4, Math.PI / 2, 2.2, Math.PI, -1.1]) {
+      const crank = angle * 4;
+      // With the turret turned so the gun passes over the driver's head.
+      const turret = turretWith(0.32, 0, 0);
+      turret.add(build('gunner', angle, crank));
+      const driver = build('driver', angle, crank);
+      driver.updateMatrixWorld(true);
+      turret.updateMatrixWorld(true);
+      expectNone([hull, turret, driver], CABIN_GAP);
+    }
+    for (const yaw of [0, Math.PI / 4, Math.PI, -Math.PI / 3]) {
+      const turret = turretWith(yaw, 0, 0);
+      turret.add(build('gunner', -0.7, 1.3));
+      turret.updateMatrixWorld(true);
+      expectNone([hull, turret], CABIN_GAP);
     }
   });
 

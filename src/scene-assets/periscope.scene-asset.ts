@@ -1,15 +1,18 @@
 import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial, PlaneGeometry } from '@iwsdk/core';
-import { beam, mergeParts, type Part } from './lowpoly.js';
-import { GRIP_RADIUS } from './mechanism.scene-asset.js';
-import { HULL } from '../sim/cabin.js';
-import { EYEPIECE_BOX, HEAD, PERISCOPE_YOKE, SHAFT_RADIUS, WINDOW, YOKE_Y } from '../sim/periscope.js';
+import { mergeParts, type Part } from './lowpoly.js';
+import { EYEPIECE_BOX, HEAD_SIZE, type PeriscopeSpec, RELAY, SHAFT_RADIUS, WINDOW, WINDOW_PROUD } from '../sim/periscope.js';
 import { litInside } from './cabin-light.js';
 
 /**
- * The driver's periscope (F1.6, docs/periscope.md), in periscope space (the
- * yoke's middle at the origin; place it at AXIS, YOKE_Y in the hull): the
- * fixed eyepiece the driver looks into, and the turning part, the yoke,
- * the shaft and the head on the roof, which turns with `rotation.y`.
+ * A crew periscope (F1.6, F1.19, docs/periscope.md), in periscope space:
+ * the upright at the origin's x and z, y = 0 at the window's middle; place
+ * it at (axis x, lens y, axis z) in its frame (the hull for the driver's,
+ * the turret for the gunner's). The fixed part is the eyepiece hanging
+ * under the roof and the crank's gearbox on its right; the turning part is
+ * the shaft up through the roof and the head on it, turned with
+ * `rotation.y`. A neck and a housing under the roof join the eyepiece to
+ * the upright, which may stand ahead of it. The crank itself is the mechanism kit's wheel
+ * (createWheel), which PeriscopeSystem places at the spec's `crank`.
  * Numbers from src/sim/periscope.ts; the window's shader is the scope
  * lens's (src/systems/scope-lens.ts).
  */
@@ -17,97 +20,114 @@ import { litInside } from './cabin-light.js';
 const STEEL = 0x4a5148;
 const STEEL_DARK = 0x2f3430;
 const RUBBER = 0x1c1c1c;
-/** The hull's paint outside (cabin.scene-asset.ts), for the head on the roof. */
+/** The tank's paint outside (cabin.scene-asset.ts), for the head on the roof. */
 const PAINT = 0x8f8a5c;
 const GLASS = 0x1a2630;
-/** The hub's pointer, showing which way the head looks. */
-const MARK = 0xd8b030;
 
 const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
 
 /** The rubber surround round the window: how wide its bars are and how far they stand out from the box's back face, m. */
 const SURROUND = { bar: 0.015, depth: 0.012 } as const;
 /** The bearing collar under the roof the shaft turns in: its radius, and how far below the roof it reaches, m. */
-const COLLAR = { radius: 0.045, below: 0.06 } as const;
-/** The yoke's hub: its radius and height, m. */
-const HUB = { radius: 0.03, height: 0.05 } as const;
+const COLLAR = { radius: 0.03, below: 0.06 } as const;
+/** The crank's gearbox: its height and depth, and how far behind the crank's face its front is, m. */
+const GEARBOX = { height: 0.036, depth: 0.035, behind: 0.016 } as const;
+
+/** The crank's hub in periscope space. */
+export function crankInPeriscope(s: PeriscopeSpec): [number, number, number] {
+  return [s.crank[0] - s.axis[0], s.crank[1] - s.lens[1], s.crank[2] - s.axis[1]];
+}
+
+/** The window's middle in periscope space. */
+export function lensInPeriscope(s: PeriscopeSpec): [number, number, number] {
+  return [s.lens[0] - s.axis[0], 0, s.lens[2] - s.axis[1]];
+}
+
+/** The eyepiece box's middle's z in periscope space. */
+function boxZ(s: PeriscopeSpec): number {
+  return s.lens[2] - s.axis[1] - WINDOW_PROUD - EYEPIECE_BOX.depth / 2;
+}
 
 /**
- * The fixed part: the eyepiece box round the shaft with the rubber
- * surround of its window on the back face (towards the driver), and the
- * bearing collar under the roof.
+ * The fixed part: the eyepiece box with the rubber surround of its window
+ * on the back face (towards the seat), the crank's gearbox out of its right
+ * side behind the crank, the neck up from it into the housing under the
+ * roof, and the housing forwards to the bearing collar the upright turns in.
  */
-export function createPeriscopeBody(): Mesh {
+export function createPeriscopeBody(s: PeriscopeSpec): Mesh {
   const { width, height, depth } = EYEPIECE_BOX;
-  const y = EYEPIECE_BOX.y - YOKE_Y;
-  const back = depth / 2;
+  const bz = boxZ(s);
+  const back = bz + depth / 2;
   const sz = back + SURROUND.depth / 2;
   const bar = SURROUND.bar;
   const w = WINDOW.width / 2 + bar / 2;
   const h = WINDOW.height / 2 + bar / 2;
-  const roof = HULL.roof - YOKE_Y;
+  const roof = s.roof - s.lens[1];
+  const crank = crankInPeriscope(s);
+  const gearFront = crank[2] - GEARBOX.behind;
+  const gearRight = crank[0] + 0.03;
+  const gearLeft = width / 2 - 0.02;
+  const relayBottom = roof - RELAY.depth;
+  const relayFront = Math.min(-COLLAR.radius - 0.005, bz - 0.04);
+  const relayBack = Math.max(bz + 0.035, COLLAR.radius + 0.005);
+  const neckBottom = height / 2 - 0.01;
+  const neckTop = relayBottom + 0.01;
   const parts: Part[] = [
-    { geometry: new BoxGeometry(width, height, depth), color: STEEL, position: [0, y, 0] },
+    { geometry: new BoxGeometry(width, height, depth), color: STEEL, position: [0, 0, bz] },
     // The surround: top and bottom bars full width, the sides between them.
-    { geometry: new BoxGeometry(WINDOW.width + 2 * bar, bar, SURROUND.depth), color: RUBBER, position: [0, y + h, sz] },
-    { geometry: new BoxGeometry(WINDOW.width + 2 * bar, bar, SURROUND.depth), color: RUBBER, position: [0, y - h, sz] },
-    { geometry: new BoxGeometry(bar, WINDOW.height, SURROUND.depth), color: RUBBER, position: [-w, y, sz] },
-    { geometry: new BoxGeometry(bar, WINDOW.height, SURROUND.depth), color: RUBBER, position: [w, y, sz] },
-    // The collar, its top inside the roof plate.
+    { geometry: new BoxGeometry(WINDOW.width + 2 * bar, bar, SURROUND.depth), color: RUBBER, position: [0, h, sz] },
+    { geometry: new BoxGeometry(WINDOW.width + 2 * bar, bar, SURROUND.depth), color: RUBBER, position: [0, -h, sz] },
+    { geometry: new BoxGeometry(bar, WINDOW.height, SURROUND.depth), color: RUBBER, position: [-w, 0, sz] },
+    { geometry: new BoxGeometry(bar, WINDOW.height, SURROUND.depth), color: RUBBER, position: [w, 0, sz] },
+    // The crank's gearbox: from inside the eyepiece out behind the crank, the crank's hub sunk in its front.
+    {
+      geometry: new BoxGeometry(gearRight - gearLeft, GEARBOX.height, GEARBOX.depth),
+      color: STEEL_DARK,
+      position: [(gearLeft + gearRight) / 2, crank[1], gearFront - GEARBOX.depth / 2],
+    },
+    // The neck, from inside the eyepiece up into the housing.
+    { geometry: new BoxGeometry(0.06, neckTop - neckBottom, 0.05), color: STEEL, position: [0, (neckTop + neckBottom) / 2, bz] },
+    // The housing under the roof, its top inside the roof plate.
+    {
+      geometry: new BoxGeometry(RELAY.width, RELAY.depth + 0.012, relayBack - relayFront),
+      color: STEEL_DARK,
+      position: [0, relayBottom + (RELAY.depth + 0.012) / 2, (relayFront + relayBack) / 2],
+    },
+    // The collar the upright turns in, under the housing, its top inside the roof plate.
     {
       geometry: new CylinderGeometry(COLLAR.radius, COLLAR.radius, COLLAR.below + 0.005, 12, 1),
-      color: STEEL_DARK,
+      color: STEEL,
       position: [0, roof - COLLAR.below / 2 + 0.0025, 0],
     },
   ];
   const mesh = new Mesh(mergeParts(parts), material);
-  mesh.name = 'Periscope Body';
+  mesh.name = `Periscope Body ${s.id}`;
   return mesh;
 }
 
 /**
- * The turning part: the yoke (a hub with a pointer the way the head looks,
- * a bar out each side and a rubber handle on each end), the shaft up
- * through the eyepiece and the roof, and the head on the roof with its
- * window looking along -Z.
+ * The turning part: the upright from inside the housing up through the
+ * roof, and the head on the roof with its window looking along -Z.
  */
-export function createPeriscopeTurning(): Mesh {
-  const { inner, outer } = PERISCOPE_YOKE;
-  const length = outer - inner;
-  const headBottom = HEAD.bottom - YOKE_Y;
-  const headTop = HEAD.top - YOKE_Y;
+export function createPeriscopeTurning(s: PeriscopeSpec): Mesh {
+  const shaftBottom = s.roof - s.lens[1] - 0.03;
+  const headBottom = s.head.bottom - s.lens[1];
+  const headTop = s.head.top - s.lens[1];
   const headMid = (headBottom + headTop) / 2;
-  const alongX: [number, number, number] = [0, 0, Math.PI / 2];
+  const shaftTop = headBottom + 0.02;
   const parts: Part[] = [
-    { geometry: new CylinderGeometry(HUB.radius, HUB.radius, HUB.height, 12, 1), color: STEEL_DARK },
-    // The pointer: its foot sunk into the hub's top.
-    { geometry: new BoxGeometry(0.012, 0.01, 0.04), color: MARK, position: [0, HUB.height / 2 + 0.003, -0.04] },
-    beam([-inner - 0.01, 0, 0], [inner + 0.01, 0, 0], 0.012, STEEL, 6),
-    ...[-1, 1].map((s): Part => ({
-      geometry: new CylinderGeometry(GRIP_RADIUS, GRIP_RADIUS, length, 8, 1),
-      color: RUBBER,
-      position: [s * (inner + length / 2), 0, 0],
-      rotation: alongX,
-    })),
-    ...[-1, 1].map((s): Part => ({
-      geometry: new CylinderGeometry(GRIP_RADIUS + 0.005, GRIP_RADIUS + 0.005, 0.012, 8, 1),
-      color: STEEL,
-      position: [s * (outer + 0.004), 0, 0],
-      rotation: alongX,
-    })),
-    // The shaft, from inside the hub to inside the head.
-    { geometry: new CylinderGeometry(SHAFT_RADIUS, SHAFT_RADIUS, headBottom + 0.02, 10, 1), color: STEEL, position: [0, (headBottom + 0.02) / 2, 0] },
+    { geometry: new CylinderGeometry(SHAFT_RADIUS, SHAFT_RADIUS, shaftTop - shaftBottom, 10, 1), color: STEEL, position: [0, (shaftTop + shaftBottom) / 2, 0] },
     // The head, its foot inside the roof plate, a lid over it and its window on the front.
-    { geometry: new BoxGeometry(HEAD.width, headTop - headBottom, HEAD.depth), color: PAINT, position: [0, headMid, 0] },
-    { geometry: new BoxGeometry(HEAD.width + 0.01, 0.015, HEAD.depth + 0.01), color: STEEL_DARK, position: [0, headTop + 0.0025, 0] },
-    { geometry: new BoxGeometry(0.07, 0.035, 0.006), color: GLASS, position: [0, headMid + 0.005, -HEAD.depth / 2 - 0.002] },
+    { geometry: new BoxGeometry(HEAD_SIZE.width, headTop - headBottom, HEAD_SIZE.depth), color: PAINT, position: [0, headMid, 0] },
+    { geometry: new BoxGeometry(HEAD_SIZE.width + 0.01, 0.015, HEAD_SIZE.depth + 0.01), color: STEEL_DARK, position: [0, headTop + 0.0025, 0] },
+    { geometry: new BoxGeometry(0.07, 0.035, 0.006), color: GLASS, position: [0, headMid + 0.005, -HEAD_SIZE.depth / 2 - 0.002] },
   ];
   const mesh = new Mesh(mergeParts(parts), material);
-  mesh.name = 'Periscope Turning';
+  mesh.name = `Periscope Turning ${s.id}`;
   return mesh;
 }
 
-/** The window's glass, facing the driver (+Z); place it at the lens. The periscope system gives it the scope lens's shader. */
+/** The window's glass, facing the seat (+Z); place it at the lens (WINDOW_PROUD proud of the box's back face). The periscope system gives it the scope lens's shader. */
 export function createPeriscopeWindowGeometry(): PlaneGeometry {
   return new PlaneGeometry(WINDOW.width, WINDOW.height);
 }
