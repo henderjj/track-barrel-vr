@@ -28,7 +28,6 @@ import {
   RETURN_DELAY,
   rotate,
   SHELL_LENGTH,
-  SHELL_RADIUS,
   STREAK_GOAL,
   unrotate,
   turretToGun,
@@ -126,21 +125,16 @@ class Rig {
 }
 
 describe('loading the gun (F1.10, after spike S4)', () => {
-  it("puts the breech lever on the breech's far side from the gunner, its handle swinging clear of the breech (John's play test)", () => {
-    expect(PIVOT_GUN[0]).toBeLessThan(-GUN.breechHalfWidth);
+  it("puts the breech lever on the breech's far side from the gunner, its handle sticking out to the left, clear of the breech (John's play test)", () => {
     expect(SEATS.gunner.eye[0]).toBeGreaterThan(0);
     const HANDLE_RADIUS = 0.017;
-    for (let a = 0; a <= LEVER_CLOSED + 1e-9; a += LEVER_CLOSED / 30) {
-      const y = LEVER_LENGTH * Math.cos(a);
-      const z = PIVOT_GUN[2] + LEVER_LENGTH * Math.sin(a);
-      // The handle reaches over the breech towards the gunner: above its top while over it, behind its back face once below.
-      const overBreech = z - HANDLE_RADIUS < MOUTH_GUN[2];
-      if (overBreech) expect(y - HANDLE_RADIUS, `at ${((a * 180) / Math.PI).toFixed(0)}°`).toBeGreaterThan(GUN.breechHalfHeight + 0.015);
-    }
-    // Closed, it is behind the closed breech block and clear of the bore's line, where a shell goes in.
+    // The arm (1.6 cm wide) and the whole handle, which sticks out to the left, stay outside the breech's side.
+    expect(PIVOT_GUN[0] + 0.008).toBeLessThan(-GUN.breechHalfWidth - 0.01);
+    expect(LEVER_HANDLE_X).toBeLessThan(0);
+    // Closed, the handle is behind the closed breech block.
     expect(PIVOT_GUN[2] + LEVER_LENGTH - HANDLE_RADIUS).toBeGreaterThan(MOUTH_GUN[2] + 0.06);
-    expect(Math.abs(PIVOT_GUN[0] + 2 * LEVER_HANDLE_X + 0.005)).toBeGreaterThan(SHELL_RADIUS + HANDLE_RADIUS + 0.01);
   });
+
 
   it('loads a shell: grab from the rack, swing to the breech, ram, close; then the trigger fires it and the breech opens', () => {
     const rig = new Rig();

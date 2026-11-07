@@ -89,18 +89,22 @@ describe('rig offset', () => {
     const raised = rigOffset(targetEyeHeight({ raise: 0, seated: true }), 1.2);
     const seat = SEATS.gunner;
     const points: number[][] = RACK_SLOTS.map((slot) => [...slot]);
+    const levers: number[][] = [];
     for (const e of [MIN_ELEVATION, 0, MAX_ELEVATION]) {
       points.push(gunToTurret(BREECH_MOUTH, e, 0, [0, 0, 0]));
-      points.push(gunToTurret(leverHandle(0, [0, 0, 0]), e, 0, [0, 0, 0]));
-      points.push(gunToTurret(leverHandle(LEVER_CLOSED, [0, 0, 0]), e, 0, [0, 0, 0]));
+      levers.push(gunToTurret(leverHandle(0, [0, 0, 0]), e, 0, [0, 0, 0]));
+      levers.push(gunToTurret(leverHandle(LEVER_CLOSED, [0, 0, 0]), e, 0, [0, 0, 0]));
     }
-    for (const p of points) {
+    for (const p of [...points, ...levers]) {
       // Between knee and chest above the real floor, which is the basket floor.
       const y = p[1] - seat.floorY;
       expect(y - raised).toBeGreaterThan(0.45);
       expect(y - raised).toBeLessThan(1.4);
       // Within a seated arm's reach of the eyes, with a little lean at full elevation (the head box allows 24 cm).
-      expect(Math.hypot(p[0] - seat.eye[0], p[1] - seat.eye[1], p[2] - seat.eye[2])).toBeLessThan(0.8);
+      // The lever is on the breech's far side since John's play test (2026-11-07), its handle out to the left as he
+      // asked: a lean over the breech (the head box is open that way), so it is allowed 5 cm more.
+      const reach = levers.includes(p) ? 0.85 : 0.8;
+      expect(Math.hypot(p[0] - seat.eye[0], p[1] - seat.eye[1], p[2] - seat.eye[2])).toBeLessThan(reach);
     }
   });
 
