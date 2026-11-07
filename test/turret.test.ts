@@ -7,7 +7,7 @@ import { decodeTurretState, encodeTurretState, TURRET_STATE_BYTES } from '../src
 import { GUN, SEATS, seatToHull, TURRET, TURRET_RING } from '../src/sim/cabin.js';
 import { MAX_TRAVERSE, MAX_TRAVERSE_ACCEL } from '../src/sim/comfort.js';
 import { type HandInput, MechEvent, TwistGrip, type Vec3, Wheel } from '../src/sim/mechanism.js';
-import { LEVER_HANDLE_X, LEVER_PIVOT } from '../src/sim/loading.js';
+import { gunToTurret, LEVER_CLOSED, LEVER_HANDLE_X, LEVER_PIVOT, leverHandle, RECOIL } from '../src/sim/loading.js';
 import { IDLE_RPM, MAX_RPM } from '../src/sim/tank-drive.js';
 import {
   barrelDirection,
@@ -359,8 +359,8 @@ describe("the gunner's station (F1.8)", () => {
       expect(inGun).toBeGreaterThan(from + 3 * DEG);
       expect(inGun).toBeLessThan(to - 3 * DEG);
     }
-    // Beside the breech and right of the breech lever's handle, so the gun recoils and the lever swings past it.
-    expect(x - half - 0.004).toBeGreaterThan(LEVER_PIVOT[0] + LEVER_HANDLE_X + 0.015);
+    // Beside the breech on the gunner's side, so the gun recoils past it; the breech lever is on the far side.
+    expect(LEVER_PIVOT[0] + LEVER_HANDLE_X).toBeLessThan(0);
     expect(x - half).toBeGreaterThan(GUN.breechHalfWidth + 0.05);
     // Its spokes end where they stay above the turret ring as the gun rises (the arc's lower end dips through the ring's hole).
     for (const spoke of ELEVATING_GEAR.spokes) {
@@ -419,6 +419,28 @@ describe("the gunner's station (F1.8)", () => {
             if (turretToMount('elevation', q)[2] < 0) continue;
             expect(Math.hypot(q[0] - fist[0], q[1] - fist[1], q[2] - fist[2]), `handle at ${((a * 180) / Math.PI).toFixed(0)}°`).toBeGreaterThan(FIST + 0.02);
           }
+        }
+      }
+    }
+  });
+
+  it("keeps a hand on the breech lever clear of the hand on the elevation handwheel and the elevating gear (John's play test)", () => {
+    const FIST = 0.05;
+    const wheel = new Wheel(ELEVATION_WHEEL);
+    const fists: Vec3[] = [];
+    for (let a = 0; a < 2 * Math.PI; a += Math.PI / 12) {
+      wheel.angle = a;
+      const p = wheel.handle(1, [0, 0, 0]);
+      for (const along of [0.3, 0.7, 1]) fists.push(mountToTurret('elevation', [p[0], p[1], ELEVATION_WHEEL.knobLength * along]));
+    }
+    for (let e = MIN_ELEVATION; e <= MAX_ELEVATION + 1e-9; e += 5 * DEG) {
+      const gear = gearPoints(e);
+      for (let lever = 0; lever <= LEVER_CLOSED + 1e-9; lever += LEVER_CLOSED / 6) {
+        for (const recoil of [0, RECOIL.length]) {
+          const hand = gunToTurret(leverHandle(lever, [0, 0, 0]), e, recoil, [0, 0, 0]);
+          const at = `lever ${((lever * 180) / Math.PI).toFixed(0)}° at ${(e / DEG).toFixed(0)}°`;
+          for (const f of fists) expect(Math.hypot(f[0] - hand[0], f[1] - hand[1], f[2] - hand[2]), at).toBeGreaterThan(2 * FIST + 0.1);
+          for (const q of gear) expect(Math.hypot(q[0] - hand[0], q[1] - hand[1], q[2] - hand[2]), at).toBeGreaterThan(FIST + 0.1);
         }
       }
     }
