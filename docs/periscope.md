@@ -40,7 +40,8 @@ Frame space: hull space ([cabin.md](cabin.md)) for the driver's, turret space fo
 | Opens / closes | an eye within 9 cm of the window and behind it / beyond 12 cm | the same; and the gunsight shut, which stays shut while the eyes are nearer this window than its own | The gunsight's numbers |
 | Power, field | 1×, ±20° by ±8° | the same | A Sherman's M6 periscopes had no magnification (see [Power](#power)); a wide field for driving and looking round; a rectangular field stop like a real periscope's window |
 | Picture | 1024 × 395, 4× multisampling, only while open | the same | About 25 texels a degree, the Quest 3's display's own |
-| Head | 10 × 10 cm, 8 cm over the roof, the camera looking 2° down | the same | |
+| Head | 10 × 10 cm, 8 cm over the roof, the camera looking 2° down | 15 cm over the roof, the same | The driver's under the gun as it sweeps over the hull; the gunner's high enough to look over the turret roof ahead to the gun and the ground |
+| Camera | near plane 5 cm, far 1500 m | the same | Near enough to draw the roof in the bottom of the view and the driver's open hatch lid behind (0.3 m cut them away, so the view saw through the tank: John, 2026-11-07) |
 
 ## Reach
 
@@ -49,6 +50,10 @@ John's headset note (2026-11-07): it was hard to get the head up high enough to 
 The eyepieces can't simply come down: the driver's would cut into the top of the slit's view and come within the near plane of the eyes leant in to the slit, and the gunner's sits over the sight's hood with the forehead under it while sighting. So each eyepiece is **tipped forwards 30°** about its window's middle, its window facing down towards the seat, and lowered 2 cm. The eyes meet the window lower and nearer: looking up into it 6 cm out they are 7 cm (driver's) or 9 cm (gunner's) above the eye point, where before they were 12 or 14. The picture is at infinity along the window's axis, so looking up into it shows the view out of the head level, as a real periscope's tilted eyepiece prism does.
 
 Tipped, the gunner's window brings the eyes looking into it within 9 cm of the sight's lens below. So instead of the sight always having the eye, **whichever window the eyes are nearer has them**: PeriscopeSystem tells SightSystem how far the eyes are from its window (`sightStats.periscopeEye`), and the sight stays shut while they are nearer the periscope's.
+
+## What blocks the view
+
+John asked (2026-11-07) whether the driver's periscope should be stopped from turning, since the turret blocks its view behind. It isn't: a Sherman driver's M6 sat in a mount that turned all the way round, and looking back meant looking at the turret, or here at the open hatch lid just behind the head. The tank itself was clipped out of the view, though, because the camera cut away everything within 30 cm of it: the roof in the bottom of the view and the lid behind. The near plane is now 5 cm, and the gunner's head stands 15 cm over the turret roof so the roof fills only the bottom of its view.
 
 ## Power
 

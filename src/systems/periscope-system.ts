@@ -61,8 +61,8 @@ import { type PracticeButton, sightStats } from './sight-system.js';
 import { seating } from './seating.js';
 
 const DEG = Math.PI / 180;
-/** The camera's near and far planes, m: the head it sits in is hidden while it renders. */
-const NEAR = 0.3;
+/** The camera's near and far planes, m: the head it sits in is hidden while it renders. Near enough not to cut away the roof in the bottom of the view or the hatch lid behind the driver's (John, 2026-11-07: 0.3 m let the view clip through the tank). */
+const NEAR = 0.05;
 const FAR = 1500;
 /** How far behind the window "Go to it" puts the head, m: lean in 6 cm and it opens. */
 const APPROACH = 0.15;

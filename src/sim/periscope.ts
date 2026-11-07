@@ -56,8 +56,10 @@ export const WINDOW_PROUD = 0.004;
  */
 export const EYEPIECE_TILT = 30 * DEG;
 
-/** The head on the roof: its width and depth, and how far it stands over the roof, m. */
+/** The head on the roof: its width and depth, and how far the driver's stands over the roof, m (under the gun as it sweeps over the hull). */
 export const HEAD_SIZE = { width: 0.1, depth: 0.1, height: 0.08 } as const;
+/** How far the gunner's head stands over the turret roof, m: high enough to look over the roof ahead of it to the gun and the ground (John, 2026-11-07: lower, the roof filled the bottom of its view). */
+export const GUNNER_HEAD_HEIGHT = 0.15;
 /** The shaft between the eyepiece and the head, its radius, m. */
 export const SHAFT_RADIUS = 0.022;
 /** The head looks this far down from level, radians: the nose (or the turret's roof) at the bottom of the view, the ground from about 15 m out. */
@@ -139,11 +141,12 @@ function spec(
   roof: number,
   rise: number,
   ahead: number,
+  headHeight: number = HEAD_SIZE.height,
 ): PeriscopeSpec {
   const roofTop = roof + HULL.wall;
   const eye = SEATS[id].eye;
   const lens: Vec3 = [axis[0], eye[1] + rise, eye[2] - ahead];
-  const head = { bottom: roofTop - 0.01, top: roofTop + HEAD_SIZE.height };
+  const head = { bottom: roofTop - 0.01, top: roofTop + headHeight };
   return {
     id,
     label,
@@ -179,7 +182,7 @@ export const DRIVER_PERISCOPE = spec('driver', "driver's", 'periscope', 'hull', 
  * never both open). It turns with the turret, so its angle is
  * from the gun's line.
  */
-export const GUNNER_PERISCOPE = spec('gunner', "gunner's", 'gunner-periscope', 'turret', [0.32, -0.49], TURRET.roof, 0.12, 0.196);
+export const GUNNER_PERISCOPE = spec('gunner', "gunner's", 'gunner-periscope', 'turret', [0.32, -0.49], TURRET.roof, 0.12, 0.196, GUNNER_HEAD_HEIGHT);
 
 export const PERISCOPES: Readonly<Record<PeriscopeId, PeriscopeSpec>> = { driver: DRIVER_PERISCOPE, gunner: GUNNER_PERISCOPE };
 
