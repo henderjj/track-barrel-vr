@@ -27,11 +27,12 @@ into the ground's model, so it moves with the world as the tank drives
 - A **range marker** stands beside the road every 100 m out to 600 m: a pale
   post with an orange band per hundred metres. The driver can see how far up
   the range the tank is without asking.
-- **Fog** thickens with distance: nothing is hazed closer than 150 m,
-  everything is sky colour beyond 780 m, and by about 600 m a target is three
-  quarters gone. So the 500 m target is there to be found rather than
-  obvious, the drawn ground's edge (800 m away at the nearest) is never seen,
-  and the two players have to talk about what they can make out. The game
+- **Fog** thickens with distance: nothing is hazed closer than 450 m,
+  everything is sky colour beyond 780 m, and by about 700 m a target is three
+  quarters gone. So every target is clear (the 500 m one only 15% hazed), and
+  the drawn ground's edge (800 m away at the nearest) is never seen. It
+  started at 150 m until John's play test (2026-11-07) found it hid the far
+  target; fog thick enough to change the game is F5.11's weather. The game
   menu's **Settings → Range fog** turns it off and on at once, for a
   comparison on a headset; `?fog=0` starts without it.
 - The menu's new **RANGE** line names the nearest target, how far away it is
@@ -54,7 +55,7 @@ into the ground's model, so it moves with the world as the tank drives
 | Clearance | every target's near edge is at least 4 m from the road's middle, 2.8 m from the tank's outline | The tank drives the whole range without clipping a board |
 | Roads | up the range 8 m wide, across the start 7 m wide, surfaces 3 cm and 2 cm above the ground | Inside the ground's flat corridors (±17 m), and the two never share a plane where they cross (the 8 mm rule) |
 | Markers | every 100 m to 600 m, 13 m right of the road's middle, 1.5 m tall | Off the road, on the flat, out of the way of the targets |
-| Fog | linear, 150 m to 780 m, sky-horizon colour (`#d9e0e6`) | Hides the ground's edge (800 m) completely, leaves the 500 m target 46% visible, and limits useful sight to about 620 m (the plan's "about 600 m") |
+| Fog | linear, 450 m to 780 m, sky-horizon colour (`#d9e0e6`) | Hides the ground's edge (800 m) completely, leaves the 500 m target 85% visible and the nearer two untouched, and limits useful sight to about 700 m. Was 150 m to 780 m, which left the 500 m target barely visible |
 | Up the range | parked 200 m up the road facing the 500 m target | 300 m to the far target, 50 m to the gun target, both within the fog's reach |
 | Range | about 600 × 600 m of a tile 800 m square | The plan's size; everything repeats with the ground every 800 m, so a long drive meets the range again rather than running out of world |
 | Drawn ground | 73,792 triangles in 36 meshes of 400 m square | Was 63k before the range; the renderer skips the squares out of view or past the 1.2 km far plane, about two thirds of them |
@@ -134,13 +135,13 @@ On a Quest 3 after the deploy, with the cache cleared (Ctrl+Shift+R), seated
 2. Lean into the **eyepiece** (Sights → Gunsight (S1) → Go to it if the
    lean is awkward). Report whether you can tell the three targets apart
    through the sight at 3×, whether you can count the orange blocks on each,
-   and whether the 500 m one is findable in the haze or too faint.
+   and whether the 500 m one is easy to see (it should be, with only a light haze).
 3. Menu → **Range**: it should name the nearest target (the tank at 100 m,
-   about 100 m away) and say the fog lets you see about 620 m.
+   about 100 m away) and say the fog lets you see about 700 m.
 4. Menu → **Settings → Range fog → Off**, close the menu and look up the
    range again. Report which you prefer: with the fog, the distance should
-   feel deep and the far target hard-won; without it, everything is crisp to
-   the horizon. Say also whether the fog makes the edge of the world visible
+   feel deep with every target still plain; without it, everything is crisp
+   to the horizon. Say also whether the fog makes the edge of the world visible
    anywhere (it should not), and whether the frame rate changes (press X for
    the perf HUD).
 5. Turn the fog back **on**. Swap to the **driver's** seat (menu → You →
