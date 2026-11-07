@@ -2748,7 +2748,7 @@ async function partTwo() {
 
 /**
  * Part 3: loading and firing, the test range, the gunsight, the tank's
- * sounds, the range run, and comfort and stats.
+ * sounds, the range run, comfort and stats, and the driver's turret dial.
  */
 async function partThree() {
   // 6g. Loading and firing (F1.10).
@@ -2767,6 +2767,47 @@ async function partThree() {
 
   // 6m. Comfort and stats (F1.14).
   await comfortAndStats();
+
+  // 6n. The driver's turret position dial (F2.3).
+  await theTurretDial();
+}
+
+/**
+ * 6n. The driver's turret position dial (F2.3): Practice → Lay the gun →
+ *     To 3 o'clock puts the player in the driver's seat and the turret
+ *     turns itself there, the dial's pointer turning with it; it stops at
+ *     3 o'clock and the dial reads 3 (screenshot from the driver's eyes);
+ *     Forward brings both back to 12.
+ */
+async function theTurretDial() {
+  const dial = () => evalInApp('window.__turretDial.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp('(window.__turret.set(null), window.__turret.forward(), true)');
+  await sleep(300);
+  await menuButtonPress();
+  await menuClick('menu-turret-dial');
+  const turning = await waitFor('the turret turning by itself', () => { const s = dial(); return s.traversing && s.turretDeg < -5 && s; }, 8000).catch(() => dial());
+  const seated = evalInApp('({ seat: window.__seats.mine, sign: window.__turret.sign })');
+  check("Practice → Lay the gun → To 3 o'clock puts the player in the driver's seat, and the turret turns by itself with the dial's pointer on it",
+    seated.seat === 'driver' && turning.traversing && turning.turretDeg < -5 && Math.abs(turning.pointerDeg - turning.turretDeg) < 1 && seated.sign.startsWith('Turret to 3'),
+    `seat ${seated.seat}, turret ${turning.turretDeg.toFixed(1)}°, pointer ${turning.pointerDeg.toFixed(1)}°, sign "${seated.sign}"`);
+  const there = await waitFor("the turret at 3 o'clock", () => { const s = dial(); return !s.traversing && s.hour === 3 && s; }, 20000).catch(() => dial());
+  check("The turret stops at 3 o'clock and the driver's dial reads 3, its pointer to the right",
+    !there.traversing && there.hour === 3 && Math.abs(there.turretDeg + 90) < 0.1 && Math.abs(there.pointerDeg + 90) < 0.1,
+    `turret ${there.turretDeg.toFixed(2)}°, pointer ${there.pointerDeg.toFixed(2)}°, reads ${there.hour} o'clock`);
+  const eye = evalInApp('window.__seats.eye("driver")');
+  const at = evalInApp('window.__turretDial.at');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin(eye) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([(eye[0] + at[0]) / 2, at[1], at[2]]) });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-turret-dial.png'], {});
+  iwsdk(['xr', 'set-device-state'], {});
+  await menuButtonPress();
+  await menuClick('menu-turret-forward');
+  await menuButtonPress();
+  const home = await waitFor('the turret forward', () => { const s = dial(); return s.hour === 12 && Math.abs(s.pointerDeg) < 0.1 && s; }, 8000).catch(() => dial());
+  check('Practice → Lay the gun → Forward brings the turret back and the dial reads 12', home.hour === 12 && Math.abs(home.pointerDeg) < 0.1,
+    `turret ${home.turretDeg.toFixed(2)}°, pointer ${home.pointerDeg.toFixed(2)}°`);
 }
 
 /** Every part ends with these: the perf log, PC VR without the frame-rate API, and the console. */

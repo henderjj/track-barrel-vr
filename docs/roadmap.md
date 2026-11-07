@@ -81,7 +81,7 @@ The indicators the crew read most, and a game mode that needs no enemies, so the
 | ID | Feature | Status | Depends on | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 | F2.2 | Driver signal lamps (stop, go, left, right) with gunner's buttons and a buzz on the driver's controller | Cut | F1.5 | | Dropped (John, 2026-11-07) |
-| F2.3 | Turret position dial for the driver | Planned | F1.8 | | On the hood's face right of the slit ([phase-2-plan.md](phase-2-plan.md)) |
+| F2.3 | Turret position dial for the driver | Headset check | F1.8 | | [turret-dial.md](turret-dial.md): a 10 cm dial flat on the hood's face right of the slit, the hull from above nose up and a turret-and-gun pointer; reads the turret both pages already draw (no packet); Practice → Lay the gun → To 3 o'clock |
 | F2.4 | Hull direction indicator in the gunner's sight | Planned | F1.9 | | In the gunsight and the gunner's periscope; starts after the periscope fix merges, as both edit `scope-lens.ts` |
 | F2.5 | Firing lamp so the driver holds steady | Planned | F1.10 | | Lights by itself when the gun is ready (no button), on the slit's frame with a repeater by the gunsight; starts after F2.3 merges |
 | F2.6 | Callout vocabulary card | Planned | F1.12 | | Push-to-talk dropped (John, 2026-11-07): open mic is the only mode |

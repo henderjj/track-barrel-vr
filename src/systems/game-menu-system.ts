@@ -13,6 +13,7 @@ import { driveStatus, resetTank, startDriving } from './drive-system.js';
 import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-system.js';
 import { goUpTheRange, rangeStatus } from './range-system.js';
 import { readyToFire, runStatus, shownRun, startRun, stopRun } from './range-run-system.js';
+import { turretToHour } from './turret-dial-system.js';
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
 import { seating } from './seating.js';
@@ -203,7 +204,8 @@ interface GameMenuDebug {
  *   while riding the tank, spike S2: the ride's options);
  * - Practice: shortcuts straight to a situation to test (sit in either
  *   seat, drive the tank or put it back at its start, lay the gun or turn
- *   the turret forward, load and fire, play each of the tank's sounds, go
+ *   the turret forward or to 3 o'clock for the driver's dial, load and
+ *   fire, play each of the tank's sounds, go
  *   up the range, start or stop a range run, ready to fire on each target);
  * - Sights: the gunsight's and the periscope's shortcuts and render choices;
  * - Test rigs: ride the tank (spike S2), the lever test and the mechanism kit;
@@ -320,6 +322,12 @@ export class GameMenuSystem extends createSystem({}) {
     ui.on('menu-turret-forward', () => {
       turretForward();
       this.render();
+    });
+    ui.on('menu-turret-dial', () => {
+      // The driver's turret dial (F2.3): alone, into the driver's seat, and the turret turns to 3 o'clock.
+      this.setOpen(false);
+      stopRide();
+      turretToHour(3);
     });
     ui.on('menu-swap', () => {
       // Alone, straight into the other seat; in a crew, an ask (or the answer to theirs).
