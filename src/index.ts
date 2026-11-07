@@ -29,6 +29,7 @@ import { SeatSystem } from './systems/seat-system.js';
 import { SightSystem } from './systems/sight-system.js';
 import { TankAudioSystem } from './systems/tank-audio-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
+import { TurretDialSystem } from './systems/turret-dial-system.js';
 import { TurretSystem } from './systems/turret-system.js';
 
 // On a two-GPU PC, start on the graphics card Link uses (src/gpu-preference.ts).
@@ -67,6 +68,8 @@ World.create(
   world.registerSystem(MechanismSystem);
   // The turret (F1.8): after the kit has moved its controls, before OwnHandsSystem draws hands on them. It turns a seated gunner's play space with the turret.
   world.registerSystem(TurretSystem);
+  // The driver's turret position dial (F2.3): turns its pointer to the turret as TurretSystem drew it this frame.
+  world.registerSystem(TurretDialSystem);
   // The cabin's lighting (docs/interior.md): turns the turret's light with it, after TurretSystem sets its angle.
   world.registerSystem(CabinLightSystem);
   // Loading and firing (F1.10): after the turret (the gun's elevation, the power grip's trigger), before the throwables and the hands drawn on the lever.

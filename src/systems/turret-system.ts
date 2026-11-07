@@ -14,6 +14,8 @@ import {
   createTurretState,
   ELEVATION_WHEEL,
   elevationForWheel,
+  MAX_ELEVATION,
+  MIN_ELEVATION,
   extrapolateTurretState,
   lerpTurretState,
   POWER_GRIP,
@@ -28,6 +30,7 @@ import {
   wheelForElevation,
   wrapAngle,
 } from '../sim/turret.js';
+import { slewTurret } from '../sim/turret-dial.js';
 import { engineRpm, startEngine } from './drive-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { HoldKind } from './hand-lock.js';
@@ -84,6 +87,23 @@ export function takeTriggerPulls(): number {
   const n = a.triggerPulls;
   a.triggerPulls = 0;
   return n;
+}
+
+/**
+ * Practice → Turret to 3 o'clock (F2.3): the turret turns itself to `yaw`
+ * (rad) at the power traverse's top rate, so the driver can watch the
+ * turret dial follow it. The gunner's page turns it (the other page asks,
+ * with the `turret-forward` event's `yaw`); a hand on the power grip or
+ * the crank, Forward, or a test's lay stops it.
+ */
+export function traverseTo(yaw: number, sign?: [title: string, line1: string, line2: string]): void {
+  active?.traverseTo(yaw);
+  if (sign) active?.say(sign[0], [sign[1], sign[2]]);
+}
+
+/** Whether the turret is turning itself for the Practice shortcut on this page. */
+export function turretTraversing(): boolean {
+  return active?.slewTarget != null;
 }
 
 /** Lay the gun straight to a turn and elevation (rad), on the page that owns the turret: the tests, the gunsight's Practice lay (F1.9), and later the practice crewmate's aim (F1.13). */
@@ -170,6 +190,8 @@ export class TurretSystem extends createSystem({}) {
   private lastCrank = 0;
   private wasOwner = true;
   private override: TurretOverride | null = null;
+  /** Where the Practice shortcut is turning the turret to (rad), or null (F2.3). */
+  slewTarget: number | null = null;
   /** Trigger pulls on the power grip not yet taken (takeTriggerPulls). */
   triggerPulls = 0;
   private turret: Object3D | null = null;
@@ -206,8 +228,12 @@ export class TurretSystem extends createSystem({}) {
     this.world.createTransformEntity(this.sign.mesh);
 
     netLink.handlers.set(PacketType.TurretState, (view) => this.onTurretState(view));
-    netLink.events.set('turret-forward', () => {
-      if (this.isOwner()) this.forward();
+    netLink.events.set('turret-forward', (e) => {
+      if (!this.isOwner()) return;
+      // F2.3's Practice shortcut sends where to turn to; without it (and from an older build) it is Forward.
+      const yaw = Number(e.yaw);
+      if (e.yaw !== undefined && Number.isFinite(yaw)) this.traverseTo(yaw);
+      else this.forward();
     });
     this.cleanupFuncs.push(
       () => {
@@ -296,6 +322,7 @@ export class TurretSystem extends createSystem({}) {
       return;
     }
     Object.assign(this.sim, createTurretState());
+    this.slewTarget = null;
     this.crankWheel.angle = 0;
     this.lastCrank = 0;
     if (!this.elevationWheel.anyHeld) this.elevationWheel.angle = 0;
@@ -309,9 +336,21 @@ export class TurretSystem extends createSystem({}) {
     this.sim.yaw = wrapAngle(yaw);
     this.sim.rate = 0;
     this.override = null;
+    this.slewTarget = null;
     if (!this.elevationWheel.anyHeld) this.elevationWheel.angle = wheelForElevation(elevation);
     this.sim.elevation = elevationForWheel(this.elevationWheel.angle);
     copyTurretState(this.sim, this.shown);
+  }
+
+  /** Turn to `yaw` by itself (Practice, F2.3): here if this page lays the gun, else ask the page that does. */
+  traverseTo(yaw: number): void {
+    if (!this.isOwner()) {
+      const event: { t: 'turret-forward'; yaw: number } = { t: 'turret-forward', yaw };
+      netLink.sendEvent(event);
+      return;
+    }
+    this.slewTarget = wrapAngle(yaw);
+    console.info(`[Turret] traversing to ${(-this.slewTarget / DEG).toFixed(0)}° right`);
   }
 
   sayHowToLay(): void {
@@ -330,6 +369,7 @@ export class TurretSystem extends createSystem({}) {
       console.info('[Turret] laying the gun here now');
     } else if (!owner && this.wasOwner) {
       this.buffer.clear();
+      this.slewTarget = null;
     }
     this.wasOwner = owner;
 
@@ -366,12 +406,20 @@ export class TurretSystem extends createSystem({}) {
       this.toldNoPower = true;
       this.say('No power traverse', ['The engine is stopped: the driver starts it', 'The hand crank still turns the turret']);
     }
+    // The Practice shortcut's turn (F2.3) gives way to the gunner's hands and to a test's traverse.
+    if (this.slewTarget !== null && (this.grip.anyHeld || this.crankWheel.anyHeld || o?.traverse !== undefined || ride.active)) this.slewTarget = null;
     let first = true;
     for (let left = dt; left > 1e-6; left -= MAX_STEP) {
+      const step = Math.min(left, MAX_STEP);
+      if (this.slewTarget !== null) {
+        if (slewTurret(this.sim, this.slewTarget, step)) this.slewTarget = null;
+        this.sim.elevation = Math.min(MAX_ELEVATION, Math.max(MIN_ELEVATION, input.elevation));
+        continue;
+      }
       // The crank's turn is applied once, in the first step.
       input.crank = first ? crankTurned : 0;
       first = false;
-      stepTurret(this.sim, input, rpm, Math.min(left, MAX_STEP));
+      stepTurret(this.sim, input, rpm, step);
     }
     this.sim.crank = wrapAngle(crank);
     this.sim.twist = this.grip.angle;
@@ -441,7 +489,7 @@ export class TurretSystem extends createSystem({}) {
     else this.sign.follow(this.world.visibilityState.peek() !== VisibilityState.NonImmersive ? this.player.head : this.camera, delta);
   }
 
-  private say(title: string, lines: [string, string]): void {
+  say(title: string, lines: [string, string]): void {
     const { ctx, width, height } = this.sign;
     drawSignBackground(ctx, width, height);
     ctx.fillStyle = '#f4ead8';

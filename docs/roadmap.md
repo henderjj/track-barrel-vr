@@ -28,13 +28,13 @@ Features counts the rows not Cut.
 | --- | --- | --- | --- |
 | 0 Groundwork | Rename, plan, spikes | 6 | 6 |
 | 1 Core controls prototype | Prove the tank's controls work in VR co-op | 20 | 15 |
-| 2 Crew indicators and the first game mode | Indicators for the driver and gunner, and the biathlon to play the mechanics early | 5 | 0 |
+| 2 Crew indicators and the first game mode | Indicators for the driver and gunner, and the biathlon to play the mechanics early | 6 | 0 |
 | 3 Combat and damage | Enemies, ammunition types, damage and repairs | 8 | 0 |
 | 4 Training and tutorials | Training stages and the callouts taught in them | 4 | 0 |
 | 5 Content and replay | Tiers, scenarios, scoring, ghosts, replays, hatches | 10 | 0 |
 | 6 Polish | Sound and graphics past the placeholders | 3 | 0 |
 
-**Current focus:** finishing Phase 1 from John's play test (2026-11-07): the periscopes (F1.6, reworked for both crew in #62), the seated avatars (F1.1b), and trying the crewmate (F1.13) and the stats (F1.14). Then Phase 2, where the biathlon (F5.3) puts the controls to work in a game mode before any combat.
+**Current focus:** finishing Phase 1 from John's play test (2026-11-07): the periscopes (F1.6, reworked for both crew in #62), the seated avatars (F1.1b), and trying the crewmate (F1.13) and the stats (F1.14). Then Phase 2 ([phase-2-plan.md](phase-2-plan.md)), where the biathlon (F5.3a, F5.3b) puts the controls to work in a game mode before any combat, built in six threads in two waves.
 
 ## Phase 0: Groundwork
 
@@ -76,17 +76,18 @@ Ends when a crew can drive the range, find and hit three static targets, and the
 
 ## Phase 2: Crew indicators and the first game mode
 
-The indicators the crew read most, and a game mode that needs no enemies, so the controls are played against the clock as early as possible. Reshaped after John's play test (2026-11-07): the hatches (F2.1) moved to Phase 5, the signal lamps (F2.2), push-to-talk and the signals comparison (F2.7) dropped, and the biathlon (F5.3) brought up from Phase 5.
+The indicators the crew read most, and a game mode that needs no enemies, so the controls are played against the clock as early as possible. Reshaped after John's play test (2026-11-07): the hatches (F2.1) moved to Phase 5, the signal lamps (F2.2), push-to-talk and the signals comparison (F2.7) dropped, and the biathlon (F5.3) brought up from Phase 5 and split into its course (F5.3a) and race (F5.3b). The order, the threads and what keeps them from clashing are in [phase-2-plan.md](phase-2-plan.md).
 
 | ID | Feature | Status | Depends on | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 | F2.2 | Driver signal lamps (stop, go, left, right) with gunner's buttons and a buzz on the driver's controller | Cut | F1.5 | | Dropped (John, 2026-11-07) |
-| F2.3 | Turret position dial for the driver | Planned | F1.8 | | |
-| F2.4 | Hull direction indicator in the gunner's sight | Planned | F1.9 | | |
-| F2.5 | Firing lamp so the driver holds steady | Planned | F1.10 | | |
+| F2.3 | Turret position dial for the driver | Headset check | F1.8 | | [turret-dial.md](turret-dial.md): a 10 cm dial flat on the hood's face right of the slit, the hull from above nose up and a turret-and-gun pointer; reads the turret both pages already draw (no packet); Practice → Lay the gun → To 3 o'clock |
+| F2.4 | Hull direction indicator in the gunner's sight | Planned | F1.9 | | In the gunsight and the gunner's periscope; starts after the periscope fix merges, as both edit `scope-lens.ts` |
+| F2.5 | Firing lamp so the driver holds steady | Planned | F1.10 | | Lights by itself when the gun is ready (no button), on the slit's frame with a repeater by the gunsight; starts after F2.3 merges |
 | F2.6 | Callout vocabulary card | Planned | F1.12 | | Push-to-talk dropped (John, 2026-11-07): open mic is the only mode |
 | F2.7 | Signals on/off setting and comparison in the play-test stats | Cut | F2.2–F2.5, F1.14 | | Dropped (John, 2026-11-07), with the signal lamps |
-| F5.3 | Tank biathlon time trial with medals and penalty laps | Planned | F1.11 | | Moved up from Phase 5 (John, 2026-11-07) to play the mechanics early. Needs only the range run, so it can be built first: a loop course on the range, firing lines where the tank halts and shoots, a penalty loop per miss, medal times. Concept §8 |
+| F5.3a | Biathlon course: a loop on the range, two firing lines with their own targets, a penalty loop, lap and gate tracking | Planned | F1.11 | | Split from F5.3 ([phase-2-plan.md](phase-2-plan.md), John, 2026-11-07); moved up from Phase 5 to play the mechanics early. About 800 m round the outside of the range's targets; the host tracks laps (`course` event); the crewmate drives it; Practice → Biathlon → Drive the course. Concept §8 |
+| F5.3b | Biathlon race: 3 laps, a firing line after laps 1 and 2 (3 targets, 3 rounds, firing at a halt), a penalty loop per target left standing, medal times | Planned | F5.3a | | Split from F5.3 ([phase-2-plan.md](phase-2-plan.md)). The range run grows a biathlon mode (`run`/`run-ask` fields), so the clocks, sign and stats row serve both; the crewmate shoots the lines and takes its penalty loops |
 
 ## Phase 3: Combat and damage
 
@@ -122,7 +123,7 @@ The indicators the crew read most, and a game mode that needs no enemies, so the
 | F5.1 | Realism tiers: Recruit, Veteran, Ace | Planned | F1.16, F1.17, F3.7, F3.8 | | Concept §7.2; pick the first-session default from play tests. With F4.6 cut there are no AI callouts, and the autoloader (F4.2) is parked, so Recruit differs by the gearbox, start-up and range hints |
 | F5.2 | Expert option: tillers as brakes, hand throttle for speed | Cut | F1.5 | | Taken into F1.16: Stick shift and Clutch drive by the accelerator (right trigger) with the tillers as brakes |
 | F5.4 | Per-role stats and crew ranks for a regular pair | Planned | F1.14 | | |
-| F5.5 | Ghost replay of the crew's best run | Planned | F5.3 | | |
+| F5.5 | Ghost replay of the crew's best run | Planned | F5.3b | | |
 | F5.6 | After-action replay with both views side by side | Planned | F5.5 | | |
 | F5.7 | Randomised targets, routes and weather | Planned | F1.7 | | Each random part gets a URL switch to turn it off in tests |
 | F5.8 | Scenario: escort a convoy | Planned | F3.3 | | |
