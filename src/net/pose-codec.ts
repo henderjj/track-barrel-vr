@@ -30,6 +30,8 @@ export const PacketType = {
   LoadingState: 8,
   /** Which way the driver's periscope looks, from the driver's page (F1.6, src/net/periscope-codec.ts). */
   PeriscopeState: 9,
+  /** Which way the gunner's periscope looks, from the gunner's page (F1.19, src/net/periscope-codec.ts). */
+  GunnerPeriscopeState: 10,
 } as const;
 
 /** One tracked pose: position (m) and rotation quaternion. */

@@ -1,87 +1,184 @@
 /**
- * The driver's periscope (F1.6, docs/periscope.md): where it stands in the
- * hull, its two-handled yoke, its view, and the sums shared by the model,
- * PeriscopeSystem and the tests. Engine-free.
+ * The crew's periscopes (F1.6, reworked by F1.19, docs/periscope.md): one
+ * for the driver in the hull roof ahead of their hatch, one for the gunner
+ * in the turret roof over the gunsight. Where each stands, its crank, its
+ * view, and the sums shared by the model, PeriscopeSystem and the tests.
+ * Engine-free.
  *
- * Hull space as in src/sim/cabin.ts. The periscope turns about an upright
- * through AXIS: its head on the roof (the window it looks out of) and the
- * yoke under the eyepiece turn together; the eyepiece, with the lens the
- * driver looks into, is fixed to the hull and faces them, as on a
- * panoramic sight. So the view swings as the yoke turns, while the eye
- * stays where it is.
+ * Each turns about an upright through its `axis`: the head on the roof (the
+ * window it looks out of) turns, while the eyepiece hanging under the roof,
+ * with the window the eye looks into, stays fixed and faces the seat, as on
+ * a panoramic sight. So the view swings while the eye stays where it is. The
+ * eyepiece sits just above the station's main view (the vision slit, the
+ * gunsight): sit up a little to look in, drop back to drive or shoot. A
+ * small crank on the eyepiece's right side turns it, a quarter of the way
+ * round for each turn of the crank.
  *
- * Periscope space (the yoke's, src/sim/mechanism.ts): the yoke's middle
- * at the origin, turning about +Y (positive anticlockwise seen from above,
- * so it looks left), its handles out along ±X, and the head looking along
- * -Z at 0, straight ahead.
+ * Frame space: hull space (src/sim/cabin.ts) for the driver's, turret space
+ * for the gunner's (it turns with the turret, so the gunner's periscope
+ * looks the same way relative to the gun however the turret turns). The
+ * periscope's angle is about +Y, positive anticlockwise seen from above (it
+ * looks left), 0 straight ahead along -Z.
  */
 
-import { GUN, HULL, SEATS } from './cabin.js';
-import type { YokeSpec } from './mechanism.js';
+import { DRIVER_HATCH, GUN, HULL, type SeatId, SEATS, TURRET } from './cabin.js';
+import type { Vec3, WheelSpec } from './mechanism.js';
 
 const DEG = Math.PI / 180;
 
-/**
- * The upright it turns about, hull x and z, m: 26 cm right of the driver's
- * eyes and 20 cm ahead, right of the vision slit and just behind the hood's
- * face, so the driver leans right a little to look in, hands still on the
- * tillers (docs/interior.md). The instrument box has the left.
- */
-export const AXIS = [SEATS.driver.eye[0] + 0.26, SEATS.driver.eye[2] - 0.2] as const;
-
-/** The yoke's middle, hull y, m: 27 cm under the driver's eyes, under the shoulders and low enough to read the gauges over. */
-export const YOKE_Y = SEATS.driver.eye[1] - 0.27;
+export type PeriscopeId = SeatId;
+export const PERISCOPE_IDS: readonly PeriscopeId[] = ['driver', 'gunner'];
 
 /**
- * The yoke: a handle out each side, 7 to 17 cm from the middle, turning all
- * the way round; quick in both hands, at 30°/s in one, with a tick every 15°.
+ * The eyepiece: a box hanging under the roof, with the window the player
+ * looks into on its back face: its width, height and depth, m. A neck rises
+ * from its top into a housing under the roof that runs forwards to the
+ * upright (the light comes down the upright and back along the housing, as
+ * through a panoramic sight's prisms), so the head on the roof can stand
+ * further forwards than the window.
  */
-export const PERISCOPE_YOKE: YokeSpec = {
-  inner: 0.07,
-  outer: 0.17,
-  min: -Infinity,
-  max: Infinity,
-  oneHandSpeed: 30 * DEG,
-  tickEvery: 15 * DEG,
-};
-
-/**
- * The fixed eyepiece: a box round the upright at eye height (its middle's
- * hull y; width, height and depth), with the window the driver looks into
- * on its back face and a rubber brow pad over it, m.
- */
-export const EYEPIECE_BOX = { y: SEATS.driver.eye[1] + 0.02, width: 0.2, height: 0.09, depth: 0.1 } as const;
+export const EYEPIECE_BOX = { width: 0.18, height: 0.09, depth: 0.08 } as const;
+/** The housing under the roof from the upright back to the eyepiece's neck: its width and depth under the roof, m. */
+export const RELAY = { width: 0.07, depth: 0.045 } as const;
 /** The window's size, m: wide enough for both eyes. */
 export const WINDOW = { width: 0.14, height: 0.05 } as const;
 /** The window's glass stands this far proud of the box's back face, m. */
 export const WINDOW_PROUD = 0.004;
 
-/** The window's middle in hull space, m: 15 cm ahead of the driver's eyes and 26 cm to their right. */
-export const LENS: readonly [number, number, number] = [AXIS[0], EYEPIECE_BOX.y, AXIS[1] + EYEPIECE_BOX.depth / 2 + WINDOW_PROUD];
-
-/** The head on the roof: its bottom (inside the roof plate) and top, hull y, and its width and depth, m. */
-export const HEAD = { bottom: HULL.roof + HULL.wall - 0.01, top: HULL.roof + HULL.wall + 0.08, width: 0.1, depth: 0.12 } as const;
-/** The head's camera, hull y, m: where its window looks out. */
-export const CAMERA_Y = (HEAD.bottom + HEAD.top) / 2 + 0.005;
-/** The head looks this far down from level, radians: the hull's nose at the bottom of the view, the ground from about 15 m out. */
-export const PITCH = -2 * DEG;
-/** The shaft between the yoke and the head, its radius, m. */
+/** The head on the roof: its width and depth, and how far it stands over the roof, m. */
+export const HEAD_SIZE = { width: 0.1, depth: 0.1, height: 0.08 } as const;
+/** The shaft between the eyepiece and the head, its radius, m. */
 export const SHAFT_RADIUS = 0.022;
+/** The head looks this far down from level, radians: the nose (or the turret's roof) at the bottom of the view, the ground from about 15 m out. */
+export const PITCH = -2 * DEG;
 
-/** How much bigger things look, by default, and the Practice menu's choices. */
-export const PERISCOPE_POWER = 2;
-export const PERISCOPE_POWERS = [1, 2, 3] as const;
-export type PeriscopePower = (typeof PERISCOPE_POWERS)[number];
+/**
+ * How much bigger things look: none. A Sherman's M6 periscopes were plain
+ * unity-power prisms (only the gunner's sight magnified: its telescope was
+ * 3×, as the gunsight here is), and at 1× the view moves with the head as
+ * the world outside does, which is easiest on the stomach while driving.
+ */
+export const PERISCOPE_POWER = 1;
 
-/** Half the true field across and up, radians: the eye sees ±40° by ±16° at 2×. */
+/** Half the field across and up, radians: ±20° by ±8°, the same to the eye at 1×. */
 export const HALF_FIELD_X = 20 * DEG;
 export const HALF_FIELD_Y = 8 * DEG;
-/** The picture's texels across; it is as many up as keep them square. */
-export const PICTURE_WIDTH = 768;
+/**
+ * The picture's texels across; it is as many up as keep them square. 1024
+ * over the 40° the eye sees is about 25 a degree, the Quest 3's display
+ * (John's note, 2026-11-07: 768 at 2× and 3× looked low-res).
+ */
+export const PICTURE_WIDTH = 1024;
 export const PICTURE_HEIGHT = Math.round((PICTURE_WIDTH * Math.tan(HALF_FIELD_Y)) / Math.tan(HALF_FIELD_X));
 
-/** The way the head looks at yoke angle `angle`, hull space, a unit vector, into `out`. */
-export function lookDirection(angle: number, out: [number, number, number]): [number, number, number] {
+/** How far the periscope turns for each turn of its crank, radians: a quarter of the way round. */
+export const TURN_PER_CRANK_TURN = 90 * DEG;
+/** Crank turns for each turn of the periscope. */
+export const CRANK_RATIO = (2 * Math.PI) / TURN_PER_CRANK_TURN;
+
+/**
+ * The crank on the eyepiece's right side: a small handwheel facing the
+ * seat with a knob standing out of it, turning for ever, a tick every 15°
+ * the periscope turns. Anticlockwise, as the player sees it, looks left.
+ */
+export const PERISCOPE_CRANK: WheelSpec = {
+  radius: 0.055,
+  grip: 'crank',
+  knobLength: 0.05,
+  min: -Infinity,
+  max: Infinity,
+  tickEvery: 15 * DEG * CRANK_RATIO,
+  perTurn: TURN_PER_CRANK_TURN / DEG,
+};
+
+/** The crank's hub from the window's middle (frame space), m: right of the eyepiece, a little higher, its face 2 cm ahead of the window. */
+export const CRANK_FROM_WINDOW: Vec3 = [0.19, 0.02, -0.02];
+
+export interface PeriscopeSpec {
+  id: PeriscopeId;
+  /** For menus and signs. */
+  label: string;
+  /** Its name in the mechanism kit and handUse (play-stats groups it by "periscope"). */
+  control: string;
+  /** What it is fixed to: the hull, or the turret (it turns with it). */
+  frame: 'hull' | 'turret';
+  /** The upright the head turns about, frame x and z, m (the eyepiece's x). */
+  axis: readonly [number, number];
+  /** The underside of the roof it stands in, and the roof's top, frame y, m. */
+  roof: number;
+  roofTop: number;
+  /** The window's middle, frame space, m. */
+  lens: Vec3;
+  /** The head on the roof: its bottom (inside the roof plate) and top, frame y, m. */
+  head: { bottom: number; top: number };
+  /** The head's camera, frame y, m: where its window looks out. */
+  cameraY: number;
+  /** The crank's hub, frame space, m. */
+  crank: Vec3;
+}
+
+function spec(
+  id: PeriscopeId,
+  label: string,
+  control: string,
+  frame: 'hull' | 'turret',
+  axis: readonly [number, number],
+  roof: number,
+  rise: number,
+  ahead: number,
+): PeriscopeSpec {
+  const roofTop = roof + HULL.wall;
+  const eye = SEATS[id].eye;
+  const lens: Vec3 = [axis[0], eye[1] + rise, eye[2] - ahead];
+  const head = { bottom: roofTop - 0.01, top: roofTop + HEAD_SIZE.height };
+  return {
+    id,
+    label,
+    control,
+    frame,
+    axis,
+    roof,
+    roofTop,
+    lens,
+    head,
+    cameraY: (head.bottom + head.top) / 2 + 0.005,
+    crank: [lens[0] + CRANK_FROM_WINDOW[0], lens[1] + CRANK_FROM_WINDOW[1], lens[2] + CRANK_FROM_WINDOW[2]],
+  };
+}
+
+/**
+ * The driver's: in the hull roof ahead of their hatch, over the vision slit
+ * (as a Sherman driver's periscope was in his hatch). Its window is 12 cm
+ * above the eyes and 15 cm ahead: sit up a little and lean in to look, sit
+ * back to see through the slit, which it stays clear of, behind the slit's
+ * brow pad. Its head stands on the roof just behind the hood's face, ahead
+ * of the hatch's lid standing open in front of the hole.
+ */
+export const DRIVER_PERISCOPE = spec('driver', "driver's", 'periscope', 'hull', [SEATS.driver.eye[0], -1.86], HULL.roof, 0.12, 0.15);
+
+/**
+ * The gunner's: in the turret roof ahead of their hatch, right over the
+ * gunsight's eyepiece (where a Sherman's gunner's and commander's periscopes
+ * were). Its window is 14 cm over the sight's: sit up from the sight to look
+ * round, drop back to it to shoot. It turns with the turret, so its angle is
+ * from the gun's line.
+ */
+export const GUNNER_PERISCOPE = spec('gunner', "gunner's", 'gunner-periscope', 'turret', [0.32, -0.49], TURRET.roof, 0.14, 0.196);
+
+export const PERISCOPES: Readonly<Record<PeriscopeId, PeriscopeSpec>> = { driver: DRIVER_PERISCOPE, gunner: GUNNER_PERISCOPE };
+
+/** The periscope's angle for a crank turned to `crank` radians (unwrapped). */
+export function periscopeAngle(crank: number): number {
+  return crank / CRANK_RATIO;
+}
+
+/** The crank angle that turns the periscope to `angle`. */
+export function crankFor(angle: number): number {
+  return angle * CRANK_RATIO;
+}
+
+/** The way the head looks at angle `angle`, frame space, a unit vector, into `out`. */
+export function lookDirection(angle: number, out: Vec3): Vec3 {
   const c = Math.cos(PITCH);
   out[0] = -Math.sin(angle) * c;
   out[1] = Math.sin(PITCH);
@@ -89,22 +186,17 @@ export function lookDirection(angle: number, out: [number, number, number]): [nu
   return out;
 }
 
-/** A point in periscope space, turned to yoke angle `angle`, in hull space, into `out`. */
-export function periscopeToHull(p: readonly number[], angle: number, out: [number, number, number]): [number, number, number] {
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
-  // As Three.js turns about +Y.
-  const x = p[0] * c + p[2] * s;
-  const z = -p[0] * s + p[2] * c;
-  out[0] = AXIS[0] + x;
-  out[1] = YOKE_Y + p[1];
-  out[2] = AXIS[1] + z;
+/**
+ * The middle of the crank's knob, frame space, with the crank at `crank`
+ * radians (0 the knob at the top, positive anticlockwise as the player
+ * sees it), into `out`.
+ */
+export function knobMiddle(s: PeriscopeSpec, crank: number, out: Vec3): Vec3 {
+  const r = PERISCOPE_CRANK.radius;
+  out[0] = s.crank[0] - r * Math.sin(crank);
+  out[1] = s.crank[1] + r * Math.cos(crank);
+  out[2] = s.crank[2] + 0.01 + (PERISCOPE_CRANK.knobLength - 0.01) / 2;
   return out;
-}
-
-/** The middle of handle `dir` (-1 left, 1 right) at yoke angle `angle`, hull space, into `out`. */
-export function handleMiddle(dir: -1 | 1, angle: number, out: [number, number, number]): [number, number, number] {
-  return periscopeToHull([(dir * (PERISCOPE_YOKE.inner + PERISCOPE_YOKE.outer)) / 2, 0, 0], angle, out);
 }
 
 /** The angle `angle` as a bearing from straight ahead, degrees, -180 to 180 (positive left). */
@@ -113,7 +205,7 @@ export function bearing(angle: number): number {
   return Math.round(a) === -180 ? 180 : a;
 }
 
-/** Where the periscope looks, for the menu: "ahead", "40° left", "behind". */
+/** Where a periscope looks, for the menu: "ahead", "40° left", "behind". */
 export function bearingText(angle: number): string {
   const b = Math.round(bearing(angle));
   if (Math.abs(b) <= 2) return 'ahead';
@@ -121,5 +213,23 @@ export function bearingText(angle: number): string {
   return `${Math.abs(b)}° ${b > 0 ? 'left' : 'right'}`;
 }
 
-/** The lowest the gun's barrel comes over the hull's roof with the gun level, hull y, m: the head stays under it. */
+/** Which way periscope `s` looks at `angle`, for the menu: the driver's from the hull's nose, the gunner's from the gun's line. */
+export function lookText(s: PeriscopeSpec, angle: number): string {
+  const text = bearingText(angle);
+  if (s.frame === 'hull') return text;
+  return text === 'ahead' ? 'along the gun' : text === 'behind' ? 'behind the turret' : `${text} of the gun`;
+}
+
+/** The menu's line: "The driver's periscope looks ahead, the gunner's 40° left of the gun". */
+export function periscopesLine(driverAngle: number, gunnerAngle: number): string {
+  return `The driver's periscope looks ${lookText(DRIVER_PERISCOPE, driverAngle)}, the gunner's ${lookText(GUNNER_PERISCOPE, gunnerAngle)}`;
+}
+
+/** The lowest the gun's barrel comes over the hull's roof with the gun level, hull y, m: the driver's head stays under it. */
 export const BARREL_UNDERSIDE = GUN.y - GUN.barrelRadius;
+
+/** The driver's hatch's open lid stands this far in front of the hole, its thickness, as cabin.scene-asset.ts draws it (m). */
+export const DRIVER_LID = { gap: 0.03, thickness: 0.05 } as const;
+
+/** The front of the driver's hatch's open lid, hull z: the driver's head on the roof stays ahead of it. */
+export const DRIVER_LID_FRONT = DRIVER_HATCH[1] - DRIVER_LID.gap - DRIVER_LID.thickness / 2;

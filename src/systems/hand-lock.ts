@@ -37,8 +37,10 @@ export const HoldKind = {
   Shell: 9,
   /** The breech lever's handle (LoadingSystem, F1.10). */
   BreechLever: 10,
-  /** Either handle of the driver's periscope's yoke (PeriscopeSystem, F1.6). */
+  /** The crank on the driver's periscope (PeriscopeSystem, F1.6; a two-handled yoke before F1.19). */
   Periscope: 8,
+  /** The crank on the gunner's periscope (PeriscopeSystem, F1.19). */
+  GunnerPeriscope: 14,
   /** The gunner's manual traverse crank and elevation handwheel (TurretSystem, F1.8). */
   TraverseCrank: 6,
   ElevationWheel: 7,

@@ -14,7 +14,7 @@ import {
   turretToHull,
 } from '../src/sim/interior.js';
 import { Lever, type Vec3, Wheel } from '../src/sim/mechanism.js';
-import { LENS } from '../src/sim/periscope.js';
+import { DRIVER_PERISCOPE } from '../src/sim/periscope.js';
 import { ELEVATION_WHEEL, STATION, TRAVERSE_CRANK, TRUNNION } from '../src/sim/turret.js';
 import { interiorUniforms, setCabinLook, setInteriorTurret } from '../src/scene-assets/cabin-light.js';
 import { createGun, createHull, createTurret, HATCH_LID_NAMES } from '../src/scene-assets/cabin.scene-asset.js';
@@ -55,9 +55,10 @@ describe('a Sherman-like front (docs/interior.md)', () => {
 
   it("brings what the driver looks through within a short lean, the tillers in easy reach from the seat", () => {
     const [ex, ey, ez] = SEATS.driver.eye;
-    // The slit 30 cm ahead (it was 80), the periscope's window 15 cm ahead and 26 cm to the right.
+    // The slit 30 cm ahead (it was 80), the periscope's window 15 cm ahead and 12 cm up (F1.19; 26 cm to the right before).
+    const lens = DRIVER_PERISCOPE.lens;
     expect(ez - VISION_SLIT.z).toBeCloseTo(0.3, 6);
-    expect(Math.hypot(LENS[0] - ex, LENS[2] - ez)).toBeLessThan(0.32);
+    expect(Math.hypot(lens[0] - ex, lens[2] - ez)).toBeLessThan(0.32);
     // From the seat, without leaning, the tillers' handles are where seated hands rest with the elbows bent, at
     // either end of their travel: full forwards within a short reach of the shoulder (John's headset check).
     for (const id of ['tillerLeft', 'tillerRight'] as const) {
