@@ -70,6 +70,7 @@ Nothing new goes over the unreliable channel.
 
 - Tracked hands still have no trigger gesture, so they can load but not fire (from F1.10).
 - The stats count only during a range run (and the visit row). If free driving turns out to be where people get queasy, a "session" mode could count without a run.
+- Play testing (2026-11-07) found comfort is not an issue: the slit, the periscope and the sights show only a small field of view, so little of what the eyes see moves. The vignette and reduced bumps stay as options. Revisit them if driving head out of the hatch comes in (F2.1), where the whole view would move.
 
 ## Headset check
 
