@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 # The tests run as parallel jobs, each on its own runner: quick checks, the
-# emulated-headset test and the two-player network test. The `check` job at
+# emulated-headset test (in three parts) and the two-player network test. The `check` job at
 # the end gates on all of them; it is the status check the main ruleset
 # requires, so keep its name. See docs/testing.md for how to run each part.
 jobs:
@@ -113,13 +113,19 @@ jobs:
 
   xr:
     # The emulated-headset test drives an emulated Quest 3 through the IWSDK
-    # dev runtime; it is the longest job, so it starts as soon as it can.
+    # dev runtime. The runners draw it in software at a frame every 0.5 to
+    # 1 s, so all of it took about 36 minutes: it runs in three parts of
+    # about 12 minutes each, on three runners at once (XR_PART in
+    # scripts/xr-smoke-test.mjs). One part failing doesn't stop the others.
     needs: plan
     if: needs.plan.outputs.browser == 'true'
     runs-on: ubuntu-latest
-    # About 35 minutes: the runners draw a frame every 0.5 to 1 s in software.
-    # Runs reach 36 minutes and every feature adds steps: leave headroom.
-    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3]
+    name: xr (part ${{ matrix.part }})
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -131,6 +137,7 @@ jobs:
       - name: Emulated-headset test
         run: npm run test:xr
         env:
+          XR_PART: ${{ matrix.part }}
           # Runners have a display device (/dev/dri/card1) but no GPU. IWSDK
           # takes any such device for a GPU and launches Chromium on hardware
           # GL, which dies on reloads and screenshots. Render in software.
@@ -149,7 +156,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: xr-artifacts
+          name: xr-artifacts-${{ matrix.part }}
           path: artifacts/*.png
           if-no-files-found: ignore
 

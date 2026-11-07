@@ -95,7 +95,13 @@
  * Add a numbered step for each feature you add (see the building skill in
  * .claude/skills/), with a screenshot where it helps a review.
  *
+ * CI runs the steps in three parts at once, on three runners: part 1 is
+ * steps 0 to 6c, part 2 is 6d to 6f (the driver and the turret), part 3 is
+ * 6g to 6m. Each part ends with step 7. Put a new feature's steps in
+ * partOne, partTwo or partThree, whichever is shortest on CI.
+ *
  * Usage: npm run test:xr   (starts the dev runtime headless if needed)
+ *        XR_PART=2 npm run test:xr   (only part 2, as one CI runner does)
  * Exit code 0 = all checks passed. Screenshots go to artifacts/.
  */
 
@@ -293,6 +299,19 @@ function elementPosition(panel, id) {
 
 /** Set once XR has started, so the app's frame times can be read. */
 let appRunning = false;
+/** When the test started, for the console and frame-rate logs since then. */
+let startedAt = Date.now();
+
+/**
+ * The test comes in three parts of about the same length, which CI runs on
+ * three runners at once (XR_PART=1, 2 or 3); with no XR_PART all three run
+ * one after another. Parts 2 and 3 start the game with Play solo
+ * (playSolo) and every part ends with lastChecks. A new feature's steps go
+ * in the part that is shortest on CI.
+ */
+const XR_PART = Number(process.env.XR_PART ?? 0);
+if (![0, 1, 2, 3].includes(XR_PART)) throw new Error(`XR_PART is 1, 2 or 3, not ${process.env.XR_PART}`);
+const inPart = (n) => XR_PART === 0 || XR_PART === n;
 
 /** The slowest frame a ray click has had to wait for so far, to log when it grows. */
 let slowestClickFrameMs = 400;
@@ -552,6 +571,29 @@ async function calibrationStep() {
   await waitFor('the seated eyes again', () => calState().step === 'reach', 8000).catch(() => null);
   evalInApp('(window.__calibration.skip(), true)');
   await waitFor('calibration finished', () => calState().step === 'off', 6000).catch(() => null);
+  await sleep(300);
+}
+
+/**
+ * Parts 2 and 3 start the game the quick way (part 1 checks each of these):
+ * Play solo on the start screen, then the eyes taken at the headset's height
+ * and the reach skipped, as part 1 leaves them.
+ */
+async function playSolo() {
+  await waitFor('the start screen in front of the player', () => {
+    const s = evalInApp('({ visible: window.__startScreen.visible, at: window.__startScreen.position() })');
+    return s.visible && s.at[2] < -0.5;
+  }, 10000).catch(() => null);
+  await rayClick(elementPosition('start-panel', 'start-solo'));
+  const solo = await waitFor('solo play', () => {
+    const s = evalInApp('({ mode: window.__startScreen.mode, visible: window.__startScreen.visible })');
+    return s.mode === 'solo' && !s.visible && s;
+  }, 10000).catch(() => evalInApp('({ mode: window.__startScreen.mode, visible: window.__startScreen.visible })'));
+  check('Play solo starts the game', solo.mode === 'solo' && !solo.visible, JSON.stringify(solo));
+  iwsdk(['xr', 'set-device-state'], {});
+  await waitFor('the eyes taken', () => calState().step === 'reach', 15000).catch(() => null);
+  evalInApp('(window.__calibration.skip(), true)');
+  await waitFor('calibration finished', () => calState().step === 'off', 8000).catch(() => null);
   await sleep(300);
 }
 
@@ -2142,12 +2184,16 @@ async function tankSounds() {
   const audio = () => evalInApp('window.__audio.state()');
   const before = audio();
   const h = before.heard;
-  check('The earlier steps were heard: gears going in, a shell rammed, the breech closing, the shot and its casing, the engine catching and stalling',
-    h.clunk >= 1 && h.ram >= 1 && h.breech >= 1 && h.shot >= 1 && h.casing >= 1 && h.catch >= 1 && h.stall >= 1,
+  // The drive's sounds (gears, the engine catching and stalling) are
+  // checked at the end of part 2.
+  check('Loading and firing were heard: a shell rammed, the breech closing, the shot and its casing',
+    h.ram >= 1 && h.breech >= 1 && h.shot >= 1 && h.casing >= 1,
     `${Object.entries(h).map(([id, n]) => `${id} ${n}`).join(', ')}; audio ${before.context}`);
 
   iwsdk(['xr', 'set-device-state'], {});
-  evalInApp("(window.__seats.ask('driver'), window.__drive.reset(), true)");
+  // Warm, so the engine is running whichever steps ran before (part 3 on
+  // CI never starts it by hand).
+  evalInApp("(window.__seats.ask('driver'), window.__drive.reset('warm'), true)");
   await sleep(400);
   const idle = audio();
   evalInApp('(window.__drive.set({ left: 1, right: 1, gear: 1, throttle: 0 }), true)');
@@ -2360,7 +2406,7 @@ async function driverStation() {
 async function main() {
   mkdirSync(`${ROOT}/artifacts`, { recursive: true });
   await ensureRuntime();
-  const startedAt = Date.now();
+  startedAt = Date.now();
 
   try {
     iwsdk(['browser', 'reload'], {});
@@ -2415,6 +2461,19 @@ async function main() {
   appRunning = true;
   check('XR session active', iwsdk(['xr', 'status'], {}).result.sessionActive);
   await sleep(500);
+  if (inPart(1)) await partOne();
+  else await playSolo();
+  if (inPart(2)) await partTwo();
+  if (inPart(3)) await partThree();
+  await lastChecks();
+}
+
+/**
+ * Part 1: the start screen and menu, calibration, the hands, the seats and
+ * eye height, the frame rate, the gunsight spike, the lever test, the
+ * mechanism kit, tracked hands and riding the tank.
+ */
+async function partOne() {
   await startScreenAndMenu();
   await calibrationStep();
   const ownHands = evalInApp('({ shown: window.__ownHands.shown(), right: window.__ownHands.position("right") })');
@@ -2641,7 +2700,10 @@ async function main() {
 
   // 6c. Spike S2: riding the tank.
   await ridingTheTank();
+}
 
+/** Part 2: driving the tank, the driver's station and controls, and laying the gun. */
+async function partTwo() {
   // 6d. The tank drive (F1.4).
   await drivingTheTank();
 
@@ -2652,6 +2714,19 @@ async function main() {
   // 6f. The turret (F1.8).
   await layingTheGun();
 
+  // The driving steps' sounds (the rest are checked in part 3 with the
+  // tank's sounds).
+  const heard = evalInApp('window.__audio.state().heard');
+  check('The drive was heard: gears going in, the engine catching and stalling',
+    heard.clunk >= 1 && heard.catch >= 1 && heard.stall >= 1,
+    Object.entries(heard).map(([id, n]) => `${id} ${n}`).join(', '));
+}
+
+/**
+ * Part 3: loading and firing, the test range, the gunsight, the tank's
+ * sounds, the range run, the driver's periscope, and comfort and stats.
+ */
+async function partThree() {
   // 6g. Loading and firing (F1.10).
   await loadingAndFiring();
 
@@ -2670,7 +2745,10 @@ async function main() {
 
   // 6m. Comfort and stats (F1.14).
   await comfortAndStats();
+}
 
+/** Every part ends with these: the perf log, PC VR without the frame-rate API, and the console. */
+async function lastChecks() {
   // 7. Perf log.
   const rows = evalInApp('window.__perf.recorder.rows.length');
   check('Perf CSV is recording', rows > 2, `${rows - 1} rows`);
