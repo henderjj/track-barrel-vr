@@ -45,7 +45,7 @@ The running record of where the game is and what comes next, so anyone (or any C
 ## Next
 
 - Finish Phase 1: the periscopes for both crew (#62, replacing F1.6), the seated avatars (F1.1b), and trying the practice crewmate (F1.13) and a range run's stats and CSV (F1.14).
-- Then Phase 2: the tank biathlon (F5.3) first, as it needs only the range run, then the turret position dial, the hull direction in the sight, the firing lamp and the callout card. Each feature is built in a thread of its own once the ones it depends on have merged.
+- Phase 2, planned with John on 2026-11-07 in [phase-2-plan.md](phase-2-plan.md): six threads in two waves, at most three at once. First the biathlon course (F5.3a), the driver's turret dial (F2.3) and the callout card (F2.6); then the biathlon race (F5.3b) after the course, the firing lamp (F2.5) after the dial, and the hull direction in the sight (F2.4) after the periscope fix. No new packets or HoldKinds; HoldKind 15 is the last free one.
 - The roadmap's Ideas list game modes that could follow each combat feature in Phase 3 (a gunnery table, right round, run the gauntlet, a duel, a bad day), waiting on John to give them a phase.
 - Tracked hands can load but not fire yet (no trigger gesture).
 
