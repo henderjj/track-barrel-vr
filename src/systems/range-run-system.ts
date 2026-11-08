@@ -54,6 +54,14 @@ const AT_START = 0.5;
 const STILL = 0.1;
 /** How long a race's note (a line shot, a loop driven, the finish) stays on the sign, s. */
 const NOTE_SECONDS = 4;
+/**
+ * While a run's clock runs, the host sends it again at least this often, s,
+ * so the guest's clock (run on by its own frames between the host's words)
+ * can't drift from the host's: a page's slow frames are cut to 0.25 s each,
+ * so the two pages lose different amounts of time when they stutter, and a
+ * race runs about nine minutes.
+ */
+const RESYNC_SECONDS = 1;
 
 type RunAsk = 'start' | 'stop' | 'assist';
 const ASKS: readonly RunAsk[] = ['start', 'stop', 'assist'];
@@ -189,8 +197,8 @@ interface RangeRunDebug {
  *
  * The host keeps the run (src/sim/range-run.ts), as it decides hits
  * (FiringSystem's decidedListeners), and sends it as a reliable `run` event
- * whenever it changes; the guest copies it and runs the clock on between
- * events, on the shared clock. A guest's Start and Stop ask the host
+ * whenever it changes (and each second while the clock runs); the guest
+ * copies it and runs the clock on between events, on the shared clock. A guest's Start and Stop ask the host
  * (`run-ask`). The clock stands still while the crewmate is away. Ready to
  * fire parks the tank and has the gunner's page lay the gun with `aimAt`
  * and load it (`range-ready` when the button was pressed on the other
@@ -220,6 +228,8 @@ export class RangeRunSystem extends createSystem({}) {
   /** What the sign was last drawn for: the countdown's number, 4 for Go!, 5 for the finish, 0 for none. */
   private signState = -1;
   private sentVersion = -1;
+  /** When the host last sent the run (this.time), for RESYNC_SECONDS. */
+  private sentAt = 0;
   private wasConnected = false;
   private seenId = 0;
   private wasDone = false;
@@ -410,9 +420,11 @@ export class RangeRunSystem extends createSystem({}) {
       run.course(shownCourse());
       run.step(dt);
       const joined = netLink.connected && !this.wasConnected;
-      if (netLink.connected && (joined || run.version !== this.sentVersion)) {
+      const resync = run.s.phase === 'running' && !run.s.paused && this.time - this.sentAt >= RESYNC_SECONDS;
+      if (netLink.connected && (joined || resync || run.version !== this.sentVersion)) {
         netLink.sendEvent(runEvent(run.s, performance.now()));
         this.sent++;
+        this.sentAt = this.time;
       }
       this.sentVersion = run.version;
     } else {
