@@ -14,6 +14,7 @@ import {
   GUN_STOP_MARGIN,
   HEAD,
   LID_ASIDE,
+  periscopeLowered,
   SEAT_LEVER_PULL,
   SEAT_LEVER_RESET,
   seatAs,
@@ -32,12 +33,12 @@ const DEG = Math.PI / 180;
 const hand = (x: number, y: number, z: number): HandInput => ({ fist: [x, y, z], across: [1, 0, 0], tip: null, trigger: 0, tracked: false });
 
 describe('the convoy position (docs/convoy-seat.md)', () => {
-  it('puts the eyes 10 cm over the roof, in the middle of the hatch', () => {
+  it('puts the eyes 5 cm over the roof, in the middle of the hatch', () => {
     const eye = CONVOY_SEAT.eye;
-    expect(eye[1] - (HULL.roof + HULL.wall)).toBeCloseTo(0.1, 6);
-    // About a Sherman seat's travel and a half: our roof is higher over the eyes than a Sherman's.
-    expect(CONVOY_RAISE).toBeGreaterThan(0.35);
-    expect(CONVOY_RAISE).toBeLessThan(0.45);
+    expect(eye[1] - (HULL.roof + HULL.wall)).toBeCloseTo(0.05, 6);
+    // A little more than a Sherman seat's 25 cm: our roof plate is drawn thick.
+    expect(CONVOY_RAISE).toBeGreaterThan(0.25);
+    expect(CONVOY_RAISE).toBeLessThan(0.36);
     const [hx0, hz0, hx1, hz1] = DRIVER_HATCH;
     expect(eye[0]).toBeCloseTo((hx0 + hx1) / 2, 6);
     expect(eye[2]).toBeGreaterThan(hz0 + 0.2);
@@ -74,7 +75,9 @@ describe('the convoy position (docs/convoy-seat.md)', () => {
     // Lying flat beside the hole, its top under the eyes, nothing standing ahead of them.
     expect(LID_ASIDE.y1).toBeLessThan(CONVOY_SEAT.eye[1]);
     expect(LID_ASIDE.x1).toBeLessThan(DRIVER_HATCH[0]);
-    expect(DRIVER_PERISCOPE.head.top).toBeLessThan(CONVOY_SEAT.eye[1] + 0.01);
+    // The periscope's head, lowered, stands under the eyes.
+    const head = DRIVER_PERISCOPE.head;
+    expect(head.top - periscopeLowered(head)).toBeLessThan(CONVOY_SEAT.eye[1] - 0.03);
   });
 
   it('fades out, moves the seat while black, and fades back in', () => {
@@ -183,7 +186,7 @@ describe('the convoy grips', () => {
     const axis: Vec3 = [0, 0, 0];
     convoy.lock(1, onGrip.fist, point, axis);
     expect(axis).toEqual([0, 1, 0]);
-    expect(point[1]).toBeGreaterThan(plainAt[1] + 0.3);
+    expect(point[1]).toBeGreaterThan(plainAt[1] + 0.2);
   });
 });
 

@@ -5,10 +5,10 @@
  * convoy position", FM 17-67, 1944). Engine-free, so it is unit tested.
  *
  * The player sits in a real chair, so raising the seat lowers the whole tank
- * round them, and the controls with it. In our tank the roof is 24 cm over the
- * driver's eyes (docs/crew-heights.md), so the eyes must rise about 42 cm to
- * see over the hatch's rim, which would leave the tillers below the knees,
- * out of a seated arm's reach. So the tillers and the gear lever get convoy
+ * round them, and the controls with it. The roof is 20 cm over the driver's eyes
+ * (docs/crew-heights.md) under an 8 cm plate, so the eyes rise 33 cm to see
+ * over the hatch's rim, which would leave the tillers down by the knees,
+ * past where a seated driver's hands rest. So the tillers and the gear lever get convoy
  * grips: a rod up from each handle to a grip where the hands rest seated,
  * moving with the handle (John picked this, 2026-11-08). The hand throttle,
  * the parking brake and the switch strip stay where they are: set them before
@@ -18,7 +18,7 @@ import { DRIVER_HATCH, GUN, HULL, type Seat, type SeatId, SEATS, TURRET } from '
 import type { LeverSpec, Vec3 } from './mechanism.js';
 
 /** How far the eyes stand over the roof's top in the convoy position, m: enough to see the road over the hood. */
-export const CONVOY_EYES_OVER_ROOF = 0.1;
+export const CONVOY_EYES_OVER_ROOF = 0.05;
 
 /** The seat's rise to the convoy position, m: the eyes from under the roof to `CONVOY_EYES_OVER_ROOF` over its top. */
 export const CONVOY_RAISE = HULL.roof + HULL.wall + CONVOY_EYES_OVER_ROOF - SEATS.driver.eye[1];
@@ -190,9 +190,10 @@ export function periscopeLowered(head: { bottom: number; top: number }): number 
 export const LID_ASIDE = (() => {
   const [hx0, hz0, hx1, hz1] = DRIVER_HATCH;
   const top = HULL.roof + HULL.wall;
-  const gap = 0.03;
-  const lift = 0.03;
-  const thickness = 0.05;
+  // Far enough out that its post is clear of a raised head at the head box's front-left corner.
+  const gap = 0.06;
+  const lift = 0.015;
+  const thickness = 0.03;
   return {
     x0: hx0 - gap - (hx1 - hx0),
     x1: hx0 - gap,

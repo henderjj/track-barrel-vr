@@ -2844,7 +2844,7 @@ async function theConvoySeat() {
     const hand = device.replace('controller-', '');
     await waitFor(`the ${hand} hand on the ${id}`, () => station().heldBy[id] === hand, 3000, 100).catch(() => {});
   };
-  const roofTop = 1.51 + 0.08;
+  const roofTop = 1.47 + 0.08;
 
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
@@ -2855,12 +2855,12 @@ async function theConvoySeat() {
   const up = await waitFor('the seat raised and the view clear', () => {
     const c = convoy();
     const s = seated();
-    return c.shown && s.fade === 0 && s.head[1] > roofTop + 0.05 && { c, s };
+    return c.shown && s.fade === 0 && s.head[1] > roofTop + 0.03 && { c, s };
   }, 10000).catch(() => ({ c: convoy(), s: seated() }));
   const looks = evalInApp('({ lid: window.__interior.state().lids.driver, scope: window.__periscope.driver.head().at, eye: window.__seats.eye("driver") })');
   check('Practice → Head out raises the driver\'s seat: the eyes come up over the roof in the hatch, the lid lies open, the periscope is down, the view clear',
-    up.c.shown && up.s.mine === 'driver' && up.s.head[1] > roofTop + 0.05 && up.s.fade === 0 && looks.lid && looks.scope[1] < roofTop + 0.04 &&
-      looks.eye[1] - downEye[1] > 0.35 && flatGap(up.s.head, looks.eye) < 0.08,
+    up.c.shown && up.s.mine === 'driver' && up.s.head[1] > roofTop + 0.03 && up.s.fade === 0 && looks.lid && looks.scope[1] < roofTop + 0.04 &&
+      looks.eye[1] - downEye[1] > 0.28 && flatGap(up.s.head, looks.eye) < 0.08,
     `seat ${up.s.mine}, head ${fmt(up.s.head)}, eye point ${fmt(looks.eye)} (down ${fmt(downEye)}), fade ${up.s.fade}, lid open ${looks.lid}, periscope head at ${looks.scope[1].toFixed(3)}`);
   iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([looks.eye[0], looks.eye[1] - 0.4, looks.eye[2] - 6]) });
   await sleep(300);

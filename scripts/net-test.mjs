@@ -340,7 +340,7 @@ async function seatChecks(host, guest, label, hostSeat = 'driver') {
     const seen = await waitFor(`the gunner's page to draw the driver's seat ${up ? 'raised' : 'lowered'}`, async () => {
       const g = await raisedOnGunner();
       const lift = g.legs ? g.legs[1] - HIPS.driver[1] : NaN;
-      return g.crew === up && (up ? lift > 0.35 && g.lid : Math.abs(lift) < 0.01) ? g : null;
+      return g.crew === up && (up ? lift > 0.28 && g.lid : Math.abs(lift) < 0.01) ? g : null;
     }, 8000).catch(() => null);
     check(`The driver ${up ? 'raising' : 'lowering'} their seat to ${up ? 'drive head out' : 'drive closed down'}: the gunner's page draws them ${up ? 'raised, their lid open' : 'back in the seat'} (${label})`,
       seen !== null, JSON.stringify(seen ?? await raisedOnGunner()));
