@@ -979,8 +979,12 @@ async function botChecks(browser) {
     holdsSeen.add(holds & 15);
     holdsSeen.add(holds >> 4);
   };
+  // F2.5: the player's (the driver's) firing lamp, from the bot's loading and its hands' hold kinds.
+  const lampSeen = { litByHand: false, flashes: (await me.page.evaluate(() => window.__firingLamp.state())).flashes };
   const fired = await waitFor('the bot to hit a target', async () => {
     await crewHolds();
+    const lamp = await me.page.evaluate(() => window.__firingLamp.state());
+    if (lamp.look === 'lit' && lamp.loaded && lamp.handOnTrigger && !lamp.practice) lampSeen.litByHand = true;
     const records = await me.page.evaluate(() => window.__firing.records());
     return records.find((r) => r.id % 2 === 1 && r.kind === 'target') ?? null;
   }, 120000).catch(() => null);
@@ -988,6 +992,12 @@ async function botChecks(browser) {
   check('Practice crewmate: as gunner it loads, lays on the nearest target and hits it, the host deciding',
     fired !== null && fired.target === 0 && bot1.loads >= 1,
     fired ? `"${fired.line}", bot ${JSON.stringify(bot1)}` : JSON.stringify({ bot: bot1, mine: await me.page.evaluate(() => window.__firing.records()) }));
+  const lampAfter = await waitFor("the driver's lamp to flash at the bot's shot", async () => {
+    const lamp = await me.page.evaluate(() => window.__firingLamp.state());
+    return lamp.flashes > lampSeen.flashes ? lamp : null;
+  }, 5000).catch(() => me.page.evaluate(() => window.__firingLamp.state()));
+  check("Firing lamp: the driver's lamp lights while the crewmate gunner's gun is loaded with its hand on a trigger, and flashes at its shot",
+    lampSeen.litByHand && lampAfter.flashes > lampSeen.flashes, `lit by its hand ${lampSeen.litByHand}, ${JSON.stringify(lampAfter)}`);
   // HoldKinds: 7 elevation wheel, 9 shell, 10 breech lever, 12 power grip.
   const seenAll = [7, 9, 10, 12].every((k) => holdsSeen.has(k));
   check('Practice crewmate: the player sees its hands on the elevation wheel, a shell, the breech lever and the power grip',
@@ -1049,6 +1059,34 @@ async function botChecks(browser) {
   }, 30000).catch(() => null);
   check('Practice crewmate: "Driver, left" — at a halt it pivots 45° left', turned !== null,
     `heading ${(((turned ?? await tank()).heading - heading) * 180 / Math.PI).toFixed(1)}° from ${(heading * 180 / Math.PI).toFixed(1)}°`);
+
+  // F2.5: the player (gunner) laid and loaded by Ready to fire, the bot advancing; the player's hand on the
+  // power grip lights the firing lamp on the bot's page too, and it holds the tank steady until the hand lets go.
+  await me.page.evaluate(() => window.__rangeRun.ready(0));
+  await waitFor('the player\'s gun loaded', async () => (await me.page.evaluate(() => window.__firingLamp.state())).loaded, 15000).catch(() => null);
+  await me.page.evaluate(() => window.__gameMenu.click('call-advance'));
+  await waitFor('the bot to drive off', async () => (await tank()).speed > 1, 30000).catch(() => null);
+  await me.page.evaluate(() => window.__firingLamp.holdGrip(true));
+  const steady = await waitFor('the bot to hold the tank steady for the gun', async () => {
+    const [t, lamp, botLamp, driving] = await Promise.all([
+      tank(),
+      me.page.evaluate(() => window.__firingLamp.state()),
+      bot.page.evaluate(() => window.__firingLamp.state()),
+      bot.page.evaluate(() => window.__bot.driving),
+    ]);
+    return t.speed === 0 && lamp.look === 'lit' && botLamp.look === 'lit' && driving.steady ? { lamp, botLamp, driving } : null;
+  }, 20000).catch(() => null);
+  check('Firing lamp: with the gunner\'s hand on the grip of a loaded gun, the lamp lights on both pages and the crewmate driver halts and holds steady',
+    steady !== null && !steady.lamp.practice && steady.botLamp.handOnTrigger,
+    JSON.stringify(steady ?? await Promise.all([tank(), me.page.evaluate(() => window.__firingLamp.state()), bot.page.evaluate(() => ({ lamp: window.__firingLamp.state(), driving: window.__bot.driving }))])));
+  await me.page.evaluate(() => window.__firingLamp.holdGrip(false));
+  const movesOn = await waitFor('the bot to drive on once the lamp goes out', async () => {
+    const [t, driving] = await Promise.all([tank(), bot.page.evaluate(() => window.__bot.driving)]);
+    return t.speed > 1 && !driving.steady ? { t, driving } : null;
+  }, 20000).catch(() => null);
+  check('Firing lamp: the hand off the grip puts the lamp out and the crewmate drives on as it was told', movesOn !== null,
+    JSON.stringify(movesOn ?? await Promise.all([tank(), bot.page.evaluate(() => ({ lamp: window.__firingLamp.state(), driving: window.__bot.driving }))])));
+  await me.page.evaluate(() => window.__gameMenu.click('call-halt'));
   await me.page.evaluate(() => window.__drive.reset());
 
   const errors = [...me.errors, ...bot.errors].filter((m) => !m.includes('net::ERR_') && !m.includes('Failed to load resource'));

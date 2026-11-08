@@ -32,6 +32,7 @@ import { DOME_LAMPS } from '../sim/interior.js';
 import { binParts, boardParts, BREECH_HOLE, breechFittings, rackParts } from './loading.scene-asset.js';
 import { driverClockParts, gunnerClockParts } from './range-run.scene-asset.js';
 import { turretDialParts } from './turret-dial.scene-asset.js';
+import { firingLampParts, lampRepeaterParts } from './firing-lamp.scene-asset.js';
 import { litInside } from './cabin-light.js';
 
 /**
@@ -259,6 +260,8 @@ function hullParts(): Part[] {
   parts.push(...driverClockParts());
   // The turret position dial's case on the hood's face, right of the slit (F2.3).
   parts.push(...turretDialParts());
+  // The firing lamp's bezel on the slit frame's top bar (F2.5).
+  parts.push(...firingLampParts());
   // The rest of a Sherman's front compartment (docs/interior.md).
   parts.push(...hullDetailParts());
 
@@ -544,6 +547,8 @@ function turretParts(): Part[] {
   parts.push(...rackParts(), ...binParts(), ...boardParts());
   // The range run's clock over the loading board (F1.11).
   parts.push(...gunnerClockParts());
+  // The firing lamp's repeater's bezel on the front wall, right of the gunsight (F2.5).
+  parts.push(...lampRepeaterParts());
   // The radio in the turret's bustle and the dome lamp's housing (docs/interior.md).
   parts.push(...turretDetailParts());
   return parts;

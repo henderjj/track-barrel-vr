@@ -14,6 +14,7 @@ import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-
 import { goUpTheRange, rangeStatus } from './range-system.js';
 import { readyToFire, runStatus, shownRun, startRun, stopRun } from './range-run-system.js';
 import { turretToHour } from './turret-dial-system.js';
+import { watchTheLamp } from './firing-lamp-system.js';
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
 import { seating } from './seating.js';
@@ -206,7 +207,8 @@ interface GameMenuDebug {
  *   seat, drive the tank or put it back at its start, lay the gun or turn
  *   the turret forward or to 3 o'clock for the driver's dial, load and
  *   fire, play each of the tank's sounds, go
- *   up the range, start or stop a range run, ready to fire on each target);
+ *   up the range, start or stop a range run, ready to fire on each target
+ *   or from the driver's seat to watch the firing lamp);
  * - Sights: the gunsight's and the periscope's shortcuts and render choices;
  * - Test rigs: ride the tank (spike S2), the lever test and the mechanism kit;
  * - Back to start screen (leaves any crew) and Exit VR.
@@ -314,6 +316,12 @@ export class GameMenuSystem extends createSystem({}) {
         readyToFire(i);
       });
     }
+    ui.on('menu-ready-lamp', () => {
+      // The firing lamp (F2.5): laid and loaded with the player in the driver's seat; alone, the gun fires by itself.
+      this.setOpen(false);
+      stopRide();
+      watchTheLamp();
+    });
     ui.on('menu-turret-go', () => {
       this.setOpen(false);
       stopRide();
