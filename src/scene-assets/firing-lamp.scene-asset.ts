@@ -19,7 +19,7 @@ function bezelParts(p: LampPlace): Part[] {
   return [{ geometry: drum, color: BEZEL, position: [p.x, p.y, p.z + p.proud - length / 2] }];
 }
 
-/** The driver's firing lamp's bezel on the slit frame's top bar, hull space, for the hull's mesh. */
+/** The driver's firing lamp's bezel on the hood's face beside the turret dial, hull space, for the hull's mesh. */
 export function firingLampParts(): Part[] {
   return bezelParts(FIRING_LAMP);
 }
