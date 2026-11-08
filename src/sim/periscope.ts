@@ -54,7 +54,7 @@ export const WINDOW_PROUD = 0.004;
  * it lower and nearer, 5 to 9 cm above the eye point instead of 12 to 14,
  * while the box stays as high, clear of the slit's view and the gunsight.
  */
-export const EYEPIECE_TILT = 30 * DEG;
+export const EYEPIECE_TILT = 15 * DEG;
 
 /** The head on the roof: its width and depth, and how far the driver's stands over the roof, m (under the gun as it sweeps over the hull). */
 export const HEAD_SIZE = { width: 0.1, depth: 0.1, height: 0.08 } as const;
@@ -171,7 +171,7 @@ function spec(
  * slit, which it stays clear of, behind the slit's brow pad. Its head stands on the roof just behind the hood's face, ahead
  * of the hatch's lid standing open in front of the hole.
  */
-export const DRIVER_PERISCOPE = spec('driver', "driver's", 'periscope', 'hull', [SEATS.driver.eye[0], -1.86], HULL.roof, 0.1, 0.135);
+export const DRIVER_PERISCOPE = spec('driver', "driver's", 'periscope', 'hull', [SEATS.driver.eye[0], -1.86], HULL.roof, 0.09, 0.135);
 
 /**
  * The gunner's: in the turret roof ahead of their hatch, right over the
@@ -182,7 +182,7 @@ export const DRIVER_PERISCOPE = spec('driver', "driver's", 'periscope', 'hull', 
  * never both open). It turns with the turret, so its angle is
  * from the gun's line.
  */
-export const GUNNER_PERISCOPE = spec('gunner', "gunner's", 'gunner-periscope', 'turret', [0.32, -0.49], TURRET.roof, 0.12, 0.196, GUNNER_HEAD_HEIGHT);
+export const GUNNER_PERISCOPE = spec('gunner', "gunner's", 'gunner-periscope', 'turret', [0.32, -0.49], TURRET.roof, 0.125, 0.196, GUNNER_HEAD_HEIGHT);
 
 export const PERISCOPES: Readonly<Record<PeriscopeId, PeriscopeSpec>> = { driver: DRIVER_PERISCOPE, gunner: GUNNER_PERISCOPE };
 

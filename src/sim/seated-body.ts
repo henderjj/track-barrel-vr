@@ -22,19 +22,25 @@
 
 export type Vec3 = [number, number, number];
 
-/** The neck's base (between the shoulders) from the eyes, in the head's frame (face towards -Z), m. */
-export const NECK_BASE: readonly [number, number, number] = [0, -0.2, 0.09];
+/**
+ * The neck's base (between the shoulders) from the eyes, in the head's frame (face towards -Z), m: the shoulders
+ * stand 20 cm under the eyes, as a seated adult's do (docs/crew-heights.md).
+ */
+export const NECK_BASE: readonly [number, number, number] = [0, -0.16, 0.08];
 /** The neck's top, from the eyes, in the head's frame, m: inside the skull, behind the jaw, so no gap shows as the neck turns. */
 export const SKULL_BASE: readonly [number, number, number] = [0, -0.04, 0.07];
 /** Share of the head's nod that tips the neck's base too. */
 export const NOD_SHARE = 0.5;
-/** The torso's length at rest, from the hip point up its spine to the neck's base, m. */
-export const TORSO_LENGTH = 0.62;
+/**
+ * The torso's length at rest, from the hip point up its spine to the neck's base, m: with the eyes 79 cm over
+ * the cushion (src/sim/cabin.ts), as a seated 1.75 m adult's, it reaches without stretching.
+ */
+export const TORSO_LENGTH = 0.56;
 /** Least and most the torso stretches along its spine. */
 export const MIN_STRETCH = 0.88;
 export const MAX_STRETCH = 1.15;
-/** Longest the neck grows (from the torso's top to SKULL_BASE; 16 cm at rest) before the torso rises off the seat, m. */
-export const MAX_NECK = 0.26;
+/** Longest the neck grows (from the torso's top to SKULL_BASE; 12 cm at rest) before the torso rises off the seat, m. */
+export const MAX_NECK = 0.22;
 /** Share of the head's turn (from the seat's facing) the shoulders take. */
 export const TWIST_SHARE = 0.35;
 /** Most the shoulders turn from the seat's facing, rad. */

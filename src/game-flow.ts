@@ -113,11 +113,11 @@ export function parseMenuTab(id: string, fallback: MenuTab): MenuTab {
 
 /**
  * The eye raise after one press of the menu's + (`direction` 1) or −
- * (-1): one `step` up or down, between -`max` and `max`.
+ * (-1): one `step` up or down, between -`drop` and `max`.
  */
-export function stepRaise(raise: number, direction: 1 | -1, step: number, max: number): number {
+export function stepRaise(raise: number, direction: 1 | -1, step: number, max: number, drop = max): number {
   const steps = Math.round(raise / step) + direction;
-  const stepped = Math.min(max, Math.max(-max, steps * step));
+  const stepped = Math.min(max, Math.max(-drop, steps * step));
   return Number(stepped.toFixed(2)) || 0;
 }
 

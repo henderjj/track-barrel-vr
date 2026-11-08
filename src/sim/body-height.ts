@@ -21,14 +21,22 @@
 /** How far the eyes are below the top of the head, m (as on the crew avatar). */
 export const EYES_BELOW_TOP = 0.13;
 /**
- * The seat's eye height above the floor it stands on, m: a 1.58 m
- * character's standing eyes, a chair-height head (about 1.2 m) raised about
- * 0.25 m. The seats are built round it (src/sim/cabin.ts), so the controls
- * between knee and chest height stay in reach (test/body-height.test.ts).
+ * The seat's eye height above the floor it stands on, m: a Sherman crewman's
+ * (docs/crew-heights.md). A 1.75 m adult's eyes sit 79 cm above a seat whose
+ * cushion is 48 cm off the floor, as a Sherman's was (about 90 cm under the
+ * roof). A player sitting on a chair at home has their eyes about 1.2 m up,
+ * so their real floor is close to the tank's. The seats are built round it
+ * (src/sim/cabin.ts), so the controls between knee and chest height stay in
+ * reach (test/body-height.test.ts).
  */
-export const SEATED_EYE = 1.45;
-/** Most the player may raise (+) or drop (-) their eyes from the seat's eye point in the menu, m. */
-export const MAX_EYE_RAISE = 0.15;
+export const SEATED_EYE = 1.27;
+/**
+ * Most the player may raise their eyes from the seat's eye point in the menu, m: a Sherman's roof is
+ * only 20 cm over the driver's eyes (docs/crew-heights.md), so a raise leaves room to sit up a little more.
+ */
+export const MAX_EYE_RAISE = 0.05;
+/** Most the player may drop their eyes from the seat's eye point in the menu, m. */
+export const MAX_EYE_DROP = 0.15;
 /** The menu's step for it, m. */
 export const EYE_RAISE_STEP = 0.05;
 /** Furthest the rig is lowered or raised, m. */
@@ -53,7 +61,7 @@ export function clampEyeRaise(raise: number): number {
   if (!Number.isFinite(raise)) {
     return 0;
   }
-  const clamped = Math.min(MAX_EYE_RAISE, Math.max(-MAX_EYE_RAISE, raise));
+  const clamped = Math.min(MAX_EYE_RAISE, Math.max(-MAX_EYE_DROP, raise));
   return Number((Math.round(clamped / EYE_RAISE_STEP) * EYE_RAISE_STEP).toFixed(2)) || 0;
 }
 

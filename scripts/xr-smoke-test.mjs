@@ -506,8 +506,8 @@ async function startScreenAndMenu() {
   check('Y opens the game menu in front of the player, its ray turns the perf HUD off and on, and it closes again',
     opened.open && opened.at[2] < -0.5 && opened.exit && !off.on && off.offLit && on.on && !on.offLit && !closed,
     `opened ${opened.open} at ${fmt(opened.at)}, HUD ${off.on ? 'on' : 'off'} then ${on.on ? 'on' : 'off'}, closed ${!closed}`);
-  check('The game menu picks standing or seated play (seated by default), and steps the eye height 5 cm at a time',
-    seatedFirst && standing && seated && up1.raise === 0.05 && up1.shown === '+5 cm' && up2.raise === 0.1 && own.raise === 0 && own.shown === '0 cm',
+  check('The game menu picks standing or seated play (seated by default), and steps the eye height 5 cm at a time, up to +5 cm under a Sherman\'s roof',
+    seatedFirst && standing && seated && up1.raise === 0.05 && up1.shown === '+5 cm' && up2.raise === 0.05 && own.raise === 0 && own.shown === '0 cm',
     `seated first ${seatedFirst}, standing ${standing}, seated ${seated}, eyes ${up1.shown} then ${up2.shown}, then ${own.shown}`);
 
   // B on the right controller closes the menu too.

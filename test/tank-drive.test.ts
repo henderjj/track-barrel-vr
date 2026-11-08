@@ -75,7 +75,7 @@ describe('tank drive (F1.4)', () => {
     expect(s.gear).toBe(NEUTRAL);
     expect(s.rpm).toBe(IDLE_RPM);
     expect(s.y).toBeCloseTo(-GROUND_Y, 6);
-    expect(CLEARANCE).toBeCloseTo(0.6);
+    expect(CLEARANCE).toBeCloseTo(0.46);
   });
 
   it('both tillers forwards drive straight ahead (towards -Z), the automatic box changing up to 5th and 35 km/h, never more', () => {

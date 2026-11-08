@@ -60,14 +60,16 @@ describe('rig offset', () => {
     }
   });
 
-  it('raises or drops the eyes as chosen, within 15 cm of the eye point', () => {
+  it('raises the eyes up to 5 cm or drops them up to 15 cm, as chosen', () => {
     expect(1.2 + rigOffset(targetEyeHeight({ raise: 0.05, seated: true }), 1.2)).toBeCloseTo(SEATED_EYE + 0.05, 6);
     expect(1.2 + rigOffset(targetEyeHeight({ raise: -0.1, seated: true }), 1.2)).toBeCloseTo(SEATED_EYE - 0.1, 6);
     expect(targetEyeHeight({ raise: 0.4, seated: true })).toBeCloseTo(SEATED_EYE + MAX_EYE_RAISE, 6);
   });
 
   it('keeps a raise on 5 cm steps', () => {
-    expect(clampEyeRaise(0.07)).toBe(0.05);
+    expect(clampEyeRaise(0.04)).toBe(0.05);
+    expect(clampEyeRaise(0.12)).toBe(0.05);
+    expect(clampEyeRaise(-0.07)).toBe(-0.05);
     expect(clampEyeRaise(-0.5)).toBe(-0.15);
     expect(clampEyeRaise(Number.NaN)).toBe(0);
     expect(Object.is(clampEyeRaise(-0.01), -0)).toBe(false);
@@ -123,7 +125,8 @@ describe('height settings', () => {
   it('reads an eye raise and seated or standing play from the URL, seated by default', () => {
     expect(parseSettings('?raise=0.05&seated=0')).toMatchObject({ raise: 0.05, seated: false });
     expect(parseSettings('')).toMatchObject({ raise: 0, seated: true });
-    expect(parseSettings('?raise=1').raise).toBe(0.15);
+    expect(parseSettings('?raise=1').raise).toBe(0.05);
+    expect(parseSettings('?raise=-1').raise).toBe(-0.15);
     expect(parseSettings('?raise=-0.12').raise).toBe(-0.1);
   });
 });

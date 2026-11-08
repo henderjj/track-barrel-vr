@@ -61,9 +61,10 @@ describe('the cabin', () => {
   });
 
   it('gives a seated head room under the roof, and lets the gunner lean into the sight', () => {
-    // Eyes are 0.13 m below the top of the head (src/sim/body-height.ts).
-    expect(HULL.roof - (SEATS.driver.eye[1] + 0.13)).toBeGreaterThan(0.15);
-    expect(TURRET.roof - (SEATS.gunner.eye[1] + 0.13)).toBeGreaterThan(0.25);
+    // Eyes are 0.13 m below the top of the head (src/sim/body-height.ts). A Sherman's roof is close over the
+    // crew's heads (docs/crew-heights.md): a hand's width over the driver's, more over the gunner's.
+    expect(HULL.roof - (SEATS.driver.eye[1] + 0.13)).toBeGreaterThan(0.06);
+    expect(TURRET.roof - (SEATS.gunner.eye[1] + 0.13)).toBeGreaterThan(0.2);
     const g = SEATS.gunner;
     expect(g.eye[2] - g.headBox[2]).toBeLessThan(SIGHT_EYEPIECE[2] + 0.1);
     expect(Math.abs(SIGHT_EYEPIECE[0] - g.eye[0])).toBeLessThan(g.headBox[0]);

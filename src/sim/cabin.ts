@@ -25,8 +25,11 @@ export const HULL = {
   front: -2.4,
   /** Inner face of the bulkhead in front of the engine. */
   rear: 2.0,
-  /** Underside of the roof: 35 cm over a seated driver's eyes. */
-  roof: 1.8,
+  /**
+   * Underside of the roof: 24 cm over a seated driver's eyes (a Sherman's was about 15 to 20 cm,
+   * docs/crew-heights.md), so the periscope's crank and the fist on it fit under it above the slit's view.
+   */
+  roof: 1.51,
   /** Thickness of the walls, roof and floor plate as drawn. */
   wall: 0.08,
 } as const;
@@ -41,9 +44,9 @@ export const HULL = {
  */
 export const GLACIS = {
   /** Top of the nose plate, which stands at z = HULL.front. */
-  noseTop: 1.0,
+  noseTop: 0.82,
   /** Bottom of the hood's face, where the glacis meets it. */
-  hoodBottom: 1.32,
+  hoodBottom: 1.14,
   /** The hood face's inner face, hull z. */
   face: -1.9,
 } as const;
@@ -59,8 +62,8 @@ export function frontAt(y: number): number {
 /** The glacis's slope from upright, radians. */
 export const GLACIS_SLOPE = Math.atan2(GLACIS.face - HULL.front, GLACIS.hoodBottom - GLACIS.noseTop);
 
-/** The ground under the tracks, m (the tracks reach down to it). */
-export const GROUND_Y = -0.6;
+/** The ground under the tracks, m (the tracks reach down to it): a Sherman's 17 in of ground clearance and its floor plate. */
+export const GROUND_Y = -0.46;
 
 /**
  * The turret: its ring in the hull roof, the basket that hangs from it (the
@@ -74,14 +77,14 @@ export const TURRET = {
   ringRadius: 0.92,
   /** Radius of the basket floor. */
   basketRadius: 0.86,
-  /** Top of the basket floor, 80 cm above the hull floor so the gunner's eyes are near the gun's height. */
-  basketFloor: 0.8,
+  /** Top of the basket floor above the hull floor, so the gunner's eyes are 20 cm over the gun's axis (GUN.y). */
+  basketFloor: 0.71,
   /** Outer faces of the walls in turret space: x = ±halfWidth, z from front to rear. */
   halfWidth: 1.15,
   front: -1.15,
   rear: 1.15,
-  /** Underside of the turret roof. */
-  roof: 2.75,
+  /** Underside of the turret roof: 35 cm over the gunner's eyes, as a Sherman's (docs/crew-heights.md). */
+  roof: 2.33,
 } as const;
 
 /**
@@ -94,7 +97,8 @@ export const TURRET_RING = { y: HULL.roof + HULL.wall - 0.02, radius: 0.91, tube
 
 /** The gun, in turret space: its axis's height, its breech beside the gunner, and its barrel, m. */
 export const GUN = {
-  y: 2.05,
+  /** 2.24 m above the ground, a Sherman's line of fire (88 in), and 20 cm under the gunner's eyes so they load at chest height. */
+  y: 1.78,
   /**
    * The breech: half its width, and the turret z its back (the breech
    * mouth) reaches, 50 cm ahead of the gunner's eyes so a seated gunner can
@@ -109,10 +113,10 @@ export const GUN = {
 } as const;
 
 /** The driver's vision slit: an opening in the hood's face in front of the driver's eyes (middle x, y, z of the inner face; width, height), m. */
-export const VISION_SLIT = { x: -0.5, y: 1.45, z: GLACIS.face, width: 0.34, height: 0.1 } as const;
+export const VISION_SLIT = { x: -0.5, y: SEATED_EYE, z: GLACIS.face, width: 0.34, height: 0.1 } as const;
 
-/** Height of a seat's cushion above the floor it stands on, m. */
-export const CUSHION_HEIGHT = 0.55;
+/** Height of a seat's cushion above the floor it stands on, m: 79 cm under the eyes, as for a seated 1.75 m adult. */
+export const CUSHION_HEIGHT = 0.48;
 
 export type SeatId = 'driver' | 'gunner';
 export const SEAT_IDS: readonly SeatId[] = ['driver', 'gunner'];

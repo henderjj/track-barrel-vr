@@ -1,6 +1,6 @@
 import { BoxGeometry, ConeGeometry, CylinderGeometry, IcosahedronGeometry, Mesh, MeshBasicMaterial, MeshStandardMaterial } from '@iwsdk/core';
 import { mergeParts, type Part } from './lowpoly.js';
-import { TURRET } from '../sim/cabin.js';
+import { SEATS, TURRET } from '../sim/cabin.js';
 import {
   BREECH_MOUTH,
   CASE_LENGTH,
@@ -54,7 +54,7 @@ export const BLOCK_Z = MZ + BLOCK.gap + BLOCK.depth / 2;
  * hangs on the turret's right wall above the rack, turned to face the
  * gunner's seat, m.
  */
-export const BOARD = { x: 0.93, y: 2.4, z: -0.62, width: 0.34, height: 0.17, yaw: -1.0 } as const;
+export const BOARD = { x: 0.93, y: SEATS.gunner.eye[1] + 0.04, z: -0.62, width: 0.34, height: 0.17, yaw: -1.0 } as const;
 
 const ALONG_Z: readonly [number, number, number] = [-Math.PI / 2, 0, 0];
 const ALONG_X: readonly [number, number, number] = [0, 0, Math.PI / 2];
