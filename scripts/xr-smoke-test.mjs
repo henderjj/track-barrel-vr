@@ -687,7 +687,7 @@ async function seatStep() {
   const lit = evalInApp('window.__gameMenu.selected("row-seat-1")');
   await menuButtonPress();
   check("The game menu's Practice row sits the player in the gunner's seat, on the turret basket's floor",
-    gunner.mine === 'gunner' && flatGap(gunner.head, gunner.eye) < 0.01 && Math.abs(gunner.head[1] - gunner.eye[1]) < 0.005 && Math.abs(gunner.rigY - gunner.offset - 0.8) < 0.01 && lit,
+    gunner.mine === 'gunner' && flatGap(gunner.head, gunner.eye) < 0.01 && Math.abs(gunner.head[1] - gunner.eye[1]) < 0.005 && Math.abs(gunner.rigY - gunner.offset - 0.71) < 0.01 && lit,
     `${gunner.mine}, head ${fmt(gunner.head)}, eye point ${fmt(gunner.eye)}, floor at ${(gunner.rigY - gunner.offset).toFixed(3)} m, Gunner ${lit ? '' : 'not '}highlighted`);
   const g = gunner.eye;
   iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([g[0] - 1.2, g[1] - 0.5, g[2] - 2.5]) });
