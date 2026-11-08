@@ -34,7 +34,7 @@ How it should look and work (each rule fixed something a headset playtest found 
 | Crew (only in a crew) | The crew's state, My microphone, Crewmate's voice, and Calls to the other seat ([crewmate.md](crewmate.md)) |
 | You | Coat colour, Playing, Eye height, Seat, Calibration |
 | Comfort | Vignette, Bumps, I feel queasy, the play-test stats ([comfort-stats.md](comfort-stats.md)) |
-| Sound and view | The other live settings: tank sounds, perf HUD, frame rate, fog, foveation |
+| Sound and view | The other live settings: tank sounds, the cabin's look, the callout card, perf HUD, frame rate, fog, foveation |
 | Tank | Driving (its state and the gear lever), the range's state, and Riding while on spike S2's ride |
 | Practice | Shortcuts for the crew's jobs: Sit in, Drive the tank, Lay the gun, Load and fire, Tank sounds, Test range, Range run, Ready to fire |
 | Sights | Gunsight, Lay on, Sight render, Periscope |
@@ -52,6 +52,7 @@ Some of the rows:
 | You | Seat | Back in my seat (eyes back at the seat's eye point, facing forward); Swap seats (in a crew it asks your crewmate, or agrees to their ask: [seat-choice.md](seat-choice.md)) |
 | You | Calibration | Calibrate again; the line below says the eye height and reach it took |
 | Sound and view | Tank sounds | On, Quiet, Off ([audio.md](audio.md)) |
+| Sound and view | Callout card | On (the default), Off: the card in each seat ([callout-card.md](callout-card.md)) |
 | Sound and view | Perf HUD (X) | On, Off |
 | Sound and view | Frame rate (Hz) | 72, 80, 90, 120 |
 | Sound and view | Foveation | Off, Half, Full |

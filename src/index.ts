@@ -3,6 +3,7 @@ import projectOptions from 'virtual:iwsdk-project';
 import { preferHighPerformanceGpu } from './gpu-preference.js';
 import { BodyHeightSystem } from './systems/body-height-system.js';
 import { CabinLightSystem } from './systems/cabin-light-system.js';
+import { CalloutCardSystem } from './systems/callout-card-system.js';
 import { CalibrationSystem } from './systems/calibration-system.js';
 import { CrewBotSystem } from './systems/crew-bot-system.js';
 import { CrewStatusSystem } from './systems/crew-status-system.js';
@@ -75,6 +76,8 @@ World.create(
   world.registerSystem(FiringSystem);
   // The range run (F1.11): after FiringSystem, whose decided shots it counts on the host.
   world.registerSystem(RangeRunSystem);
+  // The callout card in each seat (F2.6): hangs on the hull and turret, drawn once; nothing per frame.
+  world.registerSystem(CalloutCardSystem);
   // After the kit has moved its levers: it reads them into the drive (DriveSystem drives by them next frame) and draws the gauges.
   world.registerSystem(DriverStationSystem);
   world.registerSystem(LeverSystem);
