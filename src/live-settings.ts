@@ -121,6 +121,8 @@ export const LIVE_ITEMS: readonly LiveItem[] = [
     ],
     current: (s) => String(s.lamps),
   },
+  // The callout card in each seat (F2.6): also in the Sound and view tab.
+  { key: 'card', label: 'Callout card', options: [['1', 'On'], ['0', 'Off']], current: (s) => onOff(s.card) },
   { key: 'fog', label: 'Range fog', options: [['1', 'On'], ['0', 'Off']], current: (s) => onOff(s.fog) },
   {
     key: 'foveation',

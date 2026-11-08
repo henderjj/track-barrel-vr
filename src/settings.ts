@@ -111,6 +111,12 @@ export interface Settings {
   hatches: OpenHatches;
   cabin: number;
   lamps: number;
+  /**
+   * The callout card in each seat (F2.6, src/sim/callout-card.ts): shown
+   * (the default) or hidden. The game menu's Sound and view tab changes it
+   * at once.
+   */
+  card: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -144,6 +150,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hatches: 'none',
   cabin: 0.5,
   lamps: 1,
+  card: true,
 };
 
 function num(params: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
@@ -201,6 +208,7 @@ export function parseSettings(search: string): Settings {
     hatches: parseHatches(params.get('hatches'), d.hatches),
     cabin: num(params, 'cabin', d.cabin, 0.1, 8),
     lamps: num(params, 'lamps', d.lamps, 0, 4),
+    card: bool(params, 'card', d.card),
   };
 }
 
