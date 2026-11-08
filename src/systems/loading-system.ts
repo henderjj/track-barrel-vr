@@ -97,6 +97,15 @@ export function loadForPractice(): void {
   active?.loadNow();
 }
 
+/**
+ * How many times Practice → Ready to fire has loaded the gun on this page:
+ * the firing lamp (F2.5) takes a load made for a lone player as the
+ * gunner's hand on the trigger until it fires.
+ */
+export function practiceLoads(): number {
+  return active?.practiceLoads ?? 0;
+}
+
 /** The loading as drawn on this page (the gunner's own, or the gunner's packets): the practice crewmate reads it, and the tank sounds hear the breech and the ram in it (F1.12). */
 export function loadingShown(): Readonly<LoadingSnapshot> | null {
   return active?.shown ?? null;
@@ -150,6 +159,8 @@ export class LoadingSystem extends createSystem({}) {
   readonly gun = new GunAction();
   /** What is drawn: the drill's own, or the gunner's packets. */
   readonly shown = createLoadingSnapshot();
+  /** Loads made by Practice → Ready to fire on this page (practiceLoads). */
+  practiceLoads = 0;
   private hands: Record<Side, DrillHand> = { left: createDrillHand(), right: createDrillHand() };
   private testHands: Record<Side, DrillTestHandFn | null> = { left: null, right: null };
   private turret: Entity | null = null;
@@ -315,6 +326,7 @@ export class LoadingSystem extends createSystem({}) {
   loadNow(): void {
     if (!this.isOwner()) return;
     this.drill.loadNow();
+    this.practiceLoads++;
     this.clearHandUse();
     console.info('[Loading] Practice: loaded');
   }

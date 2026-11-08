@@ -29,6 +29,7 @@ import {
   type RunSnapshot,
   targetsHit,
 } from '../sim/range-run.js';
+import type { SeatId } from '../sim/cabin.js';
 import { RANGE_TARGETS } from '../sim/range.js';
 import { groundHeight, wrapTile } from '../sim/terrain.js';
 import { muzzlePoint } from '../sim/turret.js';
@@ -66,11 +67,12 @@ export function stopRun(): void {
  * Practice → Ready to fire (100 m, 250 m, 500 m): the tank parked at the
  * start, where each target stands at its marked range, the gun laid on
  * target `i` and loaded, so one pull of the trigger hits it. Alone, the
- * player goes to the gunner's seat; in a crew the seats stay and the
- * gunner's page lays and loads. Marks a run on now as assisted.
+ * player goes to `seat` (the gunner's, or the driver's to watch the firing
+ * lamp, F2.5); in a crew the seats stay and the gunner's page lays and
+ * loads. Marks a run on now as assisted.
  */
-export function readyToFire(i: number): void {
-  active?.ready(i);
+export function readyToFire(i: number, seat: SeatId = 'gunner'): void {
+  active?.ready(i, seat);
 }
 
 /** One line for the game menu. */
@@ -241,10 +243,10 @@ export class RangeRunSystem extends createSystem({}) {
     }
   }
 
-  ready(i: number): void {
+  ready(i: number, seat: SeatId = 'gunner'): void {
     if (!(i >= 0 && i < RANGE_TARGETS.length)) return;
-    // Alone, into the gunner's seat to pull the trigger; in a crew the seats stay.
-    if (!netLink.connected) seating.ask('gunner');
+    // Alone, into the gunner's seat to pull the trigger (or the driver's, to watch the firing lamp); in a crew the seats stay.
+    if (!netLink.connected) seating.ask(seat);
     // Parked with the engine running warm, for the power traverse (F1.17).
     resetTank('warm');
     this.ask('assist');

@@ -89,6 +89,16 @@ export function takeTriggerPulls(): number {
   return n;
 }
 
+/** Pull the gun's trigger as a hand on the power grip would: Practice → Ready to fire → Driver's lamp's pretend gunner (F2.5). Only the gunner's page's pulls fire. */
+export function pullTrigger(): void {
+  if (active?.isOwner()) active.triggerPulls++;
+}
+
+/** Put a line on the turret's sign, in front of the player (Practice shortcuts about the gun). */
+export function sayAboutTheGun(title: string, lines: [string, string]): void {
+  active?.say(title, lines);
+}
+
 /**
  * Practice → Turret to 3 o'clock (F2.3): the turret turns itself to `yaw`
  * (rad) at the power traverse's top rate, so the driver can watch the

@@ -2771,6 +2771,9 @@ async function partThree() {
 
   // 6n. The driver's turret position dial (F2.3).
   await theTurretDial();
+
+  // 6o. The firing lamp (F2.5).
+  await theFiringLamp();
 }
 
 /**
@@ -2809,6 +2812,57 @@ async function theTurretDial() {
   const home = await waitFor('the turret forward', () => { const s = dial(); return s.hour === 12 && Math.abs(s.pointerDeg) < 0.1 && s; }, 8000).catch(() => dial());
   check('Practice → Lay the gun → Forward brings the turret back and the dial reads 12', home.hour === 12 && Math.abs(home.pointerDeg) < 0.1,
     `turret ${home.turretDeg.toFixed(2)}°, pointer ${home.pointerDeg.toFixed(2)}°`);
+}
+
+/**
+ * 6o. The firing lamp (F2.5): Practice → Ready to fire → Driver's lamp puts
+ *     the player in the driver's seat with the gun laid and loaded, and the
+ *     lamp on the slit's frame lights at once (screenshot from the driver's
+ *     eyes); the pretend gunner fires about 3 s later, the lamp flashes and
+ *     goes dark with the breech open. Then, as gunner, the repeater right of
+ *     the gunsight (screenshot), and a hand on the power grip seen as the
+ *     gunner's hand on a trigger, which with the breech open leaves it dark.
+ */
+async function theFiringLamp() {
+  const lamp = () => evalInApp('window.__firingLamp.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp('(window.__turret.set(null), window.__turret.forward(), true)');
+  await sleep(300);
+  await menuButtonPress();
+  await menuClick('menu-ready-lamp');
+  const lit = await waitFor('the firing lamp lit', () => { const s = lamp(); return s.look === 'lit' && s; }, 15000).catch(() => lamp());
+  const litAt = Date.now();
+  const seated = evalInApp('({ seat: window.__seats.mine, sign: window.__turret.sign })');
+  check("Practice → Ready to fire → Driver's lamp seats the player as driver with the gun loaded, and the firing lamp lights at once",
+    seated.seat === 'driver' && lit.look === 'lit' && lit.loaded && lit.practice && lit.practiceFire && seated.sign.startsWith('Gun ready'),
+    `seat ${seated.seat}, lamp ${JSON.stringify(lit)}, sign "${seated.sign}"`);
+  const eye = evalInApp('window.__seats.eye("driver")');
+  const at = evalInApp('window.__firingLamp.at()');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin(eye) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([at.driver[0], (eye[1] + at.driver[1]) / 2, at.driver[2]]) });
+  await sleep(300);
+  if (lamp().look === 'lit') iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-firing-lamp.png'], {});
+  const fired = await waitFor('the pretend gunner to fire and the lamp to flash', () => { const s = lamp(); return s.flashes > lit.flashes && s; }, 15000).catch(() => null);
+  const firedAfter = (Date.now() - litAt) / 1000;
+  const dark = await waitFor('the lamp dark after its flashes', () => { const s = lamp(); return s.look === 'dark' && !s.loaded && s; }, 8000).catch(() => lamp());
+  check('Alone, the pretend gunner fires: the lamp flashes at the shot, then goes dark with the breech open',
+    fired !== null && firedAfter > 2 && !dark.practiceFire && dark.look === 'dark' && !dark.loaded && !dark.practice,
+    `${fired ? `fired ${firedAfter.toFixed(1)} s after the lamp lit` : 'never fired'}, then ${JSON.stringify(dark)}`);
+
+  evalInApp("(window.__seats.ask('gunner'), window.__firingLamp.holdGrip(true), true)");
+  const gripped = await waitFor("the gunner's hand on the power grip", () => { const s = lamp(); return s.handOnTrigger && s; }, 10000).catch(() => lamp());
+  const gunnerEye = evalInApp('window.__seats.eye("gunner")');
+  const repeater = evalInApp('window.__firingLamp.at().gunner');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin(gunnerEye) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(repeater) });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-firing-lamp-repeater.png'], {});
+  evalInApp('(window.__firingLamp.holdGrip(false), true)');
+  const letGo = await waitFor('the hand off the grip', () => { const s = lamp(); return !s.handOnTrigger && s; }, 10000).catch(() => lamp());
+  check("A gunner's hand on the power grip counts as a hand on the trigger, but with the breech open the lamp stays dark",
+    gripped.handOnTrigger && gripped.look === 'dark' && !gripped.ready && !letGo.handOnTrigger,
+    `holding ${JSON.stringify(gripped)}, let go ${JSON.stringify(letGo)}`);
+  iwsdk(['xr', 'set-device-state'], {});
 }
 
 /** Every part ends with these: the perf log, PC VR without the frame-rate API, and the console. */

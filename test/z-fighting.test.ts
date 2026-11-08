@@ -263,6 +263,25 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
+  it('on the firing lamp (F2.5): its lens in its bezel on the slit frame, and the repeater on the turret turned two ways', async () => {
+    const { MeshBasicMaterial } = await import('@iwsdk/core');
+    const { FIRING_LAMP, LAMP_REPEATER } = await import('../src/sim/firing-lamp.js');
+    const { createLampLens } = await import('../src/scene-assets/firing-lamp.scene-asset.js');
+    const material = new MeshBasicMaterial({ color: 0xffa21f });
+    const hull = cabin.createHull();
+    hull.add(createLampLens(FIRING_LAMP, material, 'Firing Lamp'));
+    hull.updateMatrixWorld(true);
+    expectNone([hull], CABIN_GAP);
+    for (const yaw of [0, 2.2]) {
+      const turret = cabin.createTurret();
+      turret.position.set(0, 0, TURRET.z);
+      turret.rotation.y = yaw;
+      turret.add(createLampLens(LAMP_REPEATER, material, 'Firing Lamp Repeater'));
+      turret.updateMatrixWorld(true);
+      expectNone([turret], CABIN_GAP);
+    }
+  });
+
   it("on the crew's periscopes (F1.6, F1.19): eyepieces, windows and cranks fixed, shafts and heads turned every way, the gunner's in the turning turret", async () => {
     const periscope = await import('../src/scene-assets/periscope.scene-asset.js');
     const { PERISCOPE_CRANK, PERISCOPES } = await import('../src/sim/periscope.js');
