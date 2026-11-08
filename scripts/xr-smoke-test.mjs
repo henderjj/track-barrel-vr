@@ -2977,9 +2977,10 @@ async function theFiringLamp() {
   if (lamp().look === 'lit') iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-firing-lamp.png'], {});
   const fired = await waitFor('the pretend gunner to fire and the lamp to flash', () => { const s = lamp(); return s.flashes > lit.flashes && s; }, 15000).catch(() => null);
   const firedAfter = (Date.now() - litAt) / 1000;
-  const dark = await waitFor('the lamp dark after its flashes', () => { const s = lamp(); return s.look === 'dark' && !s.loaded && s; }, 8000).catch(() => lamp());
+  // Past the whole flash sequence, not in the dark gap between two flashes (each lasts several frames on a slow runner).
+  const dark = await waitFor('the lamp dark after its flashes', () => { const s = lamp(); return !s.flashing && s.look === 'dark' && !s.loaded && s; }, 8000).catch(() => lamp());
   check('Alone, the pretend gunner fires: the lamp flashes at the shot, then goes dark with the breech open',
-    fired !== null && firedAfter > 2 && !dark.practiceFire && dark.look === 'dark' && !dark.loaded && !dark.practice,
+    fired !== null && firedAfter > 2 && !dark.practiceFire && !dark.flashing && dark.look === 'dark' && !dark.loaded && !dark.practice,
     `${fired ? `fired ${firedAfter.toFixed(1)} s after the lamp lit` : 'never fired'}, then ${JSON.stringify(dark)}`);
 
   evalInApp("(window.__seats.ask('gunner'), window.__firingLamp.holdGrip(true), true)");
