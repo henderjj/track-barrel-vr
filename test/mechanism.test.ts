@@ -239,7 +239,7 @@ describe('the wheel and the crank', () => {
     }
   });
 
-  it('turns by how far the hand moves round, so a hand drifting to and fro over the middle of a small crank hardly turns it (John, 2026-11-07)', () => {
+  it('hardly turns with a hand drifting to and fro over the middle of a small crank, not going round (John, 2026-11-07)', () => {
     // A crank the size of the periscopes' (5.5 cm), the hand drifting 2 cm to and fro across its axle, 1 cm above it.
     const crank = new Wheel({ ...CRANK, radius: 0.055 });
     const at = (x: number) => hand(x, 0.01, 0.04);
@@ -250,9 +250,56 @@ describe('the wheel and the crank', () => {
       furthest = Math.max(furthest, Math.abs(crank.angle));
     }
     for (let i = 0; i < 30; i++) crank.update(DT, right(at(0)));
-    // Its angle round the axle swings 90° each way; the crank moves no more than the 1 cm on its knob's circle, and comes back.
+    // Its angle round the axle swings 90° each way; the crank hardly moves, and comes back.
     expect(furthest / DEG).toBeLessThan(15);
     expect(Math.abs(crank.angle / DEG)).toBeLessThan(1);
+  });
+
+  it('turns once a circle, never backwards, with the hand circling beside or over the middle of a small crank (John, 2026-11-08)', () => {
+    // The periscopes' 5.5 cm crank. Circles that don't go round the axle: its angle round the axle swings back each circle.
+    const circles: [number, number, number][] = [
+      [0.025, 0.005, 0.015], // over the middle, 1 to 4 cm from the axle
+      [-0.04, 0, 0.02], // beside it, 2 to 6 cm out
+      [0, -0.045, 0.025], // across the knob's circle, below the axle
+    ];
+    for (const [ox, oy, rad] of circles) {
+      for (const way of [1, -1]) {
+        for (const seconds of [1, 2, 3]) {
+          const crank = new Wheel({ ...CRANK, radius: 0.055 });
+          // A millimetre of tremor, the same every run.
+          let seed = 7;
+          const shake = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 0.002;
+          const at = (deg: number) => hand(ox - rad * Math.sin(way * deg * DEG) + shake(), oy + rad * Math.cos(way * deg * DEG) + shake(), 0.04);
+          expect(crank.grab(1, at(0))).toBe(true);
+          // Three circles, a circle every `seconds`.
+          const frames = Math.round(seconds / DT);
+          let furthest = 0;
+          let back = 0;
+          let afterOne = 0;
+          for (let i = 1; i <= 3 * frames; i++) {
+            crank.update(DT, right(at((i * 360) / frames)));
+            const turned = way * crank.angle;
+            back = Math.max(back, furthest - turned);
+            furthest = Math.max(furthest, turned);
+            if (i === frames) afterOne = turned;
+          }
+          // Never more than a few degrees back (the old way went back 65°); the first circle gets going, then a turn a circle.
+          expect(back / DEG).toBeLessThan(5);
+          expect(afterOne / (2 * Math.PI)).toBeGreaterThan(0.4);
+          expect((way * crank.angle - afterOne) / (2 * Math.PI)).toBeCloseTo(2, 1);
+        }
+      }
+    }
+  });
+
+  it('follows the hand straight back the other way on the knob', () => {
+    const crank = new Wheel(CRANK);
+    const r = CRANK.radius;
+    crank.grab(1, wheelHand(0, r, 0.04));
+    for (let i = 1; i <= 90; i++) crank.update(DT, right(wheelHand(i * 4, r, 0.04)));
+    for (let i = 1; i <= 45; i++) crank.update(DT, right(wheelHand(360 - i * 2, r, 0.04)));
+    for (let i = 0; i < 30; i++) crank.update(DT, right(wheelHand(270, r, 0.04)));
+    expect(crank.angle / DEG).toBeCloseTo(270, 0);
   });
 
   it('takes hold of a fist too near the axle to read as if it were on the knob, and turns from there', () => {

@@ -117,12 +117,28 @@ function smoothing(dt: number, cutoff: number): number {
 export const CONTROLLER_FILTER = { minCutoff: 8, beta: 0.5 } as const;
 export const TRACKED_HAND_FILTER = { minCutoff: 1.5, beta: 4 } as const;
 
-/** Nearer a wheel's axle than this share of its radius, a hand's move round turns it as if made this far out: less the nearer it is (`HandAngle.stepAround`). */
-const NEAR_AXLE = 0.8;
-/** From this share of a wheel's radius out (fully from NEAR_AXLE), its angle eases towards the hand's angle round the axle. */
-const STEADY_FROM = 0.5;
-/** How quickly it eases there, s: quick enough that a hand going round off the axle keeps up, slow enough not to jump. */
-const CATCH_UP = 0.15;
+/** Out from this share of a wheel's radius (now and last frame), a hand turns it by its angle round the axle (`HandAngle.stepAround`). */
+const ON_RIM = 0.5;
+/** Out from this share, a hand going round the axle does too. */
+const ROUND_FROM = 0.3;
+/** The hand's position is smoothed over this long for that, s, so a millimetre of tremor can't steer it. */
+const STEADY_TIME = 0.03;
+/** Where the hand has been lately, averaged over this long, s: the middle of the circles it is going round. */
+const CENTRE_TIME = 0.5;
+/** Nearer than this to where it has been lately, m, the hand isn't going round anything. */
+const STILL = 0.006;
+/** A swing round that middle bigger than this in a frame is a jerk, not going round. */
+const JERK = 60 * DEG;
+/** Which way the hand is going round now: its going round over about this long, s. */
+const NOW_TIME = 0.15;
+/** ...once that is at least this much. */
+const NOW_SPIN = 8 * DEG;
+/** Whether it is going round the axle: its going round, and round the axle, over about this long, s. */
+const LATELY_TIME = 0.5;
+/** ...once it has gone round at least this much... */
+const LATELY_SPIN = 45 * DEG;
+/** ...and round the axle at least this share as far. */
+const ROUND_SHARE = 0.5;
 
 /**
  * A hand's angle round a mechanism's axis, unwrapped (so a crank can go
@@ -134,6 +150,17 @@ class HandAngle {
   private unwrapped = 0;
   private lastX = 0;
   private lastY = 0;
+  /** The hand's smoothed position. */
+  private handX = 0;
+  private handY = 0;
+  /** Where the hand has been lately (the middle of its circles), and its angle round there (NaN: too near). */
+  private midX = 0;
+  private midY = 0;
+  private aroundMid = Number.NaN;
+  /** How far the hand went round that middle, just now and lately, and round the axle lately, radians (fading sums). */
+  private spinNow = 0;
+  private spinLately = 0;
+  private roundLately = 0;
 
   /** The hand takes hold at `angle` (not NaN); returns it. */
   start(angle: number, tracked: boolean): number {
@@ -163,40 +190,78 @@ class HandAngle {
   startAround(x: number, y: number, angle: number, tracked: boolean): number {
     this.lastX = x;
     this.lastY = y;
+    this.handX = x;
+    this.handY = y;
+    this.midX = x;
+    this.midY = y;
+    this.aroundMid = Number.NaN;
+    this.spinNow = 0;
+    this.spinLately = 0;
+    this.roundLately = 0;
     return this.start(angle, tracked);
   }
 
   /**
    * Round a wheel's axle: the hand is at (x, y) in wheel space now, `dt`
-   * after the last; its steadied, unwrapped angle. The angle moves on by how
-   * far the hand moved round since the last frame (John's headset note,
-   * 2026-11-07): its move along the way round, divided by its distance from
-   * the axle but never by less than `NEAR_AXLE` of `radius`. So a hand
-   * drifting over the middle of a small crank turns it only by how far it
-   * moved (a centimetre is a centimetre on the knob's circle), instead of its
-   * angle round the axle swinging and the crank jumping. Out near the rim,
-   * where the hand's angle round the axle is steady, the angle is also eased
-   * towards it (`CATCH_UP`), so a hand going round a circle off the axle, or
-   * inside the knob's, still turns it as far as it goes round.
+   * after the last; its steadied, unwrapped angle.
+   *
+   * Two readings of how far the hand went round (John's headset notes,
+   * 2026-11-07 and 11-08). One is its angle round the axle: exact while the
+   * hand is on the knob, but near the axle it swings wildly, and for a hand
+   * going round in circles beside the axle it goes back every circle. The
+   * other is its angle round the middle of where it has been lately: a hand
+   * going round in circles anywhere goes round that once a circle, always
+   * the same way, and a hand drifting to and fro doesn't go round it at all.
+   * Laptop touchpads read circular scrolling this way (Synaptics'
+   * ChiralMotion): by which way the finger is going round, not where it is.
+   *
+   * The crank goes by the angle round the axle out on the knob's circle,
+   * unless that is against the way the hand is going round just now, or the
+   * hand has lately gone round in circles that aren't round the axle; and
+   * nearer in only while the hand is going round the axle. Otherwise it
+   * goes by the angle round the middle. So a hand going round in circles
+   * turns the crank once a circle, wherever the circles are, and never
+   * backwards; and small, careful turns on the knob are exact.
    */
   stepAround(x: number, y: number, radius: number, dt: number): number {
-    const dx = x - this.lastX;
-    const dy = y - this.lastY;
-    // The middle of the move, and the way round (anticlockwise) there.
-    const mx = x - dx / 2;
-    const my = y - dy / 2;
-    const m = Math.hypot(mx, my);
-    const lever = NEAR_AXLE * radius;
-    if (m > 1e-9) {
-      const along = (dy * mx - dx * my) / m;
-      this.unwrapped += along / (m > lever ? m : lever);
+    // How far the (steadied) hand went round the middle of where it has been lately.
+    const steady = dt > 0 ? 1 - Math.exp(-dt / STEADY_TIME) : 0;
+    this.handX += steady * (x - this.handX);
+    this.handY += steady * (y - this.handY);
+    let bend = 0;
+    const k = dt > 0 ? 1 - Math.exp(-dt / CENTRE_TIME) : 0;
+    this.midX += k * (this.handX - this.midX);
+    this.midY += k * (this.handY - this.midY);
+    const ox = this.handX - this.midX;
+    const oy = this.handY - this.midY;
+    if (ox * ox + oy * oy < STILL * STILL) {
+      this.aroundMid = Number.NaN;
+    } else {
+      // Measured like wheel angles, so going round anticlockwise turns the wheel anticlockwise.
+      const a = Math.atan2(-ox, oy);
+      if (!Number.isNaN(this.aroundMid)) {
+        const t = wrap(a - this.aroundMid);
+        if (Math.abs(t) < JERK) bend = t;
+      }
+      this.aroundMid = a;
     }
-    // Out from STEADY_FROM of the radius (fully at NEAR_AXLE), ease towards the hand's angle round the axle.
-    const r = Math.hypot(x, y);
-    const steady = Math.min(1, Math.max(0, (r - STEADY_FROM * radius) / ((NEAR_AXLE - STEADY_FROM) * radius)));
-    if (steady > 0) {
-      this.unwrapped += steady * (1 - Math.exp(-dt / CATCH_UP)) * wrap(Math.atan2(-x, y) - this.unwrapped);
+    // How far it went round the axle, when not too near it now and last frame.
+    const r2 = Math.min(x * x + y * y, this.lastX * this.lastX + this.lastY * this.lastY);
+    const round = r2 >= (ROUND_FROM * radius) ** 2 ? wrap(Math.atan2(-x, y) - Math.atan2(-this.lastX, this.lastY)) : 0;
+    const now = Math.exp(-dt / NOW_TIME);
+    const lately = Math.exp(-dt / LATELY_TIME);
+    this.spinNow = this.spinNow * now + bend;
+    this.spinLately = this.spinLately * lately + bend;
+    this.roundLately = this.roundLately * lately + round;
+
+    const against = Math.abs(this.spinNow) > NOW_SPIN && round * this.spinNow < 0;
+    const circling = Math.abs(this.spinLately) > LATELY_SPIN;
+    const roundAxle = circling && this.roundLately * this.spinLately >= ROUND_SHARE * this.spinLately * this.spinLately;
+    let turn = bend;
+    if (r2 >= (ROUND_FROM * radius) ** 2 && (roundAxle || (!circling && !against && r2 >= (ON_RIM * radius) ** 2))) {
+      turn = round;
     }
+    this.unwrapped += turn;
     this.lastX = x;
     this.lastY = y;
     return this.filter.filter(this.unwrapped, dt);
