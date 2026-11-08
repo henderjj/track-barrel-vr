@@ -45,6 +45,7 @@ import {
 import { drive, engineRpm, engineStart, shownDriverState, tankState } from './drive-system.js';
 import { lastShot } from './firing-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
+import { firingLampLit } from './firing-lamp-system.js';
 import { handUse } from './grip-system.js';
 import { loadingShown, scriptLoadingHand } from './loading-system.js';
 import { findControl, type ScriptedHand, scriptedHands } from './mechanism-system.js';
@@ -280,7 +281,7 @@ export class CrewBotSystem extends createSystem({}) {
       /** What each hand holds (handUse) and what it is doing. */
       holding: () => ({ left: handUse.left, right: handUse.right, modes: [self.hands.left.mode, self.hands.right.mode] }),
       get status() { return self.status; },
-      get driving() { return { mode: self.driver.mode, motion: self.driver.motion, leg: self.driver.leg, arrivals: self.driver.arrivals, wish: { ...self.wish } }; },
+      get driving() { return { mode: self.driver.mode, motion: self.driver.motion, steady: self.driver.steady, leg: self.driver.leg, arrivals: self.driver.arrivals, wish: { ...self.wish } }; },
       get gunning() {
         return { phase: self.phase, target: self.target, aim: { ...self.aim }, loads: self.loads, shots: self.shots, hits: self.hits, hit: [...self.hit], fireAtWill: self.fireAtWill };
       },
@@ -482,7 +483,8 @@ export class CrewBotSystem extends createSystem({}) {
       return;
     }
     // It drives with the automatic box (DriveSystem gives the crewmate's page no other), so its hands stay on the tillers.
-    const wish = this.driver.update(dt, tank, this.wish);
+    // The firing lamp lit (F2.5): it holds the tank steady for the shot.
+    const wish = this.driver.update(dt, tank, this.wish, firingLampLit());
     this.onControl('left', TILLER.left, leverGrip(DRIVER_TILLER, tillerAngle(wish.left), this.p));
     this.onControl('right', TILLER.right, leverGrip(DRIVER_TILLER, tillerAngle(wish.right), this.p));
   }

@@ -305,6 +305,8 @@ export class BotDriver {
   halting = 0;
   /** Waypoints reached so far (on the course, its halts), for the tests. */
   arrivals = 0;
+  /** Holding the tank steady for the gun: the firing lamp is lit (F2.5). */
+  steady = false;
   private steerOut = { left: 0, right: 0 };
   /** The legs it drives: ROUTE, or COURSE_ROUTE. */
   private legs: readonly RouteLeg[] = ROUTE;
@@ -347,9 +349,20 @@ export class BotDriver {
     }
   }
 
-  /** Step `dt` seconds with the tank as it is; what the tillers should do, into `out`. */
-  update(dt: number, tank: TankView, out: DriveWish): DriveWish {
+  /**
+   * Step `dt` seconds with the tank as it is; what the tillers should do,
+   * into `out`. While `steady` (the firing lamp is lit, F2.5) it holds the
+   * tank still for the shot: tillers centred, no turning, and a route's
+   * halt doesn't run out; calls heard meanwhile wait until the lamp goes out.
+   */
+  update(dt: number, tank: TankView, out: DriveWish, steady = false): DriveWish {
     if (Number.isNaN(this.heading)) this.heading = tank.heading;
+    this.steady = steady;
+    if (steady) {
+      out.left = 0;
+      out.right = 0;
+      return out;
+    }
     let base = 0;
     if (this.mode !== 'calls') {
       if (this.pickLeg) this.nearestLeg(tank);
@@ -422,6 +435,7 @@ export class BotDriver {
 
   /** One line for the menu and the tests. */
   describe(): string {
+    if (this.steady) return 'holding steady: the gun is ready';
     if (this.mode === 'route') {
       const leg = ROUTE[this.leg];
       const where = `${Math.round(-leg.z)} m up the road`;

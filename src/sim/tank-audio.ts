@@ -188,6 +188,12 @@ export function whineVoice(rate: number, out: { freq: number; gain: number }): {
   return out;
 }
 
+/** A voice in the speech band since it was last read: its loudest 10 ms and its quietest, RMS 0 to 1. */
+export interface SpeechReading {
+  level: number;
+  quiet: number;
+}
+
 /**
  * Whether one voice is speaking: its level (in the speech band) loud enough
  * and well above its steady background. Without the background, the tank
@@ -204,9 +210,10 @@ export class VoiceGate {
   /** The steady background, as the level would be with the tank not ducked. */
   floor = 0;
 
-  step(level: number, duckGain: number, dt: number): boolean {
-    const background = level / duckGain;
-    const speech = level >= SPEECH_LEVEL && background >= this.floor * SPEECH_OVER_FLOOR;
+  /** `level` is the loudest of the voice since the last step, `quiet` the quietest (the same if it was measured once). */
+  step(level: number, duckGain: number, dt: number, quiet = level): boolean {
+    const speech = level >= SPEECH_LEVEL && level / duckGain >= this.floor * SPEECH_OVER_FLOOR;
+    const background = quiet / duckGain;
     const tau = background > this.floor ? FLOOR_RISE : FLOOR_FALL;
     this.floor += (background - this.floor) * (1 - Math.exp(-dt / tau));
     return speech;
@@ -230,9 +237,10 @@ export class Ducker {
   private readonly mic = new VoiceGate();
   private readonly crew = new VoiceGate();
 
-  step(micLevel: number, crewLevel: number, dt: number): number {
-    this.micSpeaking = this.mic.step(micLevel, this.gain, dt);
-    this.crewSpeaking = this.crew.step(crewLevel, this.gain, dt);
+  /** Each voice's loudest level since the last step, and optionally its quietest (VoiceGate). */
+  step(micLevel: number, crewLevel: number, dt: number, micQuiet = micLevel, crewQuiet = crewLevel): number {
+    this.micSpeaking = this.mic.step(micLevel, this.gain, dt, micQuiet);
+    this.crewSpeaking = this.crew.step(crewLevel, this.gain, dt, crewQuiet);
     if (this.micSpeaking || this.crewSpeaking) {
       this.hold = DUCK_HOLD;
     } else {

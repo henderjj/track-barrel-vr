@@ -10,6 +10,7 @@ import { CrewStatusSystem } from './systems/crew-status-system.js';
 import { CourseSystem } from './systems/course-system.js';
 import { DriveSystem } from './systems/drive-system.js';
 import { DriverStationSystem } from './systems/driver-station-system.js';
+import { FiringLampSystem } from './systems/firing-lamp-system.js';
 import { FiringSystem } from './systems/firing-system.js';
 import { FrameRateSystem } from './systems/frame-rate-system.js';
 import { GameMenuSystem } from './systems/game-menu-system.js';
@@ -82,6 +83,8 @@ World.create(
   world.registerSystem(RangeRunSystem);
   // The callout card in each seat (F2.6): hangs on the hull and turret, drawn once; nothing per frame.
   world.registerSystem(CalloutCardSystem);
+  // The firing lamp (F2.5): after FiringSystem (it hears every shot) and LoadingSystem (the breech as drawn), before the crewmate, who holds the tank steady while it is lit.
+  world.registerSystem(FiringLampSystem);
   // The biathlon course (F5.3a): after DriveSystem has moved the tank, it follows it round the course's gates.
   world.registerSystem(CourseSystem);
   // After the kit has moved its levers: it reads them into the drive (DriveSystem drives by them next frame) and draws the gauges.

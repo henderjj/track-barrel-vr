@@ -28,8 +28,9 @@
     to watch the driver's turret dial; load and fire as
     gunner; play each of the tank's short sounds; park up the range facing a
     target; start or stop a range run, and ready to fire on each target,
-    parked at the start, laid and loaded; go to the biathlon course's start
-    line or either firing line (F5.3a). Sights: go to the gunsight, lay the
+    parked at the start, laid and loaded, or from the driver's seat to watch
+    the firing lamp; go to the biathlon course's start line or either firing
+    line (F5.3a). Sights: go to the gunsight, lay the
     gun on a target's range mark, the sight's render choices; go to the
     driver's or the gunner's periscope, turn both ahead, their power. Test rigs: ride the tank (spike
     S2), the lever test and the mechanism kit.
@@ -580,6 +581,7 @@
               <Button id="menu-ready-0" class="choice" size="sm" variant="secondary">100 m</Button>
               <Button id="menu-ready-1" class="choice" size="sm" variant="secondary">250 m</Button>
               <Button id="menu-ready-2" class="choice" size="sm" variant="secondary">500 m</Button>
+              <Button id="menu-ready-lamp" class="choice" size="sm" variant="secondary">Driver's lamp</Button>
             </div>
           </div>
           <div id="menu-run-status" class="hint">Range run</div>
