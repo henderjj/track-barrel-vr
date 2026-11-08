@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DRIVER_HATCH, EYE_CLEARANCE, frontAt, HULL, SEATS } from '../src/sim/cabin.js';
+import { DRIVER_HATCH, EYE_CLEARANCE, frontAt, GUN, HULL, SEATS, TURRET } from '../src/sim/cabin.js';
 import {
   CONVOY_BACK,
   CONVOY_FADE_SECONDS,
@@ -10,6 +10,9 @@ import {
   CONVOY_SEAT,
   type ConvoyMove,
   eyesFromLid,
+  GUN_STOP,
+  GUN_STOP_MARGIN,
+  HEAD,
   LID_ASIDE,
   SEAT_LEVER_PULL,
   SEAT_LEVER_RESET,
@@ -22,6 +25,8 @@ import { DRIVER_CONTROLS, DRIVER_TILLER, GEAR_LEVER, PANEL } from '../src/sim/dr
 import { type HandInput, Lever, type Vec3 } from '../src/sim/mechanism.js';
 import { DRIVER_PERISCOPE } from '../src/sim/periscope.js';
 import { TURRET_DIAL } from '../src/sim/turret-dial.js';
+import { createGunnerInput, createTurretState, keepOutOf, MAX_ELEVATION, MUZZLE_REACH, stepTurret, TRUNNION } from '../src/sim/turret.js';
+import { MAX_RPM } from '../src/sim/tank-drive.js';
 
 const DEG = Math.PI / 180;
 const hand = (x: number, y: number, z: number): HandInput => ({ fist: [x, y, z], across: [1, 0, 0], tip: null, trigger: 0, tracked: false });
@@ -179,5 +184,88 @@ describe('the convoy grips', () => {
     convoy.lock(1, onGrip.fist, point, axis);
     expect(axis).toEqual([0, 1, 0]);
     expect(point[1]).toBeGreaterThan(plainAt[1] + 0.3);
+  });
+});
+
+describe('the gun stop while the driver is head out', () => {
+  /** The head's middles at the raised head box's corners and middle, and at the top of its rise, hull space. */
+  function heads(): Vec3[] {
+    const [left, right, forward, back] = CONVOY_SEAT.headBox;
+    const e = CONVOY_SEAT.eye;
+    const out: Vec3[] = [];
+    for (const x of [e[0] - left, e[0], e[0] + right]) {
+      for (const z of [e[2] - forward, e[2], e[2] + back]) {
+        for (const y of [e[1], e[1] + CONVOY_SEAT.headUp]) out.push([x + HEAD.centre[0], y + HEAD.centre[1], z + HEAD.centre[2]]);
+      }
+    }
+    return out;
+  }
+  /** The nearest the barrel's axis comes to `p` for turret `yaw` and gun `elevation`, m. */
+  function barrelGap(p: Vec3, yaw: number, elevation: number): number {
+    // Into turret space, then along the elevated barrel from the trunnions.
+    const dx = p[0];
+    const dz = p[2] - TURRET.z;
+    const tx = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+    const tz = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+    const ry = p[1] - TRUNNION.y;
+    const rz = tz - TRUNNION.z;
+    const along = Math.max(0, Math.min(MUZZLE_REACH, -rz * Math.cos(elevation) + ry * Math.sin(elevation)));
+    const ax = 0;
+    const ay = along * Math.sin(elevation);
+    const az = -along * Math.cos(elevation);
+    return Math.hypot(tx - ax, ry - ay, rz - az);
+  }
+
+  it('covers the turns where the barrel would meet the raised head, left of forward, and leaves straight ahead free', () => {
+    expect(GUN_STOP.from).toBeGreaterThan(0);
+    expect(GUN_STOP.to).toBeLessThan(45 * DEG);
+    // Outside the band the barrel keeps its gap from every head, level or at full elevation.
+    for (const yaw of [GUN_STOP.from - 0.2 * DEG, GUN_STOP.to + 0.2 * DEG, 0, -30 * DEG]) {
+      for (const head of heads()) {
+        for (const elevation of [0, MAX_ELEVATION / 2, MAX_ELEVATION]) {
+          expect(barrelGap(head, yaw, elevation) - HEAD.radius - GUN.barrelRadius, `${(yaw / DEG).toFixed(1)}°`).toBeGreaterThan(GUN_STOP_MARGIN - 0.005);
+        }
+      }
+    }
+    // Inside it, level, the barrel meets the head: the band is no wider than it needs to be in its middle.
+    const middle = (GUN_STOP.from + GUN_STOP.to) / 2;
+    expect(Math.min(...heads().map((h) => barrelGap(h, middle, 0)))).toBeLessThan(HEAD.radius + GUN.barrelRadius);
+  });
+
+  it('stops the turret at its edges, power or crank, and lets it out if it was inside', () => {
+    const s = createTurretState();
+    const input = createGunnerInput();
+    input.traverse = 1;
+    for (let i = 0; i < 600; i++) {
+      const before = s.yaw;
+      stepTurret(s, input, MAX_RPM, 1 / 60);
+      keepOutOf(s, before, GUN_STOP);
+    }
+    expect(s.yaw).toBeCloseTo(GUN_STOP.from, 6);
+    expect(s.rate).toBe(0);
+    // From the left, a crank's big turn stops at the far edge.
+    s.yaw = GUN_STOP.to + 10 * DEG;
+    input.traverse = 0;
+    input.crank = -20 * 2 * Math.PI;
+    let before = s.yaw;
+    stepTurret(s, input, MAX_RPM, 1 / 60);
+    expect(keepOutOf(s, before, GUN_STOP)).toBe(true);
+    expect(s.yaw).toBeCloseTo(GUN_STOP.to, 6);
+    // Inside the band (the driver came up with the gun there): free to turn out.
+    s.yaw = (GUN_STOP.from + GUN_STOP.to) / 2;
+    input.crank = 2 * Math.PI;
+    before = s.yaw;
+    stepTurret(s, input, MAX_RPM, 1 / 60);
+    expect(keepOutOf(s, before, GUN_STOP)).toBe(false);
+    expect(s.yaw).toBeGreaterThan(before);
+    // Round the back the band never catches.
+    s.yaw = Math.PI - 0.01;
+    input.crank = 0;
+    input.traverse = 1;
+    for (let i = 0; i < 60; i++) {
+      before = s.yaw;
+      stepTurret(s, input, MAX_RPM, 1 / 60);
+      expect(keepOutOf(s, before, GUN_STOP)).toBe(false);
+    }
   });
 });

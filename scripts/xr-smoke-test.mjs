@@ -2881,6 +2881,20 @@ async function theConvoySeat() {
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
 
+  // The gun stop: with the driver's head out, the turret can't turn the barrel over the hatch.
+  evalInApp('(window.__turret.forward(), true)');
+  await sleep(200);
+  const stopsBefore = evalInApp('window.__turret.headOutStops');
+  evalInApp('(window.__turret.crank(10), true)');
+  const held = await waitFor('the turret stopped short of the hatch', () => {
+    const t = evalInApp('({ yaw: window.__turret.state().yawDeg, stops: window.__turret.headOutStops, sign: window.__turret.sign })');
+    return t.stops > stopsBefore && t;
+  }, 3000, 100).catch(() => evalInApp('({ yaw: window.__turret.state().yawDeg, stops: window.__turret.headOutStops, sign: window.__turret.sign })'));
+  check('Head out, the crank\'s 20° left stops the turret before the barrel reaches the driver\'s hatch, and the sign says why',
+    held.stops > stopsBefore && held.yaw > 2 && held.yaw < 6 && /head is out/.test(held.sign),
+    `turret ${held.yaw.toFixed(1)}° left, stops ${held.stops}, sign "${held.sign}"`);
+  evalInApp('(window.__turret.forward(), true)');
+
   await menuButtonPress();
   await menuClick('menu-head-out');
   const down = await waitFor('the seat lowered', () => { const c = convoy(); const s = seated(); return !c.shown && s.fade === 0 && s.head[1] < roofTop - 0.1 && { c, s }; }, 10000)

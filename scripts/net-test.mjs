@@ -344,6 +344,18 @@ async function seatChecks(host, guest, label, hostSeat = 'driver') {
     }, 8000).catch(() => null);
     check(`The driver ${up ? 'raising' : 'lowering'} their seat to ${up ? 'drive head out' : 'drive closed down'}: the gunner's page draws them ${up ? 'raised, their lid open' : 'back in the seat'} (${label})`,
       seen !== null, JSON.stringify(seen ?? await raisedOnGunner()));
+    if (up) {
+      // The gunner's page owns the turret: with the driver's head out, it can't turn the barrel over their hatch.
+      await gunner.page.evaluate(() => { window.__turret.forward(); window.__turret.crank(10); });
+      const turrets = () => Promise.all([gunner, driver].map((p) => p.page.evaluate(() => ({ yaw: window.__turret.state().yawDeg, stops: window.__turret.headOutStops }))));
+      const stopped = await waitFor('the turret stopped short of the driver\'s hatch on both pages', async () => {
+        const [g, d] = await turrets();
+        return g.stops > 0 && g.yaw > 2 && g.yaw < 6 && Math.abs(d.yaw - g.yaw) < 0.5 ? [g, d] : null;
+      }, 8000).catch(() => null);
+      check(`With the driver's head out, the gunner's crank turning 20° left stops the turret short of the driver's hatch, on both pages (${label})`,
+        stopped !== null, JSON.stringify(stopped ?? await turrets()));
+      await gunner.page.evaluate(() => window.__turret.forward());
+    }
   }
 }
 

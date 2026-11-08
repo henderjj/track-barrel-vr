@@ -14,7 +14,7 @@
  * the parking brake and the switch strip stay where they are: set them before
  * going up.
  */
-import { DRIVER_HATCH, HULL, type Seat, type SeatId, SEATS } from './cabin.js';
+import { DRIVER_HATCH, GUN, HULL, type Seat, type SeatId, SEATS, TURRET } from './cabin.js';
 import type { LeverSpec, Vec3 } from './mechanism.js';
 
 /** How far the eyes stand over the roof's top in the convoy position, m: enough to see the road over the hood. */
@@ -47,8 +47,12 @@ export const CONVOY_GRIP = { radius: 0.016, gripLength: 0.11, rodRadius: 0.009 }
 /** How the neck keeps clear of the hatch's rim, m: the head box stops this far from it. */
 export const NECK_CLEARANCE = 0.07;
 
-/** How far the eyes may rise in the convoy position before the player has stood up from the seat, m. */
-export const CONVOY_HEAD_UP = 0.25;
+/**
+ * How far the eyes may rise in the convoy position before the view fades, m:
+ * a little sitting up, but not standing, which would put the head where the
+ * gun passes (GUN_STOP is drawn round this head).
+ */
+export const CONVOY_HEAD_UP = 0.1;
 
 const down = SEATS.driver;
 const raisedEye = [down.eye[0], down.eye[1] + CONVOY_RAISE, down.eye[2] + CONVOY_BACK] as const;
@@ -204,3 +208,37 @@ export const LID_ASIDE = (() => {
 export function eyesFromLid(): number {
   return CONVOY_SEAT.eye[0] - CONVOY_SEAT.headBox[0] - LID_ASIDE.x1;
 }
+
+/** A head round the eyes, for the gun's clearance: its middle from the eye point (hull space, m) and its radius with a helmet, m. */
+export const HEAD = { centre: [0, 0.02, 0.07] as const, radius: 0.11 } as const;
+/** The gap the gun's barrel keeps from a raised driver's head, m. */
+export const GUN_STOP_MARGIN = 0.03;
+
+/**
+ * The turret turns the gun can't be laid through while the driver's head is
+ * out (radians, positive left as the turret's yaw): the band in which the
+ * barrel, level or elevated to its limit, would meet a head anywhere in the
+ * raised head box. The turret stops at its edges (src/sim/turret.ts,
+ * `keepOutOf`). Raising the gun is no way past it: over the head box's back
+ * the barrel would need more than the gun's 20 degrees.
+ */
+export const GUN_STOP = (() => {
+  const [left, right, forward, back] = CONVOY_SEAT.headBox;
+  const eye = CONVOY_SEAT.eye;
+  const clear = HEAD.radius + GUN.barrelRadius + GUN_STOP_MARGIN;
+  let from = Infinity;
+  let to = -Infinity;
+  for (const x of [eye[0] - left, eye[0] + right]) {
+    for (const z of [eye[2] - forward, eye[2] + back]) {
+      const dx = x + HEAD.centre[0];
+      const dz = z + HEAD.centre[2] - TURRET.z;
+      const distance = Math.hypot(dx, dz);
+      // The barrel points along (-sin yaw, -cos yaw).
+      const yaw = Math.atan2(-dx, -dz);
+      const half = Math.asin(Math.min(1, clear / distance));
+      from = Math.min(from, yaw - half);
+      to = Math.max(to, yaw + half);
+    }
+  }
+  return { from, to } as const;
+})();
