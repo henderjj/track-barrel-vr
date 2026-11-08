@@ -1,4 +1,4 @@
-import { type BufferGeometry, Group, Mesh, MeshLambertMaterial, type Object3D, type Vector3 } from '@iwsdk/core';
+import { type BufferGeometry, Euler, Group, Mesh, MeshLambertMaterial, type Object3D, type Vector3 } from '@iwsdk/core';
 import { describe, expect, it } from 'vitest';
 import * as avatar from '../src/scene-assets/avatar.scene-asset.js';
 import * as cabin from '../src/scene-assets/cabin.scene-asset.js';
@@ -19,7 +19,8 @@ import { markerParts, targetParts } from '../src/scene-assets/range.scene-asset.
 import { MARKER_RANGES, RANGE_TARGETS } from '../src/sim/range.js';
 import * as sight from '../src/scene-assets/sight.scene-asset.js';
 import { createTerrain } from '../src/scene-assets/terrain.scene-asset.js';
-import { GROUND_Y } from '../src/sim/cabin.js';
+import { GROUND_Y, hipPoint, SEATS } from '../src/sim/cabin.js';
+import { createSeatedBody, solveSeatedBody } from '../src/sim/seated-body.js';
 import { TURRET } from '../src/sim/cabin.js';
 import { EYEPIECE } from '../src/sim/gunsight.js';
 import {
@@ -482,7 +483,37 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     for (const index of [0, 1]) {
       expectNone([avatar.createAvatarHead(index)], CABIN_GAP);
       expectNone([avatar.createAvatarTorso(index)], CABIN_GAP);
+      expectNone([avatar.createAvatarNeck(index)], CABIN_GAP);
       expectNone([avatar.createAvatarLegs(index, 0.63)], CABIN_GAP);
+    }
+  });
+
+  it('on a seated crewmate, sitting up, leaning and looking round (F1.1b)', () => {
+    const seat = SEATS.driver;
+    const hip = hipPoint(seat, [0, 0, 0]);
+    // [lean of the head from the eye point (m), yaw, pitch, roll (rad)]
+    const poses: [[number, number, number], number, number, number][] = [
+      [[0, 0, 0], 0, 0, 0],
+      [[0, -0.06, -0.2], 0, -0.25, 0],
+      [[0, 0, 0], 1.2, -0.1, 0],
+      [[0.2, -0.04, 0], 0, 0, -0.2],
+      [[-0.2, -0.04, 0], -0.6, 0, 0.2],
+      [[0, 0.15, 0], 0, 0, 0],
+      [[0, -0.15, 0], 0, 0.3, 0],
+    ];
+    for (const [lean, yaw, pitch, roll] of poses) {
+      const head = avatar.createAvatarHead(0);
+      const torso = avatar.createAvatarTorso(0);
+      const neck = avatar.createAvatarNeck(0);
+      const legs = avatar.createAvatarLegs(0, hip[1] - seat.floorY);
+      head.position.set(seat.eye[0] + lean[0], seat.eye[1] + lean[1], seat.eye[2] + lean[2]);
+      head.quaternion.setFromEuler(new Euler(pitch, yaw, roll, 'YXZ'));
+      legs.position.set(...hip);
+      const q = head.quaternion;
+      const body = solveSeatedBody(head.position.toArray(), [q.x, q.y, q.z, q.w], hip, 0, 0, createSeatedBody());
+      avatar.poseCrewBody(torso, neck, body, 0);
+      for (const o of [head, torso, neck, legs]) o.updateMatrixWorld(true);
+      expectNone([head, torso, neck, legs], CABIN_GAP);
     }
   });
 

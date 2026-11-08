@@ -6,6 +6,7 @@ import { boardDown, BOARD_FIRST, lineClosed, lineFor } from '../sim/biathlon.js'
 import { boxAt, LINE_ACROSS } from '../sim/course.js';
 import { RANGE_TARGETS } from '../sim/range.js';
 import { hullToSeat, SEATS, seatToHull, type SeatId } from '../sim/cabin.js';
+import { NECK_BASE, NOD_SHARE } from '../sim/seated-body.js';
 import { MAX_TRAVERSE_ACCEL } from '../sim/comfort.js';
 import {
   BotDriver,
@@ -62,6 +63,15 @@ const SIDES = ['left', 'right'] as const;
 
 /** How fast the bot's head moves to a new seat, m/s. */
 const MOVE_SPEED = 1.5;
+/**
+ * Where the gunner's eyes go while it lays the gun, from the seat's eye
+ * point, in the seat's frame, m: leaning in to the gunsight's eyecup (the
+ * head box's front edge is 16 cm ahead), as a player does. It shows the
+ * seated body bending at the hips (F1.1b).
+ */
+const SIGHT_LEAN: Vec3 = [0, -0.03, -0.14];
+/** How fast the bot leans in and back, m/s. */
+const LEAN_SPEED = 0.4;
 /** How fast its hands move from one thing to the next, m/s. */
 const HAND_SPEED = 0.8;
 /** A hand this close to a handle squeezes to take hold, m (it comes to rest exactly there). */
@@ -168,6 +178,12 @@ export class CrewBotSystem extends createSystem({}) {
   private seat: SeatId | null = null;
   private head: Vec3 = [0, 0, 0];
   private headGoal: Vec3 = [0, 0, 0];
+  /** Where its eyes are sent: `head` moved as the head turns on the neck (F1.1b). */
+  private eyes: Vec3 = [0, 0, 0];
+  private neckRest = new Vector3();
+  private neckTurned = new Vector3();
+  private nod = new Euler(0, 0, 0, 'YXZ');
+  private yAxis = new Vector3(0, 1, 0);
   private hands: Record<Side, BotHand> = { left: createHand(), right: createHand() };
   private look: [number, number] = [0, 0];
   private euler = new Euler(0, 0, 0, 'YXZ');
@@ -254,9 +270,9 @@ export class CrewBotSystem extends createSystem({}) {
     console.info('[Bot] this page plays as the practice crewmate');
     netLink.headOverride = () => {
       const p = this.headPose;
-      p.px = this.head[0];
-      p.py = this.head[1];
-      p.pz = this.head[2];
+      p.px = this.eyes[0];
+      p.py = this.eyes[1];
+      p.pz = this.eyes[2];
       p.qx = this.quat.x;
       p.qy = this.quat.y;
       p.qz = this.quat.z;
@@ -310,7 +326,9 @@ export class CrewBotSystem extends createSystem({}) {
       return;
     }
     const seat = SEATS[seating.mine];
-    seatToHull(seat, seating.turretYaw, seat.eye, this.headGoal);
+    const leaning = this.started && this.seat === 'gunner' && seating.mine === 'gunner' && this.phase === 'lay' && !ride.active && !seating.away;
+    for (let i = 0; i < 3; i++) this.p[i] = seat.eye[i] + (leaning ? SIGHT_LEAN[i] : 0);
+    seatToHull(seat, seating.turretYaw, this.p, this.headGoal);
     if (!this.started) {
       this.started = true;
       this.startedAt = this.time;
@@ -340,8 +358,9 @@ export class CrewBotSystem extends createSystem({}) {
         if (was) hullToSeat(seat, seating.turretYaw, seatToHull(was, seating.turretYaw, hand.at, this.q), hand.at);
       }
     }
-    // Moved seats: slide across rather than jump.
-    stepTowards(this.head, this.headGoal, MOVE_SPEED * dt);
+    // Moved seats: slide across rather than jump; lean in and back more gently.
+    const far = Math.hypot(this.headGoal[0] - this.head[0], this.headGoal[1] - this.head[1], this.headGoal[2] - this.head[2]) > 0.3;
+    stepTowards(this.head, this.headGoal, (far ? MOVE_SPEED : LEAN_SPEED) * dt);
 
     if (ride.active || seating.away) {
       this.rest('left');
@@ -355,9 +374,20 @@ export class CrewBotSystem extends createSystem({}) {
     this.say();
 
     idleLook((this.time - this.startedAt), this.look);
-    const yaw = (seat.frame === 'turret' ? seating.turretYaw : 0) + this.look[0];
+    if (leaning) {
+      // Eye to the sight: looking straight ahead.
+      this.look[0] = 0;
+      this.look[1] = 0;
+    }
+    const seatYaw = seat.frame === 'turret' ? seating.turretYaw : 0;
+    const yaw = seatYaw + this.look[0];
     this.euler.set(this.look[1], yaw, 0, 'YXZ');
     this.quat.setFromEuler(this.euler);
+    // A head turns and nods on its neck, so the eyes swing about the neck's base (src/sim/seated-body.ts).
+    this.neckRest.set(NECK_BASE[0], NECK_BASE[1], NECK_BASE[2]).applyAxisAngle(this.yAxis, seatYaw);
+    this.nod.set(this.look[1] * NOD_SHARE, yaw, 0, 'YXZ');
+    this.neckTurned.set(NECK_BASE[0], NECK_BASE[1], NECK_BASE[2]).applyEuler(this.nod);
+    for (let i = 0; i < 3; i++) this.eyes[i] = this.head[i] + this.neckRest.getComponent(i) - this.neckTurned.getComponent(i);
   }
 
   // ------------------------------------------------------------ Calls
