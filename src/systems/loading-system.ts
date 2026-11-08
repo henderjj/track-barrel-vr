@@ -50,6 +50,7 @@ import {
   type LoadingSnapshot,
   RACK_SLOTS,
   type Side,
+  spentShells,
   type Vec3,
 } from '../sim/loading.js';
 import { MANTLET_DEPTH, TRUNNION } from '../sim/turret.js';
@@ -95,6 +96,19 @@ export function resetLoading(): void {
 /** Practice → Ready to fire (F1.11): a shell rammed and the breech closed at once, on the gunner's page. */
 export function loadForPractice(): void {
   active?.loadNow();
+}
+
+/**
+ * A biathlon line's rounds (F5.3b): the rack holds only `n` (Infinity for
+ * no limit), and a fired shell's slot stays empty. The gunner's page does it.
+ */
+export function limitRounds(n: number): void {
+  if (active?.isOwner()) active.drill.setRounds(n);
+}
+
+/** The rounds the loading on this page allows (Infinity: no limit), or NaN if this page doesn't load. */
+export function loadingRounds(): number {
+  return active?.isOwner() ? active.drill.rounds : Number.NaN;
 }
 
 /**
@@ -166,13 +180,15 @@ export class LoadingSystem extends createSystem({}) {
   private turret: Entity | null = null;
   private recoilPart: Object3D | null = null;
   private shells: Mesh[] = [];
+  /** Whether each shell was last drawn spent (hidden), so only a change of it touches `visible`. */
+  private spentDrawn: boolean[] = [];
   private casings: Mesh[] = [];
   private block: Mesh | null = null;
   private lever: Mesh | null = null;
   private flash: Mesh | null = null;
   private board!: { ctx: CanvasRenderingContext2D; texture: CanvasTexture };
   /** What the board shows now. */
-  private boardKey = { loads: -1, last: 0, best: 0, fumbles: 0, streak: 0, bestStreak: 0, phase: -1, shot: '' };
+  private boardKey = { loads: -1, last: 0, best: 0, fumbles: 0, streak: 0, bestStreak: 0, phase: -1, shot: '', spent: 0 };
   private boardText: [string, string, string] = ['', '', ''];
   private wasOwner = true;
   private time = 0;
@@ -281,6 +297,7 @@ export class LoadingSystem extends createSystem({}) {
     for (let i = 0; i < this.drill.shells.length; i++) {
       const shell = createShell(i);
       this.shells.push(shell);
+      this.spentDrawn.push(false);
       this.world.createTransformEntity(shell, { parent: turret });
     }
     for (let i = 0; i < CASINGS_KEPT; i++) {
@@ -312,7 +329,7 @@ export class LoadingSystem extends createSystem({}) {
   }
 
   /** The gunner's page loads, as it owns the turret; alone, this page does whichever seat it sits in. */
-  private isOwner(): boolean {
+  isOwner(): boolean {
     return !netLink.connected || seating.mine === 'gunner';
   }
 
@@ -562,6 +579,13 @@ export class LoadingSystem extends createSystem({}) {
     for (let i = 0; i < this.shells.length; i++) {
       const shell = s.shells[i];
       const mesh = this.shells[i];
+      // A biathlon line's spent round (F5.3b): its rack slot stands empty. Only a change of
+      // spent touches `visible`, so a shell hidden by something else (the ride hides the cabin) stays hidden.
+      const spent = shell.place === 'spent';
+      if (spent !== this.spentDrawn[i]) {
+        this.spentDrawn[i] = spent;
+        mesh.visible = !spent;
+      }
       mesh.position.set(shell.centre[0], shell.centre[1], shell.centre[2]);
       // The model's nose points to -Z; shells are round, so their roll doesn't show.
       this.axis.set(shell.axis[0], shell.axis[1], shell.axis[2]);
@@ -630,10 +654,11 @@ export class LoadingSystem extends createSystem({}) {
   /** Whether the board already shows `s` and `shot`; remembers them if not. */
   private boardKeyUnchanged(s: LoadingSnapshot, shot: string): boolean {
     const phase = s.loaded ? 3 : s.breechShell >= 0 ? (s.rammed ? 2 : 1) : s.lever > 0.3 ? 4 : 0;
+    const spent = spentShells(s);
     const k = this.boardKey;
     if (
       k.loads === s.loads && Object.is(k.last, s.last) && Object.is(k.best, s.best) && k.fumbles === s.fumbles &&
-      k.streak === s.streak && k.bestStreak === s.bestStreak && k.phase === phase && k.shot === shot
+      k.streak === s.streak && k.bestStreak === s.bestStreak && k.phase === phase && k.shot === shot && k.spent === spent
     ) {
       return true;
     }
@@ -645,6 +670,7 @@ export class LoadingSystem extends createSystem({}) {
     k.bestStreak = s.bestStreak;
     k.phase = phase;
     k.shot = shot;
+    k.spent = spent;
     return false;
   }
 

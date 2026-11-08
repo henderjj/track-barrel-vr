@@ -2,6 +2,7 @@ import { createSystem, Euler, Matrix4, Quaternion, Vector3, VisibilityState } fr
 import type { PoseSample } from '../net/pose-codec.js';
 import { settings } from '../settings.js';
 import { aimAt, COURSE_TARGET_FIRST, targetFaces } from '../sim/ballistics.js';
+import { boardDown, BOARD_FIRST, lineClosed, lineFor } from '../sim/biathlon.js';
 import { boxAt, LINE_ACROSS } from '../sim/course.js';
 import { RANGE_TARGETS } from '../sim/range.js';
 import { hullToSeat, SEATS, seatToHull, type SeatId } from '../sim/cabin.js';
@@ -48,6 +49,7 @@ import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { firingLampLit } from './firing-lamp-system.js';
 import { handUse } from './grip-system.js';
 import { loadingShown, scriptLoadingHand } from './loading-system.js';
+import { raceLineNow, shownRun } from './range-run-system.js';
 import { findControl, type ScriptedHand, scriptedHands } from './mechanism-system.js';
 import { FLAG_LEFT_TRACKED, FLAG_RIGHT_TRACKED, netLink } from './net-system.js';
 import { ride } from './ride-system.js';
@@ -181,6 +183,8 @@ export class CrewBotSystem extends createSystem({}) {
 
   // The driver.
   private driver = new BotDriver();
+  /** The race (F5.3b) it last started driving, by the run's id. */
+  private raceId = 0;
   private wish = createDriveWish();
   private tank = { x: 0, z: 0, heading: 0, speed: 0, gear: 1 as 0 | 1 | 2 };
   /** The engine ran last frame, when it last caught (s on this.time), and the start-up step under way (F1.17). */
@@ -482,11 +486,37 @@ export class CrewBotSystem extends createSystem({}) {
       this.onControl('right', TILLER.right, leverGrip(DRIVER_TILLER, tillerAngle(0), this.p));
       return;
     }
+    this.raceOrders();
     // It drives with the automatic box (DriveSystem gives the crewmate's page no other), so its hands stay on the tillers.
     // The firing lamp lit (F2.5): it holds the tank steady for the shot.
     const wish = this.driver.update(dt, tank, this.wish, firingLampLit());
     this.onControl('left', TILLER.left, leverGrip(DRIVER_TILLER, tillerAngle(wish.left), this.p));
     this.onControl('right', TILLER.right, leverGrip(DRIVER_TILLER, tillerAngle(wish.right), this.p));
+  }
+
+  /**
+   * The biathlon race (F5.3b) as the driver's orders: a new race starts it
+   * round the race's route from the start line; it waits in this lap's box
+   * while the line is open and goes round the penalty loop for each loop
+   * owed. When the race ends it halts.
+   */
+  private raceOrders(): void {
+    const s = shownRun();
+    const o = this.driver.orders;
+    const on = s.mode === 'biathlon' && s.phase === 'running';
+    o.on = on;
+    o.go = on && s.clock >= 0 && !s.paused;
+    o.laps = s.laps;
+    o.owed = s.owed;
+    const line = lineFor(s.laps);
+    o.hold = on && line >= 0 && !lineClosed(s, line);
+    if (on && s.id !== this.raceId && s.clock < 0) {
+      this.raceId = s.id;
+      this.driver.startRace();
+      console.info('[Bot] racing');
+    } else if (!on && this.driver.mode === 'race') {
+      this.driver.call('halt', this.tank.heading);
+    }
   }
 
   // ------------------------------------------------------------ Gunning
@@ -534,6 +564,27 @@ export class CrewBotSystem extends createSystem({}) {
       if (this.load(dt)) this.phase = 'lay';
       return;
     }
+    // In a biathlon race (F5.3b) it lays only halted in this lap's firing
+    // box, on that line's boards still standing: anywhere else a round would
+    // be wasted.
+    const race = shownRun();
+    if (race.mode === 'biathlon' && race.phase === 'running') {
+      const line = raceLineNow();
+      for (let i = 0; i < this.faces.length; i++) {
+        const j = i - BOARD_FIRST;
+        this.skip[i] = line < 0 || j < 0 || j >= LINE_ACROSS.length * 2 || Math.floor(j / LINE_ACROSS.length) !== line || boardDown(race, j);
+      }
+      this.target = line < 0 ? -1 : chooseTarget(tank.x, tank.z, this.faces, this.skip, sightLimit());
+      if (this.target < 0) {
+        // Loaded and waiting for the line: its right hand off the grip, so the firing lamp (F2.5) doesn't tell the driver to stop.
+        this.laidFor = 0;
+        this.holdElevation(turret.elevation);
+        this.rest('right');
+        return;
+      }
+      this.layAndFire(dt);
+      return;
+    }
     // Laying: the nearest target not hit yet; all hit, round again. In a
     // biathlon firing box (F5.3a) it shoots that line's boards, elsewhere
     // the range's targets.
@@ -559,6 +610,14 @@ export class CrewBotSystem extends createSystem({}) {
       this.twist(0);
       return;
     }
+    this.layAndFire(dt);
+  }
+
+  /** Lay on this.target with the power traverse and the wheel, and fire once laid with the tank halted (asking the driver to halt if it won't). */
+  private layAndFire(dt: number): void {
+    const turret = turretState();
+    const tank = tankState();
+    const right = this.hands.right;
     aimAt(tank, this.faces[this.target], muzzlePoint, this.aim);
     const yawError = wrapAngle(this.aim.yaw - turret.yaw);
     const demand = traverseDemand(yawError, turret.rate, powerTraverseRate(engineRpm()), MAX_TRAVERSE_ACCEL);

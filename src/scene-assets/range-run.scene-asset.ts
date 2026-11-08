@@ -1,5 +1,7 @@
 import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial } from '@iwsdk/core';
 import { TURRET, VISION_SLIT } from '../sim/cabin.js';
+import { COURSE_BOARD, COURSE_TARGETS, courseBoardMiddle } from '../sim/course.js';
+import { groundHeight } from '../sim/terrain.js';
 import { HIT_FLAG } from '../sim/range-run.js';
 import { BOARD } from './loading.scene-asset.js';
 import { mergeParts, type Part } from './lowpoly.js';
@@ -17,6 +19,8 @@ const BACKING = 0x2b2622;
 const BRACKET = 0x3a3f42;
 const POLE = 0xe8e4d8;
 const FLAG_RED = 0xc8281e;
+/** The course boards' white (course.scene-asset.ts). */
+const COVER_WHITE = 0xf4f2ea;
 
 /**
  * A run clock: its face's middle, size and turn about +Y (its face looks
@@ -98,5 +102,49 @@ export function createHitFlag(): Mesh {
     box([f.width, f.height, f.thickness], [f.width / 2, f.pole - 0.1 - f.height / 2, 0], FLAG_RED),
   ]), material);
   mesh.name = 'Hit Flag';
+  return mesh;
+}
+
+/**
+ * A biathlon board's cover (F5.3b, docs/biathlon-race.md): a white disc
+ * that swings over a course board's black disc when the board falls, as a
+ * biathlon target's flap does, so the line's standing boards still read as
+ * black discs in the sight. Its face looks along +Z, its back
+ * BOARD_COVER.gap in front of the board's disc (the 8 mm rule out in the
+ * world); RangeRunSystem stands it on the board's middle, turned as the
+ * board.
+ */
+export const BOARD_COVER = {
+  /** Wider than the board's disc all round, m. */
+  radius: COURSE_BOARD.disc + 0.03,
+  thickness: 0.02,
+  /** From the board's middle plane to the disc's front, and on to the cover's back, m (boardParts: the disc's middle 7 cm out, 6 cm thick). */
+  discFront: 0.1,
+  gap: 0.01,
+} as const;
+
+/** How far in front of the board's middle plane the cover's middle stands, m. */
+export function boardCoverOut(): number {
+  return BOARD_COVER.discFront + BOARD_COVER.gap + BOARD_COVER.thickness / 2;
+}
+
+/** Where board `j`'s cover stands: its middle's x and z (world space, the tile's own copy), its height above the ground there, and its turn about +Y. */
+export function boardCoverSpot(j: number, out: [number, number, number, number]): [number, number, number, number] {
+  const t = COURSE_TARGETS[j];
+  const ahead = boardCoverOut();
+  // In front of the board, towards its box: the board's face looks along its yaw.
+  out[0] = t.x + Math.sin(t.yaw) * ahead;
+  out[1] = groundHeight(t.x, t.z) + courseBoardMiddle();
+  out[2] = t.z + Math.cos(t.yaw) * ahead;
+  out[3] = t.yaw;
+  return out;
+}
+
+export function createBoardCover(): Mesh {
+  const c = BOARD_COVER;
+  const disk = new CylinderGeometry(c.radius, c.radius, c.thickness, 20, 1);
+  disk.rotateX(Math.PI / 2);
+  const mesh = new Mesh(mergeParts([{ geometry: disk, color: COVER_WHITE }]), material);
+  mesh.name = 'Board Cover';
   return mesh;
 }

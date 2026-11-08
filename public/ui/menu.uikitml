@@ -30,7 +30,8 @@
     target; start or stop a range run, and ready to fire on each target,
     parked at the start, laid and loaded, or from the driver's seat to watch
     the firing lamp; go to the biathlon course's start line or either firing
-    line (F5.3a). Sights: go to the gunsight, lay the
+    line (F5.3a); start or stop a biathlon race, or be ready to fire at
+    either of its lines (F5.3b). Sights: go to the gunsight, lay the
     gun on a target's range mark, the sight's render choices; go to the
     driver's or the gunner's periscope, turn both ahead, their power. Test rigs: ride the tank (spike
     S2), the lever test and the mechanism kit.
@@ -83,7 +84,7 @@
     flex-direction: column;
     flex-shrink: 0;
     width: 476px;
-    min-height: 508px;
+    min-height: 548px;
   }
 
   .page {
@@ -594,6 +595,16 @@
             </div>
           </div>
           <div id="menu-course-status" class="hint">Biathlon course</div>
+          <div class="setting">
+            <div class="label">Biathlon race</div>
+            <div class="choices">
+              <Button id="menu-race-start" class="choice" size="sm" variant="secondary">Start</Button>
+              <Button id="menu-race-stop" class="choice" size="sm" variant="secondary">Stop</Button>
+              <Button id="menu-race-ready-0" class="choice" size="sm" variant="secondary">Ready line 1</Button>
+              <Button id="menu-race-ready-1" class="choice" size="sm" variant="secondary">Ready line 2</Button>
+            </div>
+          </div>
+          <div id="menu-race-status" class="hint">Biathlon race</div>
         </div>
       </div>
       <div id="page-sights" class="page" style="display: none">

@@ -25,7 +25,7 @@ import { MAX_SPEED, MAX_YAW_RATE } from './comfort.js';
 import type { EngineControlId } from './driver-station.js';
 import { CHOKE_COOLANT, CHOKE_HOLD, chokeLevel, type EngineStart, WARM_COOLANT } from './engine.js';
 import { TRACK_GAUGE } from './tank-drive.js';
-import { BOX_Z, COURSE_PATH, eastSideAt, FINISH_Z, JOIN, type Path, PENALTY_OWN, PENALTY_PATH } from './course.js';
+import { BOX_Z, COURSE_PATH, COURSE_START, eastSideAt, FINISH_Z, JOIN, type Path, PENALTY_OWN, PENALTY_PATH } from './course.js';
 import { wrapTile } from './terrain.js';
 
 const DEG = Math.PI / 180;
@@ -177,6 +177,12 @@ export interface RouteLeg {
   through?: boolean;
   heading?: number;
   label?: string;
+  /** The race's (F5.3b): which lap this leg is on (-1: the penalty loop's), and what it does there. */
+  lap?: number;
+  /** A firing line's halt: it waits there while the line is open. The finish: it stays. */
+  wait?: 'line' | 'finish';
+  /** Where the penalty loop leaves the course: round it if a loop is owed, on otherwise. */
+  fork?: boolean;
 }
 
 /**
@@ -242,6 +248,72 @@ export const COURSE_ROUTE: readonly RouteLeg[] = (() => {
   return legs;
 })();
 
+/** In the race, it halts at least this long in a firing box, s, then waits while the line is open (the gunner's three rounds). */
+export const LINE_HALT = 3;
+
+/**
+ * The crewmate's way round the biathlon race (F5.3b): from the course's
+ * start, three laps; on the first two it halts in that lap's firing box
+ * (lap 1 box 1, lap 2 box 2) and waits there while the line is open, then
+ * at the penalty loop's fork goes round the loop once for each loop owed;
+ * after the third lap it halts past the finish. Through legs every
+ * COURSE_STEP m as COURSE_ROUTE's. The penalty loop's legs come last
+ * (RACE_LOOP_FIRST on), ending at the fork again.
+ */
+export const RACE_ROUTE: readonly RouteLeg[] = (() => {
+  const legs: RouteLeg[] = [];
+  const L = COURSE_PATH.length;
+  const add = (path: Path, from: number, to: number, kmh: number, lap: number, slowFrom = Infinity) => {
+    const n = Math.max(1, Math.round((to - from) / COURSE_STEP));
+    for (let i = 1; i <= n; i++) {
+      const s = from + ((to - from) * i) / n;
+      const p = path.at(s);
+      legs.push({ x: p.x, z: p.z, kmh: s >= slowFrom ? COURSE_KMH.box : kmh, halt: 0, through: true, heading: p.heading, lap });
+    }
+  };
+  const leave = eastSideAt(JOIN.leave);
+  const back = eastSideAt(JOIN.back);
+  const end = eastSideAt(FINISH_Z);
+  for (let lap = 0; lap < BOX_Z.length; lap++) {
+    const box = eastSideAt(BOX_Z[lap]);
+    // Lap 1 from the start, 10 m short of the line; lap 2 from the line.
+    const from = lap === 0 ? eastSideAt(COURSE_START.z) - L : 0;
+    add(COURSE_PATH, from, box - COURSE_STEP, COURSE_KMH.loop, lap, box - BOX_SLOW);
+    const p = COURSE_PATH.at(box);
+    legs.push({ x: p.x, z: p.z, kmh: COURSE_KMH.box, halt: LINE_HALT, label: `firing box ${lap + 1}`, lap, wait: 'line' });
+    add(COURSE_PATH, box, leave, COURSE_KMH.box, lap);
+    legs[legs.length - 1].fork = true;
+    add(COURSE_PATH, leave, end, COURSE_KMH.loop, lap);
+  }
+  // The last lap, then on past the finish to halt.
+  add(COURSE_PATH, 0, L, COURSE_KMH.loop, BOX_Z.length);
+  add(COURSE_PATH, 0, 30, COURSE_KMH.box, BOX_Z.length + 1);
+  const stop = COURSE_PATH.at(40);
+  legs.push({ x: stop.x, z: stop.z, kmh: COURSE_KMH.box, halt: Infinity, label: 'the finish', lap: BOX_Z.length + 1, wait: 'finish' });
+  // The penalty loop: round its own track, back onto the course and up to the fork.
+  add(PENALTY_PATH, 0, PENALTY_OWN, COURSE_KMH.penalty, -1);
+  add(COURSE_PATH, back, leave, COURSE_KMH.box, -1);
+  legs[legs.length - 1].fork = true;
+  return legs;
+})();
+
+/** Where the race route's penalty loop legs start. */
+export const RACE_LOOP_FIRST = RACE_ROUTE.findIndex((leg) => leg.lap === -1);
+
+/** What the race tells the crewmate driver (F5.3b), set each frame by its system. */
+export interface RaceOrders {
+  /** A race is running: the gunner's Course call joins it. */
+  on: boolean;
+  /** Past the countdown: drive. */
+  go: boolean;
+  /** Laps counted so far. */
+  laps: number;
+  /** This lap's firing line is open: wait in its box. */
+  hold: boolean;
+  /** Penalty loops owed. */
+  owed: number;
+}
+
 /** The heading that faces from a point towards (dx, dz) further on, rad (0 faces -Z, positive turns left). */
 export function headingTo(dx: number, dz: number): number {
   return Math.atan2(-dx, -dz);
@@ -296,7 +368,7 @@ export interface TankView {
  * It drives with the automatic box (F1.16), so it never changes gear itself.
  */
 export class BotDriver {
-  mode: 'calls' | 'route' | 'course' = 'calls';
+  mode: 'calls' | 'route' | 'course' | 'race' = 'calls';
   motion: 'halt' | 'advance' | 'reverse' = 'halt';
   /** The heading it holds, rad (NaN until it has seen the tank). */
   heading = Number.NaN;
@@ -307,6 +379,12 @@ export class BotDriver {
   arrivals = 0;
   /** Holding the tank steady for the gun: the firing lamp is lit (F2.5). */
   steady = false;
+  /** The race's word (F5.3b), set each frame by its system. */
+  readonly orders: RaceOrders = { on: false, go: false, laps: 0, hold: false, owed: 0 };
+  /** Penalty loops it has gone round in this race (the tests count them). */
+  loopsTaken = 0;
+  /** Racing round the penalty loop: the leg to go on from once no loop is owed. */
+  private resume = -1;
   private steerOut = { left: 0, right: 0 };
   /** The legs it drives: ROUTE, or COURSE_ROUTE. */
   private legs: readonly RouteLeg[] = ROUTE;
@@ -339,14 +417,32 @@ export class BotDriver {
         this.halting = 0;
         return true;
       case 'course':
-        this.mode = 'course';
-        this.legs = COURSE_ROUTE;
+        // In a race (F5.3b) it drives the race from where the tank stands.
+        if (this.orders.on) {
+          this.mode = 'race';
+          this.legs = RACE_ROUTE;
+          this.resume = -1;
+        } else {
+          this.mode = 'course';
+          this.legs = COURSE_ROUTE;
+        }
         this.pickLeg = true;
         this.halting = 0;
         return true;
       default:
         return false;
     }
+  }
+
+  /** A race started (F5.3b): from the course's start, round RACE_ROUTE once the countdown is over. */
+  startRace(): void {
+    this.mode = 'race';
+    this.legs = RACE_ROUTE;
+    this.leg = 0;
+    this.halting = 0;
+    this.resume = -1;
+    this.loopsTaken = 0;
+    this.pickLeg = false;
   }
 
   /**
@@ -364,7 +460,10 @@ export class BotDriver {
       return out;
     }
     let base = 0;
-    if (this.mode !== 'calls') {
+    if (this.mode === 'race' && !this.orders.go) {
+      // The countdown: it stands on the start line.
+      base = 0;
+    } else if (this.mode !== 'calls') {
       if (this.pickLeg) this.nearestLeg(tank);
       base = this.followRoute(dt, tank);
     } else {
@@ -386,6 +485,8 @@ export class BotDriver {
     this.pickLeg = false;
     let best = Infinity;
     this.legs.forEach((leg, i) => {
+      // In a race, only this lap's legs.
+      if (this.mode === 'race' && leg.lap !== this.orders.laps) return;
       const d = Math.hypot(wrapTile(leg.x - tank.x), wrapTile(leg.z - tank.z));
       if (d <= best + 1e-6) {
         best = d;
@@ -398,10 +499,13 @@ export class BotDriver {
   private followRoute(dt: number, tank: TankView): number {
     const legs = this.legs;
     if (this.halting > 0) {
+      // In a race it waits at a line while the line is open (the gunner's rounds), and at the finish for good.
+      const wait = this.mode === 'race' ? legs[this.leg].wait : undefined;
+      if (wait === 'finish' || (wait === 'line' && this.orders.hold && this.halting <= dt)) return 0;
       this.halting -= dt;
       if (this.halting <= 0) {
         this.halting = 0;
-        this.leg = (this.leg + 1) % legs.length;
+        this.leg = this.nextLeg(this.leg);
       }
       return 0;
     }
@@ -412,7 +516,7 @@ export class BotDriver {
     for (let k = 0; k < 4 && leg.through; k++) {
       const h = leg.heading ?? 0;
       if (dx * -Math.sin(h) + dz * -Math.cos(h) > THROUGH_AHEAD) break;
-      this.leg = (this.leg + 1) % legs.length;
+      this.leg = this.nextLeg(this.leg);
       leg = legs[this.leg];
       dx = wrapTile(leg.x - tank.x);
       dz = wrapTile(leg.z - tank.z);
@@ -433,6 +537,24 @@ export class BotDriver {
     return (leg.kmh / 3.6 / MAX_SPEED) * clamp(distance / slowFrom, 0.3, 1);
   }
 
+  /** The leg after leg `i`: in a race, at the penalty loop's fork, round the loop while one is owed. */
+  private nextLeg(i: number): number {
+    const legs = this.legs;
+    if (this.mode === 'race' && legs[i].fork) {
+      const inLoop = legs[i].lap === -1;
+      if (this.orders.owed > 0 && RACE_LOOP_FIRST >= 0) {
+        if (!inLoop) this.resume = i + 1;
+        else this.loopsTaken++;
+        return RACE_LOOP_FIRST;
+      }
+      if (inLoop) {
+        this.loopsTaken++;
+        if (this.resume >= 0) return this.resume;
+      }
+    }
+    return (i + 1) % legs.length;
+  }
+
   /** One line for the menu and the tests. */
   describe(): string {
     if (this.steady) return 'holding steady: the gun is ready';
@@ -440,6 +562,14 @@ export class BotDriver {
       const leg = ROUTE[this.leg];
       const where = `${Math.round(-leg.z)} m up the road`;
       return this.halting > 0 ? `driving the route, halted (${Math.ceil(this.halting)} s)` : `driving the route to ${where}`;
+    }
+    if (this.mode === 'race') {
+      const leg = this.legs[this.leg];
+      if (!this.orders.go) return 'racing: waiting for Go';
+      if (leg.wait === 'finish' && this.halting > 0) return 'racing: finished';
+      if (leg.wait === 'line' && this.halting > 0) return `racing: halted in ${leg.label} for the gunner`;
+      if (leg.lap === -1) return `racing: round the penalty loop (${this.orders.owed} owed)`;
+      return `racing: lap ${Math.min(this.orders.laps + 1, BOX_Z.length + 1)}`;
     }
     if (this.mode === 'course') {
       const leg = this.legs[this.leg];

@@ -386,6 +386,22 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     expectNone([terrain, ...flags], WORLD_GAP);
   });
 
+  it("on the biathlon race's board covers (F5.3b), on their own and over every board's disc on the ground", async () => {
+    const run = await import('../src/scene-assets/range-run.scene-asset.js');
+    const { COURSE_TARGETS } = await import('../src/sim/course.js');
+    expectNone([run.createBoardCover()], WORLD_GAP);
+    const terrain = ground();
+    const covers = COURSE_TARGETS.map((_, j) => {
+      const cover = run.createBoardCover();
+      const [x, y, z, yaw] = run.boardCoverSpot(j, [0, 0, 0, 0]);
+      cover.position.set(x, GROUND_Y + y, z);
+      cover.rotation.y = yaw;
+      cover.updateMatrixWorld(true);
+      return cover;
+    });
+    expectNone([terrain, ...covers], WORLD_GAP);
+  });
+
   it('on the gunsight (F1.9): its eyepiece fixed in the turret and its objective on the gun, through the whole elevation', () => {
     const hull = cabin.createHull();
     for (let elevation = MIN_ELEVATION; elevation <= MAX_ELEVATION + 1e-9; elevation += (MAX_ELEVATION - MIN_ELEVATION) / 6) {

@@ -9,8 +9,10 @@ import {
   VisibilityState,
 } from '@iwsdk/core';
 import { crewPresence } from '../net/crew-presence.js';
-import { createHitFlag, RUN_CLOCKS, type RunClockPlace } from '../scene-assets/range-run.scene-asset.js';
-import { aimAt, rangeFaces } from '../sim/ballistics.js';
+import { boardCoverSpot, createBoardCover, createHitFlag, RUN_CLOCKS, type RunClockPlace } from '../scene-assets/range-run.scene-asset.js';
+import { aimAt, targetFaces } from '../sim/ballistics.js';
+import { BOARD_FIRST, boardDown, boardsDown, BOARDS_PER_LINE, lineClosed, lineFor } from '../sim/biathlon.js';
+import { BOX_Z, boxSpot, COURSE_START, COURSE_TARGETS } from '../sim/course.js';
 import {
   clockLines,
   copyRunSnapshot,
@@ -26,6 +28,8 @@ import {
   runEvent,
   runLine,
   runSign,
+  type RunMode,
+  RUN_MODES,
   type RunSnapshot,
   targetsHit,
 } from '../sim/range-run.js';
@@ -34,10 +38,11 @@ import { RANGE_TARGETS } from '../sim/range.js';
 import { groundHeight, wrapTile } from '../sim/terrain.js';
 import { muzzlePoint } from '../sim/turret.js';
 import { createTankDrive } from '../sim/tank-drive.js';
-import { resetTank, tankState } from './drive-system.js';
+import { goToFiringLine, shownCourse } from './course-system.js';
+import { placeTank, resetTank, tankState } from './drive-system.js';
 import { decidedListeners } from './firing-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
-import { loadForPractice, resetLoading } from './loading-system.js';
+import { limitRounds, loadForPractice, loadingRounds, resetLoading } from './loading-system.js';
 import { netLink } from './net-system.js';
 import { seating } from './seating.js';
 import { aimTurret, turretForward } from './turret-system.js';
@@ -47,6 +52,16 @@ const READY_WAIT = 5;
 /** The tank counts as parked at the start within this distance (m) and below this speed (m/s). */
 const AT_START = 0.5;
 const STILL = 0.1;
+/** How long a race's note (a line shot, a loop driven, the finish) stays on the sign, s. */
+const NOTE_SECONDS = 4;
+/**
+ * While a run's clock runs, the host sends it again at least this often, s,
+ * so the guest's clock (run on by its own frames between the host's words)
+ * can't drift from the host's: a page's slow frames are cut to 0.25 s each,
+ * so the two pages lose different amounts of time when they stutter, and a
+ * race runs about nine minutes.
+ */
+const RESYNC_SECONDS = 1;
 
 type RunAsk = 'start' | 'stop' | 'assist';
 const ASKS: readonly RunAsk[] = ['start', 'stop', 'assist'];
@@ -64,6 +79,26 @@ export function stopRun(): void {
 }
 
 /**
+ * Practice → Biathlon race → Start (or Restart), F5.3b: the tank parked
+ * short of the course's start line, a countdown, then three laps against
+ * the clock with three rounds at each firing line. The host does it; a
+ * guest asks.
+ */
+export function startRace(): void {
+  active?.ask('start', 'biathlon');
+}
+
+/**
+ * Practice → Biathlon race → Ready at line 1 or 2: the tank parked halted
+ * in firing box `k` with the engine running, the gun laid on the line's
+ * first board still standing and loaded. Alone, the player takes the
+ * gunner's seat. Marks a race on now as assisted.
+ */
+export function readyAtLine(k: number): void {
+  active?.readyLine(k);
+}
+
+/**
  * Practice → Ready to fire (100 m, 250 m, 500 m): the tank parked at the
  * start, where each target stands at its marked range, the gun laid on
  * target `i` and loaded, so one pull of the trigger hits it. Alone, the
@@ -75,14 +110,38 @@ export function readyToFire(i: number, seat: SeatId = 'gunner'): void {
   active?.ready(i, seat);
 }
 
-/** One line for the game menu. */
+/** One line for the game menu's Range run row. */
 export function runStatus(): string {
-  return active ? runLine(active.run.s) : '';
+  if (active == null) return '';
+  const s = active.run.s;
+  return s.mode === 'range' ? runLine(s) : 'No range run on: a biathlon race is.';
+}
+
+/** One line for the game menu's Biathlon race row (F5.3b). */
+export function raceStatus(): string {
+  if (active == null) return '';
+  const s = active.run.s;
+  return s.mode === 'biathlon' ? runLine(s) : 'No race on: three laps of the course, three rounds at each line.';
 }
 
 /** The run as this page shows it (the host's own, or its word on a guest): for F1.14's play-test stats. */
 export function shownRun(): Readonly<RunSnapshot> {
-  return active?.run.s ?? createRunSnapshot();
+  return active?.run.s ?? NO_RUN;
+}
+const NO_RUN = createRunSnapshot();
+
+/**
+ * The firing line whose boards a shot can bring down now in a race (F5.3b),
+ * or -1: the race's clock running, this lap's line not shot yet, and the
+ * tank halted in its box. The practice crewmate fires only then.
+ */
+export function raceLineNow(): number {
+  const s = shownRun();
+  if (s.mode !== 'biathlon' || s.phase !== 'running' || s.clock < 0 || s.paused) return -1;
+  const line = lineFor(s.laps);
+  if (line < 0 || lineClosed(s, line) || s.rounds <= 0) return -1;
+  const c = shownCourse();
+  return c.box === line && c.halted ? line : -1;
 }
 
 /** Whether this page lays and loads the gun: the gunner's page, or alone whichever seat (as TurretSystem and LoadingSystem own them). */
@@ -105,6 +164,18 @@ interface RangeRunDebug {
   clock(): string[];
   /** Which hit flags are up. */
   flags(): boolean[];
+  /** Start a biathlon race (F5.3b). */
+  race(): void;
+  /** Ready at line k: parked in its box, laid on a standing board and loaded. */
+  readyLine(k: number): void;
+  /** Which course boards are covered (fallen), line 1's three then line 2's. */
+  covers(): boolean[];
+  /** Where board cover `j` is drawn (ground space), or null while it's hidden. */
+  coverAt(j: number): number[] | null;
+  /** The rounds the loading on this page allows (null: no limit, or not the loading page). */
+  rounds(): number | null;
+  /** The line a shot counts at now, or -1. */
+  lineNow(): number;
   /** Where flag `i` is drawn (ground space), or null while it's down. */
   flagAt(i: number): number[] | null;
   /** A Ready to fire waiting for the tank to reach the start, or -1. */
@@ -126,8 +197,8 @@ interface RangeRunDebug {
  *
  * The host keeps the run (src/sim/range-run.ts), as it decides hits
  * (FiringSystem's decidedListeners), and sends it as a reliable `run` event
- * whenever it changes; the guest copies it and runs the clock on between
- * events, on the shared clock. A guest's Start and Stop ask the host
+ * whenever it changes (and each second while the clock runs); the guest
+ * copies it and runs the clock on between events, on the shared clock. A guest's Start and Stop ask the host
  * (`run-ask`). The clock stands still while the crewmate is away. Ready to
  * fire parks the tank and has the gunner's page lay the gun with `aimAt`
  * and load it (`range-ready` when the button was pressed on the other
@@ -135,7 +206,16 @@ interface RangeRunDebug {
  */
 export class RangeRunSystem extends createSystem({}) {
   readonly run = new RangeRun();
-  private faces = rangeFaces();
+  private faces = targetFaces();
+  /** The course boards' covers (F5.3b), and the ground's height under each board's middle. */
+  private covers: Mesh[] = [];
+  private coverSpots: [number, number, number, number][] = [];
+  /** The race's rounds last given to the loading (the run's id and rounds then). */
+  private roundsId = -1;
+  private roundsGiven = -1;
+  /** The race note on the sign, and until when, s. */
+  private shownNote = 0;
+  private noteUntil = 0;
   private start = createTankDrive();
   private flags: Mesh[] = [];
   private flagY: number[] = [];
@@ -148,12 +228,17 @@ export class RangeRunSystem extends createSystem({}) {
   /** What the sign was last drawn for: the countdown's number, 4 for Go!, 5 for the finish, 0 for none. */
   private signState = -1;
   private sentVersion = -1;
+  /** When the host last sent the run (this.time), for RESYNC_SECONDS. */
+  private sentAt = 0;
   private wasConnected = false;
   private seenId = 0;
   private wasDone = false;
   private doneAt = 0;
   private pendingTarget = -1;
   private pendingSince = 0;
+  /** Where Ready to fire waits for the tank to stand: the range's start, or a firing box. */
+  private pendingX = 0;
+  private pendingZ = 0;
   private time = 0;
   private sent = 0;
   private received = 0;
@@ -171,6 +256,15 @@ export class RangeRunSystem extends createSystem({}) {
       this.flagY.push(groundHeight(x, z));
       if (ground) this.world.createTransformEntity(flag, { parent: ground });
     });
+    COURSE_TARGETS.forEach((_, j) => {
+      const cover = createBoardCover();
+      cover.visible = false;
+      const spot = boardCoverSpot(j, [0, 0, 0, 0]);
+      cover.rotation.y = spot[3];
+      this.covers.push(cover);
+      this.coverSpots.push(spot);
+      if (ground) this.world.createTransformEntity(cover, { parent: ground });
+    });
     const turret = this.world.getSceneEntity('turret') ?? null;
     this.clocks.push(this.createClock(RUN_CLOCKS.driver, null, 'Run Clock Driver'));
     this.clocks.push(this.createClock(RUN_CLOCKS.gunner, turret, 'Run Clock Gunner'));
@@ -180,11 +274,16 @@ export class RangeRunSystem extends createSystem({}) {
     netLink.events.set('run', (e) => this.onRun(e));
     netLink.events.set('run-ask', (e) => {
       const what = ASKS.find((a) => a === e.what);
-      if (netLink.isHost && what) this.act(what);
+      // A page from before the race (F5.3b) sends no mode: a range run.
+      const mode = RUN_MODES.find((m) => m === e.mode) ?? 'range';
+      if (netLink.isHost && what) this.act(what, mode);
     });
     netLink.events.set('range-ready', (e) => {
       const target = Number(e.target);
-      if (Number.isInteger(target) && target >= 0 && target < RANGE_TARGETS.length && ownsGun()) this.pend(target);
+      // A firing line's box (F5.3b), or the range's start.
+      const line = Number(e.line);
+      const [x, z] = Number.isInteger(line) && line >= 0 && line < BOX_Z.length ? boxSpot(line) : [this.start.x, this.start.z];
+      if (Number.isInteger(target) && target >= 0 && target < this.faces.length && ownsGun()) this.pend(target, x, z);
     });
     const onDecided = (target: number, flight: number) => {
       if (netLink.isHost) this.run.shot(target, flight);
@@ -212,6 +311,15 @@ export class RangeRunSystem extends createSystem({}) {
       clock: () => [...self.clockText],
       flags: () => self.flags.map((f) => f.visible),
       flagAt: (i) => (self.flags[i]?.visible ? self.flags[i].position.toArray() : null),
+      race: () => startRace(),
+      readyLine: (k) => readyAtLine(k),
+      covers: () => self.covers.map((c) => c.visible),
+      coverAt: (j) => (self.covers[j]?.visible ? self.covers[j].position.toArray() : null),
+      rounds: () => {
+        const n = loadingRounds();
+        return Number.isFinite(n) ? n : null;
+      },
+      lineNow: () => raceLineNow(),
       get pending() { return self.pendingTarget; },
       get sign() { return self.sign.visible ? self.signKey : ''; },
       get sent() { return self.sent; },
@@ -219,22 +327,23 @@ export class RangeRunSystem extends createSystem({}) {
     };
   }
 
-  /** Start, stop or mark the run assisted: the host does it; a guest asks the host. */
-  ask(what: RunAsk): void {
-    if (netLink.isHost) this.act(what);
+  /** Start (a run of `mode`), stop or mark the run assisted: the host does it; a guest asks the host. */
+  ask(what: RunAsk, mode: RunMode = 'range'): void {
+    if (netLink.isHost) this.act(what, mode);
     else {
-      const event = { t: 'run-ask', what };
+      const event = { t: 'run-ask', what, mode };
       netLink.sendEvent(event);
     }
   }
 
   /** The host. */
-  private act(what: RunAsk): void {
+  private act(what: RunAsk, mode: RunMode = 'range'): void {
     if (what === 'start') {
-      this.run.start();
-      // The run starts at the start line with the engine as the crew left it (F1.17).
-      resetTank('keep');
-      console.info(`[RangeRun] run ${this.run.s.id} starting`);
+      this.run.start(mode);
+      // The run starts at its start line with the engine as the crew left it (F1.17): the range's, or short of the course's.
+      if (mode === 'biathlon') placeTank(COURSE_START.x, COURSE_START.z, COURSE_START.heading);
+      else resetTank('keep');
+      console.info(`[RangeRun] ${mode === 'biathlon' ? 'race' : 'run'} ${this.run.s.id} starting`);
     } else if (what === 'stop') {
       this.run.stop();
       console.info('[RangeRun] stopped');
@@ -250,7 +359,7 @@ export class RangeRunSystem extends createSystem({}) {
     // Parked with the engine running warm, for the power traverse (F1.17).
     resetTank('warm');
     this.ask('assist');
-    if (ownsGun()) this.pend(i);
+    if (ownsGun()) this.pend(i, this.start.x, this.start.z);
     else {
       const event = { t: 'range-ready', target: i };
       netLink.sendEvent(event);
@@ -258,10 +367,36 @@ export class RangeRunSystem extends createSystem({}) {
     console.info(`[RangeRun] ready to fire on the ${RANGE_TARGETS[i].range} m target`);
   }
 
-  /** The gunner's page: lay and load once the tank stands at the start. */
-  private pend(i: number): void {
+  /** Ready at line `k` (F5.3b): parked halted in its box, engine running, laid on its first board still standing and loaded. */
+  readyLine(k: number): void {
+    if (!(k >= 0 && k < BOX_Z.length)) return;
+    goToFiringLine(k);
+    this.ask('assist');
+    const s = this.run.s;
+    let board = k * BOARDS_PER_LINE;
+    for (let j = board; j < board + BOARDS_PER_LINE; j++) {
+      if (!boardDown(s, j)) {
+        board = j;
+        break;
+      }
+    }
+    const target = BOARD_FIRST + board;
+    if (ownsGun()) {
+      const [x, z] = boxSpot(k);
+      this.pend(target, x, z);
+    } else {
+      const event = { t: 'range-ready', target, line: k };
+      netLink.sendEvent(event);
+    }
+    console.info(`[RangeRun] ready at line ${k + 1}, on ${COURSE_TARGETS[board].name}`);
+  }
+
+  /** The gunner's page: lay on target `i` (of targetFaces) and load, once the tank stands at (x, z). */
+  private pend(i: number, x: number, z: number): void {
     this.pendingTarget = i;
     this.pendingSince = this.time;
+    this.pendingX = x;
+    this.pendingZ = z;
   }
 
   /** The host's word on the run. */
@@ -281,11 +416,15 @@ export class RangeRunSystem extends createSystem({}) {
     const run = this.run;
     if (netLink.isHost) {
       run.setPaused(netLink.connected && crewPresence.paused);
+      // A race counts laps and penalty loops from the course's progress (F5.3a), and shots only from a halt in a box.
+      run.course(shownCourse());
       run.step(dt);
       const joined = netLink.connected && !this.wasConnected;
-      if (netLink.connected && (joined || run.version !== this.sentVersion)) {
+      const resync = run.s.phase === 'running' && !run.s.paused && this.time - this.sentAt >= RESYNC_SECONDS;
+      if (netLink.connected && (joined || resync || run.version !== this.sentVersion)) {
         netLink.sendEvent(runEvent(run.s, performance.now()));
         this.sent++;
+        this.sentAt = this.time;
       }
       this.sentVersion = run.version;
     } else {
@@ -302,7 +441,10 @@ export class RangeRunSystem extends createSystem({}) {
         resetLoading();
         this.pendingTarget = -1;
       }
+      // The first note heard of a run is old news.
+      this.shownNote = s.noteId;
     }
+    this.giveRounds();
     const done = s.phase === 'done';
     if (done && !this.wasDone) {
       this.doneAt = this.time;
@@ -312,6 +454,7 @@ export class RangeRunSystem extends createSystem({}) {
 
     this.layAndLoad();
     this.drawFlags();
+    this.drawCovers();
     this.drawClocks();
     this.drawSign(delta);
   }
@@ -326,11 +469,52 @@ export class RangeRunSystem extends createSystem({}) {
       return;
     }
     const tank = tankState();
-    if (Math.hypot(tank.x - this.start.x, tank.z - this.start.z) > AT_START || Math.abs(tank.speed) > STILL) return;
+    if (Math.hypot(tank.x - this.pendingX, tank.z - this.pendingZ) > AT_START || Math.abs(tank.speed) > STILL) return;
     const aim = aimAt(tank, this.faces[i], muzzlePoint);
     aimTurret(aim.yaw, aim.elevation);
     loadForPractice();
     this.pendingTarget = -1;
+  }
+
+  /**
+   * A race's rounds into the gunner's rack (F5.3b), on the page that loads:
+   * whenever the host's count changes (a new line, a line shot, a round
+   * fired), or the loading started again unlimited (the seats swapped).
+   * Between, the rack spends its own rounds as they are fired, ahead of the
+   * host's word. Out of a race the rack is full again.
+   */
+  private giveRounds(): void {
+    const s = this.run.s;
+    const have = loadingRounds();
+    if (Number.isNaN(have)) {
+      this.roundsId = -1;
+      return;
+    }
+    if (s.mode === 'biathlon' && s.phase === 'running') {
+      if (s.id === this.roundsId && s.rounds === this.roundsGiven && Number.isFinite(have)) return;
+      this.roundsId = s.id;
+      this.roundsGiven = s.rounds;
+      limitRounds(s.rounds);
+    } else if (Number.isFinite(have)) {
+      this.roundsId = -1;
+      limitRounds(Number.POSITIVE_INFINITY);
+    }
+  }
+
+  /** Each fallen course board's cover over its disc (F5.3b), at the copy of it nearest the tank. */
+  private drawCovers(): void {
+    const s = this.run.s;
+    const tank = tankState();
+    const tx = wrapTile(tank.x);
+    const tz = wrapTile(tank.z);
+    for (let j = 0; j < this.covers.length; j++) {
+      const cover = this.covers[j];
+      const down = boardDown(s, j);
+      if (cover.visible !== down) cover.visible = down;
+      if (!down) continue;
+      const [x, y, z] = this.coverSpots[j];
+      cover.position.set(tx + wrapTile(x - tank.x), y, tz + wrapTile(z - tank.z));
+    }
   }
 
   /** Each hit target's flag at the copy of it nearest the tank (the ground repeats every tile). */
@@ -372,8 +556,10 @@ export class RangeRunSystem extends createSystem({}) {
     const k = this.clockKey;
     const phase = s.phase === 'idle' ? 0 : s.phase === 'running' ? 1 : 2;
     const tenths = Math.floor(s.clock * 10);
-    const targets = targetsHit(s);
-    const flags = (s.paused ? 1 : 0) + (s.assisted ? 2 : 0);
+    // A race's clocks also show its lap, the line's rounds, what is owed and what is down (F5.3b).
+    const race = s.mode === 'biathlon';
+    const targets = race ? boardsDown(s) + 10 * s.laps + 100 * s.owed + 1000 * s.rounds + 10000 * s.loops : targetsHit(s);
+    const flags = (s.paused ? 1 : 0) + (s.assisted ? 2 : 0) + (race ? 4 : 0) + 8 * s.closed;
     if (k[0] === phase && k[1] === tenths && k[2] === targets && k[3] === s.shots && k[4] === flags && k[5] === s.best && k[6] === s.time) return;
     k[0] = phase;
     k[1] = tenths;
@@ -403,14 +589,24 @@ export class RangeRunSystem extends createSystem({}) {
     }
   }
 
-  /** The countdown, Go! and the finish, on a sign in front of each player. */
+  /** The countdown, Go! and the finish (a race's notes: a line shot, a loop driven, the finish), on a sign in front of each player. */
   private drawSign(delta: number): void {
     const s = this.run.s;
     const doneFor = this.time - this.doneAt;
-    const state = s.phase === 'running' ? (s.clock < 0 ? countdownNumber(s) : s.clock < GO_SECONDS ? 4 : 0) : s.phase === 'done' && doneFor < FINISH_SECONDS ? 5 : 0;
+    const race = s.mode === 'biathlon';
+    if (race && s.noteId !== this.shownNote) {
+      this.shownNote = s.noteId;
+      if (s.note !== '') {
+        this.noteUntil = this.time + NOTE_SECONDS;
+        console.info(`[RangeRun] ${s.note}`);
+      }
+    }
+    let state = s.phase === 'running' ? (s.clock < 0 ? countdownNumber(s) : s.clock < GO_SECONDS ? 4 : 0) : !race && s.phase === 'done' && doneFor < FINISH_SECONDS ? 5 : 0;
+    // A race's note, once the countdown and Go! are off the sign: its own state for each note.
+    if (race && state === 0 && this.time < this.noteUntil) state = 6 + this.shownNote;
     if (state !== this.signState) {
       this.signState = state;
-      const text = runSign(s, doneFor);
+      const text = state > 5 ? s.note : runSign(s, doneFor);
       this.signKey = text;
       if (text === '') {
         this.sign.setVisible(false);

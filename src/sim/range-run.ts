@@ -6,11 +6,33 @@
  * hit at least once, then stops on the crew's time. Shots and hits only
  * count while the clock runs.
  *
+ * Its second mode is the biathlon race (F5.3b, docs/biathlon-race.md):
+ * three laps of F5.3a's course, three rounds at each of two firing lines,
+ * a penalty loop owed for each board left standing. The host feeds it the
+ * course's progress (`course`) as well as the shots; its numbers and words
+ * are src/sim/biathlon.ts's.
+ *
  * Engine-free: the host keeps the run (it decides hits, plan §4.6) and
  * sends it to the guest as a reliable event; the guest keeps a copy and
  * moves its clock on between events. Allocates nothing per frame.
  */
 
+import {
+  boardOf,
+  boardsDown,
+  BOARDS_PER_LINE,
+  finishNote,
+  lineClosed,
+  lineFor,
+  lineNote,
+  loopNote,
+  RACE,
+  raceClockLines,
+  raceLine,
+  raceStartSign,
+  skippedNote,
+} from './biathlon.js';
+import { COURSE_TARGETS } from './course.js';
 import { RANGE_TARGETS, targetBoard, targetFoot } from './range.js';
 
 /** The countdown before the clock starts, s. */
@@ -23,6 +45,18 @@ const PENDING = 8;
 
 export type RunPhase = 'idle' | 'running' | 'done';
 export const RUN_PHASES: readonly RunPhase[] = ['idle', 'running', 'done'];
+/** The range run's two modes: the three range targets against the clock (F1.11), or the biathlon race (F5.3b). */
+export type RunMode = 'range' | 'biathlon';
+export const RUN_MODES: readonly RunMode[] = ['range', 'biathlon'];
+
+/** What the host feeds a race of the course's progress (F5.3a's CourseSnapshot has these). */
+export interface CourseFeed {
+  laps: number;
+  missed: number;
+  penalties: number;
+  box: number;
+  halted: boolean;
+}
 
 /** What the host sends and the guest copies. Times are on the run's clock, s; -1 for a target not hit yet, or no time. */
 export interface RunSnapshot {
@@ -43,10 +77,32 @@ export interface RunSnapshot {
   best: number;
   /** A Practice shortcut (Ready to fire) was used during this run: its time doesn't count as a best. */
   assisted: boolean;
+  /** Which run: the range's targets or the biathlon race. `best` is this mode's. */
+  mode: RunMode;
+  // The biathlon race's (F5.3b); zero in a range run.
+  /** Laps counted since the start (each passing every gate). */
+  laps: number;
+  /** Rounds left at the line on this lap (none on the last lap, or once the line is closed). */
+  rounds: number;
+  /** When each course board fell (its shell landed), or -1: line 1's three, then line 2's. */
+  boardAt: number[];
+  /** Penalty loops owed now, and those driven to pay one. */
+  owed: number;
+  loops: number;
+  /** Penalty loops not driven before the finish line: each adds RACE.penaltySeconds to the time. */
+  skipped: number;
+  /** The lines shot (bit k: line k), so no more rounds there. */
+  closed: number;
+  /** The last thing worth a sign (a line shot, a loop driven, the finish), and a count that changes with each. */
+  note: string;
+  noteId: number;
 }
 
 export function createRunSnapshot(): RunSnapshot {
-  return { id: 0, phase: 'idle', clock: 0, paused: false, shots: 0, hitAt: RANGE_TARGETS.map(() => -1), time: -1, best: -1, assisted: false };
+  return {
+    id: 0, phase: 'idle', clock: 0, paused: false, shots: 0, hitAt: RANGE_TARGETS.map(() => -1), time: -1, best: -1, assisted: false,
+    mode: 'range', laps: 0, rounds: 0, boardAt: COURSE_TARGETS.map(() => -1), owed: 0, loops: 0, skipped: 0, closed: 0, note: '', noteId: 0,
+  };
 }
 
 /**
@@ -61,17 +117,33 @@ export class RangeRun {
   version = 0;
   private pendingTarget: number[] = new Array<number>(PENDING).fill(-1);
   private pendingAt: number[] = new Array<number>(PENDING).fill(0);
+  /** Each mode's best unassisted time this session, s; -1 for none. */
+  private bests: Record<RunMode, number> = { range: -1, biathlon: -1 };
+  /** The course's counters as last fed (a race counts what changed since), and the tank in a firing box, halted, now. */
+  private seen = { laps: 0, missed: 0, penalties: 0, fed: false };
+  private box = -1;
+  private halted = false;
 
-  /** Start (or restart): the countdown begins, every target counts again. */
-  start(): void {
+  /** Start (or restart) a run of `mode`: the countdown begins, every target counts again. */
+  start(mode: RunMode = 'range'): void {
     const s = this.s;
     s.id++;
     s.phase = 'running';
+    s.mode = mode;
     s.clock = -RUN_COUNTDOWN;
     s.shots = 0;
     s.hitAt.fill(-1);
     s.time = -1;
+    s.best = this.bests[mode];
     s.assisted = false;
+    s.laps = 0;
+    s.rounds = mode === 'biathlon' ? RACE.rounds : 0;
+    s.boardAt.fill(-1);
+    s.owed = 0;
+    s.loops = 0;
+    s.skipped = 0;
+    s.closed = 0;
+    this.seen.fed = false;
     this.pendingTarget.fill(-1);
     this.version++;
   }
@@ -81,6 +153,9 @@ export class RangeRun {
     if (this.s.phase === 'idle') return;
     this.s.phase = 'idle';
     this.s.hitAt.fill(-1);
+    this.s.boardAt.fill(-1);
+    this.s.rounds = 0;
+    this.s.owed = 0;
     this.pendingTarget.fill(-1);
     this.version++;
   }
@@ -107,39 +182,150 @@ export class RangeRun {
    * The host decided a shot: `target` it hit (or -1), and its flight time,
    * s. Counts it if the clock is running; a hit counts when the shell lands.
    * Returns whether it counted.
+   *
+   * In a race every round fired spends one of the line's, even in the
+   * countdown or away from the box (the gunner's rack holds only what is
+   * left); it can only bring a board down fired from a halt in this lap's
+   * firing box, at one of its own line's boards still standing.
    */
   shot(target: number, flight: number): boolean {
-    if (!this.counting) return false;
-    this.s.shots++;
-    if (target >= 0 && target < this.s.hitAt.length) {
-      let slot = this.pendingTarget.indexOf(-1);
-      if (slot < 0) slot = 0;
-      this.pendingTarget[slot] = target;
-      this.pendingAt[slot] = this.s.clock + Math.max(0, flight);
+    const s = this.s;
+    if (s.mode === 'biathlon') {
+      if (s.phase !== 'running') return false;
+      const had = s.rounds;
+      s.rounds = Math.max(0, s.rounds - 1);
+      s.shots++;
+      this.version++;
+      const line = lineFor(s.laps);
+      const j = boardOf(target);
+      if (had > 0 && this.counting && line >= 0 && !lineClosed(s, line) && this.box === line && this.halted && j >= 0 && COURSE_TARGETS[j].line === line && s.boardAt[j] < 0) {
+        this.pend(target, flight);
+      }
+      return true;
     }
+    if (!this.counting) return false;
+    s.shots++;
+    if (target >= 0 && target < s.hitAt.length) this.pend(target, flight);
     this.version++;
     return true;
   }
 
-  /** The host: the clock runs `dt` s (not while paused), hits land, and the run ends on the third target. */
+  /** A hit on its way: it lands after the shell's `flight` s. */
+  private pend(target: number, flight: number): void {
+    let slot = this.pendingTarget.indexOf(-1);
+    if (slot < 0) slot = 0;
+    this.pendingTarget[slot] = target;
+    this.pendingAt[slot] = this.s.clock + Math.max(0, flight);
+  }
+
+  /**
+   * The host, once a frame before `step` in a race: the course's progress
+   * (src/sim/course.ts) as it stands. Laps, missed laps and penalty loops
+   * count by what changed since the last feed; a drop (the course started
+   * again after the tank was placed) just starts the counting again.
+   */
+  course(c: Readonly<CourseFeed>): void {
+    this.box = c.box;
+    this.halted = c.halted;
+    const seen = this.seen;
+    const s = this.s;
+    const counting = s.mode === 'biathlon' && s.phase === 'running' && seen.fed;
+    if (!counting || c.laps < seen.laps || c.missed < seen.missed || c.penalties < seen.penalties) {
+      seen.laps = c.laps;
+      seen.missed = c.missed;
+      seen.penalties = c.penalties;
+      seen.fed = true;
+      return;
+    }
+    for (; seen.penalties < c.penalties; seen.penalties++) {
+      if (s.owed <= 0) continue;
+      s.owed--;
+      s.loops++;
+      this.say(loopNote(s.owed));
+    }
+    for (; seen.missed < c.missed; seen.missed++) this.finishLine(false);
+    for (; seen.laps < c.laps; seen.laps++) this.finishLine(true);
+  }
+
+  /** A race crossed the finish line: a lap counted (`counted`) or not, a gate missed. */
+  private finishLine(counted: boolean): void {
+    const s = this.s;
+    if (s.phase !== 'running') return;
+    // The line on this lap is shot now, whatever is left of it; loops still owed can't be driven any more.
+    const line = lineFor(s.laps);
+    if (line >= 0 && !lineClosed(s, line)) this.closeLine(line);
+    if (s.owed > 0) {
+      s.skipped += s.owed;
+      this.say(skippedNote(s.owed));
+      s.owed = 0;
+    }
+    if (!counted) return;
+    s.laps++;
+    if (s.laps >= RACE.laps) {
+      s.phase = 'done';
+      s.time = s.clock + s.skipped * RACE.penaltySeconds;
+      s.clock = s.time;
+      if (!s.assisted && (this.bests.biathlon < 0 || s.time < this.bests.biathlon)) this.bests.biathlon = s.time;
+      s.best = this.bests.biathlon;
+      this.say(finishNote(s, formatRunTime));
+    } else {
+      s.rounds = lineFor(s.laps) >= 0 ? RACE.rounds : 0;
+    }
+    this.version++;
+  }
+
+  /** Line `k` is shot: its boards still standing are penalty loops owed. */
+  private closeLine(k: number): void {
+    const s = this.s;
+    s.closed |= 1 << k;
+    s.rounds = 0;
+    const down = boardsDown(s, k);
+    s.owed += BOARDS_PER_LINE - down;
+    this.say(lineNote(k, down));
+  }
+
+  private say(note: string): void {
+    this.s.note = note;
+    this.s.noteId++;
+    this.version++;
+  }
+
+  /** The host: the clock runs `dt` s (not while paused), hits land, and the run ends on the third target (a race, on its last lap: `course`). */
   step(dt: number): void {
     const s = this.s;
     if (s.phase !== 'running' || s.paused) return;
     s.clock += dt;
+    const race = s.mode === 'biathlon';
+    let pending = false;
     for (let k = 0; k < PENDING; k++) {
       const target = this.pendingTarget[k];
-      if (target < 0 || this.pendingAt[k] > s.clock) continue;
+      if (target < 0) continue;
+      if (this.pendingAt[k] > s.clock) {
+        pending = true;
+        continue;
+      }
       this.pendingTarget[k] = -1;
-      if (s.hitAt[target] < 0) {
+      const j = boardOf(target);
+      if (race && j >= 0 && s.boardAt[j] < 0) {
+        s.boardAt[j] = this.pendingAt[k];
+        this.version++;
+      } else if (!race && s.hitAt[target] < 0) {
         s.hitAt[target] = this.pendingAt[k];
         this.version++;
       }
+    }
+    if (race) {
+      // The line's last round fired and landed: it is shot.
+      const line = lineFor(s.laps);
+      if (line >= 0 && s.rounds === 0 && !pending && !lineClosed(s, line)) this.closeLine(line);
+      return;
     }
     if (targetsHit(s) === s.hitAt.length) {
       s.phase = 'done';
       s.time = Math.max(...s.hitAt);
       s.clock = s.time;
-      if (!s.assisted && (s.best < 0 || s.time < s.best)) s.best = s.time;
+      if (!s.assisted && (this.bests.range < 0 || s.time < this.bests.range)) this.bests.range = s.time;
+      s.best = this.bests.range;
       this.version++;
     }
   }
@@ -169,6 +355,16 @@ export function copyRunSnapshot(from: RunSnapshot, to: RunSnapshot): RunSnapshot
   to.time = from.time;
   to.best = from.best;
   to.assisted = from.assisted;
+  to.mode = from.mode;
+  to.laps = from.laps;
+  to.rounds = from.rounds;
+  for (let j = 0; j < to.boardAt.length; j++) to.boardAt[j] = from.boardAt[j] ?? -1;
+  to.owed = from.owed;
+  to.loops = from.loops;
+  to.skipped = from.skipped;
+  to.closed = from.closed;
+  to.note = from.note;
+  to.noteId = from.noteId;
   return to;
 }
 
@@ -179,9 +375,9 @@ export function targetsHit(s: RunSnapshot): number {
   return n;
 }
 
-/** Whether target `i`'s flag is up: hit in the run on now or just finished. */
+/** Whether target `i`'s flag is up: hit in the range run on now or just finished. */
 export function flagUp(s: RunSnapshot, i: number): boolean {
-  return s.phase !== 'idle' && s.hitAt[i] >= 0;
+  return s.mode === 'range' && s.phase !== 'idle' && s.hitAt[i] >= 0;
 }
 
 /** The `run` event the host sends: the snapshot as plain JSON, and the host's clock when sent (ms). */
@@ -197,6 +393,16 @@ export function runEvent(s: RunSnapshot, atMs: number): { t: 'run' } & Record<st
     time: s.time,
     best: s.best,
     assisted: s.assisted,
+    mode: s.mode,
+    laps: s.laps,
+    rounds: s.rounds,
+    boardAt: [...s.boardAt],
+    owed: s.owed,
+    loops: s.loops,
+    skipped: s.skipped,
+    closed: s.closed,
+    note: s.note,
+    noteId: s.noteId,
     at: atMs,
   };
 }
@@ -223,6 +429,19 @@ export function readRunEvent(e: Record<string, unknown>, out: RunSnapshot): { at
   out.time = time;
   out.best = best;
   out.assisted = e.assisted === true;
+  // The race's fields (F5.3b); a page from before them sends a range run.
+  const count = (v: unknown) => Math.max(0, Math.floor(num(v) ?? 0));
+  out.mode = RUN_MODES.find((m) => m === e.mode) ?? 'range';
+  out.laps = count(e.laps);
+  out.rounds = count(e.rounds);
+  const boardAt = Array.isArray(e.boardAt) ? e.boardAt : [];
+  for (let j = 0; j < out.boardAt.length; j++) out.boardAt[j] = num(boardAt[j]) ?? -1;
+  out.owed = count(e.owed);
+  out.loops = count(e.loops);
+  out.skipped = count(e.skipped);
+  out.closed = count(e.closed);
+  out.note = typeof e.note === 'string' ? e.note.slice(0, 80) : '';
+  out.noteId = count(e.noteId);
   return { at };
 }
 
@@ -241,6 +460,7 @@ export function countdownNumber(s: RunSnapshot): number {
 
 /** One line for the game menu. */
 export function runLine(s: RunSnapshot): string {
+  if (s.mode === 'biathlon') return raceLine(s, formatRunTime);
   const best = s.best >= 0 ? ` Best ${formatRunTime(s.best)}.` : '';
   switch (s.phase) {
     case 'idle':
@@ -257,6 +477,7 @@ export function runLine(s: RunSnapshot): string {
 
 /** What the run clocks in the cabin show: a heading, the time in big figures, and the targets and shots. */
 export function clockLines(s: RunSnapshot): [string, string, string] {
+  if (s.mode === 'biathlon') return raceClockLines(s, formatRunTime);
   const count = `Targets ${targetsHit(s)}/${s.hitAt.length}   Shots ${s.shots}`;
   switch (s.phase) {
     case 'idle':
@@ -271,6 +492,8 @@ export function clockLines(s: RunSnapshot): [string, string, string] {
 
 /** What the floating sign says (the countdown, Go!, the finish `doneFor` s ago), or '' for no sign. */
 export function runSign(s: RunSnapshot, doneFor: number): string {
+  // A race's finish is one of its notes.
+  if (s.mode === 'biathlon') return raceStartSign(s, GO_SECONDS);
   if (s.phase === 'running') {
     if (s.clock < 0) return `Range run: ${countdownNumber(s)}`;
     if (s.clock < GO_SECONDS) return 'Go! Hit all three targets';

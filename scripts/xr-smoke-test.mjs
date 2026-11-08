@@ -98,7 +98,7 @@
  * .claude/skills/), with a screenshot where it helps a review.
  *
  * CI runs the steps in three parts at once, on three runners: part 1 is
- * steps 0 to 6c, part 2 is 6d to 6f (the driver and the turret) and 6l
+ * steps 0 to 6c and 6r (the biathlon race), part 2 is 6d to 6f (the driver and the turret) and 6l
  * (the periscopes), part 3 is 6g to 6k and 6m to 6q. Each part ends with step 7. Put a new feature's steps in
  * partOne, partTwo or partThree, whichever is shortest on CI.
  *
@@ -1336,6 +1336,10 @@ async function driverFeedback() {
   const offTiller = controls();
   trigger('controller-right', 0);
   squeeze('controller-left', 0);
+  // Its ray down at the floor, so the trigger pulled with the menu open clicks none of the menu's buttons
+  // (Practice → Range run → Start once lay in its path: it closed the menu, so later steps' menu presses opened it when they meant to close it).
+  const below = on(starter, 0.25);
+  iwsdk(['xr', 'look-at'], { device: 'controller-right', target: toOrigin([below[0], below[1] - 1, below[2]]) });
   await menuButtonPress();
   trigger('controller-right', 1);
   await sleep(500);
@@ -2722,6 +2726,99 @@ async function partOne() {
 
   // 6c. Spike S2: riding the tank.
   await ridingTheTank();
+
+  // 6r. The biathlon race (F5.3b).
+  await theBiathlonRace();
+}
+
+/**
+ * 6r. The biathlon race (F5.3b): Practice → Biathlon race → Start parks
+ *     the tank short of the course's start line and counts down, the
+ *     gunner's rack holding the line's three rounds (its fourth slot
+ *     empty); after Go, Ready line 1 puts a solo player in the gunner's
+ *     seat halted in firing box 1, laid on a board and loaded. Each trigger
+ *     pull brings a board down (its white cover over the disc) and spends a
+ *     round; after the third the line is shot clean (a sign says so), the
+ *     rack is empty and the loading board says no rounds are left
+ *     (screenshot from the gunner's eyes). Stop ends the race: the covers
+ *     go and the rack is full again.
+ */
+async function theBiathlonRace() {
+  const run = () => evalInApp('window.__rangeRun.state()');
+  const tank = () => evalInApp('window.__drive.state()');
+  const places = () => evalInApp('window.__loading.state().shells.map((s) => s.place)');
+  iwsdk(['xr', 'set-device-state'], {});
+  await menuButtonPress();
+  await menuClick('menu-race-start');
+  const started = await waitFor('the race counting down at the course start', () => {
+    const s = run();
+    const t = tank();
+    return s.mode === 'biathlon' && s.phase === 'running' && Math.abs(t.x - 320) < 0.5 && Math.abs(t.z + 225) < 0.5 && s;
+  }, 10000).catch(() => run());
+  const rack = await waitFor("the line's three rounds in the rack", () => {
+    const p = places();
+    return p.filter((x) => x === 'spent').length === 1 && p;
+  }, 8000).catch(() => places());
+  check('Practice → Biathlon race → Start parks the tank short of the course\'s start line and counts down, three rounds in the rack',
+    started.mode === 'biathlon' && started.phase === 'running' && started.rounds === 3 && started.laps === 0 &&
+      evalInApp('window.__rangeRun.rounds()') === 3 && rack.filter((x) => x === 'rack').length === 3,
+    `${started.mode} ${started.phase}, clock ${started.clock?.toFixed(1)}, rounds ${started.rounds}, rack ${rack.join('/')}, "${started.line}"`);
+  // Go! (the run's clock steps at most 0.25 s a frame, so a slow runner takes a while over the countdown).
+  await waitFor('Go', () => run().clock >= 0.2, 60000).catch(() => null);
+
+  await menuButtonPress();
+  await menuClick('menu-race-ready-0');
+  const fallen = [];
+  for (let k = 0; k < 3; k++) {
+    if (k > 0) evalInApp('(window.__rangeRun.readyLine(0), true)');
+    const loaded = await waitFor(`laid on board ${k + 1} and loaded`, () => {
+      const l = evalInApp('window.__loading.state()');
+      return l.loaded && evalInApp('window.__rangeRun.lineNow()') === 0 && evalInApp('window.__seats.mine') === 'gunner' && l;
+    }, 15000).catch(() => null);
+    if (loaded === null) break;
+    evalInApp('(window.__turret.pullTrigger(), true)');
+    const down = await waitFor(`board ${k + 1} down`, () => {
+      const s = run();
+      return s.boardAt[k] >= 0 && evalInApp('window.__firing.flying()') === 0 && s;
+    }, 15000).catch(() => null);
+    fallen.push(down !== null);
+  }
+  const shot = await waitFor('the line shot clean', () => {
+    const s = run();
+    return s.closed === 1 && s.owed === 0 && s;
+  }, 10000).catch(() => run());
+  const covers = evalInApp('window.__rangeRun.covers()');
+  check('Ready line 1 lays and loads in firing box 1; each round fired brings a line 1 board down under its cover; the third shoots the line clean',
+    fallen.length === 3 && fallen.every(Boolean) && shot.closed === 1 && shot.owed === 0 && shot.rounds === 0 && shot.shots === 3 &&
+      covers.slice(0, 3).every(Boolean) && !covers.slice(3).some(Boolean) && evalInApp('window.__rangeRun.coverAt(0)') !== null,
+    `boards down ${fallen.join('/')}, covers ${covers.join('/')}, rounds ${shot.rounds}, owed ${shot.owed}, note "${shot.note}", "${shot.line}"`);
+  const sign = await waitFor('the line\'s sign', () => { const t = evalInApp('window.__rangeRun.sign'); return t === 'Line 1: clean!' && t; }, 5000)
+    .catch(() => evalInApp('window.__rangeRun.sign'));
+  const empty = await waitFor('the rack empty', () => {
+    const l = evalInApp('window.__loading.state()');
+    return l.shells.every((x) => x.place === 'spent') && /No rounds left$/.test(l.board[2]) && l;
+  }, 8000).catch(() => evalInApp('window.__loading.state()'));
+  const eye = evalInApp('window.__seats.eye("gunner")');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin(eye) });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-race-line.png'], {});
+  check('With the line shot a sign says so, the rack is empty and the loading board says no rounds are left',
+    sign === 'Line 1: clean!' && empty.shells.every((x) => x.place === 'spent') && /No rounds left$/.test(empty.board[2]),
+    `sign "${sign}", rack ${empty.shells.map((x) => x.place).join('/')}, board "${empty.board[2]}"`);
+
+  await menuButtonPress();
+  await menuClick('menu-race-stop');
+  const stopped = await waitFor('the race stopped, the rack full', () => {
+    const s = run();
+    return s.phase === 'idle' && places().every((x) => x !== 'spent') && evalInApp('window.__rangeRun.rounds()') === null && s;
+  }, 8000).catch(() => run());
+  const after = evalInApp('window.__rangeRun.covers()');
+  check('Biathlon race → Stop ends the race: the covers come down and the rack is full again',
+    stopped.phase === 'idle' && !after.some(Boolean) && places().every((x) => x === 'rack'),
+    `${stopped.phase}, covers ${after.join('/')}, rack ${places().join('/')}`);
+  await menuButtonPress();
+  evalInApp("(window.__drive.reset(), window.__turret.forward(), window.__seats.ask('driver'), true)");
+  iwsdk(['xr', 'set-device-state'], {});
 }
 
 /** Part 2: driving the tank, the driver's station and controls, laying the gun, and both crew's periscopes. */
