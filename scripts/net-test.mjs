@@ -1063,8 +1063,9 @@ async function botChecks(browser) {
   };
   const sat = (playerSeat, seat) => waitFor(`the bot in the ${seat}'s seat`, async () => {
     const b = await botSeat();
-    // The bot looks about, so its head is within a few centimetres of the eye point.
-    return b.mine === playerSeat && b.seat === seat && near(b.head, b.eye, 0.1) && near(b.legs, HIPS[seat], 0.01) ? b : null;
+    // The bot looks about on its neck and, as gunner, leans in to the sight while it lays (F1.1b), so its
+    // head is within a lean of the eye point.
+    return b.mine === playerSeat && b.seat === seat && near(b.head, b.eye, 0.25) && near(b.legs, HIPS[seat], 0.01) ? b : null;
   }, 10000).catch(() => null);
   const gunning = await sat('driver', 'gunner');
   check('Practice crewmate: sits in the gunner\'s seat while the player drives', gunning !== null, JSON.stringify(gunning ?? await botSeat()));
@@ -1081,8 +1082,22 @@ async function botChecks(browser) {
   };
   // F2.5: the player's (the driver's) firing lamp, from the bot's loading and its hands' hold kinds.
   const lampSeen = { litByHand: false, flashes: (await me.page.evaluate(() => window.__firingLamp.state())).flashes };
+  // F1.1b: while it lays the gun the bot leans in to the sight; the player sees its body bend on its hips.
+  const lean = { seen: false, last: null };
+  const crewLean = async () => {
+    if ((await bot.page.evaluate(() => window.__bot.gunning.phase)) !== 'lay') return;
+    const b = await me.page.evaluate(() => ({
+      eye: window.__seats.eye(window.__seats.crew),
+      head: window.__debug.world.scene.getObjectByName('Crew 2 Head')?.position.toArray(),
+      ...window.__net.crewBody(),
+    }));
+    lean.last = b;
+    const forward = b.head ? Math.hypot(b.head[0] - b.eye[0], b.head[2] - b.eye[2]) : 0;
+    if (forward > 0.08 && near(b.pivot, b.hip, 0.01) && b.stretch > 0.85 && b.stretch < 1.2 && b.neck < 0.27) lean.seen = true;
+  };
   const fired = await waitFor('the bot to hit a target', async () => {
     await crewHolds();
+    await crewLean();
     const lamp = await me.page.evaluate(() => window.__firingLamp.state());
     if (lamp.look === 'lit' && lamp.loaded && lamp.handOnTrigger && !lamp.practice) lampSeen.litByHand = true;
     const records = await me.page.evaluate(() => window.__firing.records());
@@ -1098,6 +1113,7 @@ async function botChecks(browser) {
   }, 5000).catch(() => me.page.evaluate(() => window.__firingLamp.state()));
   check("Firing lamp: the driver's lamp lights while the crewmate gunner's gun is loaded with its hand on a trigger, and flashes at its shot",
     lampSeen.litByHand && lampAfter.flashes > lampSeen.flashes, `lit by its hand ${lampSeen.litByHand}, ${JSON.stringify(lampAfter)}`);
+  check('Seated avatar: the crewmate gunner leans in to the sight, its body bending on its hips', lean.seen, JSON.stringify(lean.last));
   // HoldKinds: 7 elevation wheel, 9 shell, 10 breech lever, 12 power grip.
   const seenAll = [7, 9, 10, 12].every((k) => holdsSeen.has(k));
   check('Practice crewmate: the player sees its hands on the elevation wheel, a shell, the breech lever and the power grip',
@@ -1352,7 +1368,7 @@ async function main() {
         fingers.index > -0.3 && fingers.middle < -1.3,
       `left ${JSON.stringify(fingers.left)}, right ${JSON.stringify(fingers.right)}, drawn index bend ${fingers.index?.toFixed(2)}, middle ${fingers.middle?.toFixed(2)} rad`);
     const visible = await b.page.evaluate(() =>
-      ['Crew 2 Head', 'Crew 2 Torso', 'Crew 2 Legs', 'Crew 2 Left Hand', 'Crew 2 Right Hand'].every(
+      ['Crew 2 Head', 'Crew 2 Torso', 'Crew 2 Neck', 'Crew 2 Legs', 'Crew 2 Left Hand', 'Crew 2 Right Hand'].every(
         (name) => window.__debug.world.scene.getObjectByName(name)?.visible,
       ),
     );

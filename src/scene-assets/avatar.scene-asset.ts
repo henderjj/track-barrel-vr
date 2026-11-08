@@ -6,11 +6,15 @@ import {
   IcosahedronGeometry,
   Mesh,
   MeshStandardMaterial,
+  type Object3D,
+  Quaternion,
   TorusGeometry,
+  Vector3,
 } from '@iwsdk/core';
 import { PosedHand } from './hand.scene-asset.js';
 import { beam, mergeParts, type Part, shade } from './lowpoly.js';
 import { litInside } from './cabin-light.js';
+import { type SeatedBody, TORSO_LENGTH } from '../sim/seated-body.js';
 
 /**
  * Stylised crew avatar: an aviator in a leather flying cap and goggles, a
@@ -19,10 +23,12 @@ import { litInside } from './cabin-light.js';
  * triangles in all.
  *
  * The networked avatar (spike S4) is split into parts that move separately,
- * each one draw call: the head follows the remote headset; the torso hangs
- * below it and turns only with its heading; the legs sit in the crewmate's
- * seat (src/sim/cabin.ts), thighs along the cushion and shins down to the
- * floor; each glove follows a controller's grip pose.
+ * each one draw call: the head follows the remote headset; the legs sit in
+ * the crewmate's seat (src/sim/cabin.ts), hips on the cushion, thighs along
+ * it and shins down to the floor; the torso, in a waist-length jacket,
+ * pivots at the hips and leans towards the head, and a neck joins the two
+ * (F1.1b: `poseCrewBody`, with the sums in src/sim/seated-body.ts); each
+ * glove follows a controller's grip pose.
  */
 
 export const CREW_COLORS = [0x2f6db3, 0xc0563a, 0x3f8f5a, 0x8a4fb0, 0xd19a2a, 0x2a9a9a, 0x9a3a5a, 0x5a5a5a];
@@ -35,9 +41,6 @@ const BRASS = 0xc9a03a;
 const SCARF = 0xe8dcc0;
 const TROUSERS = 0x4a3f36;
 const BOOTS = 0x2e2119;
-
-/** The body's centre line is this far behind the eyes, m. */
-const BODY_BACK = 0.09;
 
 /** Head parts, with the origin at the eye centre and the face towards -Z. */
 function headParts(): Part[] {
@@ -58,24 +61,30 @@ function headParts(): Part[] {
   ];
 }
 
-/** Neck, coat and scarf, with the origin at the eye centre; turned only by heading. */
+/**
+ * Jacket and scarf, with the origin at the hip point and the spine up +Y to
+ * the neck's base `TORSO_LENGTH` above it; the front faces -Z. Drawn
+ * stretched a little along Y as the crewmate leans (`poseCrewBody`).
+ */
 function torsoParts(coat: number): Part[] {
-  const z = BODY_BACK;
-  const flat = 0.62;
+  const top = TORSO_LENGTH;
   return [
-    { geometry: new CylinderGeometry(0.045, 0.05, 0.1, 6), color: SKIN, position: [0, -0.15, z - 0.02] },
-    // Chest from shoulders (0.2 m below the eyes) to waist, then the coat skirt to just above the knee.
-    { geometry: new CylinderGeometry(0.19, 0.15, 0.4, 8), color: coat, position: [0, -0.4, z], scale: [1, 1, flat] },
-    { geometry: new IcosahedronGeometry(0.075, 0), color: coat, position: [-0.165, -0.23, z], scale: [1, 0.75, 1] },
-    { geometry: new IcosahedronGeometry(0.075, 0), color: coat, position: [0.165, -0.23, z], scale: [1, 0.75, 1] },
-    { geometry: new CylinderGeometry(0.15, 0.2, 0.4, 8), color: shade(coat, 0.85), position: [0, -0.81, z], scale: [1, 1, 0.7] },
-    // Belt and buckle.
-    { geometry: new CylinderGeometry(0.157, 0.157, 0.04, 8), color: LEATHER, position: [0, -0.6, z], scale: [1, 1, 0.65] },
-    { geometry: new BoxGeometry(0.05, 0.03, 0.012), color: BRASS, position: [0, -0.6, z - 0.1] },
+    // A waist-length jacket: the waist from just above the hips, the belt, the chest out to the shoulders.
+    { geometry: new CylinderGeometry(0.155, 0.16, 0.26, 8), color: shade(coat, 0.85), position: [0, 0.15, 0], scale: [1, 1, 0.68] },
+    { geometry: new CylinderGeometry(0.163, 0.163, 0.04, 8), color: LEATHER, position: [0, 0.12, 0], scale: [1, 1, 0.7] },
+    { geometry: new BoxGeometry(0.05, 0.03, 0.012), color: BRASS, position: [0, 0.12, -0.115] },
+    { geometry: new CylinderGeometry(0.19, 0.155, 0.34, 8), color: coat, position: [0, top - 0.21, 0], scale: [1, 1, 0.62] },
+    { geometry: new IcosahedronGeometry(0.075, 0), color: coat, position: [-0.165, top - 0.07, 0], scale: [1, 0.75, 1] },
+    { geometry: new IcosahedronGeometry(0.075, 0), color: coat, position: [0.165, top - 0.07, 0], scale: [1, 0.75, 1] },
     // Scarf round the neck with one end hanging down the chest.
-    { geometry: new CylinderGeometry(0.07, 0.115, 0.08, 8), color: SCARF, position: [0, -0.19, z - 0.01], scale: [1, 1, 0.8] },
-    { geometry: new BoxGeometry(0.055, 0.17, 0.015), color: SCARF, position: [0.05, -0.31, z - 0.115], rotation: [0.12, 0, 0.1] },
+    { geometry: new CylinderGeometry(0.07, 0.115, 0.08, 8), color: SCARF, position: [0, top - 0.01, -0.005], scale: [1, 1, 0.8] },
+    { geometry: new BoxGeometry(0.055, 0.17, 0.015), color: SCARF, position: [0.05, top - 0.13, -0.115], rotation: [0.12, 0, 0.1] },
   ];
+}
+
+/** The neck: one metre long up +Y from its middle, drawn scaled to the gap between the torso and the skull. */
+function neckParts(): Part[] {
+  return [{ geometry: new CylinderGeometry(0.045, 0.05, 1, 6), color: SKIN }];
 }
 
 /**
@@ -87,6 +96,8 @@ function seatedLegParts(hipHeight: number): Part[] {
   const parts: Part[] = [];
   const knee = -0.44;
   const ankle = -hipHeight + 0.1;
+  // The seat of the trousers, on the cushion, which the jacket's waist stands in.
+  parts.push({ geometry: new CylinderGeometry(0.155, 0.165, 0.14, 8), color: TROUSERS, position: [0, 0, 0.01], scale: [1, 1, 0.8] });
   for (const x of [-0.1, 0.1]) {
     parts.push(
       beam([x, 0, 0.06], [x, -0.01, knee], 0.075, TROUSERS, 6),
@@ -110,6 +121,35 @@ export function createAvatarHead(index: number): Mesh {
 
 export function createAvatarTorso(index: number): Mesh {
   return partsMesh(torsoParts(CREW_COLORS[index % CREW_COLORS.length]), `Crew ${index + 1} Torso`);
+}
+
+export function createAvatarNeck(index: number): Mesh {
+  return partsMesh(neckParts(), `Crew ${index + 1} Neck`);
+}
+
+const UP = new Vector3(0, 1, 0);
+const spineQuat = new Quaternion();
+const twistQuat = new Quaternion();
+const neckDir = new Vector3();
+
+/**
+ * Place a crewmate's torso and neck for a seated pose (src/sim/seated-body.ts),
+ * in a seat facing `seatYaw` (rad about +Y).
+ */
+export function poseCrewBody(torso: Object3D, neck: Object3D, body: SeatedBody, seatYaw: number): void {
+  torso.position.set(body.pivot[0], body.pivot[1], body.pivot[2]);
+  spineQuat.setFromUnitVectors(UP, neckDir.set(body.spine[0], body.spine[1], body.spine[2]));
+  torso.quaternion.copy(spineQuat).multiply(twistQuat.setFromAxisAngle(UP, seatYaw + body.twist));
+  torso.scale.set(1, body.stretch, 1);
+  const [ax, ay, az] = body.neckFrom;
+  const [bx, by, bz] = body.neckTo;
+  neckDir.set(bx - ax, by - ay, bz - az);
+  const length = neckDir.length();
+  neck.position.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2);
+  if (length > 1e-6) {
+    neck.quaternion.setFromUnitVectors(UP, neckDir.divideScalar(length));
+  }
+  neck.scale.set(1, Math.max(length, 1e-3), 1);
 }
 
 /** Seated legs for a crewmate whose hips are `hipHeight` above the floor (the seat's hip point, src/sim/cabin.ts). */

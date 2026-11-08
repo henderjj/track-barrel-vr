@@ -10,13 +10,16 @@ import {
   createAvatarHand,
   createAvatarHead,
   createAvatarLegs,
+  createAvatarNeck,
   avatarTorsoGeometry,
   crewCoat,
   createAvatarTorso,
   CREW_COLORS,
+  poseCrewBody,
 } from '../scene-assets/avatar.scene-asset.js';
 import type { PosedHand } from '../scene-assets/hand.scene-asset.js';
 import { hipPoint, SEATS, seatToHull } from '../sim/cabin.js';
+import { createSeatedBody, solveSeatedBody } from '../sim/seated-body.js';
 import { copyCurls, createFingerCurls, type FingerCurls, setCurls } from '../sim/hand-pose.js';
 import type { SpeechReading } from '../sim/tank-audio.js';
 import { settings } from '../settings.js';
@@ -207,6 +210,12 @@ interface NetDebug {
   remotePose(): AvatarPose | null;
   /** The middle of the crewmate's drawn fists (on what they hold, with grip locking), scene space. */
   crewHands(): { left: number[]; right: number[] };
+  /**
+   * The crewmate's body as drawn (F1.1b): the seat's hip point, the torso's
+   * foot, its stretch and the shoulders' turn (rad), and the neck's length
+   * (from the torso's top into the skull), m.
+   */
+  crewBody(): { hip: number[]; pivot: number[]; stretch: number; twist: number; neck: number };
   /** This player's coat colour, and the crewmate's as last told. */
   color: number;
   remoteColor: number;
@@ -247,6 +256,11 @@ export class NetSystem extends createSystem({}) {
   private head!: Mesh;
   private torso!: Mesh;
   private legs!: Mesh;
+  private neck!: Mesh;
+  /** The crewmate's torso and neck as last drawn (F1.1b). */
+  private body = createSeatedBody();
+  private headAt: [number, number, number] = [0, 0, 0];
+  private headQuat: [number, number, number, number] = [0, 0, 0, 1];
   private leftHand!: PosedHand;
   private rightHand!: PosedHand;
   /** Grip locking for the crewmate's hands, and their curls as drawn. */
@@ -345,6 +359,13 @@ export class NetSystem extends createSystem({}) {
       setTestPose: (pose) => { this.testPose = pose; },
       remotePose: () => (this.haveRemote ? this.remote : null),
       crewHands: () => ({ left: this.leftHand.fistCentre(new Vector3()).toArray(), right: this.rightHand.fistCentre(new Vector3()).toArray() }),
+      crewBody: () => ({
+        hip: [...this.hip],
+        pivot: [...this.body.pivot],
+        stretch: this.body.stretch,
+        twist: this.body.twist,
+        neck: this.neck.scale.y,
+      }),
       get color() { return self.color; },
       get remoteColor() { return self.remoteColor; },
       join: (room) => this.join(room),
@@ -575,11 +596,12 @@ export class NetSystem extends createSystem({}) {
     const index = this.remoteColor;
     this.head = createAvatarHead(index);
     this.torso = createAvatarTorso(index);
+    this.neck = createAvatarNeck(index);
     const seat = SEATS.driver;
     this.legs = createAvatarLegs(index, hipPoint(seat, this.hip)[1] - seat.floorY);
     this.leftHand = createAvatarHand(index, 'left');
     this.rightHand = createAvatarHand(index, 'right');
-    for (const mesh of [this.head, this.torso, this.legs, this.leftHand.mesh, this.rightHand.mesh]) {
+    for (const mesh of [this.head, this.torso, this.neck, this.legs, this.leftHand.mesh, this.rightHand.mesh]) {
       mesh.visible = false;
       this.world.createTransformEntity(mesh);
     }
@@ -694,7 +716,7 @@ export class NetSystem extends createSystem({}) {
       this.haveRemote = true;
       netLink.haveRemote = true;
       netLink.remoteAtMs = performance.now() - this.delayMs;
-      this.applyRemote();
+      this.applyRemote(delta);
       this.placeVoice();
     }
   }
@@ -744,19 +766,27 @@ export class NetSystem extends createSystem({}) {
     return this.local;
   }
 
-  private applyRemote(): void {
+  private applyRemote(dt: number): void {
     const r = this.remote;
     setFromPose(this.head, r.head);
-    // Torso: its mesh hangs below the head origin and turns only with the head's yaw.
-    this.torso.position.set(r.head.px, r.head.py, r.head.pz);
-    this.tmpQuat.set(r.head.qx, r.head.qy, r.head.qz, r.head.qw);
-    this.tmpEuler.setFromQuaternion(this.tmpQuat, 'YXZ');
-    this.torso.rotation.set(0, this.tmpEuler.y, 0);
     // Legs sit in the crewmate's seat, facing its way.
     const seat = SEATS[seating.crew];
+    const seatYaw = seat.frame === 'turret' ? seating.turretYaw : 0;
     seatToHull(seat, seating.turretYaw, hipPoint(seat, this.hip), this.hip);
     this.legs.position.set(this.hip[0], this.hip[1], this.hip[2]);
-    this.legs.rotation.set(0, seat.frame === 'turret' ? seating.turretYaw : 0, 0);
+    this.legs.rotation.set(0, seatYaw, 0);
+    // The torso pivots at the hips towards the head, and the neck joins them (F1.1b).
+    const h = this.headAt;
+    h[0] = r.head.px;
+    h[1] = r.head.py;
+    h[2] = r.head.pz;
+    const q = this.headQuat;
+    q[0] = r.head.qx;
+    q[1] = r.head.qy;
+    q[2] = r.head.qz;
+    q[3] = r.head.qw;
+    solveSeatedBody(h, q, this.hip, seatYaw, this.torso.visible ? dt : 0, this.body);
+    poseCrewBody(this.torso, this.neck, this.body, seatYaw);
     setFromPose(this.leftHand.mesh, r.left);
     setFromPose(this.rightHand.mesh, r.right);
     // Their fingers are posed, and hands locked to what they hold, in lockCrewHands.
@@ -790,6 +820,7 @@ export class NetSystem extends createSystem({}) {
   private setRemoteVisible(visible: boolean, flags: number): void {
     this.head.visible = visible;
     this.torso.visible = visible;
+    this.neck.visible = visible;
     this.legs.visible = visible;
     this.leftHand.mesh.visible = visible && (flags & FLAG_LEFT_TRACKED) !== 0;
     this.rightHand.mesh.visible = visible && (flags & FLAG_RIGHT_TRACKED) !== 0;
