@@ -61,7 +61,11 @@ interface AudioDebug {
     cranking: boolean;
     siren: number;
     duckDb: number;
+    /** The duck's gain as the audio graph has it now, linear (what the player hears), and who is speaking. */
+    duckGain: number;
     speaking: boolean;
+    micSpeaking: boolean;
+    crewSpeaking: boolean;
     /** Each short sound played (or sent to play) so far on this page. */
     heard: Record<SoundId, number>;
   };
@@ -85,8 +89,9 @@ interface AudioDebug {
  * Each page plays the tank as it draws it (shownDriverState, the turret,
  * the loading as drawn, and every shot through `shotListeners`), so both
  * crew hear the same tank with nothing more sent. Everything goes through
- * one bus that drops 6 dB while either player speaks (the voice analysers,
- * `netLink.micLevel` and `crewLevel`), then the player's Tank sounds
+ * one bus that drops 6 dB while either player speaks (the voices above
+ * the engine's pitch, `netLink.micSpeech` and `crewSpeech`, over their
+ * steady background: the microphone hears the tank too), then the player's Tank sounds
  * setting. The voice itself plays outside it, plain like an intercom.
  *
  * Browsers start audio only after a click or Enter VR; the context
@@ -146,7 +151,10 @@ export class TankAudioSystem extends createSystem({}) {
         cranking: self.cranking,
         siren: self.sirenNow.gain,
         duckDb: self.ducker.db,
+        duckGain: self.ctx ? self.duck.gain.value : 1,
         speaking: self.ducker.speaking,
+        micSpeaking: self.ducker.micSpeaking,
+        crewSpeaking: self.ducker.crewSpeaking,
         heard: { ...self.heard },
       }),
       playEach: () => self.playEach(),
@@ -271,7 +279,7 @@ export class TankAudioSystem extends createSystem({}) {
     }
     sirenVoice(shownDriverControls()?.siren ?? false, this.sirenNow);
     whineVoice(turret.rate, this.whineNow);
-    const duck = this.ducker.step(netLink.micLevel(), netLink.crewLevel(), dt);
+    const duck = this.ducker.step(netLink.micSpeech(), netLink.crewSpeech(), dt);
 
     // The short sounds this frame's changes make.
     const c = this.cueState;
@@ -351,7 +359,9 @@ export class TankAudioSystem extends createSystem({}) {
     if (ctx == null) return 'No sound: this browser has no Web Audio.';
     if (settings.sound === 0) return 'Tank sounds off (Sound and view).';
     if (ctx.state !== 'running') return 'Sound starts with a click or Enter VR.';
-    const duck = this.ducker.speaking ? `ducked ${this.ducker.db.toFixed(0)} dB for the intercom` : 'nobody speaking';
+    const d = this.ducker;
+    const who = d.micSpeaking && d.crewSpeaking ? 'both speaking' : d.micSpeaking ? 'you speaking' : d.crewSpeaking ? 'crewmate speaking' : 'just stopped';
+    const duck = d.speaking ? `ducked ${d.db.toFixed(0)} dB for the intercom (${who})` : 'nobody speaking';
     return `Sound on: engine ${this.engine.freq.toFixed(0)} Hz, ${duck}.`;
   }
 

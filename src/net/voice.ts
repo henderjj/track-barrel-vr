@@ -18,6 +18,8 @@
  * element so the echo canceller can see it (the "loopback workaround").
  */
 
+import { SPEECH_BAND_HZ } from '../sim/tank-audio.js';
+
 export type VoiceMode = 'spatial' | 'plain' | 'off';
 
 export interface Vec3Like {
@@ -52,6 +54,9 @@ export class Voice {
   private micAnalyser: AnalyserNode | null = null;
   private micSource: MediaStreamAudioSourceNode | null = null;
   private micData: Float32Array<ArrayBuffer> | null = null;
+  /** Both voices in the speech band only, for the duck (above the tank's engine, which the microphone hears from the speakers). */
+  private micSpeech: SpeechMeter | null = null;
+  private remoteSpeech: SpeechMeter | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   /** Keeps Chromium pulling the remote stream; muted in spatial mode (Web Audio plays it). */
   private sink: HTMLAudioElement | null = null;
@@ -195,6 +200,8 @@ export class Voice {
     this.source?.disconnect();
     this.panner?.disconnect();
     this.analyser?.disconnect();
+    this.remoteSpeech?.disconnect();
+    this.remoteSpeech = null;
     this.source = null;
     this.panner = null;
     this.analyser = null;
@@ -253,6 +260,16 @@ export class Voice {
     return rms(this.micAnalyser, this.micData);
   }
 
+  /** The crewmate's voice above SPEECH_BAND_HZ, RMS 0 to 1: what the tank sounds' duck listens to. */
+  remoteSpeechLevel(): number {
+    return this.remoteSpeech?.level() ?? 0;
+  }
+
+  /** This player's microphone above SPEECH_BAND_HZ, RMS 0 to 1 (0 while muted): what the tank sounds' duck listens to. */
+  micSpeechLevel(): number {
+    return this.micSpeech?.level() ?? 0;
+  }
+
   /** True once the loopback route is playing the spatial mix. */
   get loopbackActive(): boolean {
     return this.loopOut?.srcObject != null;
@@ -264,6 +281,8 @@ export class Voice {
 
   dispose(): void {
     this.stopRemote();
+    this.micSpeech?.disconnect();
+    this.micSpeech = null;
     this.micSource?.disconnect();
     this.micSource = null;
     this.micAnalyser = null;
@@ -285,7 +304,9 @@ export class Voice {
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 512;
     this.levelData = new Float32Array(this.analyser.fftSize);
-    (reuseSource && this.source ? this.source : ctx.createMediaStreamSource(stream)).connect(this.analyser);
+    const input = reuseSource && this.source ? this.source : ctx.createMediaStreamSource(stream);
+    input.connect(this.analyser);
+    this.remoteSpeech = new SpeechMeter(ctx, input);
   }
 
   /** Listen to this player's own microphone (not played anywhere), to know when they speak. */
@@ -296,6 +317,7 @@ export class Voice {
     this.micAnalyser.fftSize = 512;
     this.micData = new Float32Array(this.micAnalyser.fftSize);
     this.micSource.connect(this.micAnalyser);
+    this.micSpeech = new SpeechMeter(ctx, this.micSource);
   }
 
   /** Route `node` through a local peer connection pair into an audio element (see the header comment). */
@@ -326,6 +348,39 @@ export class Voice {
     const answer = await b.createAnswer();
     await b.setLocalDescription({ type: 'answer', sdp: stereoOpus(answer.sdp ?? '') });
     await a.setRemoteDescription(b.localDescription!);
+  }
+}
+
+/**
+ * A level meter on the speech band: two high-passes at SPEECH_BAND_HZ
+ * before an analyser, so the tank's engine and tracks, low-passed below
+ * 900 Hz and heard by the headset's microphone from its own speakers,
+ * hardly register (docs/audio.md).
+ */
+class SpeechMeter {
+  private readonly input: AudioNode;
+  private readonly low: BiquadFilterNode;
+  private readonly high: BiquadFilterNode;
+  private readonly analyser: AnalyserNode;
+  private readonly data: Float32Array<ArrayBuffer>;
+
+  constructor(ctx: BaseAudioContext, input: AudioNode) {
+    this.input = input;
+    this.low = new BiquadFilterNode(ctx, { type: 'highpass', frequency: SPEECH_BAND_HZ, Q: Math.SQRT1_2 });
+    this.high = new BiquadFilterNode(ctx, { type: 'highpass', frequency: SPEECH_BAND_HZ, Q: Math.SQRT1_2 });
+    this.analyser = new AnalyserNode(ctx, { fftSize: 512 });
+    this.data = new Float32Array(this.analyser.fftSize);
+    input.connect(this.low).connect(this.high).connect(this.analyser);
+  }
+
+  level(): number {
+    return rms(this.analyser, this.data);
+  }
+
+  disconnect(): void {
+    this.input.disconnect(this.low);
+    this.low.disconnect();
+    this.high.disconnect();
   }
 }
 
