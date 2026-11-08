@@ -695,6 +695,51 @@ async function runChecks(host, guest, label) {
 }
 
 /**
+ * The biathlon course (F5.3a): the host keeps the crew's progress round the
+ * course and sends it as a reliable `course` event. The host drives across
+ * the start line and the guest hears Lap 1 start; the guest's Line 2
+ * shortcut parks the tank in firing box 2 through the host, and both pages
+ * show it halted there.
+ */
+async function courseChecks(host, guest, label) {
+  const course = (p) => p.page.evaluate(() => window.__course.state());
+  const wasRunning = (await host.page.evaluate(() => window.__drive.state())).running;
+  const heard = await guest.page.evaluate(() => window.__course.received);
+  await host.page.evaluate(() => window.__course.go());
+  // Up the course a few metres a hop (each short of a jump), across the start line.
+  for (const s of [-3, 5]) {
+    const frames = await host.page.evaluate(() => window.__course.frames);
+    await host.page.evaluate((at) => { const p = window.__course.pointAt(at); window.__drive.place(p.x, p.z, p.heading); }, s);
+    await waitFor('a frame after the move', async () => (await host.page.evaluate(() => window.__course.frames)) >= frames + 2, 10000).catch(() => null);
+  }
+  const started = await waitFor('the guest to hear lap 1 start', async () => {
+    const [h, g] = await Promise.all([course(host), course(guest)]);
+    return h.started && g.started && g.note === 'Lap 1: go!' ? { h, g } : null;
+  }, 8000).catch(() => null);
+  const received = await guest.page.evaluate(() => window.__course.received);
+  check(`The host's crossing of the start line starts lap 1 on both pages (${label})`,
+    started !== null && received > heard && started.g.laps === 0,
+    started ? `guest "${started.g.line}", ${received - heard} course events heard` : JSON.stringify(await Promise.all([course(host), course(guest)])));
+
+  await guest.page.evaluate(() => window.__course.line(1));
+  const inBox = await waitFor('both pages to show the tank halted in box 2', async () => {
+    const [h, g] = await Promise.all([course(host), course(guest)]);
+    return h.box === 1 && h.halted && g.box === 1 && g.halted ? { h, g } : null;
+  }, 10000).catch(() => null);
+  const tank = await host.page.evaluate(() => window.__drive.state());
+  check(`The guest's Line 2 parks the tank in firing box 2 with the engine running, halted there on both pages (${label})`,
+    inBox !== null && tank.running && !inBox.g.started,
+    inBox ? `tank at ${tank.x.toFixed(1)}, ${tank.z.toFixed(1)}, engine ${tank.running ? 'running' : 'off'}; guest "${inBox.g.line}"` : JSON.stringify(await Promise.all([course(host), course(guest)])));
+
+  // Back to the range start as the later checks expect.
+  await host.page.evaluate((running) => { if (!running) window.__drive.engine('stop'); window.__drive.reset(); }, wasRunning);
+  await waitFor('the guest to see the tank back', async () => {
+    const t = await guest.page.evaluate(() => window.__drive.state());
+    return Math.hypot(t.x, t.z) < 0.5;
+  }, 8000).catch(() => null);
+}
+
+/**
  * Comfort and stats (F1.14), after runChecks' run: each page wrote the
  * stopped run's row and got the crewmate's seat times for it (the
  * `run-stats` event), and the guest's Bumps → Reduced makes the host's
@@ -1104,7 +1149,7 @@ async function main() {
     }
     const room = 'TEST';
     // ONLY_SEATS=lag runs the quick seat checks at about 150 ms RTT.
-    const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' || process.env.ONLY_TURRET === 'lag' || process.env.ONLY_FIRING === 'lag' || process.env.ONLY_RUN === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
+    const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' || process.env.ONLY_TURRET === 'lag' || process.env.ONLY_FIRING === 'lag' || process.env.ONLY_RUN === 'lag' || process.env.ONLY_COURSE === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
     const a = await openPlayer(browser, `room=${room}&name=Ann${quickLag}`);
     await waitFor('Ann waiting in the lobby', async () => (await state(a.page)) === 'waiting');
     const b = await openPlayer(browser, `room=${room}&name=Bo${quickLag}`);
@@ -1144,6 +1189,11 @@ async function main() {
       // Quick loop for F1.10: the turret, then loading and firing (ONLY_FIRING=lag at about 150 ms RTT).
       await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
       await firingChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+      return;
+    }
+    if (process.env.ONLY_COURSE) {
+      // Quick loop for F5.3a: the biathlon course's progress shared (ONLY_COURSE=lag at about 150 ms RTT).
+      await courseChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
       return;
     }
     if (process.env.ONLY_RUN) {
@@ -1260,6 +1310,7 @@ async function main() {
     await firingChecks(a, b, 'local network');
     await runChecks(a, b, 'local network');
     await statsChecks(a, b, 'local network');
+    await courseChecks(a, b, 'local network');
     await lobbyChecks(browser, a, b);
 
     const motion = await measureMotion(a, b, 3);
@@ -1317,6 +1368,7 @@ async function main() {
     await firingChecks(d, e, '150 ms RTT');
     await runChecks(d, e, '150 ms RTT');
     await statsChecks(d, e, '150 ms RTT');
+    await courseChecks(d, e, '150 ms RTT');
 
     await d.context.close();
     await e.context.close();

@@ -72,9 +72,13 @@ interface CourseDebug {
     boxes: number[][];
     boards: { x: number; z: number; name: string }[];
   };
+  /** The course's middle line `s` m along from the finish line (tests drive along it). */
+  pointAt(s: number): { x: number; z: number; heading: number };
   go(): void;
   line(k: number): void;
   readonly sign: string;
+  /** Frames this system has run: a test waits for one to pass after moving the tank. */
+  readonly frames: number;
   readonly sent: number;
   readonly received: number;
 }
@@ -105,6 +109,7 @@ export class CourseSystem extends createSystem({}) {
   private time = 0;
   private sent = 0;
   private received = 0;
+  private frames = 0;
 
   init(): void {
     active = this;
@@ -128,11 +133,16 @@ export class CourseSystem extends createSystem({}) {
         boxes: BOX_Z.map((_, k) => boxSpot(k)),
         boards: COURSE_TARGETS.map((t) => ({ x: t.x, z: t.z, name: t.name })),
       }),
+      pointAt: (at) => {
+        const p = COURSE_PATH.at(at);
+        return { x: p.x, z: p.z, heading: p.heading };
+      },
       go: () => goToCourse(),
       line: (k) => goToFiringLine(k),
       get sign() { return self.sign.visible ? self.signText : ''; },
       get sent() { return self.sent; },
       get received() { return self.received; },
+      get frames() { return self.frames; },
     };
   }
 
@@ -150,6 +160,7 @@ export class CourseSystem extends createSystem({}) {
   update(delta: number): void {
     const dt = Math.min(delta, 0.25);
     this.time += dt;
+    this.frames++;
     const progress = this.progress;
     if (netLink.isHost) {
       progress.setPaused(netLink.connected && crewPresence.paused);
