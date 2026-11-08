@@ -153,6 +153,21 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
+  it('on the callout cards (F2.6): the driver\'s on the hull\'s left wall, the gunner\'s on the turret\'s front wall as it turns, the gun at both ends of its elevation', async () => {
+    const card = await import('../src/scene-assets/callout-card.scene-asset.js');
+    const { CARDS } = await import('../src/sim/callout-card.js');
+    const hull = cabin.createHull();
+    hull.add(card.createCalloutCard(CARDS.driver));
+    hull.updateMatrixWorld(true);
+    expectNone([card.createCalloutCard(CARDS.driver)], CABIN_GAP);
+    for (const [yaw, elevation] of [[0, MIN_ELEVATION], [Math.PI / 2, MAX_ELEVATION], [Math.PI, 0], [-Math.PI / 3, 0]]) {
+      const turret = turretWith(yaw, elevation, 0);
+      turret.add(card.createCalloutCard(CARDS.gunner));
+      turret.updateMatrixWorld(true);
+      expectNone([hull, turret], CABIN_GAP);
+    }
+  });
+
   it('with the hatches shut: the lids in their holes, the turret facing every way it turns', () => {
     const shut = (o: Object3D, hatch: 'driver' | 'gunner') => {
       o.getObjectByName(cabin.HATCH_LID_NAMES[hatch].open)!.visible = false;

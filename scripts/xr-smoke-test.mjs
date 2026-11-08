@@ -99,7 +99,7 @@
  *
  * CI runs the steps in three parts at once, on three runners: part 1 is
  * steps 0 to 6c, part 2 is 6d to 6f (the driver and the turret) and 6l
- * (the periscopes), part 3 is 6g to 6k and 6m to 6o. Each part ends with step 7. Put a new feature's steps in
+ * (the periscopes), part 3 is 6g to 6k and 6m to 6p. Each part ends with step 7. Put a new feature's steps in
  * partOne, partTwo or partThree, whichever is shortest on CI.
  *
  * Usage: npm run test:xr   (starts the dev runtime headless if needed)
@@ -2748,8 +2748,53 @@ async function partTwo() {
 }
 
 /**
+ * 6o. The callout card (F2.6): a card hangs on the hull's left wall beside
+ *     the driver and on the turret's front wall in front of the gunner,
+ *     each facing its seat, with the Calls' words on it; the game menu's
+ *     Sound and view → Callout card → Off hides both and On brings them back.
+ */
+async function theCalloutCard() {
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp("(window.__seats.ask('driver'), true)");
+  await waitFor("the driver's seat", () => evalInApp('window.__seats.mine') === 'driver', 5000).catch(() => null);
+  const cards = evalInApp(`(() => {
+    const c = window.__calloutCard;
+    return { shown: c.shown(), driver: c.face('driver'), gunner: c.face('gunner'), say: c.text('driver').say, hear: c.text('driver').hear,
+      driverEye: window.__seats.eye('driver'), gunnerEye: window.__seats.eye('gunner') };
+  })()`);
+  const towards = (face, eye) => {
+    const d = face.at.map((v, i) => eye[i] - v);
+    const length = Math.hypot(...d);
+    return { length, cos: d.reduce((sum, v, i) => sum + v * face.normal[i], 0) / length };
+  };
+  const driverSees = towards(cards.driver, cards.driverEye);
+  const gunnerSees = towards(cards.gunner, cards.gunnerEye);
+  check("A callout card hangs in each seat facing it: the driver's on the left wall, the gunner's on the turret's front wall",
+    cards.shown && cards.driver.normal[0] > 0.99 && cards.driver.at[0] < -1.05 && driverSees.length > 0.5 && driverSees.length < 0.7 && driverSees.cos > 0.6
+      && gunnerSees.length > 1 && gunnerSees.length < 1.35 && gunnerSees.cos > 0.6
+      && cards.hear.includes('Driver, halt') && cards.say.includes('Gunner, hold fire'),
+    `driver's ${driverSees.length.toFixed(2)} m away at ${fmt(cards.driver.at)}, facing ${fmt(cards.driver.normal)}; gunner's ${gunnerSees.length.toFixed(2)} m away; says ${cards.say.length}, hears ${cards.hear.length}`);
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(cards.driver.at) });
+  await sleep(800);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-callout-card.png'], {});
+
+  iwsdk(['xr', 'set-device-state'], {});
+  await menuButtonPress();
+  await menuClick('row-card-1');
+  const hidden = await waitFor('the cards to hide', () => evalInApp('window.__calloutCard.shown()') === false, 5000).catch(() => false);
+  const offLit = evalInApp('window.__gameMenu.selected("row-card-1")');
+  await menuClick('row-card-0');
+  const back = await waitFor('the cards to show', () => evalInApp('window.__calloutCard.shown()'), 5000).catch(() => false);
+  check('Sound and view → Callout card → Off hides both cards, On shows them again',
+    hidden !== false && offLit && back === true && evalInApp('window.__settings.card') === true,
+    `hidden ${hidden !== false} (Off lit ${offLit}), back ${back === true}`);
+  if (evalInApp('window.__gameMenu.open')) await menuButtonPress();
+}
+
+/**
  * Part 3: loading and firing, the test range, the gunsight, the tank's
- * sounds, the range run, comfort and stats, and the driver's turret dial.
+ * sounds, the range run, comfort and stats, the driver's turret dial and
+ * the callout card.
  */
 async function partThree() {
   // 6g. Loading and firing (F1.10).
@@ -2772,12 +2817,15 @@ async function partThree() {
   // 6n. The driver's turret position dial (F2.3).
   await theTurretDial();
 
-  // 6o. The biathlon course (F5.3a).
+  // 6o. The callout card (F2.6).
+  await theCalloutCard();
+
+  // 6p. The biathlon course (F5.3a).
   await theBiathlonCourse();
 }
 
 /**
- * 6o. The biathlon course (F5.3a): Practice → Biathlon → Course puts a
+ * 6p. The biathlon course (F5.3a): Practice → Biathlon → Course puts a
  *     solo player in the driver's seat parked short of the start line
  *     (screenshot from the driver's eyes); moving the tank up the course a
  *     few metres a frame crosses the start line (Lap 1: go! on the sign)

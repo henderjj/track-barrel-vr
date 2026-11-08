@@ -236,7 +236,11 @@ function peakVoiceLevel(page, ms) {
   );
 }
 
-/** The furthest the tank's sounds duck for the intercom over `ms`, dB (F1.12). */
+/**
+ * The furthest the tank's sounds duck for the intercom over `ms`, dB (F1.12),
+ * as the audio graph's own gain has it: what the player hears, not just
+ * what the duck worked out.
+ */
 function deepestDuck(page, ms) {
   return page.evaluate(
     (duration) =>
@@ -244,7 +248,7 @@ function deepestDuck(page, ms) {
         let deepest = 0;
         const end = performance.now() + duration;
         const tick = () => {
-          deepest = Math.min(deepest, window.__audio.state().duckDb);
+          deepest = Math.min(deepest, 20 * Math.log10(Math.max(1e-6, window.__audio.state().duckGain)));
           if (performance.now() < end) setTimeout(tick, 20);
           else resolve(deepest);
         };
