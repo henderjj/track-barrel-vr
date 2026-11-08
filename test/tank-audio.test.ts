@@ -187,6 +187,21 @@ describe('the intercom duck', () => {
     expect(run(d, 20)).toBe(0);
   });
 
+  it('hears short sounds between slow frames, from the loudest and quietest moments since the last', () => {
+    // A test browser draws a frame or two a second: each frame's reading spans a beep and the quiet after it.
+    const d = new Ducker();
+    let ducked = 0;
+    for (let i = 0; i < 200; i++) {
+      d.step(0, 0.08, 0.1, 0, 0);
+      if (d.speaking) ducked++;
+    }
+    expect(ducked).toBe(200);
+    expect(d.db).toBeLessThan(DUCK_DB + 0.5);
+    // A steady sound is as loud at its quietest: it still lets go.
+    for (let i = 0; i < 100; i++) d.step(0, 0.08, 0.1, 0, 0.08);
+    expect(d.speaking).toBe(false);
+  });
+
   it('keeps hearing a crew that talks a lot', () => {
     const d = new Ducker();
     run(d, 10);
