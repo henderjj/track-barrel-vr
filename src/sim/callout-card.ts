@@ -54,7 +54,7 @@ export const CARDS: Readonly<Record<SeatId, CardPlace>> = {
   driver: {
     frame: 'hull',
     x: -HULL.halfWidth + CARD_OUT,
-    y: 1.24,
+    y: SEATS.driver.eye[1] - 0.21,
     z: SEATS.driver.eye[2],
     width: 0.36,
     height: 0.24,
@@ -62,11 +62,11 @@ export const CARDS: Readonly<Record<SeatId, CardPlace>> = {
   },
   gunner: {
     frame: 'turret',
-    x: -0.58,
-    y: 2.42,
+    x: -0.59,
+    y: SEATS.gunner.eye[1] + 0.04,
     z: TURRET.front + HULL.wall + CARD_OUT,
-    width: 0.54,
-    height: 0.36,
+    width: 0.51,
+    height: 0.34,
     yaw: 0,
   },
 };

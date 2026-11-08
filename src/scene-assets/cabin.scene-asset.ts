@@ -216,7 +216,7 @@ function hullParts(): Part[] {
   const top = HULL.roof + t;
   const front = HULL.front - t;
   const rear = HULL.rear + t;
-  const inside: Vec3 = [0, 0.9, -0.2];
+  const inside: Vec3 = [0, HULL.roof / 2, -0.2];
   const height = top - bottom;
   const midY = (top + bottom) / 2;
   const length = rear - front;
@@ -266,7 +266,7 @@ function hullParts(): Part[] {
   parts.push(...hullDetailParts());
 
   // The engine compartment behind the bulkhead.
-  parts.push(box([2 * outer, 1.7, 0.6], [0, bottom + 0.85, rear + 0.3], PAINT));
+  parts.push(box([2 * outer, height - 0.28, 0.6], [0, bottom + (height - 0.28) / 2, rear + 0.3], PAINT));
   // Tracks with their road wheels standing proud on the outside, and the fenders over them.
   for (const side of [-1, 1]) {
     const trackX = side * (outer + 0.32);
@@ -314,7 +314,7 @@ function hullDetailParts(): Part[] {
   const [cx, cy, cz] = SEATS.driver.cushion;
   parts.push(...seatParts([-cx, cy, cz], SEATS.driver.floorY));
   // The bow machine gun's ball in the glacis ahead of that seat, the gun's body and grips inside, its barrel out.
-  const ballY = 1.16;
+  const ballY = GLACIS.noseTop + 0.16;
   const ballZ = frontAtGlacis(ballY) - HULL.wall / 2;
   parts.push({ geometry: new SphereGeometry(0.085, 10, 6), color: PAINT_DARK, position: [-cx, ballY, ballZ] });
   parts.push(box([0.07, 0.09, 0.4], [-cx, ballY - 0.01, ballZ + 0.24], STEEL));
@@ -341,8 +341,8 @@ function hullDetailParts(): Part[] {
   }
   // Cable conduits along both walls, standing 3 cm off them on their brackets.
   for (const side of [-1, 1]) {
-    parts.push(beam([side * (w - 0.03), 1.62, GLACIS.face + 0.02], [side * (w - 0.03), 1.62, HULL.rear - 0.02], 0.012, STEEL, 6));
-    for (let z = -1.6; z < HULL.rear; z += 0.7) parts.push(box([0.05, 0.02, 0.02], [side * (w - 0.02), 1.62, z], STEEL));
+    parts.push(beam([side * (w - 0.03), HULL.roof - 0.08, GLACIS.face + 0.02], [side * (w - 0.03), HULL.roof - 0.08, HULL.rear - 0.02], 0.012, STEEL, 6));
+    for (let z = -1.6; z < HULL.rear; z += 0.7) parts.push(box([0.05, 0.02, 0.02], [side * (w - 0.02), HULL.roof - 0.08, z], STEEL));
   }
   // The dome lamp's housing.
   for (const lamp of DOME_LAMPS) if (lamp.frame === 'hull') parts.push(...lampHousing(lamp.at, HULL.roof));
@@ -359,7 +359,7 @@ function frontAtGlacis(y: number): number {
 function turretDetailParts(): Part[] {
   const parts: Part[] = [];
   const back = TURRET.rear - HULL.wall + 0.01;
-  const radio = { width: 0.56, height: 0.32, depth: 0.26, y: 2.18 };
+  const radio = { width: 0.56, height: 0.32, depth: 0.26, y: GUN.y + 0.13 };
   const front = back - radio.depth;
   parts.push(box([radio.width, radio.height, radio.depth], [0, radio.y, back - radio.depth / 2], RADIO));
   parts.push(box([radio.width + 0.1, 0.03, radio.depth + 0.04], [0, radio.y - radio.height / 2 - 0.015, back - radio.depth / 2 - 0.01], STEEL));
@@ -494,7 +494,7 @@ function turretParts(): Part[] {
   const top = TURRET.roof + t;
   const height = TURRET.roof - bottom;
   const midY = (TURRET.roof + bottom) / 2;
-  const inside: Vec3 = [0, 2.3, 0];
+  const inside: Vec3 = [0, (HULL.roof + TURRET.roof) / 2, 0];
   const parts: Part[] = [
     plate([t, height, TURRET.rear - TURRET.front], [-w + t / 2, midY, 0], inside),
     plate([t, height, TURRET.rear - TURRET.front], [w - t / 2, midY, 0], inside),

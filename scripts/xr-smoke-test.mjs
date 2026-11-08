@@ -506,8 +506,8 @@ async function startScreenAndMenu() {
   check('Y opens the game menu in front of the player, its ray turns the perf HUD off and on, and it closes again',
     opened.open && opened.at[2] < -0.5 && opened.exit && !off.on && off.offLit && on.on && !on.offLit && !closed,
     `opened ${opened.open} at ${fmt(opened.at)}, HUD ${off.on ? 'on' : 'off'} then ${on.on ? 'on' : 'off'}, closed ${!closed}`);
-  check('The game menu picks standing or seated play (seated by default), and steps the eye height 5 cm at a time',
-    seatedFirst && standing && seated && up1.raise === 0.05 && up1.shown === '+5 cm' && up2.raise === 0.1 && own.raise === 0 && own.shown === '0 cm',
+  check('The game menu picks standing or seated play (seated by default), and steps the eye height 5 cm at a time, up to +5 cm under a Sherman\'s roof',
+    seatedFirst && standing && seated && up1.raise === 0.05 && up1.shown === '+5 cm' && up2.raise === 0.05 && own.raise === 0 && own.shown === '0 cm',
     `seated first ${seatedFirst}, standing ${standing}, seated ${seated}, eyes ${up1.shown} then ${up2.shown}, then ${own.shown}`);
 
   // B on the right controller closes the menu too.
@@ -687,7 +687,7 @@ async function seatStep() {
   const lit = evalInApp('window.__gameMenu.selected("row-seat-1")');
   await menuButtonPress();
   check("The game menu's Practice row sits the player in the gunner's seat, on the turret basket's floor",
-    gunner.mine === 'gunner' && flatGap(gunner.head, gunner.eye) < 0.01 && Math.abs(gunner.head[1] - gunner.eye[1]) < 0.005 && Math.abs(gunner.rigY - gunner.offset - 0.8) < 0.01 && lit,
+    gunner.mine === 'gunner' && flatGap(gunner.head, gunner.eye) < 0.01 && Math.abs(gunner.head[1] - gunner.eye[1]) < 0.005 && Math.abs(gunner.rigY - gunner.offset - 0.71) < 0.01 && lit,
     `${gunner.mine}, head ${fmt(gunner.head)}, eye point ${fmt(gunner.eye)}, floor at ${(gunner.rigY - gunner.offset).toFixed(3)} m, Gunner ${lit ? '' : 'not '}highlighted`);
   const g = gunner.eye;
   iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([g[0] - 1.2, g[1] - 0.5, g[2] - 2.5]) });
@@ -1997,8 +1997,9 @@ async function thePeriscopes() {
       return s.mine === id && behindLens(s.head, lens) > 0.1 && behindLens(s.head, lens) < 0.2 ? s : null;
     }, 8000).catch(() => seated());
     const lens0 = scope('lens()');
+    // Tipped 15° towards the seat since John found 30° too steep (2026-11-08, docs/crew-heights.md).
     check(`Sights → Periscopes → ${id === 'driver' ? "Driver's" : "Gunner's"} sits the player in the ${label} seat just behind its window, above the eyes and facing down to them`,
-      there.mine === id && behindLens(there.head, lens0) > 0.1 && behindLens(there.head, lens0) < 0.2 && lens0.at[1] - there.eye[1] > 0.07 && lens0.facing[1] < -0.3,
+      there.mine === id && behindLens(there.head, lens0) > 0.1 && behindLens(there.head, lens0) < 0.2 && lens0.at[1] - there.eye[1] > 0.07 && lens0.facing[1] < -0.2 && lens0.facing[1] > -0.3,
       `${there.mine}, head ${fmt(there.head)}, eye point ${fmt(there.eye)}, window ${fmt(lens0.at)}`);
 
     // Sit up and lean in, looking up into the window (it faces down towards the seat): it opens on the view.

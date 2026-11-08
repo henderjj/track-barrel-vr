@@ -73,9 +73,9 @@ function torsoParts(coat: number): Part[] {
     { geometry: new CylinderGeometry(0.155, 0.16, 0.26, 8), color: shade(coat, 0.85), position: [0, 0.15, 0], scale: [1, 1, 0.68] },
     { geometry: new CylinderGeometry(0.163, 0.163, 0.04, 8), color: LEATHER, position: [0, 0.12, 0], scale: [1, 1, 0.7] },
     { geometry: new BoxGeometry(0.05, 0.03, 0.012), color: BRASS, position: [0, 0.12, -0.115] },
-    { geometry: new CylinderGeometry(0.19, 0.155, 0.34, 8), color: coat, position: [0, top - 0.21, 0], scale: [1, 1, 0.62] },
-    { geometry: new IcosahedronGeometry(0.075, 0), color: coat, position: [-0.165, top - 0.07, 0], scale: [1, 0.75, 1] },
-    { geometry: new IcosahedronGeometry(0.075, 0), color: coat, position: [0.165, top - 0.07, 0], scale: [1, 0.75, 1] },
+    { geometry: new CylinderGeometry(0.19, 0.155, 0.34, 8), color: coat, position: [0, top - 0.19, 0], scale: [1, 1, 0.62] },
+    { geometry: new IcosahedronGeometry(0.075, 0), color: coat, position: [-0.165, top - 0.04, 0], scale: [1, 0.75, 1] },
+    { geometry: new IcosahedronGeometry(0.075, 0), color: coat, position: [0.165, top - 0.04, 0], scale: [1, 0.75, 1] },
     // Scarf round the neck with one end hanging down the chest.
     { geometry: new CylinderGeometry(0.07, 0.115, 0.08, 8), color: SCARF, position: [0, top - 0.01, -0.005], scale: [1, 1, 0.8] },
     { geometry: new BoxGeometry(0.055, 0.17, 0.015), color: SCARF, position: [0.05, top - 0.13, -0.115], rotation: [0.12, 0, 0.1] },

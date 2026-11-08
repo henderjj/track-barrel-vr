@@ -51,10 +51,10 @@ export const SHELL_COUNT = 4;
  * above the turret ring, where a seated right hand reaches out sideways.
  */
 export const RACK_SLOTS: readonly Readonly<Vec3>[] = [
-  [0.82, 1.98, -0.2],
-  [0.94, 1.98, -0.2],
-  [0.82, 2.12, -0.2],
-  [0.94, 2.12, -0.2],
+  [0.82, SEATS.gunner.eye[1] - 0.27, -0.2],
+  [0.94, SEATS.gunner.eye[1] - 0.27, -0.2],
+  [0.82, SEATS.gunner.eye[1] - 0.13, -0.2],
+  [0.94, SEATS.gunner.eye[1] - 0.13, -0.2],
 ];
 
 /**

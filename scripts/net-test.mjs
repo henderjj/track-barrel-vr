@@ -274,7 +274,7 @@ async function waitForPoses(pages, count = 30) {
  * cushion plus hipPoint's offset (src/sim/cabin.ts), the gunner's turned
  * with the turret (facing forward until F1.8) about its ring at z = 0.2.
  */
-const HIPS = { driver: [-0.5, 0.63, -1.41], gunner: [0.4, 1.43, 0.16] };
+const HIPS = { driver: [-0.5, 0.56, -1.41], gunner: [0.4, 1.27, 0.16] };
 
 /**
  * Seats (F1.1): the host decides. The host keeps the seat they had
@@ -582,6 +582,9 @@ async function firingChecks(host, guest, label) {
   }, 8000);
   // The right hand's path, hull space: take shell 0 near its base, put its nose
   // to the breech mouth, ram it, then pull the lever back a quarter turn.
+  // The hand closes on the lever and holds still for half a second before pulling, pulls a little past
+  // closed and keeps hold a second: a slow frame as the hand closed took hold part-way along the pull,
+  // so the lever stopped short by the angle missed (1.46 and 1.48 rad on PR #81's runs).
   await guest.page.evaluate(() => {
     const L = window.__loading.layout();
     const shell = window.__loading.state().shells[0];
@@ -593,7 +596,7 @@ async function firingChecks(host, guest, label) {
     const keys = [
       [0, grip, false], [0.5, grip, true], [1, grip, true],
       [2, noseAt(0.25, 0.05, 0.05), true], [2.8, noseAt(0, 0, 0.03), true], [4, noseAt(0, 0, -0.63), true], [4.5, noseAt(0, 0, -0.63), false],
-      [5.2, handleAt(0), false], [5.7, handleAt(0), true], [7.2, handleAt(1.8), true], [7.7, handleAt(1.8), false], [8.4, rest, false],
+      [5.2, handleAt(0), false], [5.7, handleAt(0), true], [6.2, handleAt(0), true], [7.7, handleAt(2), true], [8.7, handleAt(2), true], [9.2, handleAt(2), false], [9.9, rest, false],
     ];
     let start = -1;
     window.__loading.setTestHand('right', (now) => {
@@ -928,9 +931,11 @@ async function lobbyChecks(browser, host, guest) {
     JSON.stringify(hz));
   const height = await solo.page.evaluate(() => {
     const m = window.__gameMenu;
-    m.click('height-up');
-    m.click('height-up');
+    // Down a step, back up, then up twice: the second stops at +5 cm, all a Sherman's roof leaves room for.
     m.click('height-down');
+    m.click('height-up');
+    m.click('height-up');
+    m.click('height-up');
     const result = { shown: m.text('height-value'), raise: window.__body.state.choice.raise, pointLit: m.selected('height-own'),
       stored: localStorage.getItem('track-barrel.settings') };
     m.click('height-own');

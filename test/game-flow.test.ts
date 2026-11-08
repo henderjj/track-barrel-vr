@@ -89,6 +89,12 @@ describe('eye height in the game menu', () => {
     expect(step(0.1, 1)).toBe(0.15);
   });
 
+  it('can stop higher steps sooner than lower ones', () => {
+    expect(stepRaise(0.05, 1, 0.05, 0.05, 0.15)).toBe(0.05);
+    expect(stepRaise(-0.1, -1, 0.05, 0.05, 0.15)).toBe(-0.15);
+    expect(stepRaise(-0.15, -1, 0.05, 0.05, 0.15)).toBe(-0.15);
+  });
+
   it('shows how far above or below the eye point', () => {
     expect(raiseShown(0)).toBe('0 cm');
     expect(raiseShown(0.05)).toBe('+5 cm');

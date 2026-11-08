@@ -62,7 +62,7 @@ John found the fade to black came in too early, and only the middle of the view 
 | Nose plate | upright from the floor to 1.0 m at z −2.4 | The final drive's housing and the driver's feet fit behind it |
 | Glacis | from 1.0 m at z −2.4 to 1.32 m at z −1.9, 57° from upright | The Sherman's is 56°; above the tillers and the driver's knees |
 | Hood face | upright at z −1.9 from 1.32 m to the roof | The slit 30 cm ahead of the eyes |
-| Vision slit | as before (34 × 10 cm at 1.45 m), in the hood face | About 60° across from the seat, 80° leant in |
+| Vision slit | as before (34 × 10 cm at the driver's eye height, 1.27 m since [crew-heights.md](crew-heights.md)), in the hood face | About 60° across from the seat, 80° leant in |
 | Driver's head box | 51 cm left, 50 cm right, 20 cm forward, 50 cm back; eyes up 26 cm (10 cm forward and 20 cm up before the fourth pass) | The eyes 9 cm from the left wall, the brow pad and the roof at its edges; open to the right and behind |
 | Head fade | from 9 cm off a wall, the hood or the roof (`EYE_CLEARANCE`), black 4 cm later; more than 30 cm out, reseat after a jump of over 20 cm or 2 s | Black before the near plane (5 cm) cuts into the wall; the seat stays where it was calibrated |
 | Tiller pivots | 81 cm under the eyes, 32 cm ahead (94 and 42 before); ±20° (±25°) | Handles 42 cm under the eyes, 19 to 45 cm ahead |

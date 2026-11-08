@@ -18,8 +18,8 @@ The gunner loads the gun by hand and fires it with the power grip's trigger; the
 | What | Value | Why |
 | --- | --- | --- |
 | Shell | 0.6 m long, 44 mm radius; brass case the rear 0.35 m | Spike S4's: short enough to ram from a seat |
-| Ready rack | four slots, turret (0.82 and 0.94, 1.98 and 2.12, −0.2) | Right of the seat above the turret ring (which turns under the hull roof up to 1.9 m), clear of the crank and the power grip; 0.4 to 0.55 m to the right of the eyes |
-| Breech mouth | gun space (0, 0, 0.45): turret (0, 2.05, −0.7) with the gun level | 0.5 m ahead, 0.4 m left and 0.2 m below the gunner's eyes, spike S4's reach. `GUN.breechBack` moved from 0.15 to −0.7, so the breech is 0.37 m long now and ends well ahead of the gunner |
+| Ready rack | four slots, turret (0.82 and 0.94, 1.71 and 1.85, −0.2; 27 cm higher before [crew-heights.md](crew-heights.md)) | Right of the seat above the turret ring (which turns under the hull roof up to 1.61 m), clear of the crank and the power grip; 0.4 to 0.55 m to the right of the eyes |
+| Breech mouth | gun space (0, 0, 0.45): turret (0, 1.78, −0.7) with the gun level | 0.5 m ahead, 0.4 m left and 0.2 m below the gunner's eyes, spike S4's reach. `GUN.breechBack` moved from 0.15 to −0.7, so the breech is 0.37 m long now and ends well ahead of the gunner |
 | Breech mouth with the gun at −10° / +20° | 8 cm higher / 15 cm lower | Moving the breech forward keeps it near the trunnions |
 | Lever | pivot gun (−0.165, 0, 0.42), 16 cm to its handle, which sticks 4 cm out to the left; open 0° (up), closed 90° (back) | On the breech's left side since John's play test (2026-11-07, see below), the handle out to the left as he asked; the pivot near the breech's back keeps the reach short. Arm and handle stay outside the breech's side; closed, the handle is behind the breech block (tested) |
 | Snap onto the bore, ram, slide, palm push | as spike S4: within 5 cm of the line, 8 cm outside to 4 cm in, 20°; shoves slow at 2 m/s² | Unchanged, so S4's headset check carries over |

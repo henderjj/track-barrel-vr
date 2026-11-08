@@ -129,7 +129,7 @@ export const TILLER_DROP = 0.81;
 export const TILLER_AHEAD = 0.32;
 
 /** The gearbox's hump beside the driver's legs: its sides, its top and its ends, hull space, m. */
-export const GEARBOX = { x0: -0.2, x1: 0.3, top: 0.45, z0: -2.4, z1: -1.1 } as const;
+export const GEARBOX = { x0: -0.2, x1: 0.3, top: 0.27, z0: -2.4, z1: -1.1 } as const;
 
 export type DriverControlId = 'tillerLeft' | 'tillerRight' | 'gear' | 'throttle' | 'brake';
 export const DRIVER_CONTROL_IDS: readonly DriverControlId[] = ['tillerLeft', 'tillerRight', 'gear', 'throttle', 'brake'];
@@ -145,9 +145,9 @@ export const DRIVER_CONTROLS: Readonly<Record<DriverControlId, { spec: LeverSpec
     // On the gearbox's hump at the driver's right knee.
     gear: { spec: GEAR_LEVER, pivot: [GEARBOX.x0 + 0.1, GEARBOX.top, ez - 0.35] },
     // On its quadrant against the left wall, by the driver's left knee, under the instrument box.
-    throttle: { spec: HAND_THROTTLE, pivot: [-0.98, 0.66, ez - 0.25] },
+    throttle: { spec: HAND_THROTTLE, pivot: [-0.98, ey - 0.79, ez - 0.25] },
     // On its post just left of the left tiller's pedestal, the handle by the left knee: a hand drops to it off the tiller.
-    brake: { spec: PARKING_BRAKE, pivot: [ex - 0.32, 0.48, ez - 0.28] },
+    brake: { spec: PARKING_BRAKE, pivot: [ex - 0.32, ey - 0.97, ez - 0.28] },
   };
 })();
 
@@ -166,7 +166,7 @@ export const TILLER_PEDESTAL = { halfWidth: 0.04, depth: 0.12, above: 0.03 } as 
  * plate in the bottom row's third place saying which way the gear lever goes.
  */
 export const PANEL = (() => {
-  const centre = [-0.5, 1.1, -2.06] as const;
+  const centre = [-0.5, SEATS.driver.eye[1] - 0.35, -2.06] as const;
   const [ex, ey, ez] = SEATS.driver.eye;
   const dx = ex - centre[0];
   const dz = ez - centre[2];

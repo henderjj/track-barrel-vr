@@ -20,6 +20,7 @@
 
 import { HEIGHT_SECONDS, MAX_ACCEL, MAX_REVERSE, MAX_SPEED, MAX_TILT, MAX_YAW_ACCEL, MAX_YAW_RATE, TILT_SECONDS } from './comfort.js';
 import { rng } from './random.js';
+import { SEATED_EYE } from './body-height.js';
 
 const DEG = Math.PI / 180;
 
@@ -28,7 +29,7 @@ export const HULL = {
   length: 6.2,
   width: 3.3,
   /** Top of the hull sides; below a seated player's eyes, so the open-top cabin shows the world. */
-  wallTop: 1.0,
+  wallTop: 0.9,
   /** The roof of the closed cabin. */
   roof: 1.75,
   /** Height of the hull floor above the ground under the tracks. */
@@ -43,7 +44,7 @@ export const DRIVER_EYE = [-0.75, -1.95] as const;
 export const GUNNER_EYE = [-0.42, -0.4] as const;
 
 /** The vision slits of the closed cabin: height of their middle above the floor and their height, width, m. */
-export const SLIT = { y: 1.45, height: 0.2, width: 0.7 } as const;
+export const SLIT = { y: SEATED_EYE, height: 0.2, width: 0.7 } as const;
 
 // Comfort caps (plan 4.10), shared with the drive: src/sim/comfort.ts.
 export {

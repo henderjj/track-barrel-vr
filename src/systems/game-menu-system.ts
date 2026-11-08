@@ -4,7 +4,7 @@ import { changeSetting, LIVE_ITEMS, MAX_OPTIONS, onSettingChange } from '../live
 import { crewControls, onCrewChange } from '../net/crew-controls.js';
 import { CREW_COLORS } from '../scene-assets/avatar.scene-asset.js';
 import { settings } from '../settings.js';
-import { EYE_RAISE_STEP, MAX_EYE_RAISE } from '../sim/body-height.js';
+import { EYE_RAISE_STEP, MAX_EYE_DROP, MAX_EYE_RAISE } from '../sim/body-height.js';
 import { otherSeat, parseSeat, SEAT_IDS, SEATS } from '../sim/cabin.js';
 import { body, chooseBody } from './body-height-system.js';
 import { OPEN_MENU_EVENT } from './net-system.js';
@@ -267,7 +267,7 @@ export class GameMenuSystem extends createSystem({}) {
       });
     });
     const step = (direction: 1 | -1) => {
-      chooseBody({ raise: stepRaise(body.choice.raise, direction, EYE_RAISE_STEP, MAX_EYE_RAISE), seated: body.choice.seated });
+      chooseBody({ raise: stepRaise(body.choice.raise, direction, EYE_RAISE_STEP, MAX_EYE_RAISE, MAX_EYE_DROP), seated: body.choice.seated });
       this.render();
     };
     ui.on('height-down', () => step(-1));

@@ -9,7 +9,7 @@ Picking a seat before the game starts, swapping seats only when both players wan
 - **Swapping needs both players.** Once the crewmate is aboard, asking for their seat (Practice → Sit in, You → Seat → Swap seats, or the crew page) asks them. A sign in front of the crewmate says "Your crewmate asks to swap seats. To agree: game menu (Y), Swap seats", and their Swap seats button reads **Agree to swap**. When they press it (or ask for the other seat themselves) both players move at once. An ask nobody answers lapses after 30 s. The practice crewmate always agrees, so Practice → Sit in still works at once when testing alone with it. Alone, a seat is taken at once.
 - **Calibration as VR starts.** Once the start screen is out of the way, a sign asks the player to "Sit back as you will play, look straight ahead and hold still" (or "Stand…" when playing standing), with a bar filling as they hold still. After 1.5 s still, their eye height is taken and they are moved so their eyes are on the seat's eye point. The sign then asks them to "Hold both hands out in front as far as is comfortable, and squeeze both grips", which records their reach. It says "Calibrated" for a moment and goes. **A** on the right controller skips a step. It waits while the game menu or the start screen is open, or while a spike seats the player elsewhere.
 - **Seated or standing, the same view.** You → Playing → Seated (the default) or Standing changes what calibration asks and calibrates again; either way the eyes land on the seat's eye point, so the vision slit, the sight and every control are where the cabin was built for. A standing player is lowered, a seated one raised.
-- **Eye height.** You → Eye height raises or drops the eyes from the seat's eye point in 5 cm steps, up to 15 cm either way, for a player who wants to sit taller or lower; **Eye point** goes back. It replaces the template's character height, which put a seated player's eyes at standing height and, at 2 m, through the driver's roof.
+- **Eye height.** You → Eye height raises or drops the eyes from the seat's eye point in 5 cm steps, up to 15 cm either way, for a player who wants to sit taller or lower (since [crew-heights.md](crew-heights.md) up to 5 cm higher and 15 cm lower, under a Sherman's lower roof); **Eye point** goes back. It replaces the template's character height, which put a seated player's eyes at standing height and, at 2 m, through the driver's roof.
 - **The roof fades the view.** Standing up out of the chair, or rising more than the seat allows, fades the view to black over 8 cm under the roof, the same way leaning past the head box does at the walls ([cabin.md](cabin.md)); it used to lower the play space. A step across the room still puts the player back in the seat.
 - **Calibrate again** is in the game menu (You → Calibration), with a line saying the eye height and reach it took.
 
@@ -20,10 +20,10 @@ Picking a seat before the game starts, swapping seats only when both players wan
 | Hold still for | 1.5 s, within 3 cm up and down | Long enough to settle into the chair, short enough not to nag |
 | Eye heights taken | 0.7 to 2.3 m above the real floor | Outside is a headset off, on the floor, or a bad floor |
 | Reach taken | 30 to 95 cm, level from the eyes to each hand, averaged, both grips squeezed | Below is a hand at rest; the concept puts controls 30 to 60 cm from the shoulders |
-| Seat's eye point | 1.45 m above the seat's floor (`SEATED_EYE`) | The cabin is built round it ([cabin.md](cabin.md#numbers)) |
-| Eye height steps | 5 cm, up to ±15 cm | Still leaves room to sit up 5 cm before the roof fades the view |
-| Highest eyes, driver | 20 cm above the eye point | The hull roof (1.8 m) less the 13 cm from eyes to the top of the head and 2 cm clearance |
-| Highest eyes, gunner | 35 cm above the eye point | The turret roof (2.75 m), the same way |
+| Seat's eye point | 1.27 m above the seat's floor (`SEATED_EYE`; 1.45 m until [crew-heights.md](crew-heights.md)) | The cabin is built round it ([cabin.md](cabin.md#numbers)) |
+| Eye height steps | 5 cm, from −15 cm to +5 cm (±15 cm until the roof came down) | Still leaves room to sit up 10 cm before the roof fades the view |
+| Highest eyes, driver | 15 cm above the eye point | The hull roof (24 cm over the eyes) less 9 cm (`EYE_CLEARANCE`) |
+| Highest eyes, gunner | 26 cm above the eye point | The turret roof (35 cm over the eyes), the same way |
 | Swap ask lapses after | 30 s | Long enough to finish a manoeuvre and open the menu |
 | Swap sign | 8 s | Long enough to read twice; the menu button keeps saying it after |
 

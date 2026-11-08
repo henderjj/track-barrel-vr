@@ -17,7 +17,7 @@
  */
 
 import { MAX_TRAVERSE, MAX_TRAVERSE_ACCEL } from './comfort.js';
-import { GUN, TURRET } from './cabin.js';
+import { GUN, SEATS, TURRET } from './cabin.js';
 import type { TwistSpec, Vec3, WheelSpec } from './mechanism.js';
 import { approach, IDLE_RPM, MAX_RPM } from './tank-drive.js';
 
@@ -103,9 +103,9 @@ export const STATION = {
   // turn clear of the turret ring (John's headset check, docs/interior.md).
   // The elevation handwheel faces sideways, as on the Sherman, with its handle out on the gun's side, so the left hand
   // cranks it from the left and its gearbox is on the right (John's headset checks).
-  elevation: { at: [0.37, 1.86, -0.59], tilt: 0, yaw: -90 * DEG },
-  crank: { at: [0.52, 1.86, -0.52], tilt: -20 * DEG },
-  twist: { at: [0.71, 1.63, -0.45], tilt: 0 },
+  elevation: { at: [0.37, SEATS.gunner.eye[1] - 0.39, -0.59], tilt: 0, yaw: -90 * DEG },
+  crank: { at: [0.52, SEATS.gunner.eye[1] - 0.39, -0.52], tilt: -20 * DEG },
+  twist: { at: [0.71, SEATS.gunner.eye[1] - 0.62, -0.45], tilt: 0 },
 } as const satisfies Record<string, StationMount>;
 export type StationControl = keyof typeof STATION;
 

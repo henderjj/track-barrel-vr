@@ -6,7 +6,7 @@ The crew's place in the tank: the hull with the driver's seat, the turret with i
 
 - On entering VR each player is in their seat: eyes at the seat's eye point, facing the tank's front, wherever they are in their real room. Their real floor goes at the seat's floor, with the body-height offset on top, which since F1.2 puts the calibrated eyes on the eye point ([seat-choice.md](seat-choice.md)).
 - The **driver** sits front left in the hull under an open hatch. The glacis slopes over their legs, as a Sherman's does, to the hood in front of their face with the vision slit 30 cm ahead of their eyes; in front of them are the tillers with the instrument box between them and the gear lever, on their left the hand throttle, on their right the periscope ([driver-station.md](driver-station.md), F1.5; [interior.md](interior.md)).
-- The **gunner** sits right of the gun in the turret basket, 80 cm above the hull floor. The breech is on their left at chest height, and the gunsight's eyepiece (F1.9, [gunsight.md](gunsight.md)) is 18 cm ahead of their eyes, over the wheels: leaning in opens it.
+- The **gunner** sits right of the gun in the turret basket, 71 cm above the hull floor. The breech is on their left at chest height, and the gunsight's eyepiece (F1.9, [gunsight.md](gunsight.md)) is 18 cm ahead of their eyes, over the wheels: leaning in opens it.
 - A player moves their head freely inside their seat. Leaning past the edge of the seat's head box, as the eyes come within 9 cm of a wall, the hood or the roof, fades the whole view to black over 4 cm; leaning back clears it ([interior.md](interior.md#johns-third-headset-check-2026-10-31)). The seat stays where calibration put it: nothing pushes the player (John's headset check, [interior.md](interior.md)). A head far outside the box that got there in one jump (the headset recentred), or stays there two seconds (the player stood up and walked across the room), puts the player back in the seat.
 - The crewmate is drawn sitting in their seat: head and hands from their poses, legs bent on their seat's cushion.
 - Game menu: **Practice → Sit in Driver / Gunner** changes seats; **You → Seat → Back in my seat** puts the player back at the eye point facing forward.
@@ -18,20 +18,20 @@ Hull space: hull floor at y = 0, front towards −Z, +X to the right. The tank s
 
 | What | Value | Why |
 | --- | --- | --- |
-| Hull inside | 2.2 m wide, z −2.4 to 2.0, roof at 1.8 m | 35 cm over a seated driver's eyes |
+| Hull inside | 2.2 m wide, z −2.4 to 2.0, roof at 1.51 m (1.8 m before [crew-heights.md](crew-heights.md)) | 24 cm over a seated driver's eyes, near a Sherman's 15 to 20 cm |
 | Turret ring | radius 0.92 m at z 0.2 | The basket and turret walls fit inside the hull's width |
-| Turret basket floor | 0.8 m above the hull floor | Puts the gunner's eyes near the gun's height |
-| Turret roof | 2.75 m | 50 cm over the gunner's eyes |
-| Gun axis | 2.05 m, breech mouth 45 cm behind the trunnions, 70 cm back from the front wall (F1.10; 1.3 m behind them before) | The mouth is 50 cm ahead of the gunner's eyes, where a seated player rams a shell |
-| Driver's eye point | (−0.5, 1.45, −1.6), hull | Seated eye height (1.45 m, `body-height.ts`) over a 55 cm cushion |
-| Hull front | nose plate to 1.0 m at z −2.4, glacis to 1.32 m at z −1.9 (57°), hood face upright to the roof | As a Sherman's; the slit 30 cm ahead of the driver's eyes ([interior.md](interior.md)) |
+| Turret basket floor | 0.71 m above the hull floor | Puts the gunner's eyes 20 cm over the gun's axis, so the breech is at chest height |
+| Turret roof | 2.33 m | 35 cm over the gunner's eyes, as a Sherman's |
+| Gun axis | 1.78 m (2.24 m over the ground, a Sherman's line of fire), breech mouth 45 cm behind the trunnions, 70 cm back from the front wall (F1.10; 1.3 m behind them before) | The mouth is 50 cm ahead of the gunner's eyes, where a seated player rams a shell |
+| Driver's eye point | (−0.5, 1.27, −1.6), hull | Seated eye height (1.27 m, `body-height.ts`), 79 cm over a 48 cm cushion, as a seated 1.75 m adult's |
+| Hull front | nose plate to 0.82 m at z −2.4, glacis to 1.14 m at z −1.9 (57°), hood face upright to the roof | As a Sherman's; the slit 30 cm ahead of the driver's eyes ([interior.md](interior.md)) |
 | Driver's head box | 51 cm left, 50 cm right, 20 cm forward, 50 cm back | The eyes 9 cm from the left wall and the brow pad at its edges; open to the right and behind |
-| Gunner's eye point | (0.4, 2.25, −0.2), turret | Right of the breech |
+| Gunner's eye point | (0.4, 1.98, −0.2), turret | Right of the breech, 20 cm over the gun's axis |
 | Gunner's head box | 50 cm left, 58 cm right, 16 cm forward, 50 cm back | The turret's wall 9 cm off; forward, 2 cm short of the sight's eyecup |
-| Sight eyepiece | (0.32, 2.25, −0.38), turret | An 18 cm lean from the eye point ([interior.md](interior.md)); the sight opens within 9 cm |
+| Sight eyepiece | (0.32, 1.98, −0.38), turret | An 18 cm lean from the eye point ([interior.md](interior.md)); the sight opens within 9 cm |
 | Head fade | from the head box's edge (9 cm off a wall, the hood or the roof), black 4 cm later | Black before the near plane (5 cm) cuts into the wall; the shell is 50 cm out, so the whole view goes black |
 | Reseat distance | 30 cm past the head box, after a jump of over 20 cm or 2 s there | Further than any lean, nearer than a step |
-| Ground | 0.6 m under the hull floor; the drive's rolling ground since F1.4 ([tank-drive.md](tank-drive.md)) | The tracks reach it |
+| Ground | 0.46 m under the hull floor (0.6 m before), a Sherman's 17 in ground clearance and floor plate; the drive's rolling ground since F1.4 ([tank-drive.md](tank-drive.md)) | The tracks reach it |
 
 The models are lit by the sky's image-based light (`IBLGradient` in the scene), which only lights `MeshStandardMaterial`: every model uses it, rough and not metallic. There are no lights in the scene. Inside the tank that light is dimmed and pooled under the hatches and the dome lamps by the cabin materials' shader (`litInside`, [interior.md](interior.md)).
 

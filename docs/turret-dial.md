@@ -10,11 +10,11 @@ A round dial on the hood's face just right of the driver's vision slit shows whi
 
 ## Numbers
 
-Hull space, as in [cabin.md](cabin.md); the driver's eye point is (−0.5, 1.45, −1.6).
+Hull space, as in [cabin.md](cabin.md); the driver's eye point is (−0.5, 1.27, −1.6).
 
 | What | Value | Why |
 | --- | --- | --- |
-| Face | 10 cm across, its middle at (−0.22, 1.45, −1.884): 28 cm right of the slit's middle, at the eyes' height | About 40 cm from the eyes and 45° off square: over 10° across, so the 12/3/6/9 read at a glance (a gauge on the instrument box is about 5.5°). Clear of the slit's frame (1.5 cm), under the brow pad, mirrors the run clock |
+| Face | 10 cm across, its middle at (−0.22, 1.27, −1.884): 28 cm right of the slit's middle, at the eyes' height | About 40 cm from the eyes and 45° off square: over 10° across, so the 12/3/6/9 read at a glance (a gauge on the instrument box is about 5.5°). Clear of the slit's frame (1.5 cm), under the brow pad, mirrors the run clock |
 | Case | a drum 11.2 cm across, 1.2 cm proud of the hood's inner face and sunk 5 mm into it; the face 4 mm in front of it, the pointer 4 mm in front of the face | Flat on the hood, as the run clock is: anything there at eye height must stand under 2 cm proud, or a head leaning into the slit meets it before the hood's fade starts (`EYE_CLEARANCE`, [interior.md](interior.md)). The gaps are the 3 mm rule ([testing.md](testing.md#z-fighting)) |
 | Hull drawing | the hull and its tracks shrunk about the turret ring's middle (the face's middle), its furthest end 55% of the face's radius out | The pointer turns where the turret does; the numbers (at 71%) and ticks (from 80%) stay clear |
 | Pointer | the turret as a disc to the drawing's scale, the gun a 4.5 mm bar out to 60% of the radius with a wider muzzle, the gauges' needles' orange | Points at the hour it reads without covering its number |

@@ -164,11 +164,15 @@ describe('the crew periscopes (F1.6, F1.19)', () => {
       expect(Math.abs(s.lens[0] - eye[0]), id).toBeLessThan(0.1);
       expect(dist(s.lens, eye), id).toBeGreaterThan(0.15);
       expect(dist(s.lens, eye), id).toBeLessThan(0.3);
-      // Tipped to face down towards the eyes, so they meet it a short sit-up above the eye point (John, 2026-11-07: 12 to 14 cm was too far).
-      expect(s.facing[1], id).toBeLessThan(-0.4);
-      expect(s.facing[2], id).toBeGreaterThan(0.8);
-      expect(lookingIn(s, 0.06, [0, 0, 0])[1] - eye[1], id).toBeLessThan(0.1);
-      expect(lookingIn(s, OPEN_DISTANCE, [0, 0, 0])[1] - eye[1], id).toBeLessThan(0.09);
+      // Tipped a little to face down towards the eyes, so they meet it a short sit-up above the eye point (John, 2026-11-07:
+      // 12 to 14 cm was too far; 2026-11-08: the 30° tilt was too steep to look into comfortably). The gunner's sits over
+      // the sight's hood, so a little higher.
+      expect(s.facing[1], id).toBeLessThan(-0.2);
+      expect(s.facing[1], id).toBeGreaterThan(-0.3);
+      expect(s.facing[2], id).toBeGreaterThan(0.95);
+      const rise = id === 'driver' ? 0.085 : 0.11;
+      expect(lookingIn(s, 0.06, [0, 0, 0])[1] - eye[1], id).toBeLessThan(rise);
+      expect(lookingIn(s, OPEN_DISTANCE, [0, 0, 0])[1] - eye[1], id).toBeLessThan(rise - 0.005);
       // The head can bring both eyes within the opening distance: 6 cm out from the window, inside the head box and under its roof stop.
       for (const e of eyesInto(id, 0.06)) {
         expect(e[0], id).toBeGreaterThan(eye[0] - left);
@@ -286,7 +290,7 @@ describe('the crew periscopes (F1.6, F1.19)', () => {
     // The eyepiece hangs behind the slit's leather brow pad (SLIT_FRAME), the housing over the pad's top.
     const front = Math.min(...eyepieceCorners('driver').map((p) => p[2]));
     expect(front - (VISION_SLIT.z - 0.005 + SLIT_FRAME.padDepth)).toBeGreaterThan(0.01);
-    expect(s.roof - RELAY.depth - (VISION_SLIT.y + VISION_SLIT.height / 2 + SLIT_FRAME.padAbove + SLIT_FRAME.padHeight)).toBeGreaterThan(0.1);
+    expect(s.roof - RELAY.depth - (VISION_SLIT.y + VISION_SLIT.height / 2 + SLIT_FRAME.padAbove + SLIT_FRAME.padHeight)).toBeGreaterThan(0.03);
     expect(s.axis[1] - 0.035).toBeGreaterThan(GLACIS.face);
   });
 

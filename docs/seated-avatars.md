@@ -6,7 +6,7 @@ From John's play test (2026-11-07): the crewmate's avatar came apart at the legs
 
 - **Nothing joined the body to the legs.** The legs sit still in the seat; the torso was one stiff piece hung from the crewmate's head, turning only with it. A lean in to the periscope or gunsight, a turn of the head, a raised or dropped eye height (the menu's ±15 cm) or standing up slid or twisted it off the legs.
 - **It was a standing figure.** The coat hung straight from the shoulders to 1.01 m under the eyes: 11 cm below the cushion, through the seat, rather than folding at the hips.
-- The seat puts the eyes 0.90 m above the cushion (`SEATED_EYE` 1.45 m, cushion 0.55 m); a 1.75 m person sitting has theirs about 0.79 m above the seat, so the body spans about 10 cm more than it would. The jacket's proportions absorb that; raising the cushion is left for later if the body still reads tall in the headset.
+- The seat put the eyes 0.90 m above the cushion (`SEATED_EYE` 1.45 m, cushion 0.55 m); a 1.75 m person sitting has theirs about 0.79 m above the seat, so the body spanned about 10 cm more than it would. Since [crew-heights.md](crew-heights.md) the seats are a Sherman's: the eyes are 79 cm over the cushion and the torso is real length.
 
 Eye raise and calibration ([seat-choice.md](seat-choice.md)) were working as meant: they move the head, and the body followed it.
 
@@ -27,10 +27,10 @@ The practice crewmate now turns its head on its neck, as a real head does, and a
 
 | What | Value | Why |
 | --- | --- | --- |
-| Neck's base from the eyes | 20 cm down, 9 cm back | between the shoulders, where a head turns and nods |
-| Torso at rest, hip point to the neck's base | 0.62 m | reaches from the seat's hip point (8 cm above the cushion) to under the eye point |
+| Neck's base from the eyes | 16 cm down, 8 cm back (20 and 9 before [crew-heights.md](crew-heights.md)); the shoulders 20 cm under the eyes | between the shoulders, where a head turns and nods |
+| Torso at rest, hip point to the neck's base | 0.56 m (0.62 before) | reaches from the seat's hip point (8 cm above the cushion) to under the eye point |
 | Stretch along the spine | 0.88 to 1.15 | beyond that it would look stretched again; the neck takes the rest |
-| Neck, torso's top to inside the skull | 16 cm at rest (about 9 cm shows), at most 26 cm | past it the torso rises off the seat |
+| Neck, torso's top to inside the skull | 12 cm at rest, at most 22 cm | past it the torso rises off the seat |
 | Shoulders' share of the head's turn | 35%, at most 0.6 rad | the rest is the neck |
 | Shoulders' turn rate | 4 rad/s | a quick swing, not a jump, past straight back |
 | Share of a nod that tips the neck's base | 50% | |
