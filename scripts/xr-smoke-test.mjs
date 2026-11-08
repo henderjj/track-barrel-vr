@@ -1997,8 +1997,9 @@ async function thePeriscopes() {
       return s.mine === id && behindLens(s.head, lens) > 0.1 && behindLens(s.head, lens) < 0.2 ? s : null;
     }, 8000).catch(() => seated());
     const lens0 = scope('lens()');
+    // Tipped 15° towards the seat since John found 30° too steep (2026-11-08, docs/crew-heights.md).
     check(`Sights → Periscopes → ${id === 'driver' ? "Driver's" : "Gunner's"} sits the player in the ${label} seat just behind its window, above the eyes and facing down to them`,
-      there.mine === id && behindLens(there.head, lens0) > 0.1 && behindLens(there.head, lens0) < 0.2 && lens0.at[1] - there.eye[1] > 0.07 && lens0.facing[1] < -0.3,
+      there.mine === id && behindLens(there.head, lens0) > 0.1 && behindLens(there.head, lens0) < 0.2 && lens0.at[1] - there.eye[1] > 0.07 && lens0.facing[1] < -0.2 && lens0.facing[1] > -0.3,
       `${there.mine}, head ${fmt(there.head)}, eye point ${fmt(there.eye)}, window ${fmt(lens0.at)}`);
 
     // Sit up and lean in, looking up into the window (it faces down towards the seat): it opens on the view.
