@@ -22,7 +22,7 @@ Picking a seat before the game starts, swapping seats only when both players wan
 | Reach taken | 30 to 95 cm, level from the eyes to each hand, averaged, both grips squeezed | Below is a hand at rest; the concept puts controls 30 to 60 cm from the shoulders |
 | Seat's eye point | 1.27 m above the seat's floor (`SEATED_EYE`; 1.45 m until [crew-heights.md](crew-heights.md)) | The cabin is built round it ([cabin.md](cabin.md#numbers)) |
 | Eye height steps | 5 cm, from −15 cm to +5 cm (±15 cm until the roof came down) | Still leaves room to sit up 10 cm before the roof fades the view |
-| Highest eyes, driver | 15 cm above the eye point | The hull roof (24 cm over the eyes) less 9 cm (`EYE_CLEARANCE`) |
+| Highest eyes, driver | 11 cm above the eye point | The hull roof (20 cm over the eyes) less 9 cm (`EYE_CLEARANCE`) |
 | Highest eyes, gunner | 26 cm above the eye point | The turret roof (35 cm over the eyes), the same way |
 | Swap ask lapses after | 30 s | Long enough to finish a manoeuvre and open the menu |
 | Swap sign | 8 s | Long enough to read twice; the menu button keeps saying it after |

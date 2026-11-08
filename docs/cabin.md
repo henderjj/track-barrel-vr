@@ -18,7 +18,7 @@ Hull space: hull floor at y = 0, front towards −Z, +X to the right. The tank s
 
 | What | Value | Why |
 | --- | --- | --- |
-| Hull inside | 2.2 m wide, z −2.4 to 2.0, roof at 1.51 m (1.8 m before [crew-heights.md](crew-heights.md)) | 24 cm over a seated driver's eyes, near a Sherman's 15 to 20 cm |
+| Hull inside | 2.2 m wide, z −2.4 to 2.0, roof at 1.47 m (1.8 m before [crew-heights.md](crew-heights.md), 1.51 m until the head-out fit) | 20 cm over a seated driver's eyes, a Sherman's 15 to 20 cm |
 | Turret ring | radius 0.92 m at z 0.2 | The basket and turret walls fit inside the hull's width |
 | Turret basket floor | 0.71 m above the hull floor | Puts the gunner's eyes 20 cm over the gun's axis, so the breech is at chest height |
 | Turret roof | 2.33 m | 35 cm over the gunner's eyes, as a Sherman's |

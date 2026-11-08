@@ -96,7 +96,7 @@ export const CRANK_RATIO = (2 * Math.PI) / TURN_PER_CRANK_TURN;
  * the periscope turns. Anticlockwise, as the player sees it, looks left.
  */
 export const PERISCOPE_CRANK: WheelSpec = {
-  radius: 0.055,
+  radius: 0.04,
   grip: 'crank',
   knobLength: 0.05,
   min: -Infinity,
@@ -105,8 +105,8 @@ export const PERISCOPE_CRANK: WheelSpec = {
   perTurn: TURN_PER_CRANK_TURN / DEG,
 };
 
-/** The crank's hub from the window's middle (frame space), m: right of the eyepiece, a little higher, its face 2 cm ahead of the window. */
-export const CRANK_FROM_WINDOW: Vec3 = [0.19, 0.02, -0.02];
+/** The crank's hub from the window's middle (frame space), m: right of the eyepiece, level with it, its face 2 cm ahead of the window. */
+export const CRANK_FROM_WINDOW: Vec3 = [0.19, 0.0, -0.02];
 
 export interface PeriscopeSpec {
   id: PeriscopeId;
