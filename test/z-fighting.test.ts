@@ -337,6 +337,49 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
+  it("in the driver's convoy position (docs/convoy-seat.md): the seat raised, the lid swung aside, the periscope down, the convoy grips on the levers at both ends, and the seat lever", async () => {
+    const periscope = await import('../src/scene-assets/periscope.scene-asset.js');
+    const { PERISCOPES } = await import('../src/sim/periscope.js');
+    const station = await import('../src/sim/driver-station.js');
+    const convoy = await import('../src/sim/convoy-seat.js');
+    const { createConvoyGrip, DRIVER_SEAT_NAME } = await import('../src/scene-assets/convoy-seat.scene-asset.js');
+    for (const up of [false, true]) {
+      const hull = cabin.createHull();
+      hull.getObjectByName(DRIVER_SEAT_NAME)!.position.set(...(up ? convoy.CONVOY_MOVE : ([0, 0, 0] as const)));
+      const s = PERISCOPES.driver;
+      const scope = new Group();
+      scope.position.set(s.axis[0], s.lens[1], s.axis[1]);
+      scope.add(periscope.createPeriscopeBody(s));
+      const turning = periscope.createPeriscopeTurning(s);
+      turning.position.y = up ? -convoy.periscopeLowered(s.head) : 0;
+      scope.add(turning);
+      for (const pose of ['min', 'rest', 'max'] as const) {
+        const root = new Group();
+        for (const id of ['tillerLeft', 'tillerRight', 'gear'] as const) {
+          const { spec, pivot } = station.DRIVER_CONTROLS[id];
+          const mount = new Group();
+          mount.position.set(pivot[0], pivot[1], pivot[2]);
+          const lever = mechanism.createLever(spec);
+          lever.rotation.x = -spec[pose];
+          mount.add(lever);
+          if (up) {
+            const grip = createConvoyGrip();
+            grip.position.set(0, spec.length * Math.cos(spec[pose]), -spec.length * Math.sin(spec[pose]));
+            mount.add(grip);
+          }
+          root.add(mount);
+        }
+        const seatLever = mechanism.createLever(convoy.SEAT_LEVER);
+        seatLever.position.set(...convoy.seatLeverPivot(up, [0, 0, 0]));
+        seatLever.rotation.x = -convoy.SEAT_LEVER[pose];
+        root.add(seatLever, scope);
+        root.updateMatrixWorld(true);
+        hull.updateMatrixWorld(true);
+        expectNone([hull, root], CABIN_GAP);
+      }
+    }
+  });
+
   /** The test range's ground (F1.4, F1.7) where the scene puts it, under the hull parked at the start. */
   const ground = () => {
     const terrain = createTerrain();

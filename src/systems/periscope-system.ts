@@ -23,6 +23,7 @@ import {
   lensInPeriscope,
 } from '../scene-assets/periscope.scene-asset.js';
 import { turnAboutHead } from '../sim/cabin.js';
+import { periscopeLowered } from '../sim/convoy-seat.js';
 import { Wheel } from '../sim/mechanism.js';
 import {
   bearing,
@@ -58,6 +59,7 @@ import {
   watchLensView,
 } from './scope-lens.js';
 import { type PracticeButton, sightStats } from './sight-system.js';
+import { convoyUp } from './convoy-seat-system.js';
 import { seating } from './seating.js';
 
 const DEG = Math.PI / 180;
@@ -378,6 +380,9 @@ export class PeriscopeSystem extends createSystem({}) {
         scope.crank.angle += crankFor(angleDelta(scope.angle, scope.shownAngle)) * (1 - Math.exp(-FOLLOW_RATE * dt));
       }
       scope.turning.rotation.y = scope.angle;
+      // "Lower periscope. Open hatch. Raise seat to convoy position": the driver's goes down into its holder (docs/convoy-seat.md).
+      const lowered = id === 'driver' && convoyUp();
+      scope.turning.position.y = lowered ? -periscopeLowered(scope.spec.head) : 0;
       scope.crankPart.rotation.z = scope.crank.angle;
 
       const gpu = scope.gpu;
@@ -389,7 +394,7 @@ export class PeriscopeSystem extends createSystem({}) {
       // to this one when the eyes are nearer it, and this one stays shut while the sight is open. Only one draws.
       if (id === 'gunner') sightStats.periscopeEye = scope.placer.eyeDistance(3);
       const was = s.open;
-      const open = !ride.active && !(id === 'gunner' && sightStats.open) && scope.placer.eyesAt(3, was);
+      const open = !ride.active && !lowered && !(id === 'gunner' && sightStats.open) && scope.placer.eyesAt(3, was);
       s.open = open;
       scope.material.uniforms.uOpen.value = open ? 1 : 0;
       if (open !== was) console.info(`[Periscope] ${id}'s ${open ? 'open' : 'closed'}`);

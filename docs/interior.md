@@ -69,7 +69,7 @@ John found the fade to black came in too early, and only the middle of the view 
 | Hand throttle pivot | 0.66 m (0.8 m before) | On its quadrant by the left knee |
 | Instrument box | face's middle (−0.5, 1.1, −2.06), 28 × 16 cm, facing the eyes 57 cm away, 37° down | Between the tillers with a fist's room either side, in front of the glacis |
 | Periscope axis | 26 cm right of the eyes, 20 cm ahead (22 cm left, 37 cm ahead before) | Behind the hood face; its handles swing beside the chest when turned |
-| Driver's hatch | 50 cm square, from 10 cm ahead of the eyes to 40 cm behind them; lid open forwards | The periscope's head stands on the roof in front of it |
+| Driver's hatch | 50 cm square, from 10 cm ahead of the eyes to 40 cm behind them; lid open forwards (swung aside on its left since F2.8, [convoy-seat.md](convoy-seat.md)) | The periscope's head stands on the roof in front of it |
 | Gunsight eyepiece | turret (0.32, 2.25, −0.38), an 18 cm lean | The fade starts with the eyes 2 cm short of it |
 | Gunner's head box | 50 cm left, 58 cm right, 16 cm forward, 50 cm back; eyes up 41 cm (22, 35, 14 and 45 cm, up 35, before the fourth pass) | The turret's wall and the roof 9 cm off at its edges; open to the left over the breech and behind |
 | Elevation wheel, crank, power grip | turret (0.37, 1.86, −0.59), (0.52, 1.86, −0.52), (0.71, 1.63, −0.45) | Hubs 39 cm under the eyes; the crank's fist inside the ring; the elevation wheel faces sideways, its handle on the gun's side, and drives a toothed arc on the gun, all inside the ring ([turret.md](turret.md)) |

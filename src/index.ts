@@ -5,6 +5,7 @@ import { BodyHeightSystem } from './systems/body-height-system.js';
 import { CabinLightSystem } from './systems/cabin-light-system.js';
 import { CalloutCardSystem } from './systems/callout-card-system.js';
 import { CalibrationSystem } from './systems/calibration-system.js';
+import { ConvoySeatSystem } from './systems/convoy-seat-system.js';
 import { CrewBotSystem } from './systems/crew-bot-system.js';
 import { CrewStatusSystem } from './systems/crew-status-system.js';
 import { CourseSystem } from './systems/course-system.js';
@@ -69,6 +70,8 @@ World.create(
   // grips, yokes, buttons), before the systems that read them and before
   // OwnHandsSystem draws hands on them.
   world.registerSystem(MechanismSystem);
+  // The driver's convoy position (docs/convoy-seat.md): after the kit has moved the seat lever; SeatSystem (early in the next frame) raises the seat.
+  world.registerSystem(ConvoySeatSystem);
   // The turret (F1.8): after the kit has moved its controls, before OwnHandsSystem draws hands on them. It turns a seated gunner's play space with the turret.
   world.registerSystem(TurretSystem);
   // The driver's turret position dial (F2.3): turns its pointer to the turret as TurretSystem drew it this frame.

@@ -326,6 +326,25 @@ async function seatChecks(host, guest, label, hostSeat = 'driver') {
   const back = await seated(hostSeat, other[hostSeat]);
   check(`The host asking to swap back waits for the guest, who agrees, and both swap back (${label})`, asked !== null && back !== null,
     JSON.stringify(back ?? asked ?? await seats()));
+
+  // The driver's convoy position (docs/convoy-seat.md): the driver raises their seat and the gunner's page draws them
+  // raised, their hatch's lid open; lowered, back as before.
+  const [driver, gunner] = hostSeat === 'driver' ? [host, guest] : [guest, host];
+  const raisedOnGunner = () => gunner.page.evaluate(() => ({
+    crew: window.__convoy.state().crew,
+    lid: window.__interior.state().lids.driver,
+    legs: window.__debug.world.scene.getObjectByName('Crew 2 Legs')?.position.toArray(),
+  }));
+  for (const up of [true, false]) {
+    await driver.page.evaluate((u) => window.__convoy.headOut(u), up);
+    const seen = await waitFor(`the gunner's page to draw the driver's seat ${up ? 'raised' : 'lowered'}`, async () => {
+      const g = await raisedOnGunner();
+      const lift = g.legs ? g.legs[1] - HIPS.driver[1] : NaN;
+      return g.crew === up && (up ? lift > 0.35 && g.lid : Math.abs(lift) < 0.01) ? g : null;
+    }, 8000).catch(() => null);
+    check(`The driver ${up ? 'raising' : 'lowering'} their seat to ${up ? 'drive head out' : 'drive closed down'}: the gunner's page draws them ${up ? 'raised, their lid open' : 'back in the seat'} (${label})`,
+      seen !== null, JSON.stringify(seen ?? await raisedOnGunner()));
+  }
 }
 
 /**

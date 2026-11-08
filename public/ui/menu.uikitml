@@ -538,6 +538,7 @@
             <div class="choices">
               <Button id="menu-drive-go" class="choice" size="sm" variant="secondary">Drive</Button>
               <Button id="menu-drive-reset" class="choice" size="sm" variant="secondary">Back to start</Button>
+              <Button id="menu-head-out" class="choice" size="sm" variant="secondary">Head out</Button>
             </div>
           </div>
           <div class="setting">

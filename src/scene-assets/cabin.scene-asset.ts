@@ -13,6 +13,7 @@ import {
   Vector2,
   type Vector3,
 } from '@iwsdk/core';
+import { createDriverSeat, driverSeatBaseParts } from './convoy-seat.scene-asset.js';
 import { driverStationParts } from './driver-station.scene-asset.js';
 import { beam, mergeParts, type Part } from './lowpoly.js';
 import { GEARBOX } from '../sim/driver-station.js';
@@ -29,6 +30,7 @@ import {
 } from '../sim/cabin.js';
 import { ELEVATING_GEAR, MANTLET_DEPTH, mountToTurret, POWER_GRIP, STATION, type StationMount, TRUNNION } from '../sim/turret.js';
 import { DOME_LAMPS } from '../sim/interior.js';
+import { LID_ASIDE } from '../sim/convoy-seat.js';
 import { binParts, boardParts, BREECH_HOLE, breechFittings, rackParts } from './loading.scene-asset.js';
 import { driverClockParts, gunnerClockParts } from './range-run.scene-asset.js';
 import { turretDialParts } from './turret-dial.scene-asset.js';
@@ -127,8 +129,6 @@ function rectangle(path: Path, x0: number, z0: number, x1: number, z1: number): 
 const GUNNER_HATCH = { x: SEATS.gunner.eye[0], z: SEATS.gunner.eye[2] + 0.1, radius: 0.27 } as const;
 /** The cast turret's rounding inside: how far the chamfers along the roof's edges and down its corners reach across each face, m. */
 const TURRET_FILLET = 0.12;
-/** How high a hatch lid stands when open, m. */
-const LID = 0.5;
 /**
  * The plate at the turret's foot, turret space: it stands `lift` above the hull roof it turns on and is `thickness`
  * thick, its hole round the ring clear of the ring's torus, m.
@@ -251,8 +251,8 @@ function hullParts(): Part[] {
   parts.push(roof(outline, top, t));
 
   // The driver's place: seat, the gearbox's hump beside their legs, and the station's fixed parts (F1.5).
-  const driver = SEATS.driver;
-  parts.push(...seatParts(driver.cushion, driver.floorY));
+  // The driver's seat rises to the convoy position (docs/convoy-seat.md): here its sleeve; the seat is its own mesh.
+  parts.push(...driverSeatBaseParts());
   const g = GEARBOX;
   parts.push(box([g.x1 - g.x0, g.top, g.z1 - g.z0], [(g.x0 + g.x1) / 2, g.top / 2, (g.z0 + g.z1) / 2], PAINT_DARK));
   parts.push(...driverStationParts());
@@ -442,10 +442,13 @@ function createHatchLids(hatch: 'driver' | 'gunner'): Mesh[] {
   let shut: BufferGeometry;
   let underside: number;
   if (hatch === 'driver') {
-    // Standing open in front of the hole, where the turret's overhang can't sweep into it.
+    // Lifted and swung aside, lying flat beside the hole on its post, so nothing stands in front of a driver's face
+    // with their head out (docs/convoy-seat.md); clear of the turret's overhang.
     const [hx0, hz0, hx1, hz1] = DRIVER_HATCH;
     const top = HULL.roof + HULL.wall;
-    open.push(box([hx1 - hx0, LID, 0.05], [(hx0 + hx1) / 2, top + LID / 2, hz0 - 0.03], PAINT_DARK));
+    const a = LID_ASIDE;
+    open.push(box([a.x1 - a.x0, a.y1 - a.y0, a.z1 - a.z0], [(a.x0 + a.x1) / 2, (a.y0 + a.y1) / 2, (a.z0 + a.z1) / 2], PAINT_DARK));
+    open.push({ geometry: new CylinderGeometry(a.post.radius, a.post.radius, a.y0 - top + 0.02, 8, 1), color: PAINT_DARK, position: [a.post.x, (top - 0.01 + a.y0 + 0.01) / 2, a.post.z] });
     underside = HULL.roof - LID_PLUG.under;
     const height = top + LID_PLUG.over - underside;
     shut = new BoxGeometry(hx1 - hx0 + 2 * LID_PLUG.rim, height, hz1 - hz0 + 2 * LID_PLUG.rim);
@@ -665,7 +668,7 @@ const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatSh
 export function createHull(): Mesh {
   const mesh = new Mesh(mergeParts(hullParts()), material);
   mesh.name = 'Hull';
-  mesh.add(createLampLenses('hull'), ...createHatchLids('driver'));
+  mesh.add(createLampLenses('hull'), ...createHatchLids('driver'), createDriverSeat());
   return mesh;
 }
 

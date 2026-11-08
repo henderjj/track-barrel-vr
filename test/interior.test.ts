@@ -316,3 +316,47 @@ describe("the head boxes against the cabin's meshes (John's headset check, 2026-
     expect([SEATS.driver.headBox[1], SEATS.driver.headBox[3], SEATS.gunner.headBox[0], SEATS.gunner.headBox[3]]).toEqual([OPEN_LEAN, OPEN_LEAN, OPEN_LEAN, OPEN_LEAN]);
   });
 });
+
+describe("the convoy position's head box against the cabin's meshes (docs/convoy-seat.md)", () => {
+  it('keeps the eyes clear of the hatch rim, the lid swung aside and the turret all along its edges, the seat raised', async () => {
+    const { CONVOY_MOVE, CONVOY_SEAT } = await import('../src/sim/convoy-seat.js');
+    const { DRIVER_SEAT_NAME } = await import('../src/scene-assets/convoy-seat.scene-asset.js');
+    const dirs: Vector3[] = [];
+    for (let i = 0, n = 300; i < n; i++) {
+      const y = 1 - (2 * (i + 0.5)) / n;
+      const r = Math.sqrt(1 - y * y);
+      const t = i * Math.PI * (3 - Math.sqrt(5));
+      dirs.push(new Vector3(Math.cos(t) * r, y, Math.sin(t) * r));
+    }
+    const ray = new Raycaster();
+    ray.far = 0.5;
+    const shown = (o: Object3D | null): boolean => o === null || (o.visible && shown(o.parent));
+    const hull = createHull();
+    hull.getObjectByName(DRIVER_SEAT_NAME)!.position.set(...CONVOY_MOVE);
+    const turret = createTurret();
+    turret.position.set(0, 0, TURRET.z);
+    const gun = createGun();
+    gun.position.set(0, TRUNNION.y, TRUNNION.z);
+    turret.add(gun);
+    hull.updateMatrixWorld(true);
+    turret.updateMatrixWorld(true);
+    const clearance = (p: Vec3): number => {
+      let best = Infinity;
+      for (const d of dirs) {
+        ray.set(new Vector3(...p), d);
+        const hit = ray.intersectObjects([hull, turret], true).find((h) => shown(h.object));
+        if (hit) best = Math.min(best, hit.distance);
+      }
+      return best;
+    };
+    const [left, right, forward, back] = CONVOY_SEAT.headBox;
+    const [ex, ey, ez] = CONVOY_SEAT.eye;
+    for (let k = 0; k <= 4; k++) {
+      const x = -left + ((left + right) * k) / 4;
+      const z = -forward + ((forward + back) * k) / 4;
+      for (const p of [[ex + x, ey, ez - forward], [ex + x, ey, ez + back], [ex - left, ey, ez + z], [ex + right, ey, ez + z], [ex, ey + CONVOY_SEAT.headUp, ez]] as Vec3[]) {
+        expect(clearance(p), `eyes at ${p.map((v) => v.toFixed(2))}`).toBeGreaterThan(EYE_CLEARANCE - 0.01);
+      }
+    }
+  });
+});

@@ -19,6 +19,7 @@ import {
 } from '../scene-assets/avatar.scene-asset.js';
 import type { PosedHand } from '../scene-assets/hand.scene-asset.js';
 import { hipPoint, SEATS, seatToHull } from '../sim/cabin.js';
+import { seatAs } from '../sim/convoy-seat.js';
 import { createSeatedBody, solveSeatedBody } from '../sim/seated-body.js';
 import { copyCurls, createFingerCurls, type FingerCurls, setCurls } from '../sim/hand-pose.js';
 import type { SpeechReading } from '../sim/tank-audio.js';
@@ -769,8 +770,8 @@ export class NetSystem extends createSystem({}) {
   private applyRemote(dt: number): void {
     const r = this.remote;
     setFromPose(this.head, r.head);
-    // Legs sit in the crewmate's seat, facing its way.
-    const seat = SEATS[seating.crew];
+    // Legs sit in the crewmate's seat, facing its way: the driver's raised in the convoy position (docs/convoy-seat.md).
+    const seat = seatAs(seating.crew, seating.crewConvoy);
     const seatYaw = seat.frame === 'turret' ? seating.turretYaw : 0;
     seatToHull(seat, seating.turretYaw, hipPoint(seat, this.hip), this.hip);
     this.legs.position.set(this.hip[0], this.hip[1], this.hip[2]);

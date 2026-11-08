@@ -2822,6 +2822,89 @@ async function theBiathlonRace() {
   iwsdk(['xr', 'set-device-state'], {});
 }
 
+/**
+ * 6e''. The driver's convoy position (docs/convoy-seat.md): Practice → Drive
+ *     the tank → Head out raises the driver's seat through a fade: the eyes
+ *     come up over the roof in the hatch's middle, the hatch's lid lies open
+ *     beside it, the periscope is down, and the view clears (screenshot from
+ *     the eyes); both hands take the tillers by their convoy grips and pull
+ *     them back; Head out again lowers the seat. Then the seat lever, pulled
+ *     back, raises it, and pulled again lowers it.
+ */
+async function theConvoySeat() {
+  const convoy = () => evalInApp('window.__convoy.state()');
+  const station = () => evalInApp('window.__driverStation.state()');
+  const handle = (id, deg) => evalInApp(`window.__driverStation.handle(${JSON.stringify(id)}${deg === undefined ? '' : `, ${deg}`})`);
+  const squeeze = (device, value) => iwsdk(['xr', 'set-gamepad-state'], { device, buttons: [{ index: SQUEEZE, value }] });
+  const handTo = (device, p, duration = 0.4) => iwsdk(['xr', 'animate-to'], { device, position: toOrigin(p), duration });
+  const take = async (device, id) => {
+    handTo(device, handle(id));
+    await sleep(600);
+    squeeze(device, 1);
+    const hand = device.replace('controller-', '');
+    await waitFor(`the ${hand} hand on the ${id}`, () => station().heldBy[id] === hand, 3000, 100).catch(() => {});
+  };
+  const roofTop = 1.51 + 0.08;
+
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+  evalInApp('(window.__drive.set(null), window.__drive.reset(), true)');
+  const downEye = evalInApp('window.__seats.eye("driver")');
+  await menuButtonPress();
+  await menuClick('menu-head-out');
+  const up = await waitFor('the seat raised and the view clear', () => {
+    const c = convoy();
+    const s = seated();
+    return c.shown && s.fade === 0 && s.head[1] > roofTop + 0.05 && { c, s };
+  }, 10000).catch(() => ({ c: convoy(), s: seated() }));
+  const looks = evalInApp('({ lid: window.__interior.state().lids.driver, scope: window.__periscope.driver.head().at, eye: window.__seats.eye("driver") })');
+  check('Practice → Head out raises the driver\'s seat: the eyes come up over the roof in the hatch, the lid lies open, the periscope is down, the view clear',
+    up.c.shown && up.s.mine === 'driver' && up.s.head[1] > roofTop + 0.05 && up.s.fade === 0 && looks.lid && looks.scope[1] < roofTop + 0.04 &&
+      looks.eye[1] - downEye[1] > 0.35 && flatGap(up.s.head, looks.eye) < 0.08,
+    `seat ${up.s.mine}, head ${fmt(up.s.head)}, eye point ${fmt(looks.eye)} (down ${fmt(downEye)}), fade ${up.s.fade}, lid open ${looks.lid}, periscope head at ${looks.scope[1].toFixed(3)}`);
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([looks.eye[0], looks.eye[1] - 0.4, looks.eye[2] - 6]) });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-convoy.png'], {});
+
+  // The tillers by their convoy grips: pulled back, they steer as from the seat below.
+  const gripAt = handle('tillerLeft');
+  await take('controller-left', 'tillerLeft');
+  await take('controller-right', 'tillerRight');
+  handTo('controller-left', handle('tillerLeft', -15));
+  handTo('controller-right', handle('tillerRight', -15));
+  const pulled = await waitFor('both tillers pulled back by their convoy grips', () => { const s = station(); return s.left < -0.4 && s.right < -0.4 && s; }, 5000).catch(() => station());
+  check('Raised, both hands take the tillers by their convoy grips, up where the hands rest, and pull them back',
+    pulled.heldBy.tillerLeft === 'left' && pulled.heldBy.tillerRight === 'right' && pulled.left < -0.4 && pulled.right < -0.4 && looks.eye[1] - gripAt[1] < 0.55,
+    `held by ${pulled.heldBy.tillerLeft} and ${pulled.heldBy.tillerRight}, tillers ${pulled.left.toFixed(2)} and ${pulled.right.toFixed(2)}, grip ${(looks.eye[1] - gripAt[1]).toFixed(2)} m under the eyes`);
+  squeeze('controller-left', 0);
+  squeeze('controller-right', 0);
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+
+  await menuButtonPress();
+  await menuClick('menu-head-out');
+  const down = await waitFor('the seat lowered', () => { const c = convoy(); const s = seated(); return !c.shown && s.fade === 0 && s.head[1] < roofTop - 0.1 && { c, s }; }, 10000)
+    .catch(() => ({ c: convoy(), s: seated() }));
+  check('Head out again lowers the seat: the eyes back under the roof, the lid back as set',
+    !down.c.shown && down.s.head[1] < roofTop - 0.1 && !evalInApp('window.__interior.state().lids.driver'),
+    `head ${fmt(down.s.head)}, lid open ${evalInApp('window.__interior.state().lids.driver')}`);
+
+  // The seat lever, right of the cushion: pull it back to raise the seat, and again to lower it.
+  for (const want of [true, false]) {
+    const lever = evalInApp('window.__convoy.lever()');
+    handTo('controller-right', lever);
+    await sleep(600);
+    squeeze('controller-right', 1);
+    await waitFor('the hand on the seat lever', () => convoy().held, 3000, 100).catch(() => {});
+    handTo('controller-right', [lever[0], lever[1] - 0.04, lever[2] + 0.14]);
+    const moved = await waitFor(`the seat ${want ? 'up' : 'down'} by its lever`, () => { const c = convoy(); return c.shown === want && c; }, 8000).catch(() => convoy());
+    squeeze('controller-right', 0);
+    check(`Pulling the seat lever back ${want ? 'raises' : 'lowers'} the seat`, moved.shown === want, `lever ${(moved.lever * 180 / Math.PI).toFixed(1)}°, held ${moved.held}, seat ${moved.shown ? 'up' : 'down'}`);
+    iwsdk(['xr', 'set-device-state'], {});
+    await waitFor('the view clear', () => seated().fade === 0, 5000).catch(() => {});
+  }
+}
+
 /** Part 2: driving the tank, the driver's station and controls, laying the gun, and both crew's periscopes. */
 async function partTwo() {
   // 6d. The tank drive (F1.4).
@@ -2831,6 +2914,8 @@ async function partTwo() {
   await driverStation();
   // 6e'. John's headset notes on the driver's controls (31 October 2026).
   await driverFeedback();
+  // 6e''. The driver's convoy position: head out of the hatch (docs/convoy-seat.md).
+  await theConvoySeat();
   // 6f. The turret (F1.8).
   await layingTheGun();
 

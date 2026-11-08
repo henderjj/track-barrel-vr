@@ -4,6 +4,7 @@ import { interiorUniforms, setCabinLook, setInteriorLighting, setInteriorTurret 
 import { HATCH_LID_NAMES } from '../scene-assets/cabin.scene-asset.js';
 import { settings } from '../settings.js';
 import { type CabinLook, cabinLook, interiorLight, lookFor } from '../sim/interior.js';
+import { convoyUp } from './convoy-seat-system.js';
 import { seating } from './seating.js';
 
 interface InteriorDebug {
@@ -24,6 +25,8 @@ interface InteriorDebug {
  */
 export class CabinLightSystem extends createSystem({}) {
   private yaw = Number.NaN;
+  /** The driver's seat stood in the convoy position at the last look. */
+  private convoy = false;
   /** Each hatch's lids: drawn open, and drawn shut. */
   private lids: { open: Object3D | null; closed: Object3D | null; hatch: 'driver' | 'gunner' }[] = [];
 
@@ -53,6 +56,8 @@ export class CabinLightSystem extends createSystem({}) {
   }
 
   update(): void {
+    // The driver's convoy position opens their hatch on both pages (docs/convoy-seat.md).
+    if (convoyUp() !== this.convoy) this.applyLook();
     if (seating.turretYaw === this.yaw) return;
     this.yaw = seating.turretYaw;
     setInteriorTurret(this.yaw);
@@ -60,7 +65,10 @@ export class CabinLightSystem extends createSystem({}) {
 
   /** Light and draw the cabin as the settings ask. */
   private applyLook(): void {
-    setCabinLook(lookFor(settings.hatches, settings.cabin, settings.lamps, cabinLook));
+    lookFor(settings.hatches, settings.cabin, settings.lamps, cabinLook);
+    this.convoy = convoyUp();
+    if (this.convoy) cabinLook.driverHatch = true;
+    setCabinLook(cabinLook);
     for (const lid of this.lids) {
       const open = lid.hatch === 'driver' ? cabinLook.driverHatch : cabinLook.gunnerHatch;
       if (lid.open) lid.open.visible = open;
