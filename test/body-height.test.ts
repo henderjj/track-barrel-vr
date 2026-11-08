@@ -134,8 +134,11 @@ describe('rig offset', () => {
     }
     for (const up of [false, true]) {
       const pivot = seatLeverPivot(up, [0, 0, 0]);
-      const grip = [pivot[0], pivot[1] + SEAT_LEVER.length - SEAT_LEVER.gripLength / 2, pivot[2]];
-      check(up ? CONVOY_SEAT : SEATS.driver, grip, `seat lever, seat ${up ? 'up' : 'down'}`);
+      const out = SEAT_LEVER.length - SEAT_LEVER.gripLength / 2;
+      for (const a of [SEAT_LEVER.rest, SEAT_LEVER.min]) {
+        const grip = [pivot[0], pivot[1] + out * Math.cos(a), pivot[2] - out * Math.sin(a)];
+        check(up ? CONVOY_SEAT : SEATS.driver, grip, `seat lever, seat ${up ? 'up' : 'down'}`);
+      }
     }
   });
 

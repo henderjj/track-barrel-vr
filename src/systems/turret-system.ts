@@ -31,7 +31,7 @@ import {
   wheelForElevation,
   wrapAngle,
 } from '../sim/turret.js';
-import { GUN_STOP } from '../sim/convoy-seat.js';
+import { GUN_STOP, HEAD_OUT_GUN_STOP } from '../sim/convoy-seat.js';
 import { slewTurret } from '../sim/turret-dial.js';
 import { convoyUp } from './convoy-seat-system.js';
 import { engineRpm, startEngine } from './drive-system.js';
@@ -428,8 +428,8 @@ export class TurretSystem extends createSystem({}) {
     }
     // The Practice shortcut's turn (F2.3) gives way to the gunner's hands and to a test's traverse.
     if (this.slewTarget !== null && (this.grip.anyHeld || this.crankWheel.anyHeld || o?.traverse !== undefined || ride.active)) this.slewTarget = null;
-    // The driver's head out of the hatch (F2.8): the gun can't be turned through it.
-    const stop = convoyUp() ? GUN_STOP : null;
+    // The driver's head out of the hatch (F2.8): the gun can't be turned through it, while the stop is on.
+    const stop = HEAD_OUT_GUN_STOP && convoyUp() ? GUN_STOP : null;
     if (!stop) this.toldHeadOut = false;
     let stopped = false;
     let first = true;
