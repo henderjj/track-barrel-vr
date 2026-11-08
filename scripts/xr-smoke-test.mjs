@@ -1336,6 +1336,10 @@ async function driverFeedback() {
   const offTiller = controls();
   trigger('controller-right', 0);
   squeeze('controller-left', 0);
+  // Its ray down at the floor, so the trigger pulled with the menu open clicks none of the menu's buttons
+  // (Practice → Range run → Start once lay in its path: it closed the menu, so later steps' menu presses opened it when they meant to close it).
+  const below = on(starter, 0.25);
+  iwsdk(['xr', 'look-at'], { device: 'controller-right', target: toOrigin([below[0], below[1] - 1, below[2]]) });
   await menuButtonPress();
   trigger('controller-right', 1);
   await sleep(500);

@@ -84,7 +84,7 @@
     flex-direction: column;
     flex-shrink: 0;
     width: 476px;
-    min-height: 508px;
+    min-height: 548px;
   }
 
   .page {

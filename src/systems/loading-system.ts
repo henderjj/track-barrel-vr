@@ -180,6 +180,8 @@ export class LoadingSystem extends createSystem({}) {
   private turret: Entity | null = null;
   private recoilPart: Object3D | null = null;
   private shells: Mesh[] = [];
+  /** Whether each shell was last drawn spent (hidden), so only a change of it touches `visible`. */
+  private spentDrawn: boolean[] = [];
   private casings: Mesh[] = [];
   private block: Mesh | null = null;
   private lever: Mesh | null = null;
@@ -295,6 +297,7 @@ export class LoadingSystem extends createSystem({}) {
     for (let i = 0; i < this.drill.shells.length; i++) {
       const shell = createShell(i);
       this.shells.push(shell);
+      this.spentDrawn.push(false);
       this.world.createTransformEntity(shell, { parent: turret });
     }
     for (let i = 0; i < CASINGS_KEPT; i++) {
@@ -576,9 +579,13 @@ export class LoadingSystem extends createSystem({}) {
     for (let i = 0; i < this.shells.length; i++) {
       const shell = s.shells[i];
       const mesh = this.shells[i];
-      // A biathlon line's spent round (F5.3b): its rack slot stands empty.
-      const shown = shell.place !== 'spent';
-      if (mesh.visible !== shown) mesh.visible = shown;
+      // A biathlon line's spent round (F5.3b): its rack slot stands empty. Only a change of
+      // spent touches `visible`, so a shell hidden by something else (the ride hides the cabin) stays hidden.
+      const spent = shell.place === 'spent';
+      if (spent !== this.spentDrawn[i]) {
+        this.spentDrawn[i] = spent;
+        mesh.visible = !spent;
+      }
       mesh.position.set(shell.centre[0], shell.centre[1], shell.centre[2]);
       // The model's nose points to -Z; shells are round, so their roll doesn't show.
       this.axis.set(shell.axis[0], shell.axis[1], shell.axis[2]);
