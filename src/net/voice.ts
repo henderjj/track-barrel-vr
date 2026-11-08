@@ -18,7 +18,7 @@
  * element so the echo canceller can see it (the "loopback workaround").
  */
 
-import { SPEECH_BAND_HZ } from '../sim/tank-audio.js';
+import { SPEECH_BAND_HZ, type SpeechReading } from '../sim/tank-audio.js';
 
 export type VoiceMode = 'spatial' | 'plain' | 'off';
 
@@ -260,14 +260,14 @@ export class Voice {
     return rms(this.micAnalyser, this.micData);
   }
 
-  /** The crewmate's voice above SPEECH_BAND_HZ, RMS 0 to 1: what the tank sounds' duck listens to. */
-  remoteSpeechLevel(): number {
-    return this.remoteSpeech?.level() ?? 0;
+  /** The crewmate's voice above SPEECH_BAND_HZ since the last read: what the tank sounds' duck listens to. Read once a frame. */
+  remoteSpeechLevel(): SpeechReading {
+    return this.remoteSpeech?.read() ?? SILENT;
   }
 
-  /** This player's microphone above SPEECH_BAND_HZ, RMS 0 to 1 (0 while muted): what the tank sounds' duck listens to. */
-  micSpeechLevel(): number {
-    return this.micSpeech?.level() ?? 0;
+  /** This player's microphone above SPEECH_BAND_HZ since the last read (silent while muted): what the tank sounds' duck listens to. Read once a frame. */
+  micSpeechLevel(): SpeechReading {
+    return this.micSpeech?.read() ?? SILENT;
   }
 
   /** True once the loopback route is playing the spatial mix. */
@@ -351,30 +351,64 @@ export class Voice {
   }
 }
 
+const SILENT: SpeechReading = Object.freeze({ level: 0, quiet: 0 });
+/** The speech meter measures in blocks this long, s. */
+const SPEECH_BLOCK = 0.01;
+
 /**
  * A level meter on the speech band: two high-passes at SPEECH_BAND_HZ
  * before an analyser, so the tank's engine and tracks, low-passed below
  * 900 Hz and heard by the headset's microphone from its own speakers,
  * hardly register (docs/audio.md).
+ *
+ * Each read covers everything heard since the last one (up to the
+ * analyser's 0.7 s or so), in 10 ms blocks: the loudest block is the
+ * level, the quietest the background under it. A single 10 ms look once a
+ * frame missed short sounds whenever frames came slowly (a software-drawn
+ * test browser draws a few a second), and a word that fell between looks.
  */
 class SpeechMeter {
+  private readonly ctx: BaseAudioContext;
   private readonly input: AudioNode;
   private readonly low: BiquadFilterNode;
   private readonly high: BiquadFilterNode;
   private readonly analyser: AnalyserNode;
   private readonly data: Float32Array<ArrayBuffer>;
+  private readonly reading: SpeechReading = { level: 0, quiet: 0 };
+  private lastRead = -1;
 
   constructor(ctx: BaseAudioContext, input: AudioNode) {
+    this.ctx = ctx;
     this.input = input;
     this.low = new BiquadFilterNode(ctx, { type: 'highpass', frequency: SPEECH_BAND_HZ, Q: Math.SQRT1_2 });
     this.high = new BiquadFilterNode(ctx, { type: 'highpass', frequency: SPEECH_BAND_HZ, Q: Math.SQRT1_2 });
-    this.analyser = new AnalyserNode(ctx, { fftSize: 512 });
+    this.analyser = new AnalyserNode(ctx, { fftSize: 32768 });
     this.data = new Float32Array(this.analyser.fftSize);
     input.connect(this.low).connect(this.high).connect(this.analyser);
   }
 
-  level(): number {
-    return rms(this.analyser, this.data);
+  /** Allocation free: the same reading object each time. */
+  read(): SpeechReading {
+    const now = this.ctx.currentTime;
+    const block = Math.max(1, Math.round(SPEECH_BLOCK * this.ctx.sampleRate));
+    const data = this.data;
+    const elapsed = this.lastRead < 0 ? 0 : Math.round((now - this.lastRead) * this.ctx.sampleRate);
+    this.lastRead = now;
+    const blocks = Math.max(1, Math.min(Math.floor(data.length / block), Math.round(elapsed / block)));
+    this.analyser.getFloatTimeDomainData(data);
+    let loudest = 0;
+    let quietest = Number.POSITIVE_INFINITY;
+    for (let b = 0; b < blocks; b++) {
+      const end = data.length - b * block;
+      let sum = 0;
+      for (let i = end - block; i < end; i++) sum += data[i] * data[i];
+      const level = Math.sqrt(sum / block);
+      if (level > loudest) loudest = level;
+      if (level < quietest) quietest = level;
+    }
+    this.reading.level = loudest;
+    this.reading.quiet = quietest;
+    return this.reading;
   }
 
   disconnect(): void {

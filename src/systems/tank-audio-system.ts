@@ -279,7 +279,9 @@ export class TankAudioSystem extends createSystem({}) {
     }
     sirenVoice(shownDriverControls()?.siren ?? false, this.sirenNow);
     whineVoice(turret.rate, this.whineNow);
-    const duck = this.ducker.step(netLink.micSpeech(), netLink.crewSpeech(), dt);
+    const mic = netLink.micSpeech();
+    const crew = netLink.crewSpeech();
+    const duck = this.ducker.step(mic.level, crew.level, dt, mic.quiet, crew.quiet);
 
     // The short sounds this frame's changes make.
     const c = this.cueState;
