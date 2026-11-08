@@ -1,7 +1,9 @@
 import { createSystem, Euler, Matrix4, Quaternion, Vector3, VisibilityState } from '@iwsdk/core';
 import type { PoseSample } from '../net/pose-codec.js';
 import { settings } from '../settings.js';
-import { aimAt, rangeFaces } from '../sim/ballistics.js';
+import { aimAt, COURSE_TARGET_FIRST, targetFaces } from '../sim/ballistics.js';
+import { boxAt, LINE_ACROSS } from '../sim/course.js';
+import { RANGE_TARGETS } from '../sim/range.js';
 import { hullToSeat, SEATS, seatToHull, type SeatId } from '../sim/cabin.js';
 import { MAX_TRAVERSE_ACCEL } from '../sim/comfort.js';
 import {
@@ -188,8 +190,10 @@ export class CrewBotSystem extends createSystem({}) {
   // The gunner.
   private phase: 'load' | 'lay' | 'result' = 'load';
   private fireAtWill = true;
-  private faces = rangeFaces();
+  private faces = targetFaces();
   private hit: boolean[] = this.faces.map(() => false);
+  /** The targets it won't lay on now: hit already, or not this place's (the range's three, or the firing box's own line). */
+  private skip: boolean[] = this.faces.map(() => false);
   private target = -1;
   private aim = { yaw: 0, elevation: 0 };
   private path = createPath();
@@ -528,11 +532,25 @@ export class CrewBotSystem extends createSystem({}) {
       if (this.load(dt)) this.phase = 'lay';
       return;
     }
-    // Laying: the nearest target not hit yet; all hit, round again.
-    this.target = chooseTarget(tank.x, tank.z, this.faces, this.hit, sightLimit());
-    if (this.target < 0 && this.hit.includes(true)) {
-      this.hit.fill(false);
-      this.target = chooseTarget(tank.x, tank.z, this.faces, this.hit, sightLimit());
+    // Laying: the nearest target not hit yet; all hit, round again. In a
+    // biathlon firing box (F5.3a) it shoots that line's boards, elsewhere
+    // the range's targets.
+    const box = boxAt(tank.x, tank.z);
+    const first = box >= 0 ? COURSE_TARGET_FIRST + box * LINE_ACROSS.length : 0;
+    const last = box >= 0 ? first + LINE_ACROSS.length : RANGE_TARGETS.length;
+    let anyHit = false;
+    for (let i = 0; i < this.faces.length; i++) {
+      const here = i >= first && i < last;
+      this.skip[i] = !here || this.hit[i];
+      if (here && this.hit[i]) anyHit = true;
+    }
+    this.target = chooseTarget(tank.x, tank.z, this.faces, this.skip, sightLimit());
+    if (this.target < 0 && anyHit) {
+      for (let i = first; i < last; i++) {
+        this.hit[i] = false;
+        this.skip[i] = false;
+      }
+      this.target = chooseTarget(tank.x, tank.z, this.faces, this.skip, sightLimit());
     }
     if (this.target < 0) {
       this.holdElevation(turret.elevation);

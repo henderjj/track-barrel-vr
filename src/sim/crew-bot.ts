@@ -25,6 +25,7 @@ import { MAX_SPEED, MAX_YAW_RATE } from './comfort.js';
 import type { EngineControlId } from './driver-station.js';
 import { CHOKE_COOLANT, CHOKE_HOLD, chokeLevel, type EngineStart, WARM_COOLANT } from './engine.js';
 import { TRACK_GAUGE } from './tank-drive.js';
+import { BOX_Z, COURSE_PATH, eastSideAt, FINISH_Z, JOIN, type Path, PENALTY_OWN, PENALTY_PATH } from './course.js';
 import { wrapTile } from './terrain.js';
 
 const DEG = Math.PI / 180;
@@ -97,7 +98,7 @@ function wrap(a: number): number {
  * event `crew-call`; the other page shows them on a sign, and the
  * practice crewmate does what they say.
  */
-export const CREW_CALLS = ['advance', 'halt', 'reverse', 'left', 'right', 'route', 'fire', 'hold', 'on-the-way', 'target'] as const;
+export const CREW_CALLS = ['advance', 'halt', 'reverse', 'left', 'right', 'route', 'course', 'fire', 'hold', 'on-the-way', 'target'] as const;
 export type CrewCall = (typeof CREW_CALLS)[number];
 
 /** What each call says on the sign. */
@@ -108,6 +109,7 @@ export const CALL_WORDS: Readonly<Record<CrewCall, string>> = {
   left: 'Driver, left',
   right: 'Driver, right',
   route: 'Driver, drive the route',
+  course: 'Driver, drive the course',
   fire: 'Gunner, fire at will',
   hold: 'Gunner, hold fire',
   'on-the-way': 'On the way!',
@@ -122,6 +124,7 @@ export const CALL_FROM: Readonly<Record<CrewCall, SeatId>> = {
   left: 'gunner',
   right: 'gunner',
   route: 'gunner',
+  course: 'gunner',
   fire: 'driver',
   hold: 'driver',
   'on-the-way': 'gunner',
@@ -159,12 +162,21 @@ const REVERSE = -0.6;
 /** Within this of a waypoint the tank has arrived, m. */
 export const ARRIVED = 3;
 
-/** One leg of the route: where it goes (world x and z), how fast, km/h, and how long it halts there, s. */
+/**
+ * One leg of a route: where it goes (world x and z), how fast, km/h, and
+ * how long it halts there, s. A `through` leg is a point on a curving
+ * track (the biathlon course) driven past without slowing: it counts as
+ * reached once the tank is level with it, along the track's `heading` there.
+ * `label` names a halt for the menu.
+ */
 export interface RouteLeg {
   x: number;
   z: number;
   kmh: number;
   halt: number;
+  through?: boolean;
+  heading?: number;
+  label?: string;
 }
 
 /**
@@ -179,6 +191,56 @@ export const ROUTE: readonly RouteLeg[] = [
   { x: 0, z: -300, kmh: 11, halt: 10 },
   { x: 0, z: -20, kmh: 30, halt: 5 },
 ];
+
+/** Course legs are this far apart, m, and a through leg is passed this far short of being level with it (so the tank always aims a few metres ahead). */
+const COURSE_STEP = 10;
+const THROUGH_AHEAD = 4;
+/** The crewmate's speeds on the course, km/h: round the loop, coming up to a firing box, and round the penalty loop's tight curves. */
+export const COURSE_KMH = { loop: 20, box: 10, penalty: 12 } as const;
+/** How long it halts in a firing box, s: time for a gunner to shoot (F5.3b gives the race its own rules). */
+export const COURSE_HALT = 15;
+/** It slows to COURSE_KMH.box this far before a firing box, m. */
+const BOX_SLOW = 40;
+
+/**
+ * The crewmate's way round the biathlon course (F5.3a): two laps from the
+ * finish line, the first halting in firing box 1 and then driving the
+ * penalty loop once, the second halting in firing box 2, and round again.
+ * Through legs every COURSE_STEP m along the course's middle line, slowing
+ * before each box.
+ */
+export const COURSE_ROUTE: readonly RouteLeg[] = (() => {
+  const legs: RouteLeg[] = [];
+  const add = (path: Path, from: number, to: number, kmh: number, slowFrom = Infinity) => {
+    const n = Math.max(1, Math.round((to - from) / COURSE_STEP));
+    for (let i = 1; i <= n; i++) {
+      const s = from + ((to - from) * i) / n;
+      const p = path.at(s);
+      legs.push({ x: p.x, z: p.z, kmh: s >= slowFrom ? COURSE_KMH.box : kmh, halt: 0, through: true, heading: p.heading });
+    }
+  };
+  const halt = (box: number) => {
+    const p = COURSE_PATH.at(eastSideAt(BOX_Z[box]));
+    legs.push({ x: p.x, z: p.z, kmh: COURSE_KMH.box, halt: COURSE_HALT, label: `firing box ${box + 1}` });
+  };
+  const box1 = eastSideAt(BOX_Z[0]);
+  const box2 = eastSideAt(BOX_Z[1]);
+  const leave = eastSideAt(JOIN.leave);
+  const back = eastSideAt(JOIN.back);
+  const end = eastSideAt(FINISH_Z);
+  // Lap A: round to box 1, halt, on to the penalty loop, once round it, then up to the finish.
+  add(COURSE_PATH, 0, box1 - COURSE_STEP, COURSE_KMH.loop, box1 - BOX_SLOW);
+  halt(0);
+  add(COURSE_PATH, box1, leave, COURSE_KMH.box);
+  add(PENALTY_PATH, 0, PENALTY_OWN, COURSE_KMH.penalty);
+  add(COURSE_PATH, back, end, COURSE_KMH.loop);
+  // Lap B: round to box 2, halt, then straight up past the penalty loop to the finish (the same last legs as lap A's).
+  add(COURSE_PATH, 0, box2 - COURSE_STEP, COURSE_KMH.loop, box2 - BOX_SLOW);
+  halt(1);
+  add(COURSE_PATH, box2, back, COURSE_KMH.box);
+  add(COURSE_PATH, back, end, COURSE_KMH.loop);
+  return legs;
+})();
 
 /** The heading that faces from a point towards (dx, dz) further on, rad (0 faces -Z, positive turns left). */
 export function headingTo(dx: number, dz: number): number {
@@ -234,16 +296,20 @@ export interface TankView {
  * It drives with the automatic box (F1.16), so it never changes gear itself.
  */
 export class BotDriver {
-  mode: 'calls' | 'route' = 'calls';
+  mode: 'calls' | 'route' | 'course' = 'calls';
   motion: 'halt' | 'advance' | 'reverse' = 'halt';
   /** The heading it holds, rad (NaN until it has seen the tank). */
   heading = Number.NaN;
   /** The route leg it drives to, and how long it has left to halt there, s (0: on its way). */
   leg = 0;
   halting = 0;
-  /** Waypoints reached so far, for the tests. */
+  /** Waypoints reached so far (on the course, its halts), for the tests. */
   arrivals = 0;
   private steerOut = { left: 0, right: 0 };
+  /** The legs it drives: ROUTE, or COURSE_ROUTE. */
+  private legs: readonly RouteLeg[] = ROUTE;
+  /** On the course, it starts from the leg nearest the tank once it sees where the tank is. */
+  private pickLeg = false;
 
   /** A call from the gunner. The tank's heading now sets where Left and Right turn from. */
   call(call: CrewCall, tankHeading: number): boolean {
@@ -260,12 +326,20 @@ export class BotDriver {
         return true;
       case 'left':
       case 'right':
-        if (this.mode === 'route') this.motion = 'halt';
+        if (this.mode !== 'calls') this.motion = 'halt';
         this.mode = 'calls';
         this.heading = wrap(this.heading + (call === 'left' ? TURN_STEP : -TURN_STEP));
         return true;
       case 'route':
         this.mode = 'route';
+        this.legs = ROUTE;
+        this.leg = 0;
+        this.halting = 0;
+        return true;
+      case 'course':
+        this.mode = 'course';
+        this.legs = COURSE_ROUTE;
+        this.pickLeg = true;
         this.halting = 0;
         return true;
       default:
@@ -277,7 +351,8 @@ export class BotDriver {
   update(dt: number, tank: TankView, out: DriveWish): DriveWish {
     if (Number.isNaN(this.heading)) this.heading = tank.heading;
     let base = 0;
-    if (this.mode === 'route') {
+    if (this.mode !== 'calls') {
+      if (this.pickLeg) this.nearestLeg(tank);
       base = this.followRoute(dt, tank);
     } else {
       base = this.motion === 'advance' ? ADVANCE : this.motion === 'reverse' ? REVERSE : 0;
@@ -288,19 +363,51 @@ export class BotDriver {
     return out;
   }
 
-  /** On the route: head for the leg's waypoint, slowing as it nears, then halt there a while. Returns the tillers' base demand. */
+  /**
+   * The course leg nearest the tank, so it joins the course where it
+   * stands. Of two at the same spot it takes the later: parked at the
+   * course's start, that is lap B's last legs, so it goes round to box 1
+   * first.
+   */
+  private nearestLeg(tank: TankView): void {
+    this.pickLeg = false;
+    let best = Infinity;
+    this.legs.forEach((leg, i) => {
+      const d = Math.hypot(wrapTile(leg.x - tank.x), wrapTile(leg.z - tank.z));
+      if (d <= best + 1e-6) {
+        best = d;
+        this.leg = i;
+      }
+    });
+  }
+
+  /** On the route: head for the leg's waypoint, slowing as it nears, then halt there a while; a through leg it drives past. Returns the tillers' base demand. */
   private followRoute(dt: number, tank: TankView): number {
+    const legs = this.legs;
     if (this.halting > 0) {
       this.halting -= dt;
       if (this.halting <= 0) {
         this.halting = 0;
-        this.leg = (this.leg + 1) % ROUTE.length;
+        this.leg = (this.leg + 1) % legs.length;
       }
       return 0;
     }
-    const leg = ROUTE[this.leg];
-    const dx = wrapTile(leg.x - tank.x);
-    const dz = wrapTile(leg.z - tank.z);
+    let leg = legs[this.leg];
+    let dx = wrapTile(leg.x - tank.x);
+    let dz = wrapTile(leg.z - tank.z);
+    // Through legs: on to the next once level with this one (a few legs at most in one frame).
+    for (let k = 0; k < 4 && leg.through; k++) {
+      const h = leg.heading ?? 0;
+      if (dx * -Math.sin(h) + dz * -Math.cos(h) > THROUGH_AHEAD) break;
+      this.leg = (this.leg + 1) % legs.length;
+      leg = legs[this.leg];
+      dx = wrapTile(leg.x - tank.x);
+      dz = wrapTile(leg.z - tank.z);
+    }
+    if (leg.through) {
+      this.heading = headingTo(dx, dz);
+      return leg.kmh / 3.6 / MAX_SPEED;
+    }
     const distance = Math.hypot(dx, dz);
     if (distance < ARRIVED) {
       this.arrivals++;
@@ -319,6 +426,11 @@ export class BotDriver {
       const leg = ROUTE[this.leg];
       const where = `${Math.round(-leg.z)} m up the road`;
       return this.halting > 0 ? `driving the route, halted (${Math.ceil(this.halting)} s)` : `driving the route to ${where}`;
+    }
+    if (this.mode === 'course') {
+      const leg = this.legs[this.leg];
+      if (this.halting > 0) return `driving the course, halted in ${leg.label ?? 'a box'} (${Math.ceil(this.halting)} s)`;
+      return leg.label ? `driving the course to ${leg.label}` : 'driving the course';
     }
     return this.motion === 'halt' ? 'halted' : this.motion === 'advance' ? 'advancing' : 'reversing';
   }

@@ -13,6 +13,7 @@ import { driveStatus, resetTank, startDriving } from './drive-system.js';
 import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-system.js';
 import { goUpTheRange, rangeStatus } from './range-system.js';
 import { readyToFire, runStatus, shownRun, startRun, stopRun } from './range-run-system.js';
+import { courseStatus, goToCourse, goToFiringLine } from './course-system.js';
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
 import { seating } from './seating.js';
@@ -28,7 +29,7 @@ import { crewCallStatus, sendCrewCall } from './crew-bot-system.js';
 import type { CrewCall } from '../sim/crew-bot.js';
 
 /** The Calls section's buttons: `call-<call>`. */
-const CALL_BUTTONS: readonly CrewCall[] = ['advance', 'halt', 'reverse', 'left', 'right', 'route', 'fire', 'hold'];
+const CALL_BUTTONS: readonly CrewCall[] = ['advance', 'halt', 'reverse', 'left', 'right', 'route', 'course', 'fire', 'hold'];
 
 /** Where the menu stands in VR when opened: ahead of the head and a little below the eyes, m. */
 const DISTANCE = 1.3;
@@ -312,6 +313,18 @@ export class GameMenuSystem extends createSystem({}) {
         readyToFire(i);
       });
     }
+    ui.on('menu-course-go', () => {
+      this.setOpen(false);
+      stopRide();
+      goToCourse();
+    });
+    for (let k = 0; k < 2; k++) {
+      ui.on(`menu-course-line-${k}`, () => {
+        this.setOpen(false);
+        stopRide();
+        goToFiringLine(k);
+      });
+    }
     ui.on('menu-turret-go', () => {
       this.setOpen(false);
       stopRide();
@@ -469,6 +482,7 @@ export class GameMenuSystem extends createSystem({}) {
       this.ui?.setText('menu-turret-status', turretStatus());
       this.ui?.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
       this.ui?.setText('menu-run-status', runStatus());
+      this.ui?.setText('menu-course-status', courseStatus());
       this.ui?.setText('menu-stats-status', statsStatus());
       this.ui?.setText('menu-audio-status', audioStatus());
       this.ui?.setText('menu-calls-status', crewCallStatus());
@@ -542,6 +556,7 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
     ui.setText('menu-run-status', runStatus());
     ui.setText('menu-run-start', shownRun().phase === 'running' ? 'Restart' : 'Start');
+    ui.setText('menu-course-status', courseStatus());
     ui.setText('menu-stats-status', statsStatus());
     ui.setText('menu-audio-status', audioStatus());
     ui.show('menu-ride', ride.active);
