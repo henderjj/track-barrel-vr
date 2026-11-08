@@ -77,7 +77,8 @@
  *     stops the clock on the crew's time (marked assisted); Stop clears it;
  *  6l. turns both crew's periscopes (F1.6, F1.19): Sights → Periscopes →
  *     Driver's (then Gunner's) sits the player in that seat behind its
- *     window, above the eyes; sitting up renders the view (the gunner's
+ *     window, above the eyes and facing down to them; sitting up and
+ *     looking up into it renders the view (the gunner's
  *     with the gunsight under it shut); the crank on its right turns it,
  *     a quarter of the way round a turn, the view and the head on the roof
  *     with it while the window stays still; Ahead works from the menu
@@ -1992,11 +1993,11 @@ async function thePeriscopes() {
       return s.mine === id && behindLens(s.head, lens) > 0.1 && behindLens(s.head, lens) < 0.2 ? s : null;
     }, 8000).catch(() => seated());
     const lens0 = scope('lens()');
-    check(`Sights → Periscopes → ${id === 'driver' ? "Driver's" : "Gunner's"} sits the player in the ${label} seat just behind its window, above the eyes`,
-      there.mine === id && behindLens(there.head, lens0) > 0.1 && behindLens(there.head, lens0) < 0.2 && lens0.at[1] - there.eye[1] > 0.1,
+    check(`Sights → Periscopes → ${id === 'driver' ? "Driver's" : "Gunner's"} sits the player in the ${label} seat just behind its window, above the eyes and facing down to them`,
+      there.mine === id && behindLens(there.head, lens0) > 0.1 && behindLens(there.head, lens0) < 0.2 && lens0.at[1] - there.eye[1] > 0.07 && lens0.facing[1] < -0.3,
       `${there.mine}, head ${fmt(there.head)}, eye point ${fmt(there.eye)}, window ${fmt(lens0.at)}`);
 
-    // Sit up and lean in: the window opens on the view.
+    // Sit up and lean in, looking up into the window (it faces down towards the seat): it opens on the view.
     const rendersBefore = scope('state()').renders;
     iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(lens0.at.map((v, i) => v + lens0.facing[i] * 0.06)) });
     iwsdk(['xr', 'look-at'], { device: 'headset', target: toRig(lens0.at.map((v, i) => v - lens0.facing[i] * 20)) });
@@ -2747,7 +2748,7 @@ async function partTwo() {
 }
 
 /**
- * 6n. The callout card (F2.6): a card hangs on the hull's left wall beside
+ * 6o. The callout card (F2.6): a card hangs on the hull's left wall beside
  *     the driver and on the turret's front wall in front of the gunner,
  *     each facing its seat, with the Calls' words on it; the game menu's
  *     Sound and view → Callout card → Off hides both and On brings them back.
@@ -2792,7 +2793,8 @@ async function theCalloutCard() {
 
 /**
  * Part 3: loading and firing, the test range, the gunsight, the tank's
- * sounds, the range run, comfort and stats, and the callout card.
+ * sounds, the range run, comfort and stats, the driver's turret dial and
+ * the callout card.
  */
 async function partThree() {
   // 6g. Loading and firing (F1.10).
@@ -2812,8 +2814,49 @@ async function partThree() {
   // 6m. Comfort and stats (F1.14).
   await comfortAndStats();
 
-  // 6n. The callout card (F2.6).
+  // 6n. The driver's turret position dial (F2.3).
+  await theTurretDial();
+
+  // 6o. The callout card (F2.6).
   await theCalloutCard();
+}
+
+/**
+ * 6n. The driver's turret position dial (F2.3): Practice → Lay the gun →
+ *     To 3 o'clock puts the player in the driver's seat and the turret
+ *     turns itself there, the dial's pointer turning with it; it stops at
+ *     3 o'clock and the dial reads 3 (screenshot from the driver's eyes);
+ *     Forward brings both back to 12.
+ */
+async function theTurretDial() {
+  const dial = () => evalInApp('window.__turretDial.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp('(window.__turret.set(null), window.__turret.forward(), true)');
+  await sleep(300);
+  await menuButtonPress();
+  await menuClick('menu-turret-dial');
+  const turning = await waitFor('the turret turning by itself', () => { const s = dial(); return s.traversing && s.turretDeg < -5 && s; }, 8000).catch(() => dial());
+  const seated = evalInApp('({ seat: window.__seats.mine, sign: window.__turret.sign })');
+  check("Practice → Lay the gun → To 3 o'clock puts the player in the driver's seat, and the turret turns by itself with the dial's pointer on it",
+    seated.seat === 'driver' && turning.traversing && turning.turretDeg < -5 && Math.abs(turning.pointerDeg - turning.turretDeg) < 1 && seated.sign.startsWith('Turret to 3'),
+    `seat ${seated.seat}, turret ${turning.turretDeg.toFixed(1)}°, pointer ${turning.pointerDeg.toFixed(1)}°, sign "${seated.sign}"`);
+  const there = await waitFor("the turret at 3 o'clock", () => { const s = dial(); return !s.traversing && s.hour === 3 && s; }, 20000).catch(() => dial());
+  check("The turret stops at 3 o'clock and the driver's dial reads 3, its pointer to the right",
+    !there.traversing && there.hour === 3 && Math.abs(there.turretDeg + 90) < 0.1 && Math.abs(there.pointerDeg + 90) < 0.1,
+    `turret ${there.turretDeg.toFixed(2)}°, pointer ${there.pointerDeg.toFixed(2)}°, reads ${there.hour} o'clock`);
+  const eye = evalInApp('window.__seats.eye("driver")');
+  const at = evalInApp('window.__turretDial.at');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin(eye) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([(eye[0] + at[0]) / 2, at[1], at[2]]) });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-turret-dial.png'], {});
+  iwsdk(['xr', 'set-device-state'], {});
+  await menuButtonPress();
+  await menuClick('menu-turret-forward');
+  await menuButtonPress();
+  const home = await waitFor('the turret forward', () => { const s = dial(); return s.hour === 12 && Math.abs(s.pointerDeg) < 0.1 && s; }, 8000).catch(() => dial());
+  check('Practice → Lay the gun → Forward brings the turret back and the dial reads 12', home.hour === 12 && Math.abs(home.pointerDeg) < 0.1,
+    `turret ${home.turretDeg.toFixed(2)}°, pointer ${home.pointerDeg.toFixed(2)}°`);
 }
 
 /** Every part ends with these: the perf log, PC VR without the frame-rate API, and the console. */

@@ -24,7 +24,8 @@
   - Practice, Sights and Test rigs hold shortcuts straight to a situation
     worth testing, one per feature, so a headset check never has to play its
     way there. Practice: sit in either seat; drive, or put the tank back at
-    its start; lay the gun, or turn the turret forward; load and fire as
+    its start; lay the gun, turn the turret forward, or turn it to 3 o'clock
+    to watch the driver's turret dial; load and fire as
     gunner; play each of the tank's short sounds; park up the range facing a
     target; start or stop a range run, and ready to fire on each target,
     parked at the start, laid and loaded. Sights: go to the gunsight, lay the
@@ -540,6 +541,7 @@
             <div class="choices">
               <Button id="menu-turret-go" class="choice" size="sm" variant="secondary">Gunner</Button>
               <Button id="menu-turret-forward" class="choice" size="sm" variant="secondary">Forward</Button>
+              <Button id="menu-turret-dial" class="choice" size="sm" variant="secondary">To 3 o'clock</Button>
             </div>
           </div>
           <div id="menu-turret-status" class="hint">Turret</div>

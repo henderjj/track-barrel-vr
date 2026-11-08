@@ -31,6 +31,7 @@ import { ELEVATING_GEAR, MANTLET_DEPTH, mountToTurret, POWER_GRIP, STATION, type
 import { DOME_LAMPS } from '../sim/interior.js';
 import { binParts, boardParts, BREECH_HOLE, breechFittings, rackParts } from './loading.scene-asset.js';
 import { driverClockParts, gunnerClockParts } from './range-run.scene-asset.js';
+import { turretDialParts } from './turret-dial.scene-asset.js';
 import { litInside } from './cabin-light.js';
 
 /**
@@ -256,6 +257,8 @@ function hullParts(): Part[] {
   parts.push(...driverStationParts());
   // The range run's clock on the hood's face, left of the slit (F1.11).
   parts.push(...driverClockParts());
+  // The turret position dial's case on the hood's face, right of the slit (F2.3).
+  parts.push(...turretDialParts());
   // The rest of a Sherman's front compartment (docs/interior.md).
   parts.push(...hullDetailParts());
 

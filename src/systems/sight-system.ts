@@ -62,6 +62,8 @@ export const sightStats = {
   eye: 'both' as SightEye,
   /** An eye is at the eyepiece (or the mode is "always"). */
   open: false,
+  /** How far the nearer eye is from the gunner's periscope window over the sight, m (PeriscopeSystem sets it each frame): the sight stays shut while the eyes are nearer that window than its own (F1.19). */
+  periscopeEye: Infinity,
   /** Frames rendered since load. */
   renders: 0,
   /** When the last one was, performance.now() ms. */
@@ -286,7 +288,9 @@ export class SightSystem extends createSystem({}) {
     this.placer.update(this.player.head, eyes);
 
     const was = sightStats.open;
-    const open = sightStats.mode === 'always' || (sightStats.mode === 'auto' && this.placer.eyesAt(eyes, was));
+    const open =
+      sightStats.mode === 'always' ||
+      (sightStats.mode === 'auto' && this.placer.eyesAt(eyes, was) && this.placer.eyeDistance(eyes) <= sightStats.periscopeEye);
     sightStats.open = open;
     this.material.uniforms.uOpen.value = open ? 1 : 0;
     if (open !== was) {

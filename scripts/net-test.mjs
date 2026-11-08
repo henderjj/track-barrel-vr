@@ -527,6 +527,22 @@ async function turretChecks(host, guest, label) {
   check(`The driver's Forward puts the gunner's turret straight ahead (${label})`, home !== null,
     home ? '' : JSON.stringify(await Promise.all([turret(host), turret(guest)])));
 
+  // The driver's turret dial (F2.3): the driver's Practice To 3 o'clock asks the gunner's page, which turns the
+  // turret there by itself; both dials read 3, the driver's following the gunner's turret.
+  const dial = (p) => p.page.evaluate(() => window.__turretDial.state());
+  await host.page.evaluate(() => window.__gameMenu.click('menu-turret-dial'));
+  const atThree = await waitFor('both dials at 3 o\'clock', async () => {
+    const [h, g] = await Promise.all([dial(host), dial(guest)]);
+    return h.hour === 3 && g.hour === 3 && !g.traversing && Math.abs(g.turretDeg + 90) < 0.1 && Math.abs(h.pointerDeg - h.turretDeg) < 0.01 && Math.abs(h.turretDeg + 90) < 0.5 ? { h, g } : null;
+  }, 20000).catch(() => null);
+  check(`The driver's To 3 o'clock turns the gunner's turret there, and the driver's dial reads 3 o'clock (${label})`, atThree !== null,
+    atThree ? `gunner ${atThree.g.turretDeg.toFixed(2)}°, driver's pointer ${atThree.h.pointerDeg.toFixed(2)}°` : JSON.stringify(await Promise.all([dial(host), dial(guest)])));
+  await host.page.evaluate(() => window.__gameMenu.click('menu-turret-forward'));
+  await waitFor('the turret forward again', async () => {
+    const [h, g] = await Promise.all([turret(host), turret(guest)]);
+    return Math.abs(h.yaw) < 1e-3 && Math.abs(g.yaw) < 1e-3;
+  }, 8000).catch(() => null);
+
   // The gunsight (F1.9): the driver's Practice lay asks the gunner's page, which lays the gun on the 250 m target; both see it on its mark.
   const onMark = (p) => p.page.evaluate(() => window.__sight.error(1));
   await host.page.evaluate(() => window.__gameMenu.click('menu-sight-lay-1'));
