@@ -117,6 +117,11 @@ export class FiringLamp {
   flashes = 0;
   private sinceShot = Infinity;
 
+  /** Still in a shot's flashes (dark between them included). */
+  get flashing(): boolean {
+    return this.sinceShot < FLASH_SECONDS;
+  }
+
   /** A shot left the gun: flash. */
   fired(): void {
     this.sinceShot = 0;

@@ -44,7 +44,7 @@ export function watchTheLamp(): void {
 
 interface FiringLampDebug {
   /** What the lamp has to go on and how it looks now. */
-  state(): ReadyInputs & { ready: boolean; look: LampLook; flashes: number; practiceFire: boolean };
+  state(): ReadyInputs & { ready: boolean; look: LampLook; flashing: boolean; flashes: number; practiceFire: boolean };
   /** Practice → Ready to fire → Driver's lamp. */
   watch(): void;
   /** A scripted right hand on the power grip (true) or back to the real hand (false), on this page: the tests' gunner's hand. */
@@ -113,7 +113,7 @@ export class FiringLampSystem extends createSystem({}) {
 
     const self = this;
     (window as unknown as { __firingLamp: FiringLampDebug }).__firingLamp = {
-      state: () => ({ ...self.inputs, ready: self.ready, look: self.lamp.look, flashes: self.lamp.flashes, practiceFire: self.practiceFire }),
+      state: () => ({ ...self.inputs, ready: self.ready, look: self.lamp.look, flashing: self.lamp.flashing, flashes: self.lamp.flashes, practiceFire: self.practiceFire }),
       watch: () => self.watch(),
       holdGrip: (on) => {
         self.testGrip = on;
