@@ -54,8 +54,8 @@ interface FiringLampDebug {
 }
 
 /**
- * The firing lamp (F2.5, docs/firing-lamp.md): a lamp on the top bar of
- * the driver's vision slit, lit by itself while the gun is ready to fire (a
+ * The firing lamp (F2.5, docs/firing-lamp.md): a lamp on the hood's face
+ * beside the driver's turret dial, lit by itself while the gun is ready to fire (a
  * shell rammed, the breech closed, and the gunner's hand on the power grip
  * or the elevation handle), flashing at the shot; and its repeater on the
  * turret's front wall right of the gunsight, so the gunner sees what the
@@ -138,7 +138,7 @@ export class FiringLampSystem extends createSystem({}) {
     this.litFor = 0;
     sayAboutTheGun(
       'Gun ready',
-      alone ? ['The lamp over the slit is lit: hold steady', `It flashes at the shot, in ${PRACTICE_FIRE_AFTER} s`] : ["The gunner's page lays and loads", 'The lamp lights as they take the grip'],
+      alone ? ['The lamp by the turret dial is lit: hold steady', `It flashes at the shot, in ${PRACTICE_FIRE_AFTER} s`] : ["The gunner's page lays and loads", 'The lamp lights as they take the grip'],
     );
     console.info(`[FiringLamp] Practice: watch the lamp${alone ? ', firing by itself' : ''}`);
   }

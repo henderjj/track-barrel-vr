@@ -1,6 +1,6 @@
 /**
- * The firing lamp (F2.5, docs/firing-lamp.md): a lamp on the top bar of the
- * driver's vision slit that lights by itself while the gun is ready to fire
+ * The firing lamp (F2.5, docs/firing-lamp.md): a lamp on the hood's face
+ * beside the driver's turret dial that lights by itself while the gun is ready to fire
  * (a shell rammed, the breech closed and the gunner's hand on a control
  * with a trigger), and flashes at the shot, so the driver holds the tank
  * steady for the shot and knows when it has gone. A repeater on the
@@ -15,7 +15,7 @@
  */
 
 import { HULL, SIGHT_EYEPIECE, TURRET, VISION_SLIT } from './cabin.js';
-import { SLIT_FRAME } from './driver-station.js';
+import { TURRET_DIAL } from './turret-dial.js';
 
 /** A round lamp flat on a face: its lens's middle, the lens's and the bezel's radii, and how far each stands out, m. */
 export interface LampPlace {
@@ -37,23 +37,24 @@ export interface LampPlace {
 }
 
 /**
- * The driver's lamp: in the middle of the slit frame's top bar, the bar's
- * face 3 cm in front of the hood, so it sits about 7 cm over the line
- * through the slit and 27 cm from the eyes: in sight (about 15° up) while
- * the driver looks out, and under the brow pad's front edge, so a head
- * leaning into the slit meets the pad first (EYE_CLEARANCE,
- * test/interior.test.ts). 1.6 cm across: about 3.4° from the seat, about
- * the size of the gear readout's figure.
+ * The driver's lamp: on the hood's face just right of the turret dial, at
+ * the dial's height (the eyes' height), about 47 cm from the eyes, so one
+ * glance to the right reads both the gun's direction and whether it is
+ * ready. Not over the slit any more: the periscope's eyepiece, lowered with
+ * the real heights (docs/crew-heights.md), hid it there (John's headset
+ * check, 2026-11-08). Clear of the eyepiece's crank, which stands above the
+ * line from the eyes. Flat on the face like the dial, under 2 cm proud
+ * (docs/turret-dial.md). 2.6 cm across: about 3.2° from the seat.
  */
 export const FIRING_LAMP: LampPlace = (() => {
-  const s = VISION_SLIT;
-  const f = SLIT_FRAME;
+  const d = TURRET_DIAL;
+  const bezel = 0.018;
   return {
-    x: s.x,
-    y: s.y + s.height / 2 + f.inset + f.bar / 2,
-    z: s.z + f.depth,
-    lens: 0.008,
-    bezel: 0.012,
+    x: d.x + d.radius + d.rim + 0.015 + bezel,
+    y: d.y,
+    z: VISION_SLIT.z,
+    lens: 0.013,
+    bezel,
     proud: 0.009,
     sunk: 0.004,
     lensProud: 0.004,

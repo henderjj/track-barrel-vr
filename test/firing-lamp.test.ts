@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { EYE_CLEARANCE, SEATS, SIGHT_EYEPIECE, TURRET, VISION_SLIT } from '../src/sim/cabin.js';
+import { EYE_CLEARANCE, GLACIS, HULL, SEATS, SIGHT_EYEPIECE, TURRET, VISION_SLIT } from '../src/sim/cabin.js';
 import { createDriveWish, BotDriver } from '../src/sim/crew-bot.js';
-import { SLIT_FRAME } from '../src/sim/driver-station.js';
 import { FiringLamp, FIRING_LAMP, FLASH, FLASH_SECONDS, gunReady, LAMP_REPEATER, type LampLook, lensFront } from '../src/sim/firing-lamp.js';
 import { KNUCKLE } from '../src/sim/gunsight.js';
 import { createTankDrive } from '../src/sim/tank-drive.js';
@@ -69,29 +68,68 @@ describe('the firing lamp (F2.5)', () => {
     expect(lamp.flashes).toBe(2);
   });
 
-  it("sits in the middle of the slit frame's top bar, in sight while looking out, and under the brow pad", () => {
-    const s = VISION_SLIT;
-    const f = SLIT_FRAME;
+  it("sits on the hood's face just right of the turret dial, at its height, and is big enough to read from the seat", () => {
     const p = FIRING_LAMP;
-    expect(p.x).toBe(s.x);
-    // On the top bar's face: its bezel within the bar's height, the pad's bottom above it.
-    const barBottom = s.y + s.height / 2 + f.inset;
-    expect(p.y - p.bezel).toBeGreaterThan(barBottom);
-    expect(p.y + p.bezel).toBeLessThan(barBottom + f.bar);
-    expect(p.y + p.bezel).toBeLessThan(s.y + s.height / 2 + f.padAbove);
-    expect(p.z).toBeCloseTo(s.z + f.depth, 9);
-    // Behind the pad's front, so a head leaning into the slit meets the pad first.
-    expect(lensFront(p)).toBeLessThan(s.z - 0.005 + f.padDepth);
-    // From the seat's eyes: 20 to 35 cm away, up to 20° over the line through the slit, and over 3° across.
+    const d = TURRET_DIAL;
+    // Flat on the hood's face, beside the dial's case and clear of it, level with its middle.
+    expect(p.z).toBe(VISION_SLIT.z);
+    expect(p.y).toBe(d.y);
+    const gap = p.x - p.bezel - (d.x + d.radius + d.rim);
+    expect(gap).toBeGreaterThan(0.01);
+    expect(gap).toBeLessThan(0.03);
+    // Above the hood's bottom edge and well inside the hull's right wall; the run clock stays on the slit's other side.
+    expect(p.y - p.bezel).toBeGreaterThan(GLACIS.hoodBottom);
+    expect(p.x + p.bezel).toBeLessThan(HULL.halfWidth - 0.2);
+    expect(RUN_CLOCKS.driver.x + RUN_CLOCKS.driver.width / 2).toBeLessThan(VISION_SLIT.x);
+    // Under 2 cm proud of the armour, as the dial is (docs/turret-dial.md).
+    expect(lensFront(p) - VISION_SLIT.z).toBeLessThan(0.02);
+    // From the seat's eyes: under 55 cm away, and over 3° across.
     const eye = SEATS.driver.eye;
-    const d = dist(eye, [p.x, p.y, lensFront(p)]);
-    expect(d).toBeGreaterThan(0.2);
-    expect(d).toBeLessThan(0.35);
-    expect(Math.atan2(p.y - eye[1], eye[2] - lensFront(p)) / DEG).toBeLessThan(20);
-    expect((2 * Math.atan(p.lens / d)) / DEG).toBeGreaterThan(3);
-    // Clear of the turret dial on the slit's right and the run clock on its left.
-    expect(TURRET_DIAL.x - TURRET_DIAL.radius - TURRET_DIAL.rim).toBeGreaterThan(p.x + p.bezel + 0.1);
-    expect(RUN_CLOCKS.driver.x + RUN_CLOCKS.driver.width / 2).toBeLessThan(p.x - p.bezel - 0.1);
+    const dd = dist(eye, [p.x, p.y, lensFront(p)]);
+    expect(dd).toBeLessThan(0.55);
+    expect((2 * Math.atan(p.lens / dd)) / DEG).toBeGreaterThan(3);
+  });
+
+  it("is in plain sight from the driver's seat: nothing of the hull, the periscope's eyepiece or its crank (turned any way) in front of it (John's headset check, 2026-11-08)", async () => {
+    const { Group, Raycaster, Vector3 } = await import('@iwsdk/core');
+    const { createHull } = await import('../src/scene-assets/cabin.scene-asset.js');
+    const periscope = await import('../src/scene-assets/periscope.scene-asset.js');
+    const { createWheel } = await import('../src/scene-assets/mechanism.scene-asset.js');
+    const { PERISCOPE_CRANK, PERISCOPES } = await import('../src/sim/periscope.js');
+    const s = PERISCOPES.driver;
+    const hull = createHull();
+    const mount = new Group();
+    mount.position.set(s.axis[0], s.lens[1], s.axis[1]);
+    mount.add(periscope.createPeriscopeBody(s));
+    mount.add(periscope.createPeriscopeTurning(s));
+    const crank = createWheel(PERISCOPE_CRANK);
+    crank.position.set(...periscope.crankInPeriscope(s));
+    mount.add(crank);
+    hull.add(mount);
+    const ray = new Raycaster();
+    const eye = SEATS.driver.eye;
+    const p = FIRING_LAMP;
+    const targets = [[p.x, p.y, lensFront(p)]];
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * 2 * Math.PI;
+      targets.push([p.x + Math.cos(a) * p.lens, p.y + Math.sin(a) * p.lens, lensFront(p)]);
+    }
+    for (let k = 0; k < 12; k++) {
+      crank.rotation.z = (k / 12) * 2 * Math.PI;
+      hull.updateMatrixWorld(true);
+      // From the eye point and a few centimetres round it, as a seated head moves.
+      for (const [dx, dy] of [[0, 0], [0.03, 0], [-0.03, 0], [0, 0.03], [0, -0.03]]) {
+        const from = new Vector3(eye[0] + dx, eye[1] + dy, eye[2]);
+        for (const t of targets) {
+          const to = new Vector3(t[0], t[1], t[2]);
+          const length = from.distanceTo(to);
+          ray.set(from, to.sub(from).normalize());
+          ray.far = length - 0.002;
+          const hit = ray.intersectObject(hull, true)[0];
+          expect(hit ? hit.object.name || 'a mesh' : 'nothing', `crank at ${k * 30}°, eyes moved (${dx}, ${dy})`).toBe('nothing');
+        }
+      }
+    }
   });
 
   it("keeps the driver's eyes EYE_CLEARANCE from the lens all along the head box's edges", () => {

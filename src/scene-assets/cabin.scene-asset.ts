@@ -260,7 +260,7 @@ function hullParts(): Part[] {
   parts.push(...driverClockParts());
   // The turret position dial's case on the hood's face, right of the slit (F2.3).
   parts.push(...turretDialParts());
-  // The firing lamp's bezel on the slit frame's top bar (F2.5).
+  // The firing lamp's bezel on the hood's face beside the turret dial (F2.5).
   parts.push(...firingLampParts());
   // The rest of a Sherman's front compartment (docs/interior.md).
   parts.push(...hullDetailParts());
