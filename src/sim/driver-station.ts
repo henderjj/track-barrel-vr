@@ -363,7 +363,7 @@ export const SLIT_FRAME = {
   inset: 0.009,
   /** The leather brow pad over the frame: its bottom above the slit's top, its height and its depth. */
   padAbove: 0.04,
-  padHeight: 0.07,
+  padHeight: 0.035,
   padDepth: 0.06,
 } as const;
 
