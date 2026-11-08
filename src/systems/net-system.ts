@@ -165,6 +165,9 @@ export const netLink = {
   /** RMS levels, 0 to 1, of this player's microphone and the crewmate's voice as heard: the tank sounds duck while either speaks (F1.12). */
   micLevel: (): number => 0,
   crewLevel: (): number => 0,
+  /** The same above the tank's engine (the speech band, SPEECH_BAND_HZ): what the duck listens to, so the tank heard through the microphone isn't taken for speech. */
+  micSpeech: (): number => 0,
+  crewSpeech: (): number => 0,
 };
 
 export function lobbyBaseUrl(): string {
@@ -322,6 +325,8 @@ export class NetSystem extends createSystem({}) {
     netLink.toLocal = (peerMs) => this.session.clock.toLocal(peerMs);
     netLink.micLevel = () => this.voice.micLevel();
     netLink.crewLevel = () => this.voice.remoteLevel();
+    netLink.micSpeech = () => this.voice.micSpeechLevel();
+    netLink.crewSpeech = () => this.voice.remoteSpeechLevel();
 
     const self = this;
     this.debug = {
