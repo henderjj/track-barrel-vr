@@ -8,11 +8,11 @@ import {
   hullDirToWorld,
   hullToWorld,
   MUZZLE_SPEED,
-  RANGE_TARGET_NAMES,
-  rangeFaces,
   shellAt,
   shellVelocity,
   type ShotResult,
+  TARGET_NAMES,
+  targetFaces,
   type Vec3,
 } from '../sim/ballistics.js';
 import { wrapTile } from '../sim/terrain.js';
@@ -62,8 +62,10 @@ export interface ShotRecord {
 export const shotListeners = new Set<(own: boolean) => void>();
 
 /**
- * The host's word on every shot, its own page's or the crewmate's: the range
- * target it hit (an index into RANGE_TARGETS, or -1) and how long the shell
+ * The host's word on every shot, its own page's or the crewmate's: the
+ * target it hit (an index into ballistics' targetFaces(): the range's three
+ * targets first, as RANGE_TARGETS, then the biathlon course's boards; or
+ * -1) and how long the shell
  * flies, s. Only the host hears these (F1.11's range run counts them).
  */
 export const decidedListeners = new Set<(target: number, flight: number) => void>();
@@ -96,7 +98,7 @@ export function firingStatus(): string {
 interface FiringDebug {
   /** Every shot's result so far, oldest first (on a guest, as the host decided it). */
   records(): ShotRecord[];
-  /** Hits on each range target (the host counts; a guest copies its word). */
+  /** Hits on each target, the range's three then the course's six (the host counts; a guest copies its word). */
   hits(): number[];
   /** Shots in the air now. */
   flying(): number;
@@ -104,7 +106,7 @@ interface FiringDebug {
   fire(): void;
   /** Where a shell from the muzzle as laid now would land, world space, and what it would hit. */
   predict(): ShotRecord;
-  /** Lay the gun on range target `i` from where the tank stands (tests; the page that owns the turret). */
+  /** Lay the gun on target `i` (the range's three, then the course's six) from where the tank stands (tests; the page that owns the turret). */
   aimAt(i: number): { yaw: number; elevation: number };
   readonly sent: number;
   readonly received: number;
@@ -126,8 +128,8 @@ interface FiringDebug {
  */
 export class FiringSystem extends createSystem({}) {
   readonly records: ShotRecord[] = [];
-  readonly hits: number[] = rangeFaces().map(() => 0);
-  private faces = rangeFaces();
+  readonly hits: number[] = targetFaces().map(() => 0);
+  private faces = targetFaces();
   private shots: Shot[] = [];
   private count = 0;
   private time = 0;
@@ -278,7 +280,7 @@ export class FiringSystem extends createSystem({}) {
       target: result.target,
       point: [...result.point] as Vec3,
       time: result.time,
-      line: describeShot(result, origin, dir, this.faces, RANGE_TARGET_NAMES),
+      line: describeShot(result, origin, dir, this.faces, TARGET_NAMES),
     };
     if (id >= 0) {
       this.records.push(record);

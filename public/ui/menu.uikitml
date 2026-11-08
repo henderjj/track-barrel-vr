@@ -29,7 +29,8 @@
     gunner; play each of the tank's short sounds; park up the range facing a
     target; start or stop a range run, and ready to fire on each target,
     parked at the start, laid and loaded, or from the driver's seat to watch
-    the firing lamp. Sights: go to the gunsight, lay the
+    the firing lamp; go to the biathlon course's start line or either firing
+    line (F5.3a). Sights: go to the gunsight, lay the
     gun on a target's range mark, the sight's render choices; go to the
     driver's or the gunner's periscope, turn both ahead, their power. Test rigs: ride the tank (spike
     S2), the lever test and the mechanism kit.
@@ -82,7 +83,7 @@
     flex-direction: column;
     flex-shrink: 0;
     width: 476px;
-    min-height: 424px;
+    min-height: 508px;
   }
 
   .page {
@@ -280,6 +281,7 @@
               <Button id="call-left" class="choice" size="sm" variant="secondary">Left</Button>
               <Button id="call-right" class="choice" size="sm" variant="secondary">Right</Button>
               <Button id="call-route" class="choice" size="sm" variant="secondary">Route</Button>
+              <Button id="call-course" class="choice" size="sm" variant="secondary">Course</Button>
             </div>
           </div>
           <div id="row-calls-gun" class="setting">
@@ -583,6 +585,15 @@
             </div>
           </div>
           <div id="menu-run-status" class="hint">Range run</div>
+          <div class="setting">
+            <div class="label">Biathlon</div>
+            <div class="choices">
+              <Button id="menu-course-go" class="choice" size="sm" variant="secondary">Course</Button>
+              <Button id="menu-course-line-0" class="choice" size="sm" variant="secondary">Line 1</Button>
+              <Button id="menu-course-line-1" class="choice" size="sm" variant="secondary">Line 2</Button>
+            </div>
+          </div>
+          <div id="menu-course-status" class="hint">Biathlon course</div>
         </div>
       </div>
       <div id="page-sights" class="page" style="display: none">

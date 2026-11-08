@@ -7,6 +7,7 @@ import {
   BotDriver,
   CALL_WORDS,
   chooseTarget,
+  COURSE_ROUTE,
   createDriveWish,
   createPath,
   CREW_CALLS,
@@ -32,6 +33,8 @@ import {
   startTask,
   WARM_UP_THROTTLE,
 } from '../src/sim/crew-bot.js';
+import { COURSE, COURSE_START, CourseProgress, distanceToTrack } from '../src/sim/course.js';
+import { OBSTACLES } from '../src/sim/terrain.js';
 import { type EngineStart, stopEngine, WARM_COOLANT } from '../src/sim/engine.js';
 import { DRIVER_TILLER } from '../src/sim/driver-station.js';
 import { createDrillHand, createLoadingSnapshot, HOLD_NONE, LoadingDrill } from '../src/sim/loading.js';
@@ -397,5 +400,54 @@ describe('practice crewmate: starting the engine (F1.17)', () => {
 
   it('leaves a hot starter to rest', () => {
     expect(startTask({ running: false, starterHot: true, coolant: 20 }, { battery: true, ignition: true, choke: 1, throttle: 0.3, start: 'full' }, 0)).toBeNull();
+  });
+});
+
+describe('practice crewmate: the biathlon course (F5.3a)', () => {
+  it('drives two laps of the course: halts in box 1, takes the penalty loop, halts in box 2, missing no gate', () => {
+    const bot = new BotDriver();
+    const tank = createTankDrive(COURSE_START.x, COURSE_START.z, COURSE_START.heading);
+    const progress = new CourseProgress();
+    const wish = createDriveWish();
+    const controls = createControls();
+    bot.call('course', tank.heading);
+    const halts: number[] = [];
+    let wasHalted = false;
+    let widest = 0;
+    for (let t = 0; t < 600 && progress.s.laps < 2; t += DT) {
+      bot.update(DT, tank, wish);
+      controls.left = wish.left;
+      controls.right = wish.right;
+      stepDrive(tank, controls, DT, OBSTACLES);
+      progress.step(DT, tank.x, tank.z, tank.speed);
+      if (progress.s.halted && !wasHalted) halts.push(progress.s.box);
+      wasHalted = progress.s.halted;
+      widest = Math.max(widest, distanceToTrack(tank.x, tank.z));
+    }
+    expect(progress.s.laps).toBe(2);
+    expect(progress.s.missed).toBe(0);
+    expect(progress.s.penalties).toBe(1);
+    expect(halts).toEqual([0, 1]);
+    expect(bot.arrivals).toBe(2);
+    // On the track all the way round.
+    expect(widest).toBeLessThan(COURSE.halfWidth);
+    // Two laps of about 800 m, two 15 s halts and a penalty loop: a few minutes.
+    expect(progress.s.bestLap).toBeGreaterThan(100);
+    expect(progress.s.bestLap).toBeLessThan(240);
+    expect(bot.describe()).toMatch(/^driving the course/);
+    // A call takes it off the course.
+    bot.call('halt', tank.heading);
+    expect(bot.mode).toBe('calls');
+  });
+
+  it('joins the course where the tank stands', () => {
+    const bot = new BotDriver();
+    const at = COURSE_ROUTE[40];
+    const tank = createTankDrive(at.x + 1, at.z, 0);
+    bot.call('course', tank.heading);
+    bot.update(DT, tank, createDriveWish());
+    const leg = COURSE_ROUTE[bot.leg];
+    expect(Math.hypot(leg.x - at.x, leg.z - at.z)).toBeLessThan(11);
+    expect(CALL_WORDS.course).toBe('Driver, drive the course');
   });
 });

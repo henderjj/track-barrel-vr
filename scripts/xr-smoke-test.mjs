@@ -99,7 +99,7 @@
  *
  * CI runs the steps in three parts at once, on three runners: part 1 is
  * steps 0 to 6c, part 2 is 6d to 6f (the driver and the turret) and 6l
- * (the periscopes), part 3 is 6g to 6k and 6m. Each part ends with step 7. Put a new feature's steps in
+ * (the periscopes), part 3 is 6g to 6k and 6m to 6q. Each part ends with step 7. Put a new feature's steps in
  * partOne, partTwo or partThree, whichever is shortest on CI.
  *
  * Usage: npm run test:xr   (starts the dev runtime headless if needed)
@@ -2822,6 +2822,91 @@ async function partThree() {
 
   // 6p. The firing lamp (F2.5).
   await theFiringLamp();
+
+  // 6q. The biathlon course (F5.3a).
+  await theBiathlonCourse();
+}
+
+/**
+ * 6q. The biathlon course (F5.3a): Practice → Biathlon → Course puts a
+ *     solo player in the driver's seat parked short of the start line
+ *     (screenshot from the driver's eyes); moving the tank up the course a
+ *     few metres a frame crosses the start line (Lap 1: go! on the sign)
+ *     and the first two gates, which the menu's line counts; Line 1 puts
+ *     the player in the gunner's seat halted in firing box 1 with the
+ *     engine running, and a shell laid on a line 1 board hits it.
+ */
+async function theBiathlonCourse() {
+  const course = () => evalInApp('window.__course.state()');
+  const tank = () => evalInApp('window.__drive.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  const layout = evalInApp('window.__course.layout()');
+  check('The course is a loop of about 800 m with 9 gates, 2 firing boxes, 6 boards and a penalty loop of about 150 m',
+    layout.length > 780 && layout.length < 830 && layout.gates.length === 9 && layout.boxes.length === 2 && layout.boards.length === 6 &&
+      layout.penalty > 140 && layout.penalty < 170,
+    `${Math.round(layout.length)} m, ${layout.gates.length} gates, ${layout.boxes.length} boxes, ${layout.boards.length} boards, penalty loop ${Math.round(layout.penalty)} m`);
+
+  await menuButtonPress();
+  await menuClick('menu-course-go');
+  const parked = await waitFor('the tank parked on the course', () => {
+    const t = tank();
+    return Math.abs(t.x - 320) < 0.5 && Math.abs(t.z + 225) < 0.5 && evalInApp('window.__seats.mine') === 'driver' && t;
+  }, 8000).catch(() => tank());
+  await sleep(500);
+  const before = course();
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-course.png'], {});
+  check('Practice → Biathlon → Course seats a solo player as driver, parked on the course short of the start line, no lap started',
+    Math.abs(parked.x - 320) < 0.5 && Math.abs(parked.z + 225) < 0.5 && Math.abs(parked.heading) < 0.01 && !before.started && before.laps === 0 &&
+      evalInApp('window.__seats.mine') === 'driver' && /^Cross the start line/.test(before.line),
+    `tank at ${parked.x.toFixed(1)}, ${parked.z.toFixed(1)}, seat ${evalInApp('window.__seats.mine')}, "${before.line}"`);
+
+  // Up the course a few metres a frame (each move short of a jump), across the start line and past gates 1 and 2.
+  const hop = async (s) => {
+    const p = evalInApp(`window.__course.pointAt(${s})`);
+    const frames = evalInApp('window.__course.frames');
+    evalInApp(`(window.__drive.place(${p.x}, ${p.z}, ${p.heading}), true)`);
+    await waitFor('a frame after the move', () => evalInApp('window.__course.frames') >= frames + 2, 10000).catch(() => null);
+  };
+  await hop(-3);
+  await hop(5);
+  const started = course();
+  const sign = evalInApp('window.__course.sign');
+  check('Crossing the start line starts lap 1, with a sign saying so',
+    started.started && started.laps === 0 && started.note === 'Lap 1: go!' && sign === 'Lap 1: go!',
+    `started ${started.started}, note "${started.note}", sign "${sign}"`);
+  for (let s = 15; s <= 170; s += 10) await hop(s);
+  await menuButtonPress();
+  const line = await waitFor("the menu's course line", () => {
+    const text = evalInApp("window.__gameMenu.text('menu-course-status')");
+    return /gates 2 of 8/.test(text) && text;
+  }, 5000).catch(() => evalInApp("window.__gameMenu.text('menu-course-status')"));
+  check('Driving on past gates 1 and 2 counts them, and the menu\'s Biathlon line says so', /^Lap 1 \d+:\d\d\.\d: gates 2 of 8/.test(line), `"${line}"`);
+
+  // Line 1: the gunner's seat, halted in box 1, the engine running for the power traverse.
+  await menuClick('menu-course-line-0');
+  const inBox = await waitFor('halted in firing box 1', () => { const c = course(); return c.box === 0 && c.halted && evalInApp('window.__seats.mine') === 'gunner' && c; }, 8000)
+    .catch(() => course());
+  const engine = tank();
+  check('Practice → Biathlon → Line 1 seats a solo player as gunner, halted in firing box 1 with the engine running; the progress starts again',
+    inBox.box === 0 && inBox.halted && !inBox.started && engine.running && evalInApp('window.__seats.mine') === 'gunner',
+    `box ${inBox.box + 1}, halted ${inBox.halted}, started ${inBox.started}, engine ${engine.running ? 'running' : 'off'}, seat ${evalInApp('window.__seats.mine')}`);
+  evalInApp('(window.__firing.aimAt(3), true)');
+  const predicted = await waitFor('the gun laid on the line 1 left board', () => { const p = evalInApp('window.__firing.predict()'); return p.target === 3 && p; }, 8000)
+    .catch(() => evalInApp('window.__firing.predict()'));
+  await sleep(400);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-course-line.png'], {});
+  const shots = evalInApp('window.__firing.records().length');
+  evalInApp('(window.__firing.fire(), true)');
+  const shot = await waitFor('the shot at the board to land', () => {
+    const r = evalInApp('window.__firing.records()');
+    return r.length === shots + 1 && evalInApp('window.__firing.flying()') === 0 && r.at(-1);
+  }, 5000).catch(() => evalInApp('window.__firing.records()').at(-1));
+  check("A shell laid on a line 1 board from firing box 1 hits it, the infield's boards being among the gun's targets",
+    predicted.target === 3 && shot?.kind === 'target' && shot.target === 3 && shot.line === 'Hit: the line 1 left board' && evalInApp('window.__firing.hits()')[3] >= 1,
+    `would: ${predicted.line}; shot: ${shot?.line}`);
+  await menuButtonPress();
+  evalInApp("(window.__drive.reset(), window.__turret.forward(), window.__seats.ask('driver'), true)");
+  iwsdk(['xr', 'set-device-state'], {});
 }
 
 /**

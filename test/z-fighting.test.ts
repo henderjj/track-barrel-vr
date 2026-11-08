@@ -344,7 +344,7 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     return terrain;
   };
 
-  it('on the range: the ground with its roads, targets, markers, rocks, walls and houses, and the tank parked on it', () => {
+  it('on the range: the ground with its roads, targets, markers, the biathlon course, rocks, walls and houses, and the tank parked on it', () => {
     expectNone([ground(), cabin.createHull()], WORLD_GAP);
   });
 
@@ -355,6 +355,18 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     for (const range of MARKER_RANGES) {
       expectNone([mesh(mergeParts(markerParts(range)), `Marker ${range} m`)], WORLD_GAP);
     }
+  });
+
+  it('on the biathlon course (F5.3a): each gate, the start and finish, both firing boxes and every board on its own, and the tracks with them where they meet', async () => {
+    const course = await import('../src/scene-assets/course.scene-asset.js');
+    const { BOX_Z, COURSE_TARGETS, GATES, PENALTY_GATE } = await import('../src/sim/course.js');
+    GATES.forEach((gate, i) => expectNone([mesh(mergeParts(course.gateParts(gate)), `Gate ${i}`)], WORLD_GAP));
+    expectNone([mesh(mergeParts(course.gateParts(PENALTY_GATE, true)), 'Penalty gate')], WORLD_GAP);
+    BOX_Z.forEach((_, k) => expectNone([mesh(mergeParts(course.boxParts(k)), `Firing box ${k + 1}`)], WORLD_GAP));
+    COURSE_TARGETS.forEach((t, j) => expectNone([mesh(mergeParts(course.boardParts(j)), t.name)], WORLD_GAP));
+    // The tracks, the finish line and the boxes painted on them, all in one: the paint on the gravel, and the penalty loop's track under the loop's where they meet.
+    const parts = [...course.trackParts().map((p) => p.part), ...course.courseFixtureParts().flatMap((p) => p.parts)];
+    expectNone([mesh(mergeParts(parts), 'Course')], WORLD_GAP);
   });
 
   it('on the range run\'s hit flags (F1.11), on their own and raised beside each target on the ground', async () => {

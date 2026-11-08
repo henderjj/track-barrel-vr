@@ -13,6 +13,7 @@
  * under gravity with no drag (plan §4.6). F3.1 adds HE and smoke.
  */
 
+import { COURSE_BOARD, COURSE_TARGETS, courseBoardMiddle } from './course.js';
 import { RANGE_TARGETS, targetFace } from './range.js';
 import type { TankDrive } from './tank-drive.js';
 import { groundHeight, wrapTile } from './terrain.js';
@@ -259,6 +260,37 @@ export function rangeFaces(): HitFace[] {
 
 /** The range's targets by name, as the board and the menu say them: "the 250 m gun". */
 export const RANGE_TARGET_NAMES: readonly string[] = RANGE_TARGETS.map((t) => `the ${t.range} m ${t.kind}`);
+
+/**
+ * The biathlon course's six boards (F5.3a, src/sim/course.ts) as faces to
+ * hit: each board's disc, as a square (the white round it misses).
+ */
+export function courseFaces(): HitFace[] {
+  return COURSE_TARGETS.map((t) => ({
+    x: t.x,
+    y: groundHeight(t.x, t.z) + courseBoardMiddle(),
+    z: t.z,
+    halfWidth: COURSE_BOARD.hitHalf,
+    halfHeight: COURSE_BOARD.hitHalf,
+    yaw: t.yaw,
+  }));
+}
+
+/**
+ * Everything a shell can hit: the range's three targets (indices 0 to 2,
+ * as RANGE_TARGETS: the range run counts these) and then the course's six
+ * boards (3 to 8, as COURSE_TARGETS). FiringSystem decides hits against
+ * these; its target numbers index this list.
+ */
+export function targetFaces(): HitFace[] {
+  return [...rangeFaces(), ...courseFaces()];
+}
+
+/** Where the course's boards start in targetFaces(). */
+export const COURSE_TARGET_FIRST = RANGE_TARGETS.length;
+
+/** Every target by name, in targetFaces()'s order. */
+export const TARGET_NAMES: readonly string[] = [...RANGE_TARGET_NAMES, ...COURSE_TARGETS.map((t) => t.name)];
 
 /** A world-space direction in hull space (the inverse of hullDirToWorld), into `out` (which may be `d`). */
 export function worldDirToHull(tank: Readonly<Pick<TankDrive, 'heading' | 'pitch' | 'roll'>>, d: Readonly<Vec3>, out: Vec3): Vec3 {

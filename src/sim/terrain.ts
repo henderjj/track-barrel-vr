@@ -60,6 +60,26 @@ const LANE_BLEND = 28;
 export const CROSS_HALF = 17;
 const CROSS_BLEND = 28;
 
+/**
+ * The biathlon course's ground (F5.3a, docs/biathlon-course.md): a flat
+ * field east of the range holding the course's loop, its infield where the
+ * firing lines' boards stand, and the penalty loop, so the boxes and the
+ * boards stand level and no crest hides a board from its firing box. A
+ * rectangle (tile-local, m) flat inside, rolling fully `blend` m outside.
+ * src/sim/course.ts lays the course inside it; obstacles keep off it.
+ */
+export const COURSE_FIELD = { west: 45, east: 370, north: -295, south: -95, blend: 25 } as const;
+
+/** How far (x, z) is outside the course's field, m (0 inside). */
+export function outsideCourseField(x: number, z: number): number {
+  const f = COURSE_FIELD;
+  const midX = (f.west + f.east) / 2;
+  const midZ = (f.north + f.south) / 2;
+  const dx = Math.max(0, Math.abs(wrapTile(x - midX)) - (f.east - f.west) / 2);
+  const dz = Math.max(0, Math.abs(wrapTile(z - midZ)) - (f.south - f.north) / 2);
+  return Math.hypot(dx, dz);
+}
+
 const smooth = (t: number) => {
   const c = t < 0 ? 0 : t > 1 ? 1 : t;
   return c * c * (3 - 2 * c);
@@ -72,7 +92,8 @@ export function roughness(x: number, z: number): number {
   const field = smooth((Math.hypot(wx, wz) - FLAT_RADIUS) / FLAT_BLEND);
   const lane = smooth((Math.abs(wx) - LANE_HALF) / LANE_BLEND);
   const cross = smooth((Math.abs(wz) - CROSS_HALF) / CROSS_BLEND);
-  return field * lane * cross;
+  const course = smooth(outsideCourseField(x, z) / COURSE_FIELD.blend);
+  return field * lane * cross * course;
 }
 
 /** The height field's sample at grid corner (ix, iz), m. Periodic over TILE. */
@@ -152,7 +173,16 @@ const ROCKS_PER_TILE = 40;
 const WALLS_PER_TILE = 10;
 const HOUSES_PER_TILE = 8;
 
-/** The obstacles in one tile, tile-local, the same on every page and in every realm. Random ones keep off the start field and both roads' corridors. */
+/** Obstacles keep this far clear of the course's field, m, beyond their own size. */
+const COURSE_CLEAR = 4;
+
+/**
+ * The obstacles in one tile, tile-local, the same on every page and in
+ * every realm. Random ones keep off the start field and both roads'
+ * corridors. Those that would stand on the biathlon course's field (F5.3a)
+ * are taken out afterwards, rather than kept out while placing, so every
+ * other obstacle stays exactly where it stood before the course.
+ */
 export const OBSTACLES: readonly Obstacle[] = (() => {
   const random = rng(OBSTACLE_SEED);
   const list: Obstacle[] = [...NEAR_START];
@@ -174,7 +204,7 @@ export const OBSTACLES: readonly Obstacle[] = (() => {
   place(ROCKS_PER_TILE, () => rock(spot(), spot(), 0.8 + random() * 1.4));
   place(WALLS_PER_TILE, () => block('wall', spot(), spot(), 4 + random() * 8, 0.35, random() * Math.PI, 1.0 + random() * 0.6));
   place(HOUSES_PER_TILE, () => block('house', spot(), spot(), 2.5 + random() * 2, 3 + random() * 2.5, random() * Math.PI, 2.6 + random() * 1));
-  return list;
+  return list.filter((o) => outsideCourseField(o.x, o.z) > o.r + COURSE_CLEAR);
 })();
 
 /**
