@@ -12,7 +12,7 @@ import { PanelUi } from './panel-ui.js';
 import { driveStatus, resetTank, startDriving } from './drive-system.js';
 import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-system.js';
 import { goUpTheRange, rangeStatus } from './range-system.js';
-import { readyToFire, runStatus, shownRun, startRun, stopRun } from './range-run-system.js';
+import { raceStatus, readyAtLine, readyToFire, runStatus, shownRun, startRace, startRun, stopRun } from './range-run-system.js';
 import { courseStatus, goToCourse, goToFiringLine } from './course-system.js';
 import { turretToHour } from './turret-dial-system.js';
 import { watchTheLamp } from './firing-lamp-system.js';
@@ -335,6 +335,23 @@ export class GameMenuSystem extends createSystem({}) {
         goToFiringLine(k);
       });
     }
+    ui.on('menu-race-start', () => {
+      // The biathlon race (F5.3b): the tank short of the course's start line; the seats stay.
+      this.setOpen(false);
+      stopRide();
+      startRace();
+    });
+    ui.on('menu-race-stop', () => {
+      stopRun();
+      this.render();
+    });
+    for (let k = 0; k < 2; k++) {
+      ui.on(`menu-race-ready-${k}`, () => {
+        this.setOpen(false);
+        stopRide();
+        readyAtLine(k);
+      });
+    }
     ui.on('menu-turret-go', () => {
       this.setOpen(false);
       stopRide();
@@ -499,6 +516,7 @@ export class GameMenuSystem extends createSystem({}) {
       this.ui?.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
       this.ui?.setText('menu-run-status', runStatus());
       this.ui?.setText('menu-course-status', courseStatus());
+      this.ui?.setText('menu-race-status', raceStatus());
       this.ui?.setText('menu-stats-status', statsStatus());
       this.ui?.setText('menu-audio-status', audioStatus());
       this.ui?.setText('menu-calls-status', crewCallStatus());
@@ -571,8 +589,11 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-turret-status', turretStatus());
     ui.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
     ui.setText('menu-run-status', runStatus());
-    ui.setText('menu-run-start', shownRun().phase === 'running' ? 'Restart' : 'Start');
+    const run = shownRun();
+    ui.setText('menu-run-start', run.phase === 'running' && run.mode === 'range' ? 'Restart' : 'Start');
     ui.setText('menu-course-status', courseStatus());
+    ui.setText('menu-race-status', raceStatus());
+    ui.setText('menu-race-start', run.phase === 'running' && run.mode === 'biathlon' ? 'Restart' : 'Start');
     ui.setText('menu-stats-status', statsStatus());
     ui.setText('menu-audio-status', audioStatus());
     ui.show('menu-ride', ride.active);

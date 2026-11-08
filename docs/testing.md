@@ -39,7 +39,7 @@ Run what covers the change, cheapest first, and leave the full run to CI:
 1. Always: `npm run typecheck` and `npm test`. Add or update a unit test in `test/` for logic in `src/sim/` or `src/net/`; it runs in seconds.
 2. Then the browser test whose checks touch what changed:
    - one player's hands, controls, physics or a feature's flow: `npm run test:xr`, narrowed while iterating to the part with the feature's steps (`XR_PART=1`, `2` or `3`);
-   - anything sent between players, the lobby or the practice crewmate: `npm run build && npm run test:net`, narrowed while iterating with `ONLY_SEATS=1` (or `=lag`), `ONLY_DRIVE=1` (or `=lag`), `ONLY_TURRET=1` (or `=lag`), `ONLY_FIRING=1` (or `=lag`), `ONLY_RUN=1` (or `=lag`), `ONLY_COURSE=1` (or `=lag`), `ONLY_BOT=1` or `ONLY_LIFECYCLE=1`;
+   - anything sent between players, the lobby or the practice crewmate: `npm run build && npm run test:net`, narrowed while iterating with `ONLY_SEATS=1` (or `=lag`), `ONLY_DRIVE=1` (or `=lag`), `ONLY_TURRET=1` (or `=lag`), `ONLY_FIRING=1` (or `=lag`), `ONLY_RUN=1` (or `=lag`), `ONLY_COURSE=1` (or `=lag`), `ONLY_RACE=1` (or `=lag`), `ONLY_BOT=1` or `ONLY_LIFECYCLE=1`;
    - a change that only touches docs needs neither.
 3. Before marking a pull request ready, run both browser tests if the change could reach either; CI runs them anyway, but a red run costs a full cycle.
 

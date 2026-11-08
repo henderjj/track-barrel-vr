@@ -137,9 +137,10 @@ export const CASING_FLIGHT = 0.5;
 /** The case's radius, m (the shell's). */
 export const CASING_RADIUS = SHELL_RADIUS;
 
-/** Where a shell is. */
-export type ShellPlace = 'rack' | 'hand' | 'breech' | 'falling' | 'floor';
-export const SHELL_PLACES: readonly ShellPlace[] = ['rack', 'hand', 'breech', 'falling', 'floor'];
+/** Where a shell is: 'spent' is fired and not refilled, its rack slot empty (a biathlon line's limited rounds, F5.3b). */
+export type ShellPlace = 'rack' | 'hand' | 'breech' | 'falling' | 'floor' | 'spent';
+/** In the loading packet's order: a new place goes on the end (a page on an older build draws it in the rack). */
+export const SHELL_PLACES: readonly ShellPlace[] = ['rack', 'hand', 'breech', 'falling', 'floor', 'spent'];
 
 export interface Shell {
   place: ShellPlace;
@@ -596,6 +597,12 @@ export class LoadingDrill {
   /** When the breech last opened for a load, and when a hand first took a shell since, s. */
   readyAt = 0;
   firstTouchAt = Number.NaN;
+  /**
+   * Rounds the crew may still fire (F5.3b's biathlon line): the rack holds
+   * only these, less any shell out of it, and a fired shell's slot stays
+   * empty. Infinity (the default) refills the rack after every shot.
+   */
+  rounds = Number.POSITIVE_INFINITY;
 
   private wasPressed: Record<Side, boolean> = { left: false, right: false };
   /** Each hand's depth along the bore last frame, for an open hand pushing on a base. */
@@ -631,8 +638,9 @@ export class LoadingDrill {
     }
   }
 
-  /** Start again: every shell in the rack, the breech open and empty, the stats cleared. */
+  /** Start again: every shell in the rack, the breech open and empty, the stats cleared, the rounds no longer limited. */
   reset(): void {
+    this.rounds = Number.POSITIVE_INFINITY;
     for (let i = 0; i < this.shells.length; i++) {
       this.toRack(i);
     }
@@ -649,6 +657,50 @@ export class LoadingDrill {
     this.readyAt = this.time;
     this.firstTouchAt = Number.NaN;
     this.version++;
+  }
+
+  /**
+   * Limit the rounds to `n` (a biathlon line's, F5.3b), or Infinity for no
+   * limit: shells come out of the rack (the highest slots first) or go back
+   * into it until as many are left as there are rounds. A shell in a hand or
+   * in the breech is never taken away.
+   */
+  setRounds(n: number): void {
+    this.rounds = Math.max(0, n);
+    this.fitRounds();
+  }
+
+  /** Shells not spent: in the rack, a hand, the breech or on the floor. */
+  shellsLeft(): number {
+    let n = 0;
+    for (const s of this.shells) if (s.place !== 'spent') n++;
+    return n;
+  }
+
+  private fitRounds(): void {
+    const want = Math.min(this.shells.length, this.rounds);
+    let left = this.shellsLeft();
+    let changed = false;
+    // Too many: spend the loose ones (on the floor, falling, then in the rack), the highest first.
+    for (const place of ['floor', 'falling', 'rack'] as const) {
+      for (let i = this.shells.length - 1; i >= 0 && left > want; i--) {
+        const s = this.shells[i];
+        if (s.place !== place) continue;
+        s.place = 'spent';
+        s.heldBy = null;
+        s.fallSpeed = 0;
+        left--;
+        changed = true;
+      }
+    }
+    // Too few: back into the rack, the lowest slots first.
+    for (let i = 0; i < this.shells.length && left < want; i++) {
+      if (this.shells[i].place !== 'spent') continue;
+      this.toRack(i);
+      left++;
+      changed = true;
+    }
+    if (changed) this.version++;
   }
 
   /** Let go with both hands (the gunner left the seat, or another page took over the loading). */
@@ -718,6 +770,11 @@ export class LoadingDrill {
       if (this.holds[side] === HOLD_LEVER) this.holds[side] = HOLD_NONE;
     }
     if (i >= 0) this.toRack(i);
+    if (Number.isFinite(this.rounds)) {
+      // A limited line: the round is gone, and the rack keeps only what is left.
+      this.rounds = Math.max(0, this.rounds - 1);
+      this.fitRounds();
+    }
     this.readyAt = this.time;
     this.firstTouchAt = Number.NaN;
     this.stats.fumblesThisLoad = 0;
@@ -743,6 +800,8 @@ export class LoadingDrill {
     }
     if (this.breechShell < 0) {
       let i = this.shells.findIndex((s) => s.place === 'rack');
+      // No rounds left at a biathlon line: nothing to load.
+      if (i < 0 && Number.isFinite(this.rounds)) return;
       if (i < 0) i = 0;
       const s = this.shells[i];
       s.place = 'breech';
@@ -814,7 +873,7 @@ export class LoadingDrill {
     for (let i = 0; i < this.shells.length; i++) {
       const s = this.shells[i];
       // A rammed shell stays put while the breech is closed.
-      if (s.heldBy !== null || (i === this.breechShell && (this.loaded || this.lever > LEVER_BLOCKED))) {
+      if (s.place === 'spent' || s.heldBy !== null || (i === this.breechShell && (this.loaded || this.lever > LEVER_BLOCKED))) {
         continue;
       }
       const d = distanceToShellAxis(hand.pos, s.centre, s.axis) - SHELL_RADIUS;
@@ -1113,6 +1172,13 @@ export class LoadingDrill {
   }
 }
 
+/** How many shells are spent (a biathlon line's rounds fired, F5.3b). */
+export function spentShells(s: Readonly<LoadingSnapshot>): number {
+  let n = 0;
+  for (const shell of s.shells) if (shell.place === 'spent') n++;
+  return n;
+}
+
 /** The gunner's seated eye point, turret space: where the reach checks measure from. */
 export const GUNNER_EYE = SEATS.gunner.eye;
 
@@ -1136,6 +1202,9 @@ export function boardLines(s: LoadingSnapshot, shot = ''): [string, string, stri
     third = 'Ram it home';
   } else if (s.lever > LEVER_BLOCKED) {
     third = 'Breech closed: open it';
+  } else if (spentShells(s) === s.shells.length) {
+    // A biathlon line's rounds all fired (F5.3b).
+    third = shot ? `${shot}. No rounds left` : 'No rounds left';
   } else {
     third = shot ? `${shot}. Load!` : 'Load!';
   }

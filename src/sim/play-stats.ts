@@ -11,7 +11,8 @@
  * Engine-free, so it is unit tested; nothing here allocates per frame.
  */
 
-import { formatRunTime, type RunPhase, type RunSnapshot, targetsHit } from './range-run.js';
+import { boardsDown, type Medal, medalFor, raceMisses } from './biathlon.js';
+import { formatRunTime, type RunMode, type RunPhase, type RunSnapshot, targetsHit } from './range-run.js';
 import { SPEAKING_LEVEL } from './tank-audio.js';
 
 /** What a fumble is counted against: each control (both tillers as one), the shell and anything else. */
@@ -137,6 +138,22 @@ export function stepTally(t: RunTally, dt: number, seat: string, micLevel: numbe
 
 export type RunResult = 'done' | 'stopped' | 'restarted';
 
+/** A biathlon race's own numbers (F5.3b), for its row. */
+export interface RaceResult {
+  laps: number;
+  /** Rounds fired that brought no board down. */
+  misses: number;
+  /** Penalty loops driven, and those not driven (each a minute on the time). */
+  loops: number;
+  skipped: number;
+  /** The medal its time earned ('' for none, or a race not finished). */
+  medal: Medal;
+}
+
+function createRaceResult(): RaceResult {
+  return { laps: 0, misses: 0, loops: 0, skipped: 0, medal: '' };
+}
+
 /** How a run ended, with its numbers as they stood. */
 export interface RunEnd {
   run: number;
@@ -148,6 +165,8 @@ export interface RunEnd {
   assisted: boolean;
   /** What this player did in it. */
   tally: RunTally;
+  /** A biathlon race's (F5.3b); absent for a range run. */
+  race?: RaceResult | null;
 }
 
 /**
@@ -158,7 +177,7 @@ export interface RunEnd {
  */
 export class RunRecorder {
   readonly tally = createTally();
-  readonly ended: RunEnd = { run: 0, result: 'done', time: 0, shots: 0, targets: 0, assisted: false, tally: createTally() };
+  readonly ended: RunEnd = { run: 0, result: 'done', time: 0, shots: 0, targets: 0, assisted: false, tally: createTally(), race: null };
   /** Whether the run's clock runs now: what happens counts. */
   counting = false;
   private id = 0;
@@ -167,6 +186,10 @@ export class RunRecorder {
   private lastShots = 0;
   private lastTargets = 0;
   private lastAssisted = false;
+  private mode: RunMode = 'range';
+  /** A race's numbers as they last stood, and the one handed out with `ended`. */
+  private lastRace = createRaceResult();
+  private endedRace = createRaceResult();
 
   /** The run as shown this frame; returns `ended` if a run just ended, otherwise null. */
   watch(s: Readonly<RunSnapshot>): RunEnd | null {
@@ -176,7 +199,8 @@ export class RunRecorder {
       if (s.id !== this.id) {
         end = this.end('restarted', this.lastClock, this.lastShots, this.lastTargets, this.lastAssisted);
       } else if (s.phase === 'done') {
-        end = this.end('done', s.time, s.shots, targetsHit(s), s.assisted);
+        if (s.mode === 'biathlon') this.raceNumbers(s, true);
+        end = this.end('done', s.time, s.shots, s.mode === 'biathlon' ? boardsDown(s) : targetsHit(s), s.assisted);
       } else if (s.phase === 'idle') {
         end = this.end('stopped', this.lastClock, this.lastShots, this.lastTargets, this.lastAssisted);
       }
@@ -186,8 +210,10 @@ export class RunRecorder {
     if (s.phase === 'running') {
       this.lastClock = Math.max(0, s.clock);
       this.lastShots = s.shots;
-      this.lastTargets = targetsHit(s);
+      this.lastTargets = s.mode === 'biathlon' ? boardsDown(s) : targetsHit(s);
       this.lastAssisted = s.assisted;
+      this.mode = s.mode;
+      if (s.mode === 'biathlon') this.raceNumbers(s, false);
     }
     this.id = s.id;
     this.phase = s.phase;
@@ -203,7 +229,23 @@ export class RunRecorder {
     e.targets = targets;
     e.assisted = assisted;
     copyTally(this.tally, e.tally);
+    if (this.mode === 'biathlon') {
+      Object.assign(this.endedRace, this.lastRace);
+      e.race = this.endedRace;
+    } else {
+      e.race = null;
+    }
     return e;
+  }
+
+  /** A race's numbers as they stand (`done`: with its medal). */
+  private raceNumbers(s: Readonly<RunSnapshot>, done: boolean): void {
+    const r = this.lastRace;
+    r.laps = s.laps;
+    r.misses = raceMisses(s);
+    r.loops = s.loops;
+    r.skipped = s.skipped;
+    r.medal = done ? medalFor(s.time) : '';
   }
 }
 
@@ -276,6 +318,9 @@ export interface StatsRow {
   speed: number;
   turn: number;
   label: string;
+  /** A run's mode ('range' or 'biathlon'; '' for a mark or the visit), and a race's own numbers (F5.3b). */
+  mode: string;
+  race: RaceResult | null;
 }
 
 /** A row for a run that ended. */
@@ -286,6 +331,7 @@ export function runRow(end: RunEnd, context: RowContext): StatsRow {
     time: end.time, shots: end.shots, targets: end.targets, assisted: end.assisted, grinds: t.grinds, stalls: t.stalls, fumbles: [...t.fumbles],
     driver: t.driver, gunner: t.gunner, talk: t.talk, crewTalk: t.crewTalk, crew: null, queasy: t.queasy,
     vignette: context.vignette, bumps: context.bumps, speed: Number.NaN, turn: Number.NaN, label: context.label,
+    mode: end.race ? 'biathlon' : 'range', race: end.race ? { ...end.race } : null,
   };
 }
 
@@ -295,7 +341,7 @@ export function queasyRow(run: number, clock: number, speed: number, turnRate: n
     kind: 'queasy', run, at: context.at, seat: context.seat, crewmate: context.crewmate, result: '', time: clock,
     shots: 0, targets: 0, assisted: false, grinds: 0, stalls: 0, fumbles: FUMBLE_GROUPS.map(() => 0), driver: 0, gunner: 0, talk: 0,
     crewTalk: 0, crew: null, queasy: 1, vignette: context.vignette, bumps: context.bumps, speed: speed * 3.6,
-    turn: (turnRate * 180) / Math.PI, label: context.label,
+    turn: (turnRate * 180) / Math.PI, label: context.label, mode: '', race: null,
   };
 }
 
@@ -305,7 +351,7 @@ export function visitRow(t: RunTally, seconds: number, context: RowContext): Sta
     kind: 'visit', run: 0, at: context.at, seat: context.seat, crewmate: context.crewmate, result: '', time: seconds,
     shots: 0, targets: 0, assisted: false, grinds: t.grinds, stalls: t.stalls, fumbles: [...t.fumbles], driver: t.driver, gunner: t.gunner,
     talk: t.talk, crewTalk: t.crewTalk, crew: null, queasy: t.queasy, vignette: context.vignette, bumps: context.bumps,
-    speed: Number.NaN, turn: Number.NaN, label: context.label,
+    speed: Number.NaN, turn: Number.NaN, label: context.label, mode: '', race: null,
   };
 }
 
@@ -330,6 +376,8 @@ export const STATS_CSV_HEADER = [
   ...FUMBLE_GROUPS.map((g) => `fumbles_${g}`),
   'most_fumbled', 'driver_s', 'gunner_s', 'talk_s', 'crew_talk_s', 'crew_driver_s', 'crew_gunner_s', 'crew_fumbles',
   'crew_most_fumbled', 'queasy', 'vignette', 'bumps', 'speed_kmh', 'turn_dps', 'label',
+  // The biathlon race's (F5.3b), after the columns earlier CSVs had.
+  'mode', 'laps', 'misses', 'penalty_loops', 'loops_skipped', 'medal',
 ].join(',');
 
 const secs = (v: number) => (Number.isFinite(v) && v >= 0 ? v.toFixed(1) : '');
@@ -341,6 +389,7 @@ export function csvLine(r: StatsRow): string {
   // A run and the visit count what the player did; a mark only says when.
   const tally = r.kind !== 'queasy';
   const crew = r.crew;
+  const race = run ? r.race : null;
   return [
     r.kind, r.run, r.at, r.seat, r.crewmate, r.result, secs(r.time),
     run ? r.shots : '', run ? r.targets : '', run ? (r.assisted ? 1 : 0) : '', tally ? r.grinds : '', tally ? r.stalls : '', tally ? sum(r.fumbles) : '',
@@ -350,6 +399,7 @@ export function csvLine(r: StatsRow): string {
     crew ? secs(crew.driver) : '', crew ? secs(crew.gunner) : '', crew ? sum(crew.fumbles) : '', crew ? mostFumbled(crew.fumbles) : '',
     r.queasy, r.vignette, r.bumps,
     Number.isFinite(r.speed) ? r.speed.toFixed(1) : '', Number.isFinite(r.turn) ? r.turn.toFixed(1) : '', plain(r.label),
+    run ? r.mode : '', race ? race.laps : '', race ? race.misses : '', race ? race.loops : '', race ? race.skipped : '', race ? race.medal : '',
   ].join(',');
 }
 
@@ -447,12 +497,17 @@ export function readRow(item: unknown): StatsRow | null {
   const fumbles = FUMBLE_GROUPS.map((_, i) => (Array.isArray(r.fumbles) ? num(r.fumbles[i]) : 0));
   const crewEvent = typeof r.crew === 'object' && r.crew !== null ? readCrewStats({ ...(r.crew as Record<string, unknown>), run: 0 }) : null;
   const crewmate = r.crewmate === 'player' || r.crewmate === 'bot' ? r.crewmate : 'none';
+  const raw = typeof r.race === 'object' && r.race !== null ? (r.race as Record<string, unknown>) : null;
+  const medal = raw && (raw.medal === 'gold' || raw.medal === 'silver' || raw.medal === 'bronze') ? raw.medal : '';
+  const race: RaceResult | null = raw ? { laps: num(raw.laps), misses: num(raw.misses), loops: num(raw.loops), skipped: num(raw.skipped), medal } : null;
   return {
     kind: r.kind, run: num(r.run), at: str(r.at), seat: str(r.seat), crewmate, result: str(r.result), time: num(r.time, -1),
     shots: num(r.shots), targets: num(r.targets), assisted: r.assisted === true, grinds: num(r.grinds), stalls: num(r.stalls), fumbles,
     driver: num(r.driver), gunner: num(r.gunner), talk: num(r.talk), crewTalk: num(r.crewTalk), crew: crewEvent?.crew ?? null,
     queasy: num(r.queasy), vignette: num(r.vignette), bumps: str(r.bumps), speed: num(r.speed, Number.NaN),
     turn: num(r.turn, Number.NaN), label: str(r.label),
+    // Rows kept from before the race (F5.3b) are range runs.
+    mode: r.kind === 'run' ? (race ? 'biathlon' : 'range') : '', race,
   };
 }
 
@@ -466,8 +521,10 @@ export function lastRunLine(log: StatsLog): string {
   const fumbles = sum(row.fumbles);
   const most = mostFumbled(row.fumbles);
   const how = row.result === 'done' ? formatRunTime(row.time) : `${row.result} at ${formatRunTime(row.time)}`;
+  const race = row.race;
+  const what = race ? `race ${row.run} ${how}${race.medal ? ` (${race.medal})` : ''}, ${race.loops} penalty loop${race.loops === 1 ? '' : 's'}` : `run ${row.run} ${how}`;
   return (
-    `Last: run ${row.run} ${how}, ${row.shots} shot${row.shots === 1 ? '' : 's'}, ${row.grinds} grind${row.grinds === 1 ? '' : 's'}, ` +
+    `Last: ${what}, ${row.shots} shot${row.shots === 1 ? '' : 's'}, ${row.grinds} grind${row.grinds === 1 ? '' : 's'}, ` +
     (row.stalls > 0 ? `${row.stalls} stall${row.stalls === 1 ? '' : 's'}, ` : '') +
     `${fumbles} fumble${fumbles === 1 ? '' : 's'}${most ? ` (most: ${most.replace('_', ' ')})` : ''}. ${kept}.`
   );

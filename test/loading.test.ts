@@ -489,3 +489,69 @@ function yaw(degrees: number): [number, number, number, number] {
   const h = (degrees * Math.PI) / 360;
   return [0, Math.sin(h), 0, Math.cos(h)];
 }
+
+describe('a biathlon line\'s limited rounds (F5.3b)', () => {
+  it('holds only the rounds left in the rack, spends each one fired, and fills again with no limit', () => {
+    const rig = new Rig();
+    const drill = rig.drill;
+    drill.setRounds(3);
+    expect(drill.shellsLeft()).toBe(3);
+    // The highest slot stands empty, and its shell can't be taken.
+    expect(drill.shells[3].place).toBe('spent');
+    rig.move(rig.right, [RACK_SLOTS[3][0], RACK_SLOTS[3][1], RACK_SLOTS[3][2] + 0.2]);
+    rig.squeeze(rig.right, true);
+    expect(drill.holds.right).toBe(HOLD_NONE);
+    rig.squeeze(rig.right, false);
+    rig.move(rig.right, RIGHT_REST, 0.2);
+    // Load and fire one: its slot stays empty.
+    rig.load(0);
+    expect(drill.loaded).toBe(true);
+    expect(drill.fire()).toBe(true);
+    expect(drill.rounds).toBe(2);
+    expect(drill.shellsLeft()).toBe(2);
+    expect(drill.shells.filter((sh) => sh.place === 'rack')).toHaveLength(2);
+    // The other two loaded at once (Practice) and fired: none left, nothing to load, and the board says so.
+    for (let k = 0; k < 2; k++) {
+      drill.loadNow();
+      expect(drill.loaded).toBe(true);
+      drill.fire();
+    }
+    expect(drill.rounds).toBe(0);
+    expect(drill.shellsLeft()).toBe(0);
+    drill.loadNow();
+    expect(drill.loaded).toBe(false);
+    const shown = drill.snapshot(createLoadingSnapshot());
+    expect(boardLines(shown)[2]).toBe('No rounds left');
+    // The next line: three again; then no limit, and the rack is full.
+    drill.setRounds(3);
+    expect(drill.shells.filter((sh) => sh.place === 'rack')).toHaveLength(3);
+    drill.setRounds(Number.POSITIVE_INFINITY);
+    expect(drill.shells.every((sh) => sh.place === 'rack')).toBe(true);
+  });
+
+  it('never takes a shell out of a hand or the breech, and a reset lifts the limit', () => {
+    const rig = new Rig();
+    const drill = rig.drill;
+    rig.toMouth(1);
+    expect(drill.breechShell).toBe(1);
+    drill.setRounds(1);
+    expect(drill.shells[1].place).toBe('breech');
+    expect(drill.shellsLeft()).toBe(1);
+    drill.setRounds(0);
+    expect(drill.shells[1].place).toBe('breech');
+    drill.reset();
+    expect(drill.rounds).toBe(Number.POSITIVE_INFINITY);
+    expect(drill.shellsLeft()).toBe(4);
+  });
+
+  it('sends a spent round in the loading packet', () => {
+    const drill = new LoadingDrill();
+    drill.setRounds(2);
+    const a = drill.snapshot(createLoadingSnapshot());
+    const buffer = new ArrayBuffer(LOADING_STATE_BYTES);
+    const length = encodeLoadingState(buffer, 1, 0, a);
+    const b = createLoadingSnapshot();
+    expect(decodeLoadingState(new DataView(buffer, 0, length), { seq: 0, timeMs: 0 }, b)).toBe(true);
+    expect(b.shells.map((sh) => sh.place)).toEqual(['rack', 'rack', 'spent', 'spent']);
+  });
+});

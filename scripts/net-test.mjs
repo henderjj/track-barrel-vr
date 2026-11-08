@@ -744,6 +744,61 @@ async function courseChecks(host, guest, label) {
 }
 
 /**
+ * The biathlon race (F5.3b), with the host driving and the guest gunner:
+ * the host's Start parks the tank at the course's start and both pages
+ * show the race, the guest gunner's rack holding the line's three rounds
+ * (the host draws the empty slot from the loading packet); after Go the
+ * host's Ready line 1 has the guest's page lay and load in box 1, and the
+ * guest's trigger brings the board down on both pages and spends a round
+ * on both; the guest's Stop ends the race on both, the rack full again.
+ */
+async function raceChecks(host, guest, label) {
+  const run = (p) => p.page.evaluate(() => window.__rangeRun.state());
+  const places = (p) => p.page.evaluate(() => window.__loading.state().shells.map((s) => s.place));
+  const wasRunning = (await host.page.evaluate(() => window.__drive.state())).running;
+  await host.page.evaluate(() => window.__rangeRun.race());
+  const started = await waitFor('both pages to show the race with three rounds in the rack', async () => {
+    const [h, g, hp, gp, rounds] = await Promise.all([run(host), run(guest), places(host), places(guest), guest.page.evaluate(() => window.__rangeRun.rounds())]);
+    const three = (p) => p.filter((x) => x === 'rack').length === 3 && p.filter((x) => x === 'spent').length === 1;
+    return h.mode === 'biathlon' && h.phase === 'running' && g.mode === 'biathlon' && g.phase === 'running' && rounds === 3 && three(gp) && three(hp) ? { h, g } : null;
+  }, 10000).catch(() => null);
+  const tank = await host.page.evaluate(() => window.__drive.state());
+  check(`The host's Start begins a race at the course's start on both pages, the guest gunner's rack holding three rounds on both (${label})`,
+    started !== null && Math.abs(tank.x - 320) < 0.5 && Math.abs(tank.z + 225) < 0.5,
+    started ? `guest "${started.g.line}", tank at ${tank.x.toFixed(1)}, ${tank.z.toFixed(1)}` : JSON.stringify({ h: await run(host), g: await run(guest), hp: await places(host), gp: await places(guest) }));
+
+  await waitFor('Go', async () => (await run(host)).clock >= 0.2, 30000).catch(() => null);
+  await host.page.evaluate(() => window.__rangeRun.readyLine(0));
+  const laid = await waitFor("the guest's page laid and loaded in box 1", async () => {
+    const [loaded, line] = await Promise.all([guest.page.evaluate(() => window.__loading.state().loaded), guest.page.evaluate(() => window.__rangeRun.lineNow())]);
+    return loaded && line === 0;
+  }, 15000).catch(() => false);
+  await guest.page.evaluate(() => window.__turret.pullTrigger());
+  const down = await waitFor('the board down on both pages, a round spent', async () => {
+    const [h, g, gc, hp] = await Promise.all([run(host), run(guest), guest.page.evaluate(() => window.__rangeRun.covers()), places(host)]);
+    return h.boardAt[0] >= 0 && g.boardAt[0] >= 0 && gc[0] && h.rounds === 2 && g.rounds === 2 && hp.filter((x) => x === 'spent').length === 2 ? { h, g } : null;
+  }, 10000).catch(() => null);
+  check(`The host's Ready line 1 has the guest gunner lay and load; the guest's round brings the board down and spends a round on both pages (${label})`,
+    laid && down !== null && down.h.shots === 1,
+    down ? `host "${down.h.line}"` : `laid ${laid}; ${JSON.stringify({ h: await run(host), g: await run(guest), hp: await places(host) })}`);
+
+  await guest.page.evaluate(() => window.__rangeRun.stop());
+  const stopped = await waitFor('the race over on both pages, the rack full', async () => {
+    const [h, g, gp, rounds] = await Promise.all([run(host), run(guest), places(guest), guest.page.evaluate(() => window.__rangeRun.rounds())]);
+    return h.phase === 'idle' && g.phase === 'idle' && rounds === null && gp.every((x) => x === 'rack') ? { h, g } : null;
+  }, 10000).catch(() => null);
+  check(`The guest's Stop ends the race on both pages, the rack full again (${label})`, stopped !== null,
+    stopped ? '' : JSON.stringify({ h: await run(host), g: await run(guest), gp: await places(guest) }));
+
+  // Back to the range start as the later checks expect.
+  await host.page.evaluate((running) => { if (!running) window.__drive.engine('stop'); window.__drive.reset(); window.__turret.forward(); }, wasRunning);
+  await waitFor('the guest to see the tank back', async () => {
+    const t = await guest.page.evaluate(() => window.__drive.state());
+    return Math.hypot(t.x, t.z) < 0.5;
+  }, 8000).catch(() => null);
+}
+
+/**
  * Comfort and stats (F1.14), after runChecks' run: each page wrote the
  * stopped run's row and got the crewmate's seat times for it (the
  * `run-stats` event), and the guest's Bumps → Reduced makes the host's
@@ -1191,7 +1246,7 @@ async function main() {
     }
     const room = 'TEST';
     // ONLY_SEATS=lag runs the quick seat checks at about 150 ms RTT.
-    const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' || process.env.ONLY_TURRET === 'lag' || process.env.ONLY_FIRING === 'lag' || process.env.ONLY_RUN === 'lag' || process.env.ONLY_COURSE === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
+    const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' || process.env.ONLY_TURRET === 'lag' || process.env.ONLY_FIRING === 'lag' || process.env.ONLY_RUN === 'lag' || process.env.ONLY_COURSE === 'lag' || process.env.ONLY_RACE === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
     const a = await openPlayer(browser, `room=${room}&name=Ann${quickLag}`);
     await waitFor('Ann waiting in the lobby', async () => (await state(a.page)) === 'waiting');
     const b = await openPlayer(browser, `room=${room}&name=Bo${quickLag}`);
@@ -1236,6 +1291,11 @@ async function main() {
     if (process.env.ONLY_COURSE) {
       // Quick loop for F5.3a: the biathlon course's progress shared (ONLY_COURSE=lag at about 150 ms RTT).
       await courseChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+      return;
+    }
+    if (process.env.ONLY_RACE) {
+      // Quick loop for F5.3b: the biathlon race with a guest gunner (ONLY_RACE=lag at about 150 ms RTT).
+      await raceChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
       return;
     }
     if (process.env.ONLY_RUN) {
@@ -1353,6 +1413,7 @@ async function main() {
     await runChecks(a, b, 'local network');
     await statsChecks(a, b, 'local network');
     await courseChecks(a, b, 'local network');
+    await raceChecks(a, b, 'local network');
     await lobbyChecks(browser, a, b);
 
     const motion = await measureMotion(a, b, 3);
@@ -1411,6 +1472,7 @@ async function main() {
     await runChecks(d, e, '150 ms RTT');
     await statsChecks(d, e, '150 ms RTT');
     await courseChecks(d, e, '150 ms RTT');
+    await raceChecks(d, e, '150 ms RTT');
 
     await d.context.close();
     await e.context.close();
