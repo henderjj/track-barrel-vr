@@ -26,10 +26,10 @@ export const HULL = {
   /** Inner face of the bulkhead in front of the engine. */
   rear: 2.0,
   /**
-   * Underside of the roof: 24 cm over a seated driver's eyes (a Sherman's was about 15 to 20 cm,
-   * docs/crew-heights.md), so the periscope's crank and the fist on it fit under it above the slit's view.
+   * Underside of the roof: 20 cm over a seated driver's eyes, a Sherman's 15 to 20 cm (docs/crew-heights.md).
+   * 24 cm until John's 2026-11-08 note: lower, the head-out driver's head clears the gun as a real one's did.
    */
-  roof: 1.51,
+  roof: 1.47,
   /** Thickness of the walls, roof and floor plate as drawn. */
   wall: 0.08,
 } as const;

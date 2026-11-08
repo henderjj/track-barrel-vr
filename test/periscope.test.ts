@@ -290,7 +290,7 @@ describe('the crew periscopes (F1.6, F1.19)', () => {
     // The eyepiece hangs behind the slit's leather brow pad (SLIT_FRAME), the housing over the pad's top.
     const front = Math.min(...eyepieceCorners('driver').map((p) => p[2]));
     expect(front - (VISION_SLIT.z - 0.005 + SLIT_FRAME.padDepth)).toBeGreaterThan(0.01);
-    expect(s.roof - RELAY.depth - (VISION_SLIT.y + VISION_SLIT.height / 2 + SLIT_FRAME.padAbove + SLIT_FRAME.padHeight)).toBeGreaterThan(0.03);
+    expect(s.roof - RELAY.depth - (VISION_SLIT.y + VISION_SLIT.height / 2 + SLIT_FRAME.padAbove + SLIT_FRAME.padHeight)).toBeGreaterThan(0.025);
     expect(s.axis[1] - 0.035).toBeGreaterThan(GLACIS.face);
   });
 

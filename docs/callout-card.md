@@ -17,7 +17,7 @@ A placard in each seat with the crew's short callouts and a clock face for targe
 
 | What | Value | Why |
 | --- | --- | --- |
-| Driver's card | 36 × 24 cm face, middle 1.24 m up the left wall, level with the eyes fore and aft (z −1.6), 63 cm from the eyes, 20° below them | A turn of the head and a glance down; clear of the conduit (1.62 m), the throttle's handle (under 1.0 m), the sponson rounds behind (from z −1.12) and the hood ahead |
+| Driver's card | 36 × 24 cm face, middle 1.24 m up the left wall, level with the eyes fore and aft (z −1.6), 63 cm from the eyes, 20° below them | A turn of the head and a glance down; clear of the conduit (1.39 m), the throttle's handle (under 1.0 m), the sponson rounds behind (from z −1.12) and the hood ahead |
 | Gunner's card | 54 × 36 cm face, middle at (−0.58, 2.42) on the turret's front wall, 1.3 m from the eyes | Left of the gunsight's eyepiece as seen from the eye point, so the eyepiece doesn't hide it; under the roof's 12 cm chamfer; bigger so its lines look at least two thirds the size of the driver's (a line 0.7° tall against 1°, about 18 of the Quest 3's pixels) |
 | Lettering | lines 36 px on a 1200 × 800 canvas: 11 mm tall on the driver's card, 16 mm on the gunner's | |
 | Plate | the face 4 mm in front of a steel plate 1.2 cm wider all round, which stands 6 mm off the wall (8 mm sunk into it), a bolt in each corner | The 3 mm z-fighting rule with room to spare; thin enough that leaning to the head box's edge keeps the eyes more than 9 cm from it |

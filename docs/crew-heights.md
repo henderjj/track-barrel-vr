@@ -23,7 +23,7 @@ Everything is measured from the eyes, because the game puts each player's eyes o
 
 | From the eyes | Before | Now | Real Sherman |
 | --- | --- | --- | --- |
-| Driver: roof | +35 cm | +24 cm | about +15 to +20 cm |
+| Driver: roof | +35 cm | +20 cm | about +15 to +20 cm |
 | Driver: seat cushion | −90 cm | −79 cm | −79 cm |
 | Driver: floor | −145 cm | −127 cm | about −127 cm |
 | Driver: ground | −205 cm | −173 cm | about −173 cm |
@@ -35,14 +35,18 @@ Everything is measured from the eyes, because the game puts each player's eyes o
 | Gun over the ground | 2.65 m | 2.24 m | 2.24 m |
 
 - **Seats.** `SEATED_EYE` is 1.27 m (1.45 before) and the cushion 48 cm (55 before). A player in a chair at home has their eyes about 1.2 m up, so their real floor now lines up with the tank's within a few centimetres.
-- **The hull.** The ground is 46 cm under the hull floor (60 before), and the roof 1.51 m over it (1.8 m before). The glacis, hood and bow gun come down with the driver's eyes, the cable conduits with the roof.
+- **The hull.** The ground is 46 cm under the hull floor (60 before), and the roof 1.47 m over it (1.8 m before). The glacis, hood and bow gun come down with the driver's eyes, the cable conduits with the roof.
 - **The turret.** The gun's axis is at 1.78 m in hull space, a Sherman's 2.24 m over the ground. The basket floor is 0.71 m (0.8 before), so the gunner's eyes stay 20 cm over the gun's axis, and the turret roof is 35 cm over them (2.33 m, 2.75 before).
 - **The one departure: the gun.** A real gunner's eye was about level with the gun, but a real gunner had a loader. Ours loads, so the gun stays 20 cm under the eyes to keep the breech at chest height. The turret is about 14 cm taller than a real one for it.
-- **The driver's roof** is 24 cm over the eyes, 4 to 9 cm more than a real Sherman's: the periscope's crank and the fist on it need that much room over the slit's view. It still leaves the eyes 15 cm to rise before the view fades (26 before).
+- **The driver's roof** is 20 cm over the eyes, the top of a real Sherman's 15 to 20 cm. It leaves the eyes 11 cm to rise before the view fades (26 before). It was 24 cm at first, for the periscope's crank; after John's look at the cross-section (2026-11-08) showed the head-out driver's head in the gun's path, the crank went down level with the window and smaller (4 cm), and the brow pad slimmer (3.5 cm), so the roof could come down. See [Head out and the gun](#head-out-and-the-gun).
 - **Eye height** in the menu now goes from −15 cm to +5 cm (±15 before). Under the lower roof a raise of more than 5 cm would leave no room to sit up to the periscope. A saved raise above +5 cm reads as +5.
 - **The periscopes.** Each eyepiece is tipped 15° towards the seat (30° before). The driver's window is 9 cm over the eyes and 13.5 cm ahead, and the eyes look in from about 7 cm up (7 before, at 30°). The gunner's window is 12.5 cm over the eyes, just over the gunsight's hood; looking in, the eyes are 11 cm up. The gunner's could not come lower, as its eyepiece must clear the sight's hood.
 - **The avatar.** The neck's base is 16 cm under the eyes (20 before) and the shoulders 20 cm (27 before), as a seated adult's. The torso is 56 cm from the hip point to the neck's base (62 before), so it sits on the cushion without stretching. Thighs stay 44 cm; the shins follow the lower seat.
 - **The gunner's callout card** is lower and a little smaller (51 × 34 cm, 54 × 36 before) to fit under the lower roof's chamfer; it reads the same size from the seat. The loading board and the gunner's run clock moved down 11 cm with it.
+
+## Head out and the gun
+
+John's look at the cross-section ([Sherman Crew Section](https://claude.ai/artifact/LGVhRG92EvVMrpmPkLLzBQ), 2026-11-08) showed the head-out driver of PR #82 too high: with the roof 24 cm over the eyes and the seat raised 42 cm, the eyes were 2.15 m over the ground and the head reached into the barrel (its underside 2.18 m) with the turret about 18° left. A real driver's eyes were about 1.98 m up, his head about 8 cm under the barrel. John chose to fit it as the real tank does: the driver's roof down to 20 cm over the eyes (this change), then a lower raise, shorter convoy grips and a turret stop while the driver is head out (the head-out thread's F2.8). For the roof to come down, the driver's periscope crank sits level with its window instead of 2 cm over it and is 4 cm to the knob instead of 5.5 (the gunner's too, as they share the spec), and the slit's brow pad is 3.5 cm tall instead of 7; the pad's bottom, the firing lamp under it and the head's stop at it are unchanged.
 
 ## Sharing
 
