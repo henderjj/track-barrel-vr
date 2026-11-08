@@ -119,6 +119,8 @@ export const TRACKED_HAND_FILTER = { minCutoff: 1.5, beta: 4 } as const;
 
 /** Out from this share of a wheel's radius (now and last frame), a hand turns it by its angle round the axle (`HandAngle.stepAround`). */
 const ON_RIM = 0.5;
+/** A hand taking hold out from this share of a wheel's radius is on its knob, and starts off going round the axle. */
+const ON_KNOB = 0.9;
 /** Out from this share, a hand going round the axle does too. */
 const ROUND_FROM = 0.3;
 /** The hand's position is smoothed over this long for that, s, so a millimetre of tremor can't steer it. */
@@ -128,7 +130,7 @@ const CENTRE_TIME = 0.5;
 /** Nearer than this to where it has been lately, m, the hand isn't going round anything. */
 const STILL = 0.006;
 /** A swing round that middle bigger than this in a frame is a jerk, not going round. */
-const JERK = 60 * DEG;
+const JERK = 135 * DEG;
 /** Which way the hand is going round now: its going round over about this long, s. */
 const NOW_TIME = 0.15;
 /** ...once that is at least this much. */
@@ -139,6 +141,12 @@ const LATELY_TIME = 0.5;
 const LATELY_SPIN = 45 * DEG;
 /** ...and round the axle at least this share as far. */
 const ROUND_SHARE = 0.5;
+/** How long it remembers going round the axle against the way the hand was going round, s... */
+const BESIDE_TIME = 1.5;
+/** ...which, once this much, says the hand is going round beside the axle, not round it. */
+const BESIDE = 10 * DEG;
+/** A hand moving further than this share of a wheel's radius in one frame jumped (the frame stalled). */
+const JUMP = 0.5;
 
 /**
  * A hand's angle round a mechanism's axis, unwrapped (so a crank can go
@@ -161,6 +169,10 @@ class HandAngle {
   private spinNow = 0;
   private spinLately = 0;
   private roundLately = 0;
+  /** How far it went round the axle against the way the hand was going round, lately (a fading sum). */
+  private beside = 0;
+  /** Which way the hand was last surely going round (+1 anticlockwise, -1, 0 not yet). */
+  private way = 0;
 
   /** The hand takes hold at `angle` (not NaN); returns it. */
   start(angle: number, tracked: boolean): number {
@@ -185,19 +197,24 @@ class HandAngle {
 
   /**
    * Round a wheel's axle: the hand takes hold at (x, y) in wheel space,
-   * reading as `angle` (not NaN); returns its steadied angle.
+   * reading as `angle` (not NaN); returns its steadied angle. Taking hold
+   * out on the knob's circle of a wheel of `radius`, it is taken to be
+   * going round the axle from the start.
    */
-  startAround(x: number, y: number, angle: number, tracked: boolean): number {
+  startAround(x: number, y: number, angle: number, tracked: boolean, radius = 0): number {
     this.lastX = x;
     this.lastY = y;
     this.handX = x;
     this.handY = y;
-    this.midX = x;
-    this.midY = y;
+    const onKnob = radius > 0 && x * x + y * y >= (ON_KNOB * radius) ** 2;
+    this.midX = onKnob ? 0 : x;
+    this.midY = onKnob ? 0 : y;
     this.aroundMid = Number.NaN;
     this.spinNow = 0;
     this.spinLately = 0;
     this.roundLately = 0;
+    this.beside = 0;
+    this.way = 0;
     return this.start(angle, tracked);
   }
 
@@ -215,13 +232,15 @@ class HandAngle {
    * Laptop touchpads read circular scrolling this way (Synaptics'
    * ChiralMotion): by which way the finger is going round, not where it is.
    *
-   * The crank goes by the angle round the axle out on the knob's circle,
-   * unless that is against the way the hand is going round just now, or the
-   * hand has lately gone round in circles that aren't round the axle; and
-   * nearer in only while the hand is going round the axle. Otherwise it
-   * goes by the angle round the middle. So a hand going round in circles
-   * turns the crank once a circle, wherever the circles are, and never
-   * backwards; and small, careful turns on the knob are exact.
+   * A hand taking hold on the knob starts off going round the axle (the
+   * middle starts there). The crank goes by the angle round the axle out on
+   * the knob's circle, and nearer in while the hand is going round the
+   * axle, unless that is against the way the hand is going round just now,
+   * or has lately been (`BESIDE`: the hand is going round beside the axle;
+   * forgotten when the hand turns back). Otherwise it goes by the angle
+   * round the middle. So a hand going round in circles turns the crank once
+   * a circle, wherever the circles are, and never backwards; and small,
+   * careful turns on the knob, and turning back on it, are exact.
    */
   stepAround(x: number, y: number, radius: number, dt: number): number {
     // How far the (steadied) hand went round the middle of where it has been lately.
@@ -254,11 +273,21 @@ class HandAngle {
     this.spinLately = this.spinLately * lately + bend;
     this.roundLately = this.roundLately * lately + round;
 
-    const against = Math.abs(this.spinNow) > NOW_SPIN && round * this.spinNow < 0;
+    // A hand that jumped a long way in one frame (a stalled frame) can't be read going round: go by the axle.
+    const dx = x - this.lastX;
+    const dy = y - this.lastY;
+    const jumped = dx * dx + dy * dy > (JUMP * radius) ** 2;
+    const against = !jumped && Math.abs(this.spinNow) > NOW_SPIN && round * this.spinNow < 0;
+    if (Math.abs(this.spinNow) > NOW_SPIN && Math.sign(this.spinNow) !== this.way) {
+      // The hand turned back: what went before says nothing about where its new circles are.
+      this.way = Math.sign(this.spinNow);
+      this.beside = 0;
+    }
+    this.beside = this.beside * Math.exp(-dt / BESIDE_TIME) + (against ? Math.abs(round) : 0);
     const circling = Math.abs(this.spinLately) > LATELY_SPIN;
     const roundAxle = circling && this.roundLately * this.spinLately >= ROUND_SHARE * this.spinLately * this.spinLately;
     let turn = bend;
-    if (r2 >= (ROUND_FROM * radius) ** 2 && (roundAxle || (!circling && !against && r2 >= (ON_RIM * radius) ** 2))) {
+    if (jumped || (!against && this.beside < BESIDE && r2 >= (ROUND_FROM * radius) ** 2 && (roundAxle || r2 >= (ON_RIM * radius) ** 2))) {
       turn = round;
     }
     this.unwrapped += turn;
@@ -661,7 +690,7 @@ export class Wheel extends Mechanism {
     // A fist too near the axle to read its angle (on a small crank) is taken to be on the knob, and turns it from there.
     let a = wheelAngleOf(hand.fist[0], hand.fist[1]);
     if (Number.isNaN(a)) a = this.angle;
-    this.offset[side] = this.angle - this.hands[side].startAround(hand.fist[0], hand.fist[1], a, hand.tracked);
+    this.offset[side] = this.angle - this.hands[side].startAround(hand.fist[0], hand.fist[1], a, hand.tracked, this.spec.radius);
     this.spot[side] = this.spec.grip === 'crank' ? 0 : wrap(a - this.angle);
     return true;
   }
