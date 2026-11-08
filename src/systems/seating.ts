@@ -38,4 +38,14 @@ export const seating = {
    * Back in my seat clears it.
    */
   away: false,
+  /**
+   * The convoy position (docs/convoy-seat.md): this player, as driver, wants
+   * the seat raised to drive with their head out. ConvoySeatSystem sets it;
+   * SeatSystem moves the seat to match through a fade and sets `convoyShown`.
+   */
+  convoy: false,
+  /** The seat as this player sits in it now: raised or not (SeatSystem). */
+  convoyShown: false,
+  /** The crewmate, as driver, has their seat raised (their page's `convoy` event). */
+  crewConvoy: false,
 };

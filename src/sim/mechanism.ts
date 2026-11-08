@@ -351,6 +351,7 @@ function segment(p: Vec3, ax: number, ay: number, az: number, dx: number, dy: nu
   return Math.hypot(p[0] - ax - t * dx, p[1] - ay - t * dy, p[2] - az - t * dz);
 }
 const seg = { t: 0 };
+const shifted: Vec3 = [0, 0, 0];
 
 /** What every mechanism offers its system: taking hold, following the hands, and where a hand on it is drawn. */
 export abstract class Mechanism {
@@ -456,6 +457,17 @@ export class Lever extends Mechanism {
    * Sherman's tillers rest against one and are only pulled back (John's headset test, 1 November 2026).
    */
   forwardStop: number | null = null;
+  /**
+   * A grip away from the handle, or null for none: its top this far from the
+   * handle's top, lever space, m, moving with the handle without turning (a
+   * rod joins them). While it is set the hands hold that grip, upright and
+   * `offsetGripLength` long, instead of the handle, and a hand on it moves
+   * the lever just as it would on the handle. The driver's convoy grips
+   * (src/sim/convoy-seat.ts).
+   */
+  gripOffset: Readonly<Vec3> | null = null;
+  /** The length of the grip at `gripOffset`, m. */
+  offsetGripLength = 0.1;
   private holder: HandIndex | -1 = -1;
   private offset = 0;
   private readonly hand = new HandAngle();
@@ -473,11 +485,24 @@ export class Lever extends Mechanism {
     const { length, gripLength } = this.spec;
     const c = Math.cos(this.angle);
     const s = Math.sin(this.angle);
+    const o = this.gripOffset;
+    if (o) return segment(hand.fist, o[0], length * c + o[1], -length * s + o[2], 0, -1, 0, 0, this.offsetGripLength, seg);
     return segment(hand.fist, 0, 0, 0, 0, c, -s, length - gripLength, length, seg);
   }
 
+  /** Where a fist at `fist` would be on the handle itself: the fist less the offset grip's offset. */
+  private onHandle(fist: Vec3): Vec3 {
+    const o = this.gripOffset;
+    if (!o) return fist;
+    shifted[0] = fist[0] - o[0];
+    shifted[1] = fist[1] - o[1];
+    shifted[2] = fist[2] - o[2];
+    return shifted;
+  }
+
   grab(side: HandIndex, hand: HandInput): boolean {
-    const a = angleOf(hand.fist[1], hand.fist[2]);
+    const f = this.onHandle(hand.fist);
+    const a = angleOf(f[1], f[2]);
     if (Number.isNaN(a) || (this.holder !== -1 && this.holder !== side)) {
       return false;
     }
@@ -503,7 +528,8 @@ export class Lever extends Mechanism {
     let events: number = MechEvent.None;
     if (this.holder !== -1) {
       const hand = hands[this.holder];
-      const smooth = this.hand.step(hand ? angleOf(hand.fist[1], hand.fist[2]) : Number.NaN, dt);
+      const f = hand ? this.onHandle(hand.fist) : null;
+      const smooth = this.hand.step(f ? angleOf(f[1], f[2]) : Number.NaN, dt);
       // NaN keeps the lever where it is for this step: the hand is over the pivot or lost.
       if (ratchet) {
         const trigger = hand ? hand.trigger : 0;
@@ -569,6 +595,13 @@ export class Lever extends Mechanism {
 
   /** The handle's middle in lever space at the current angle, into `out`. */
   gripCentre(out: Vec3): Vec3 {
+    const o = this.gripOffset;
+    if (o) {
+      out[0] = o[0];
+      out[1] = this.spec.length * Math.cos(this.angle) + o[1] - this.offsetGripLength / 2;
+      out[2] = -this.spec.length * Math.sin(this.angle) + o[2];
+      return out;
+    }
     const r = this.spec.length - this.spec.gripLength / 2;
     out[0] = 0;
     out[1] = r * Math.cos(this.angle);
@@ -584,6 +617,18 @@ export class Lever extends Mechanism {
     const { length, gripLength } = this.spec;
     const c = Math.cos(this.angle);
     const s = Math.sin(this.angle);
+    const o = this.gripOffset;
+    if (o) {
+      const ty = length * c + o[1];
+      segment(fist, o[0], ty, -length * s + o[2], 0, -1, 0, 0, this.offsetGripLength, seg);
+      point[0] = o[0];
+      point[1] = ty - seg.t;
+      point[2] = -length * s + o[2];
+      axis[0] = 0;
+      axis[1] = 1;
+      axis[2] = 0;
+      return;
+    }
     segment(fist, 0, 0, 0, 0, c, -s, length - gripLength, length, seg);
     point[0] = 0;
     point[1] = seg.t * c;

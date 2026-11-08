@@ -10,7 +10,9 @@ import {
   SRGBColorSpace,
   Vector3,
 } from '@iwsdk/core';
+import { createConvoyGrip } from '../scene-assets/convoy-seat.scene-asset.js';
 import { createGearReadout, createLamp, createNeedle, LAMP_DARK } from '../scene-assets/driver-station.scene-asset.js';
+import { CONVOY_GRIP, CONVOY_GRIP_OFFSET } from '../sim/convoy-seat.js';
 import { createButtonCap, createLever, createPullKnob, createToggleBat, createToggleNut } from '../scene-assets/mechanism.scene-asset.js';
 import {
   CAP_PROUD,
@@ -55,7 +57,8 @@ import { drive, engineStart, gearboxMode, shownDriverState, shownDriverControls 
 import { handUse } from './grip-system.js';
 import { HoldKind } from './hand-lock.js';
 import { buzz } from './haptics.js';
-import { addControl, type Control } from './mechanism-system.js';
+import { addControl, type Control, letGo } from './mechanism-system.js';
+import { convoyUp } from './convoy-seat-system.js';
 import { ride } from './ride-system.js';
 import { seating } from './seating.js';
 
@@ -159,11 +162,17 @@ interface StationDebug {
  * (the sign is DriveSystem's), and a gear going in gives a clunk in the
  * hand on the gear lever.
  */
+/** The levers that have convoy grips. */
+type ConvoyGripId = 'tillerLeft' | 'tillerRight' | 'gear';
+
 export class DriverStationSystem extends createSystem({}) {
   private root = new Group();
   private levers = {} as Record<DriverControlId, Lever>;
   private mounts = {} as Record<DriverControlId, Group>;
   private pivots = {} as Record<DriverControlId, Object3D>;
+  /** The convoy grips on the tillers and the gear lever, shown while the driver's seat is raised (docs/convoy-seat.md). */
+  private convoyGrips: { id: ConvoyGripId; mesh: Mesh; control: Control }[] = [];
+  private convoy = false;
   private needles: Object3D[] = [];
   private grindClock = 0;
   private grinds = 0;
@@ -220,6 +229,13 @@ export class DriverStationSystem extends createSystem({}) {
         active: id === 'gear' ? () => this.usable() && gearboxMode() !== 'auto' : () => this.usable(),
       };
       this.cleanupFuncs.push(addControl(control));
+      if (id === 'tillerLeft' || id === 'tillerRight' || id === 'gear') {
+        const grip = createConvoyGrip();
+        grip.visible = false;
+        mount.add(grip);
+        lever.offsetGripLength = CONVOY_GRIP.gripLength;
+        this.convoyGrips.push({ id, mesh: grip, control });
+      }
     }
     this.levers.gear.angle = GEAR_ANGLES[drive.gear];
 
@@ -286,9 +302,16 @@ export class DriverStationSystem extends createSystem({}) {
       },
       handle: (id, degrees) => {
         const { spec } = DRIVER_CONTROLS[id];
-        const a = degrees === undefined ? self.levers[id].angle : degrees * DEG;
-        const r = spec.length - spec.gripLength / 2;
+        const lever = self.levers[id];
+        const a = degrees === undefined ? lever.angle : degrees * DEG;
         self.mounts[id].updateWorldMatrix(true, false);
+        // With the seat raised, the convoy grip on it (docs/convoy-seat.md).
+        const o = lever.gripOffset;
+        if (o) {
+          const top = spec.length;
+          return self.tmp.set(o[0], top * Math.cos(a) + o[1] - lever.offsetGripLength / 2, -top * Math.sin(a) + o[2]).applyMatrix4(self.mounts[id].matrixWorld).toArray();
+        }
+        const r = spec.length - spec.gripLength / 2;
         return self.tmp.set(0, r * Math.cos(a), -r * Math.sin(a)).applyMatrix4(self.mounts[id].matrixWorld).toArray();
       },
     };
@@ -655,9 +678,28 @@ export class DriverStationSystem extends createSystem({}) {
     }
   }
 
+  /**
+   * With the driver's seat raised (on this page: the player's own, or the
+   * crewmate driver's), the hands hold the tillers and the gear lever by
+   * their convoy grips, which ride on the handles' tops without turning.
+   * Hands on them let go as the seat moves, so no lever jumps.
+   */
+  private drawConvoyGrips(): void {
+    const up = convoyUp();
+    for (const g of this.convoyGrips) {
+      const lever = this.levers[g.id];
+      if (up !== this.convoy) letGo(g.control);
+      lever.gripOffset = up ? CONVOY_GRIP_OFFSET : null;
+      g.mesh.visible = up;
+      if (up) g.mesh.position.set(0, lever.spec.length * Math.cos(lever.angle), -lever.spec.length * Math.sin(lever.angle));
+    }
+    this.convoy = up;
+  }
+
   /** Turn each lever and needle to where it is now, and show the gear engaged. */
   private draw(): void {
     for (const id of DRIVER_CONTROL_IDS) this.pivots[id].rotation.x = -this.levers[id].angle;
+    this.drawConvoyGrips();
     const s = shownDriverState();
     if (!s) return;
     for (let i = 0; i < DIALS.length; i++) {

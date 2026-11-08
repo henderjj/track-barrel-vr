@@ -110,6 +110,35 @@ describe('rig offset', () => {
     }
   });
 
+  it("keeps the driver's convoy grips and the seat lever in reach from a chair, seat down and raised (docs/convoy-seat.md)", async () => {
+    const { CONVOY_GRIP, CONVOY_GRIP_OFFSET, CONVOY_SEAT, SEAT_LEVER, seatLeverPivot } = await import('../src/sim/convoy-seat.js');
+    const { DRIVER_CONTROLS } = await import('../src/sim/driver-station.js');
+    const raised = rigOffset(targetEyeHeight({ raise: 0, seated: true }), 1.2);
+    const check = (seat: typeof CONVOY_SEAT, p: readonly number[], what: string) => {
+      const y = p[1] - seat.floorY;
+      expect(y - raised, what).toBeGreaterThan(0.45);
+      expect(y - raised, what).toBeLessThan(1.4);
+      // A seated arm's reach (the gear lever is checked against its own reach with the seat down, below).
+      if (!what.startsWith('gear')) expect(Math.hypot(p[0] - seat.eye[0], p[1] - seat.eye[1], p[2] - seat.eye[2]), what).toBeLessThan(0.75);
+    };
+    const eyeTo = (eye: readonly number[], p: readonly number[]) => Math.hypot(p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]);
+    for (const id of ['tillerLeft', 'tillerRight', 'gear'] as const) {
+      const { spec, pivot } = DRIVER_CONTROLS[id];
+      for (const a of [spec.min, spec.rest, spec.max]) {
+        const mid = [pivot[0] + CONVOY_GRIP_OFFSET[0], pivot[1] + spec.length * Math.cos(a) + CONVOY_GRIP_OFFSET[1] - CONVOY_GRIP.gripLength / 2, pivot[2] - spec.length * Math.sin(a) + CONVOY_GRIP_OFFSET[2]];
+        check(CONVOY_SEAT, mid, `${id}'s convoy grip`);
+        // No further from the raised eyes than the handle is from the eyes with the seat down, give or take the grip's drop.
+        const handle = [pivot[0], pivot[1] + (spec.length - spec.gripLength / 2) * Math.cos(a), pivot[2] - (spec.length - spec.gripLength / 2) * Math.sin(a)];
+        expect(eyeTo(CONVOY_SEAT.eye, mid), id).toBeLessThan(eyeTo(SEATS.driver.eye, handle) + 0.05);
+      }
+    }
+    for (const up of [false, true]) {
+      const pivot = seatLeverPivot(up, [0, 0, 0]);
+      const grip = [pivot[0], pivot[1] + SEAT_LEVER.length - SEAT_LEVER.gripLength / 2, pivot[2]];
+      check(up ? CONVOY_SEAT : SEATS.driver, grip, `seat lever, seat ${up ? 'up' : 'down'}`);
+    }
+  });
+
   it('never lifts the rig more than its limit', () => {
     expect(rigOffset(1.8, 0.7)).toBe(MAX_RAISE);
   });

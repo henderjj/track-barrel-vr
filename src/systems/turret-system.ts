@@ -17,6 +17,7 @@ import {
   MAX_ELEVATION,
   MIN_ELEVATION,
   extrapolateTurretState,
+  keepOutOf,
   lerpTurretState,
   POWER_GRIP,
   POWER_TRAVERSE_MIN_RPM,
@@ -30,7 +31,9 @@ import {
   wheelForElevation,
   wrapAngle,
 } from '../sim/turret.js';
+import { GUN_STOP } from '../sim/convoy-seat.js';
 import { slewTurret } from '../sim/turret-dial.js';
+import { convoyUp } from './convoy-seat-system.js';
 import { engineRpm, startEngine } from './drive-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { HoldKind } from './hand-lock.js';
@@ -163,6 +166,8 @@ interface TurretDebug {
   readonly sent: number;
   readonly received: number;
   readonly lateFrames: number;
+  /** How many times the driver's head out has stopped the turret (F2.8). */
+  readonly headOutStops: number;
 }
 
 /**
@@ -225,6 +230,10 @@ export class TurretSystem extends createSystem({}) {
   private signText = '';
   private signUntil = 0;
   private toldNoPower = false;
+  /** Whether the turret's sign has said the driver's head stops it (until the head goes back in). */
+  private toldHeadOut = false;
+  /** How many times the head-out stop has held the turret (tests). */
+  headOutStops = 0;
   private time = 0;
   private head = new Vector3();
 
@@ -278,6 +287,7 @@ export class TurretSystem extends createSystem({}) {
       get sent() { return self.sent; },
       get received() { return self.received; },
       get lateFrames() { return self.buffer.late; },
+      get headOutStops() { return self.headOutStops; },
     };
   }
 
@@ -418,18 +428,34 @@ export class TurretSystem extends createSystem({}) {
     }
     // The Practice shortcut's turn (F2.3) gives way to the gunner's hands and to a test's traverse.
     if (this.slewTarget !== null && (this.grip.anyHeld || this.crankWheel.anyHeld || o?.traverse !== undefined || ride.active)) this.slewTarget = null;
+    // The driver's head out of the hatch (F2.8): the gun can't be turned through it.
+    const stop = convoyUp() ? GUN_STOP : null;
+    if (!stop) this.toldHeadOut = false;
+    let stopped = false;
     let first = true;
     for (let left = dt; left > 1e-6; left -= MAX_STEP) {
       const step = Math.min(left, MAX_STEP);
+      const before = this.sim.yaw;
       if (this.slewTarget !== null) {
         if (slewTurret(this.sim, this.slewTarget, step)) this.slewTarget = null;
         this.sim.elevation = Math.min(MAX_ELEVATION, Math.max(MIN_ELEVATION, input.elevation));
-        continue;
+      } else {
+        // The crank's turn is applied once, in the first step.
+        input.crank = first ? crankTurned : 0;
+        first = false;
+        stepTurret(this.sim, input, rpm, step);
       }
-      // The crank's turn is applied once, in the first step.
-      input.crank = first ? crankTurned : 0;
-      first = false;
-      stepTurret(this.sim, input, rpm, step);
+      if (stop && keepOutOf(this.sim, before, stop)) {
+        stopped = true;
+        this.slewTarget = null;
+      }
+    }
+    if (stopped) {
+      this.headOutStops++;
+      if (!this.toldHeadOut) {
+        this.toldHeadOut = true;
+        this.say("Driver's head is out", ['The turret stops short of their hatch', 'Turn the other way round, or they lower the seat']);
+      }
     }
     this.sim.crank = wrapAngle(crank);
     this.sim.twist = this.grip.angle;

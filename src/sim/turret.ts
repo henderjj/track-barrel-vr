@@ -274,6 +274,32 @@ export function stepTurret(s: TurretState, input: GunnerInput, rpm: number, dt: 
   return s;
 }
 
+/** A band of turret turns the barrel may not enter: yaw `from` to `to`, radians, positive left, not across ±π. */
+export interface TraverseStop {
+  readonly from: number;
+  readonly to: number;
+}
+
+/**
+ * Hold the turret out of `stop` after a step that started at `before`: a
+ * turn into the band (or across it) ends at the edge it came to, its
+ * traverse stopped. A turret already inside the band (the stop came on
+ * with it there) is free to leave either way. Returns whether it stopped.
+ */
+export function keepOutOf(s: TurretState, before: number, stop: TraverseStop): boolean {
+  if (before > stop.from && before < stop.to) return false;
+  const after = before + angleDelta(before, s.yaw);
+  if (before <= stop.from && after > stop.from) {
+    s.yaw = stop.from;
+  } else if (before >= stop.to && after < stop.to) {
+    s.yaw = stop.to;
+  } else {
+    return false;
+  }
+  s.rate = 0;
+  return true;
+}
+
 /** Between two states (the other page draws the turret between the packets it gets), the short way round. */
 export function lerpTurretState(a: TurretState, b: TurretState, t: number, out: TurretState): TurretState {
   out.yaw = wrapAngle(a.yaw + angleDelta(a.yaw, b.yaw) * t);

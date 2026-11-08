@@ -52,6 +52,8 @@ The running record of where the game is and what comes next, so anyone (or any C
 - Real Sherman heights ([crew-heights.md](crew-heights.md)), from John's note that the avatars should have real proportions and every crewman must see through the slit, periscopes and sights. Against the M4A4's manual (TM 9-754) and spec sheets, the tank was about 25% too tall and the crew stretched to fill it. John picked "real heights, comfy loading": the seats put the eyes 79 cm over the cushion and 1.27 m over the floor, the hull roof is 24 cm over the driver's eyes (35 before), the ground 46 cm under the floor (60), the gun at a Sherman's 2.24 m with the gunner's eyes still 20 cm over it for loading, and the turret roof 35 cm over them (50). Every control kept its place relative to the eyes. The periscopes tip 15° (30° was too steep), the avatar's torso is real length, and eye height now runs from −15 to +5 cm.
 - Driver's roof down to a real Sherman's ([crew-heights.md](crew-heights.md#head-out-and-the-gun)), after John's look at the cross-section showed the head-out driver's head in the gun's path: the roof is 20 cm over the driver's eyes (24 before), with the periscope crank level with its window and smaller, and a slimmer brow pad. The head-out seat (F2.8) is to be rebuilt on it with a lower raise and a turret stop.
 
+- Head-out driving (F2.8, [convoy-seat.md](convoy-seat.md)): the driver can raise the seat to the convoy position, as Sherman drivers did on the march, with the seat lever by the right thigh or Practice → Drive the tank → Head out. The view fades, the seat rises 33 cm, and the driver's head is out of the hatch, the lid swung aside and the periscope lowered. The tillers and the gear lever get convoy grips up where seated hands rest, since from a chair a raised driver's hands can't reach them where they are. The gunner's page draws the driver raised (`convoy` event), and while the driver's head is out the turret stops before the barrel reaches it.
+
 ## Next
 
 - Finish Phase 1: the periscopes for both crew (#62, replacing F1.6), the seated avatars' headset check (F1.1b), and trying the practice crewmate (F1.13) and a range run's stats and CSV (F1.14).
@@ -61,6 +63,7 @@ The running record of where the game is and what comes next, so anyone (or any C
 
 ## Waiting on a headset check
 
+- F2.8 head-out driving: the steps in [convoy-seat.md](convoy-seat.md#headset-check): the seat's move, the view head out, driving by the convoy grips, the head box in the hatch, the seat lever, comfort on the move and the frame time.
 - Real Sherman heights: the steps in [crew-heights.md](crew-heights.md#headset-check): the roof close over the head, the road nearer through the slit, each periscope's gentler angle and shorter rise, the controls where they were, the crewmate's proportions and the frame time. It also covers the periscopes' tilt from F1.19's check.
 
 - F1.1b the seated avatars: the steps in [seated-avatars.md](seated-avatars.md#headset-check): the crewmate joined at the hips from each seat, leaning in to the sight, a second player leaning, turning and nodding, the neck, and the frame time.

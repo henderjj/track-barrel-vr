@@ -170,7 +170,7 @@ function spec(
  * above the eyes and 13.5 cm ahead, tipped to face down towards them: sit up
  * a little and lean in to look up into it, sit back to see through the
  * slit, which it stays clear of, behind the slit's brow pad. Its head stands on the roof just behind the hood's face, ahead
- * of the hatch's lid standing open in front of the hole.
+ * of the hatch (whose lid swings aside to its left when open, docs/convoy-seat.md).
  */
 export const DRIVER_PERISCOPE = spec('driver', "driver's", 'periscope', 'hull', [SEATS.driver.eye[0], -1.86], HULL.roof, 0.09, 0.135);
 
@@ -256,7 +256,7 @@ export function periscopesLine(driverAngle: number, gunnerAngle: number): string
 /** The lowest the gun's barrel comes over the hull's roof with the gun level, hull y, m: the driver's head stays under it. */
 export const BARREL_UNDERSIDE = GUN.y - GUN.barrelRadius;
 
-/** The driver's hatch's open lid stands this far in front of the hole, its thickness, as cabin.scene-asset.ts draws it (m). */
+/** Room kept in front of the driver's hatch, where its lid stood open before it swung aside (F2.8), and that lid's thickness (m). */
 export const DRIVER_LID = { gap: 0.03, thickness: 0.05 } as const;
 
 /** The front of the driver's hatch's open lid, hull z: the driver's head on the roof stays ahead of it. */

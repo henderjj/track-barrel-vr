@@ -12,13 +12,13 @@ import {
   RESEAT_AFTER,
   type RigPlace,
   type SeatId,
-  SEATS,
   seatingWith,
   seatToHull,
   type SwapAsks,
   swapAgreed,
   SWAP_WAIT_SECONDS,
 } from '../sim/cabin.js';
+import { CONVOY_MOVE, type ConvoyMove, seatAs, stepConvoyMove } from '../sim/convoy-seat.js';
 import { body } from './body-height-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { netLink } from './net-system.js';
@@ -99,6 +99,8 @@ export class SeatSystem extends createSystem({}) {
   private sign!: FloatingSign;
   private signUntil = 0;
   private signText = '';
+  /** The driver's seat on its way up to the convoy position or down (docs/convoy-seat.md). */
+  private convoyMove: ConvoyMove = { shown: false, t: -1 };
 
   init(): void {
     this.sign = new FloatingSign('Seat Sign', 0.7, [560, 160], 1.1, 0.3);
@@ -165,7 +167,11 @@ export class SeatSystem extends createSystem({}) {
       get crew() { return seating.crew; },
       ask: (seat) => this.ask(seat),
       reseat: () => seating.reseat(),
-      eye: (seat) => seatToHull(SEATS[seat], seating.turretYaw, SEATS[seat].eye, [0, 0, 0]),
+      eye: (seat) => {
+        // The driver's seat as it stands: raised in the convoy position (docs/convoy-seat.md).
+        const s = seatAs(seat, seat === 'driver' && this.convoyMove.shown);
+        return seatToHull(s, seating.turretYaw, s.eye, [0, 0, 0]);
+      },
       head: () => this.player.head.getWorldPosition(new Vector3()).toArray(),
       get fixes() { return self.fixes; },
       get fade() { return self.fade; },
@@ -179,7 +185,8 @@ export class SeatSystem extends createSystem({}) {
     this.shareSeats();
     this.updateSwap(delta);
     const player = this.player;
-    const seat = SEATS[seating.mine];
+    const convoyDark = this.stepConvoy(delta);
+    const seat = seatAs(seating.mine, this.convoyMove.shown);
     netLink.feet = seat.floorY;
     if (seating.away !== this.wasAway) {
       // Back from a spike's seat: sit down here afresh.
@@ -238,7 +245,7 @@ export class SeatSystem extends createSystem({}) {
       }
       this.lastFix = fix;
     }
-    this.setFade(this.needsPlace ? 0 : headFade(Math.max(out, over)));
+    this.setFade(Math.max(convoyDark, this.needsPlace ? 0 : headFade(Math.max(out, over))));
     if (this.needsPlace) {
       this.needsPlace = false;
       this.headQuat.copy(player.head.quaternion);
@@ -250,6 +257,38 @@ export class SeatSystem extends createSystem({}) {
       seating.placements++;
       console.info(`[Seat] in the ${seat.label.toLowerCase()}'s seat`);
     }
+  }
+
+  /**
+   * Raise or lower the driver's seat to match `seating.convoy`: in VR the
+   * view fades out, the seat moves (the play space with it, so the player
+   * keeps their place on the seat) and the view fades back in; on a flat page
+   * at once. Returns how dark the move has made the view.
+   */
+  private stepConvoy(delta: number): number {
+    const move = this.convoyMove;
+    if (seating.mine !== 'driver') seating.convoy = false;
+    const wanted = seating.mine === 'driver' && seating.convoy;
+    const inVr = this.world.session != null && !seating.away;
+    const was = move.shown;
+    let dark = 0;
+    if (inVr && seating.mine === 'driver') {
+      dark = stepConvoyMove(move, wanted, Math.min(delta, 0.1));
+    } else {
+      move.shown = wanted;
+      move.t = -1;
+    }
+    if (move.shown !== was) {
+      if (inVr && seating.mine === 'driver' && !this.needsPlace) {
+        // The driver's frame is the hull's: the play space moves with the seat. Its height follows the seat's floor.
+        const sign = move.shown ? 1 : -1;
+        this.player.position.x += sign * CONVOY_MOVE[0];
+        this.player.position.z += sign * CONVOY_MOVE[2];
+      }
+      console.info(`[Seat] driver's seat ${move.shown ? 'raised to the convoy position' : 'lowered'}`);
+    }
+    seating.convoyShown = move.shown;
+    return dark;
   }
 
   /** Darken the view to `fade` (0 clear, 1 black). */

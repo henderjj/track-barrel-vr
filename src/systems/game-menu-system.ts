@@ -18,6 +18,7 @@ import { turretToHour } from './turret-dial-system.js';
 import { watchTheLamp } from './firing-lamp-system.js';
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
+import { headOut } from './convoy-seat-system.js';
 import { seating } from './seating.js';
 import { PERISCOPE_BUTTONS, periscopeStatus } from './periscope-system.js';
 import { SIGHT_BUTTONS, sightStatus } from './sight-system.js';
@@ -360,6 +361,12 @@ export class GameMenuSystem extends createSystem({}) {
     ui.on('menu-turret-forward', () => {
       turretForward();
       this.render();
+    });
+    ui.on('menu-head-out', () => {
+      // The convoy position (docs/convoy-seat.md): alone, into the driver's seat; the seat goes up, or down again.
+      this.setOpen(false);
+      stopRide();
+      headOut();
     });
     ui.on('menu-turret-dial', () => {
       // The driver's turret dial (F2.3): alone, into the driver's seat, and the turret turns to 3 o'clock.
