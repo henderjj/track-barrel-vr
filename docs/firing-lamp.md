@@ -55,7 +55,7 @@ A lit lamp halts the crewmate wherever it is going: a gunner who wants to move w
 - `npm run test:xr`, step 6p (part 3): Practice → Ready to fire → Driver's lamp seats the player as driver and lights the lamp at once; about 3 s later the gun fires, the lamp flashes and goes dark with the breech open. Then, as gunner, `holdGrip` puts a hand on the power grip, seen as a hand on a trigger with the lamp dark (breech open). Screenshots: `artifacts/xr-firing-lamp.png`, `artifacts/xr-firing-lamp-repeater.png`.
 - `npm run test:net` (`ONLY_BOT=1`): the crewmate gunner loads with its hands on the wheel and grip, and the player driver's lamp lights from its packets and flashes at its shot. Then with the player gunning (Ready to fire, then a hand on the grip) and the crewmate advancing, the lamp lights on both pages and the crewmate halts and holds steady; the hand off the grip puts it out and the crewmate drives on.
 
-`window.__firingLamp` gives `state()` (loaded, handOnTrigger, practice, ready, look, flashes, practiceFire), `watch()` (the Practice shortcut), `holdGrip(on)` (the tests' scripted hand on the power grip) and `at()` (each lens's place, hull space, and which way it faces).
+`window.__firingLamp` gives `state()` (loaded, handOnTrigger, practice, ready, look, flashing, flashes, practiceFire), `watch()` (the Practice shortcut), `holdGrip(on)` (the tests' scripted hand on the power grip) and `at()` (each lens's place, hull space, and which way it faces).
 
 ## Headset check
 

@@ -43,6 +43,7 @@ describe('the firing lamp (F2.5)', () => {
     expect(lamp.step(DT, false)).toBe('dark');
     lamp.step(DT, true);
     lamp.fired();
+    expect(lamp.flashing).toBe(true);
     // Through the flashes: the breech opens at the shot, so not ready from the first frame.
     const looks: LampLook[] = [];
     for (let t = 0; t < FLASH_SECONDS + 0.2; t += DT) looks.push(lamp.step(DT, false));
@@ -57,6 +58,7 @@ describe('the firing lamp (F2.5)', () => {
       expect(frames * DT).toBeCloseTo(look === 'flash' ? FLASH.on : FLASH.off, 1);
     }
     expect(lamp.flashes).toBe(1);
+    expect(lamp.flashing).toBe(false);
     expect(FLASH_SECONDS).toBeLessThan(1);
     // Loaded again with the hand still on: lit.
     expect(lamp.step(DT, true)).toBe('lit');
