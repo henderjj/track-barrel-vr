@@ -16,7 +16,7 @@ The driver drives with their hands: two tillers, a gear lever (worked by hand, t
 
 ## Numbers
 
-Hull space, as in [cabin.md](cabin.md); the driver's eye point is (−0.5, 1.45, −1.6).
+Hull space, as in [cabin.md](cabin.md); the driver's eye point is (−0.5, 1.27, −1.6).
 
 | What | Value | Why |
 | --- | --- | --- |

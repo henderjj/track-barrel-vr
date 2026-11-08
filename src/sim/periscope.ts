@@ -47,12 +47,13 @@ export const WINDOW_PROUD = 0.004;
 
 /**
  * The eyepiece (box, window and all) is tipped forwards this far, radians,
- * so its window faces down towards the seat as well as back (John's headset
- * note, 2026-11-07: sitting up 12 to 14 cm to a window facing straight back
- * was too far). The eyes look up into it and see the view out of the head,
- * level: the picture is at infinity along the window's axis. So the eyes meet
- * it lower and nearer, 5 to 9 cm above the eye point instead of 12 to 14,
- * while the box stays as high, clear of the slit's view and the gunsight.
+ * so its window faces a little down towards the seat as well as back (John's
+ * headset note, 2026-11-07: sitting up 12 to 14 cm to a window facing straight
+ * back was too far; 2026-11-08: 30° was too steep to look into comfortably).
+ * The eyes look up into it and see the view out of the head, level: the
+ * picture is at infinity along the window's axis. Under a Sherman's lower roof
+ * (docs/crew-heights.md) the windows sit nearer the eyes, so a gentle tilt is
+ * enough: the eyes meet them about 7.5 cm (driver's) and 11 cm (gunner's) up.
  */
 export const EYEPIECE_TILT = 15 * DEG;
 
@@ -165,7 +166,7 @@ function spec(
 
 /**
  * The driver's: in the hull roof ahead of their hatch, over the vision slit
- * (as a Sherman driver's periscope was in his hatch). Its window is 10 cm
+ * (as a Sherman driver's periscope was in his hatch). Its window is 9 cm
  * above the eyes and 13.5 cm ahead, tipped to face down towards them: sit up
  * a little and lean in to look up into it, sit back to see through the
  * slit, which it stays clear of, behind the slit's brow pad. Its head stands on the roof just behind the hood's face, ahead
@@ -176,8 +177,8 @@ export const DRIVER_PERISCOPE = spec('driver', "driver's", 'periscope', 'hull', 
 /**
  * The gunner's: in the turret roof ahead of their hatch, right over the
  * gunsight's eyepiece (where a Sherman's gunner's and commander's periscopes
- * were). Its window is 12 cm over the sight's, tipped to face down towards
- * the eyes: sit up from the sight to look round, drop back to it to shoot.
+ * were). Its window is 12.5 cm over the sight's, just clear of its hood,
+ * tipped to face down towards the eyes: sit up from the sight to look round, drop back to it to shoot.
  * Whichever window the eyes are nearer has them (the sight's and this one
  * never both open). It turns with the turret, so its angle is
  * from the gun's line.

@@ -67,7 +67,7 @@ Bodies, hands and comfort:
 - Hands only, no arms. Pose the gloves from trigger, grip and touch sensors (`src/sim/hand-pose.ts`); lock them onto handles while gripped; let go when the real hand strays 25 cm from the handle.
 - WebXR grip space has its origin at the fist with −Z along the handle towards the thumb: align a held thing to the model's own fist axis (`FIST_AXIS`), not the controller's.
 - Read grip state from `grip` in `src/systems/grip-system.ts`, not the gamepad, so controllers and tracked hands (fist or pinch) both work.
-- Put every control between knee and chest height and check it is reachable seated (eyes raised to 1.45 m); add it to `test/body-height.test.ts`.
+- Put every control between knee and chest height and check it is reachable seated (eyes raised to 1.27 m, a Sherman crewman's, `SEATED_EYE`); add it to `test/body-height.test.ts`.
 - Keep the player in their seat by limiting where their head can go, not where the play space's origin is, so a lean or a step in the real room can't carry their head through the armour. This is `SeatSystem`, with each seat's head box in `src/sim/cabin.ts`; change the boxes there when the cabin changes. A feature that seats the player somewhere else sets `seating.away` while it does.
 - Never judge an object's speed from its drawn position over one frame: after a slow frame several physics steps land at once. Read the physics body's velocity, and move held objects to the hand each frame.
 - If players ride a moving vehicle, keep its floor under their feet and limit its lean to a few degrees. Whenever the game halts or pauses the vehicle by itself (the crewmate stepped away, a reconnect, a stop button), put a sign in front of the player saying why, so a sudden stop doesn't read as a bug.

@@ -12,7 +12,7 @@ A small amber lamp in the middle of the vision slit's top bar lights by itself w
 
 ## Numbers
 
-Hull space for the lamp, turret space for the repeater, as in [cabin.md](cabin.md). The driver's eye point is (−0.5, 1.45, −1.6); the gunner's (0.4, 2.25, −0.2).
+Hull space for the lamp, turret space for the repeater, as in [cabin.md](cabin.md). The driver's eye point is (−0.5, 1.27, −1.6); the gunner's (0.4, 1.98, −0.2).
 
 | What | Value | Why |
 | --- | --- | --- |
