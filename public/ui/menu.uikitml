@@ -412,6 +412,15 @@
               <Button id="row-lamps-3" class="choice" size="sm" variant="secondary">Choice</Button>
             </div>
           </div>
+          <div id="row-card" class="setting">
+            <div id="row-card-label" class="label">Setting</div>
+            <div id="row-card-choices" class="choices">
+              <Button id="row-card-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-card-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-card-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-card-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
           <div id="row-hud" class="setting">
             <div id="row-hud-label" class="label">Setting</div>
             <div id="row-hud-choices" class="choices">
