@@ -274,7 +274,7 @@ async function waitForPoses(pages, count = 30) {
  * cushion plus hipPoint's offset (src/sim/cabin.ts), the gunner's turned
  * with the turret (facing forward until F1.8) about its ring at z = 0.2.
  */
-const HIPS = { driver: [-0.5, 0.63, -1.41], gunner: [0.4, 1.43, 0.16] };
+const HIPS = { driver: [-0.5, 0.56, -1.41], gunner: [0.4, 1.27, 0.16] };
 
 /**
  * Seats (F1.1): the host decides. The host keeps the seat they had
@@ -928,9 +928,11 @@ async function lobbyChecks(browser, host, guest) {
     JSON.stringify(hz));
   const height = await solo.page.evaluate(() => {
     const m = window.__gameMenu;
-    m.click('height-up');
-    m.click('height-up');
+    // Down a step, back up, then up twice: the second stops at +5 cm, all a Sherman's roof leaves room for.
     m.click('height-down');
+    m.click('height-up');
+    m.click('height-up');
+    m.click('height-up');
     const result = { shown: m.text('height-value'), raise: window.__body.state.choice.raise, pointLit: m.selected('height-own'),
       stored: localStorage.getItem('track-barrel.settings') };
     m.click('height-own');
