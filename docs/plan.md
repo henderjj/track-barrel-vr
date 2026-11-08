@@ -131,7 +131,7 @@ The concept's five phases, with a Phase 0 for groundwork and a Phase 6 for polis
 
 - **Phase 0, groundwork:** rename the template to Track & Barrel VR, bring in the concept, this plan and the roadmap, and run spikes S1–S4.
 - **Phase 1, core controls prototype (current priority):** the cabin and seats, the mechanism kit, driving, the turret, the gunsight, loading and firing, the test range with static targets, tank audio, the practice crewmate in both seats, comfort options and play-test stats. Ends with the concept's Phase 1 play-test questions answered (§14 there).
-- **Phase 2, crew indicators and the first game mode:** turret position dial, hull direction indicator, firing lamp, the callout vocabulary card, and the tank biathlon (F5.3, brought forward so the controls are played in a game mode before any combat).
+- **Phase 2, crew indicators and the first game mode:** turret position dial, hull direction indicator, firing lamp, the callout vocabulary card, and the tank biathlon (F5.3, brought forward so the controls are played in a game mode before any combat, and split into its course F5.3a and race F5.3b). The order and the threads are in [phase-2-plan.md](phase-2-plan.md).
 - **Phase 3, combat and damage:** ammunition types with distinct effects, enemies that shoot back, damage, and repair tasks inside the tank.
 - **Phase 4, training:** the five training stages and the callouts taught in them. The turret travel lock and autoloader are parked until play tests show they are needed.
 - **Phase 5, content and replay:** realism tiers, hatches, scenarios, ghosts, after-action replay, per-role stats, randomisation and weather, crew ranks.

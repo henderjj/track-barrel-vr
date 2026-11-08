@@ -217,10 +217,10 @@ describe('the wheel and the crank', () => {
   });
 
   it('turns smoothly with the hand going round a circle off the axle, never stopping or jumping', () => {
-    // A hand circling 4 cm off the crank's axle passes 4 cm from it, too near to read its angle there.
-    for (const [ox, oy] of [[0.04, 0], [0, 0.04], [-0.03, -0.03]]) {
+    // A hand circling 4 cm off the crank's axle passes 4 cm from it, too near to read its angle there; or circling inside the knob's circle, 0.7 of it.
+    for (const [ox, oy, k] of [[0.04, 0, 1], [0, 0.04, 1], [-0.03, -0.03, 1], [0, 0, 0.7]]) {
       const crank = new Wheel(CRANK);
-      const r = CRANK.radius;
+      const r = CRANK.radius * k;
       const at = (deg: number) => hand(ox - r * Math.sin(deg * DEG), oy + r * Math.cos(deg * DEG), 0.04);
       expect(crank.grab(1, at(0))).toBe(true);
       let before = crank.angle;
@@ -237,6 +237,22 @@ describe('the wheel and the crank', () => {
       expect(crank.turns).toBeGreaterThan(1.9);
       expect(crank.turns).toBeLessThan(2.1);
     }
+  });
+
+  it('turns by how far the hand moves round, so a hand drifting to and fro over the middle of a small crank hardly turns it (John, 2026-11-07)', () => {
+    // A crank the size of the periscopes' (5.5 cm), the hand drifting 2 cm to and fro across its axle, 1 cm above it.
+    const crank = new Wheel({ ...CRANK, radius: 0.055 });
+    const at = (x: number) => hand(x, 0.01, 0.04);
+    expect(crank.grab(1, at(0))).toBe(true);
+    let furthest = 0;
+    for (let i = 1; i <= 180; i++) {
+      crank.update(DT, right(at(0.01 * Math.sin((i * 2 * Math.PI) / 45))));
+      furthest = Math.max(furthest, Math.abs(crank.angle));
+    }
+    for (let i = 0; i < 30; i++) crank.update(DT, right(at(0)));
+    // Its angle round the axle swings 90° each way; the crank moves no more than the 1 cm on its knob's circle, and comes back.
+    expect(furthest / DEG).toBeLessThan(15);
+    expect(Math.abs(crank.angle / DEG)).toBeLessThan(1);
   });
 
   it('takes hold of a fist too near the axle to read as if it were on the knob, and turns from there', () => {

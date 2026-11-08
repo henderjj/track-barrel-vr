@@ -245,6 +245,24 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
+  it("on the driver's turret position dial (F2.3): its case on the hull, the face in it and the pointer turned every way", async () => {
+    const { Group } = await import('@iwsdk/core');
+    const { TURRET_DIAL, pointerAngle } = await import('../src/sim/turret-dial.js');
+    const { createDialPointer, createTurretDialFace } = await import('../src/scene-assets/turret-dial.scene-asset.js');
+    const hull = cabin.createHull();
+    for (const yaw of [0, 0.4, -Math.PI / 2, Math.PI, 2.5]) {
+      const mount = new Group();
+      mount.position.set(TURRET_DIAL.x, TURRET_DIAL.y, TURRET_DIAL.z);
+      mount.rotation.y = TURRET_DIAL.yaw;
+      mount.add(createTurretDialFace());
+      const pointer = createDialPointer();
+      pointer.rotation.z = pointerAngle(yaw);
+      mount.add(pointer);
+      mount.updateMatrixWorld(true);
+      expectNone([hull, mount], CABIN_GAP);
+    }
+  });
+
   it("on the crew's periscopes (F1.6, F1.19): eyepieces, windows and cranks fixed, shafts and heads turned every way, the gunner's in the turning turret", async () => {
     const periscope = await import('../src/scene-assets/periscope.scene-asset.js');
     const { PERISCOPE_CRANK, PERISCOPES } = await import('../src/sim/periscope.js');
