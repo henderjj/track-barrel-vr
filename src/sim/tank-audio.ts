@@ -67,29 +67,10 @@ export const LINK_PITCH = 0.15;
 /** The clatter's rate tops out here, Hz (above it the links blur into the rumble). */
 export const MAX_CLATTER_HZ = 45;
 
-/** While either player speaks the tank's sounds drop this far, dB (concept §6: the intercom stays clear). */
-export const DUCK_DB = -6;
-/** A voice's RMS level (0 to 1) at or above this counts as talking in the run's stats (F1.14); Chromium's noise suppression leaves the room below it. */
+/** While either player speaks the tank's sounds drop this far, dB (concept §6: the intercom stays clear). It was −6 dB until John's play test (2026-11-07): the output really did drop 6 dB, but under a voice nobody could hear it. */
+export const DUCK_DB = -12;
+/** A voice's RMS level (0 to 1) at or above this counts as speaking; Chromium's noise suppression leaves the room below it. */
 export const SPEAKING_LEVEL = 0.01;
-/**
- * The duck listens to the voices above this, Hz (two high-passes, in
- * src/net/voice.ts): the headset's microphone also hears the tank from the
- * headset's own speakers, and Chromium's echo canceller doesn't take out
- * sound played through Web Audio. The engine and tracks are low-passed
- * below 900 Hz, so they drop 20 to 35 dB here; speech keeps its consonants
- * and upper formants.
- */
-export const SPEECH_BAND_HZ = 1000;
-/** A voice's level in that band at or above this can be speech. */
-export const SPEECH_LEVEL = 0.006;
-/**
- * ...and only if it stands this far above the voice's steady background
- * (the tank heard through the microphone, a fan, the room), linear (6 dB).
- */
-export const SPEECH_OVER_FLOOR = 2;
-/** The background follows a quieter voice down fast (a gap between words) and a louder one up slowly (a sound that stays), s. */
-export const FLOOR_FALL = 0.15;
-export const FLOOR_RISE = 5;
 /** Speech keeps the duck this long after the last loud moment, s, so it doesn't pump between words. */
 export const DUCK_HOLD = 0.35;
 /** How fast the duck comes in and lets go, s (time constants). */
@@ -188,60 +169,19 @@ export function whineVoice(rate: number, out: { freq: number; gain: number }): {
   return out;
 }
 
-/** A voice in the speech band since it was last read: its loudest 10 ms and its quietest, RMS 0 to 1. */
-export interface SpeechReading {
-  level: number;
-  quiet: number;
-}
-
-/**
- * Whether one voice is speaking: its level (in the speech band) loud enough
- * and well above its steady background. Without the background, the tank
- * picked up by the microphone counted as speech, so the duck stayed in
- * whenever the engine ran and nobody heard it dip (John's play test,
- * 2026-11-07).
- *
- * The background is kept as it would be with the tank not ducked (the
- * level over the duck's gain): the microphone hears the tank ducked too, so
- * otherwise the background would follow it down and the tank coming back
- * up after speech would read as speech again, pumping the duck.
- */
-export class VoiceGate {
-  /** The steady background, as the level would be with the tank not ducked. */
-  floor = 0;
-
-  /** `level` is the loudest of the voice since the last step, `quiet` the quietest (the same if it was measured once). */
-  step(level: number, duckGain: number, dt: number, quiet = level): boolean {
-    const speech = level >= SPEECH_LEVEL && level / duckGain >= this.floor * SPEECH_OVER_FLOOR;
-    const background = quiet / duckGain;
-    const tau = background > this.floor ? FLOOR_RISE : FLOOR_FALL;
-    this.floor += (background - this.floor) * (1 - Math.exp(-dt / tau));
-    return speech;
-  }
-}
-
 /**
  * The intercom's duck: the tank's sounds drop by DUCK_DB while this
- * player's microphone or the crewmate's voice is speaking (VoiceGate, on
- * their speech-band levels), coming in fast and letting go slowly after
- * DUCK_HOLD.
+ * player's microphone or the crewmate's voice is above SPEAKING_LEVEL,
+ * coming in fast and letting go slowly after DUCK_HOLD.
  */
 export class Ducker {
   /** The gain now, linear (1 not ducked). */
   gain = 1;
   speaking = false;
-  /** Who is speaking this frame. */
-  micSpeaking = false;
-  crewSpeaking = false;
   private hold = 0;
-  private readonly mic = new VoiceGate();
-  private readonly crew = new VoiceGate();
 
-  /** Each voice's loudest level since the last step, and optionally its quietest (VoiceGate). */
-  step(micLevel: number, crewLevel: number, dt: number, micQuiet = micLevel, crewQuiet = crewLevel): number {
-    this.micSpeaking = this.mic.step(micLevel, this.gain, dt, micQuiet);
-    this.crewSpeaking = this.crew.step(crewLevel, this.gain, dt, crewQuiet);
-    if (this.micSpeaking || this.crewSpeaking) {
+  step(micLevel: number, crewLevel: number, dt: number): number {
+    if (micLevel >= SPEAKING_LEVEL || crewLevel >= SPEAKING_LEVEL) {
       this.hold = DUCK_HOLD;
     } else {
       this.hold = Math.max(0, this.hold - dt);
