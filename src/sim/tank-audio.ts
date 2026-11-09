@@ -1,17 +1,20 @@
 /**
- * The tank's sounds (F1.12, docs/audio.md), engine-free: what the
- * continuous sounds do with the engine's RPM, the tracks' speed and the
- * turret's turn, the short sounds rendered once into sample buffers, when a
- * change in the tank's state makes one of them, and how far the mix ducks
- * while someone speaks on the intercom.
+ * The tank's sounds (F1.12, rebuilt in F6.1; docs/audio.md), engine-free:
+ * what the continuous sounds do with the engine's RPM and load, the tracks'
+ * speeds, the turret's turn and the gunner's handwheels; when a change in
+ * the tank's state makes a short sound; how far the mix ducks while
+ * someone speaks on the intercom; and where in the tank each sound comes
+ * from. The samples themselves are rendered in src/sim/sound-render.ts and
+ * played by TankSoundGraph (src/systems/tank-sound-graph.ts).
  *
- * Everything is synthesised (no CDN or sample files): `renderSound` and
- * `renderNoiseLoop` are deterministic, so the tests can check them and both
- * pages hear the same thing. TankAudioSystem plays them through Web Audio.
+ * The tank is an M4A4 Sherman, so the numbers are a Sherman's: Chrysler's
+ * A57 multibank petrol engine (five six-cylinder banks, thirty cylinders),
+ * a five-speed gearbox and final drives beside the driver, steel tracks of
+ * six-inch links, and an electric power traverse.
  */
+import { GUN } from './cabin.js';
 import { MAX_SPEED, MAX_TRAVERSE } from './comfort.js';
-import { LEVER_CLOSED } from './loading.js';
-import { rng } from './random.js';
+import { CASING_BIN, LEVER_CLOSED } from './loading.js';
 import { IDLE_RPM, MAX_RPM } from './tank-drive.js';
 
 /**
@@ -32,10 +35,17 @@ export type SoundId = (typeof SOUND_IDS)[number];
  * these peaks.
  */
 export const MIX = {
-  engine: 0.32,
+  engine: 0.4,
+  roar: 0.11,
+  gearbox: 0.016,
+  finalDrive: 0.05,
   rumble: 0.3,
-  clatter: 0.1,
+  clatter: 0.5,
+  squeal: 0.14,
   whine: 0.03,
+  traverseGear: 0.3,
+  traverseRumble: 0.09,
+  handGear: 0.3,
   grind: 0.3,
   clunk: 0.55,
   shot: 0.95,
@@ -51,21 +61,52 @@ export const MIX = {
   siren: 0.16,
 } as const;
 
+/** How long each short sound lasts, s (the grind and the crank are loops this long, a whole number of their beats). */
+export const SOUND_SECONDS: Record<SoundId, number> = {
+  clunk: 0.5,
+  grind: 0.5,
+  shot: 3.2,
+  breech: 0.7,
+  latch: 0.45,
+  casing: 1.4,
+  ram: 0.4,
+  bump: 0.9,
+  crank: 0.5,
+  catch: 1.2,
+  cough: 0.4,
+  stall: 1.3,
+};
+
 /**
- * The engine is a big V12 diesel heard through the hull: a deep, lumpy
- * firing beat rather than a note. Its beat runs from ENGINE_IDLE_HZ at idle
- * to ENGINE_TOP_HZ flat out, a narrower spread than the RPM's, as a heavy
- * diesel's sounds. The beat is one rendered cycle of firings
- * (`renderEngineCycle`) played faster as it revs.
+ * The starter turns the engine at 160 rpm: each six-cylinder bank comes up
+ * on compression three times a turn, eight times a second. A whole number
+ * of them fits the crank's loop, so it loops without a click.
  */
-export const ENGINE_IDLE_HZ = 30;
-export const ENGINE_TOP_HZ = 62;
-/** Firings in the rendered cycle: two turns of the V12, each firing a little different, so it loops lumpy rather than as a pure tone. */
-export const ENGINE_CYCLE_FIRINGS = 12;
-/** The track links are this far apart, m: the clatter's rate is the track speed over this. */
+export const CRANK_BEAT_HZ = 8;
+/** The grind's tooth beat, Hz: a whole number of beats in its loop. */
+export const GRIND_TEETH_HZ = 60;
+
+/**
+ * The engine: Chrysler's A57 multibank, a petrol engine of five
+ * six-cylinder banks geared to one shaft. Each bank fires three times a
+ * turn, so a bank's beat is 40 Hz at idle and 130 Hz flat out, and all
+ * thirty cylinders together fire five times as often: a smooth, deep
+ * burble, nothing like a diesel's knock. Its exhaust is one rendered loop
+ * (`renderEngineLoop`) played as fast as the engine turns, through filters
+ * that don't move with the revs.
+ */
+export const IDLE_REV_HZ = IDLE_RPM / 60;
+/** One bank's firings a second at idle and at top RPM. */
+export const ENGINE_IDLE_HZ = bankHz(IDLE_RPM);
+export const ENGINE_TOP_HZ = bankHz(MAX_RPM);
+/** The gearbox's gears mesh this many times for each turn of the engine: its whine's pitch. */
+export const GEARBOX_TEETH = 19;
+/** The final drives' whine, Hz for each m/s of track speed: about 250 Hz flat out. */
+export const FINAL_DRIVE_HZ_PER_MS = 26;
+/** The track links are this far apart, m (six inches): the clatter's rate is the track speed over this. */
 export const LINK_PITCH = 0.15;
-/** The clatter's rate tops out here, Hz (above it the links blur into the rumble). */
-export const MAX_CLATTER_HZ = 45;
+/** A handwheel's gears tick this many times a turn. */
+export const HAND_TICKS_PER_TURN = 14;
 
 /** While either player speaks the tank's sounds drop this far, dB (concept §6: the intercom stays clear). It was −6 dB until John's play test (2026-11-07): the output really did drop 6 dB, but under a voice nobody could hear it. */
 export const DUCK_DB = -12;
@@ -77,6 +118,19 @@ export const DUCK_HOLD = 0.35;
 export const DUCK_ATTACK = 0.05;
 export const DUCK_RELEASE = 0.4;
 
+/**
+ * The gun's blast: for a moment after a shot the crew hear little else.
+ * The engine, tracks and turret drop to BLAST_DIP of their level within
+ * BLAST_ATTACK s and come back over BLAST_RECOVER (a time constant, s).
+ */
+export const BLAST_DIP = 0.3;
+export const BLAST_ATTACK = 0.012;
+export const BLAST_HOLD = 0.12;
+export const BLAST_RECOVER = 0.5;
+
+/** How much of each kind of sound also goes through the cabin's echo (src/sim/sound-render.ts's renderCabinImpulse). */
+export const CABIN_SEND = { engine: 0.1, tracks: 0.08, turret: 0.22, knocks: 0.4, shot: 0.55 } as const;
+
 /** The lever counts as closed (or opened) crossing this angle, rad: a little short of latched, so the crewmate's smoothed copy crosses it too. */
 export const BREECH_CLOSED_AT = LEVER_CLOSED - 0.05;
 /** The breech opens by itself after a shot: no hand-opening sound for this long after one, s (the crewmate's copy of the lever comes late). */
@@ -86,20 +140,74 @@ export const dbToGain = (db: number): number => 10 ** (db / 20);
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-/** The engine's sound at an RPM: its firing beat, how fast the rendered cycle plays, how open its filter is and how loud. */
+/** One bank's firings a second at `rpm`: three a turn. */
+export function bankHz(rpm: number): number {
+  return (rpm / 60) * 3;
+}
+
+// ---------------------------------------------------------------------------
+// Where the sounds come from.
+
+/**
+ * Where in the tank each group of sounds is heard from, m: hull space, but
+ * for `breech`, `bin` and `traverse`, which turn with the turret (turret
+ * space). The engine is behind the bulkhead; the gearbox and final drives
+ * are in the nose, right of the driver; each track's sprocket is at the
+ * front corner; the siren is on the left front mudguard.
+ */
+export const SOUND_PLACES = {
+  engine: [0, 0.9, 2.6],
+  gearbox: [0.15, 0.55, -1.9],
+  leftTrack: [-1.45, 0.35, -1.6],
+  rightTrack: [1.45, 0.35, -1.6],
+  siren: [-1.1, 1.3, -2.6],
+  breech: [0, GUN.y, GUN.breechBack],
+  bin: [CASING_BIN.x, 0.75, CASING_BIN.z],
+  traverse: [0.55, 1.1, -0.75],
+} as const;
+export type SoundPlace = keyof typeof SOUND_PLACES;
+/** The places that turn with the turret. */
+export const TURRET_PLACES: readonly SoundPlace[] = ['breech', 'bin', 'traverse'];
+/**
+ * How much of a placed sound comes from its place; the rest is heard from
+ * everywhere, as most of it is in a steel box (the hull carries it).
+ */
+export const PLACED_SHARE = 0.6;
+/** Which place each short sound is heard from (the gun's blast and a bump come through the whole hull, so from nowhere). */
+export const SOUND_FROM: Record<SoundId, SoundPlace | null> = {
+  clunk: 'gearbox',
+  grind: 'gearbox',
+  shot: null,
+  breech: 'breech',
+  latch: 'breech',
+  casing: 'bin',
+  ram: 'breech',
+  bump: null,
+  crank: 'engine',
+  catch: 'engine',
+  cough: 'engine',
+  stall: 'engine',
+};
+
+// ---------------------------------------------------------------------------
+// The continuous sounds.
+
+/** The engine's sound at an RPM and a load: how fast its exhaust loop plays, how open its filter is, how loud, and how much it roars. */
 export interface EngineVoice {
-  /** The firing beat, Hz. */
+  /** One bank's firing beat, Hz. */
   freq: number;
-  /** The rendered cycle's playback rate (1 at idle). */
+  /** The rendered loop's playback rate (1 at idle). */
   rate: number;
-  /** The low-pass filter's cutoff, Hz: muffled by the hull at idle, a little harder-edged under load. */
+  /** The exhaust's low-pass cutoff, Hz: muffled by the silencers and the hull, opening up under load. */
   cutoff: number;
-  /** 0 to 1, before MIX.engine. */
+  /** The exhaust's level, 0 to 1, before MIX.engine. */
   gain: number;
+  /** The roar of the fan, the intakes and the burning itself, 0 to 1, before MIX.roar. */
+  roar: number;
 }
 
 export function createEngineVoice(): EngineVoice {
-  return { freq: 0, rate: 1, cutoff: 0, gain: 0 };
+  return { freq: 0, rate: 1, cutoff: 0, gain: 0, roar: 0 };
 }
 
 /** How far the revs are from idle to top, 0 to 1. */
@@ -108,16 +216,52 @@ export function revs(rpm: number): number {
 }
 
 /**
- * Below idle (a stopped engine running down, F1.17) the beat slows and
- * fades with the revs, to silence stopped; the starter's own sound is the 'crank'.
+ * `load` is how far the throttle is open, 0 to 1: an engine pulling is
+ * louder and harder-edged than one spinning at the same revs with the
+ * throttle shut. Below idle (a stopped engine running down, F1.17) the
+ * beat slows and fades with the revs, to silence stopped; the starter's
+ * own sound is the 'crank'.
  */
-export function engineVoice(rpm: number, out: EngineVoice): EngineVoice {
+export function engineVoice(rpm: number, load: number, out: EngineVoice): EngineVoice {
   const r = revs(rpm);
   const alive = clamp01(rpm / IDLE_RPM);
-  out.freq = (ENGINE_IDLE_HZ + (ENGINE_TOP_HZ - ENGINE_IDLE_HZ) * r) * Math.max(0.2, alive);
-  out.rate = out.freq / ENGINE_IDLE_HZ;
-  out.cutoff = 380 + 520 * r;
-  out.gain = (0.65 + 0.35 * r) * alive * alive;
+  const pull = clamp01(load);
+  out.freq = bankHz(rpm);
+  out.rate = Math.max(0.15, rpm / IDLE_RPM);
+  out.cutoff = 300 + 240 * r + 260 * pull;
+  out.gain = (0.42 + 0.23 * r + 0.35 * pull) * alive * alive;
+  out.roar = (0.1 + 0.5 * r * r + 0.4 * pull * (0.3 + 0.7 * r)) * alive * alive;
+  return out;
+}
+
+/** The gears' whine: the gearbox's with the engine, the final drives' with the tracks. */
+export interface DriveVoice {
+  /** The gearbox's whine, Hz, and its level, 0 to 1, before MIX.gearbox. */
+  gearboxHz: number;
+  gearbox: number;
+  /** The final drives' whine, Hz, and its level, 0 to 1, before MIX.finalDrive. */
+  finalHz: number;
+  final: number;
+}
+
+export function createDriveVoice(): DriveVoice {
+  return { gearboxHz: 0, gearbox: 0, finalHz: 0, final: 0 };
+}
+
+/**
+ * Straight-cut gears whine, and a Sherman's are at the driver's elbow. The
+ * gearbox turns with the engine: quiet out of gear, louder in one and
+ * louder still pulling. The final drives turn with the tracks, so their
+ * note follows the speed (`speed` is the tracks' mean, m/s).
+ */
+export function driveVoice(rpm: number, speed: number, inGear: boolean, load: number, out: DriveVoice): DriveVoice {
+  const alive = clamp01(rpm / IDLE_RPM);
+  const pull = clamp01(load);
+  out.gearboxHz = Math.max(20, (rpm / 60) * GEARBOX_TEETH);
+  out.gearbox = (inGear ? 0.4 + 0.6 * pull : 0.15) * (0.4 + 0.6 * revs(rpm)) * alive;
+  const v = Math.abs(speed);
+  out.finalHz = Math.max(20, v * FINAL_DRIVE_HZ_PER_MS);
+  out.final = v < 0.2 ? 0 : clamp01(v / MAX_SPEED) ** 0.8 * (0.6 + 0.4 * pull);
   return out;
 }
 
@@ -135,37 +279,174 @@ export function sirenVoice(on: boolean, out: { freq: number; gain: number; glide
   return out;
 }
 
-/** The tracks' sound at their speeds: a low rumble and the links' clatter. */
+/** One track's links: how many meet the sprocket a second, and how loud, 0 to 1, before MIX.clatter. */
+export interface LinkVoice {
+  hz: number;
+  gain: number;
+}
+
+/** The tracks' sound at their speeds: a low rumble through the floor, each track's links clattering round its sprocket, and dry pins squealing. */
 export interface TrackVoice {
   /** 0 to 1, before MIX.rumble. */
   rumble: number;
   /** The rumble's low-pass cutoff, Hz. */
   rumbleCutoff: number;
-  /** 0 to 1, before MIX.clatter, and its rate, Hz. */
+  left: LinkVoice;
+  right: LinkVoice;
+  /** The two tracks' mean, for the menu and the tests. */
   clatter: number;
   clatterHz: number;
+  /** The pins' squeal, 0 to 1, before MIX.squeal, and how fast its swells come (1 at SQUEAL_SPEED). */
+  squeal: number;
+  squealRate: number;
 }
 
 export function createTrackVoice(): TrackVoice {
-  return { rumble: 0, rumbleCutoff: 0, clatter: 0, clatterHz: 0 };
+  return { rumble: 0, rumbleCutoff: 0, left: { hz: 0, gain: 0 }, right: { hz: 0, gain: 0 }, clatter: 0, clatterHz: 0, squeal: 0, squealRate: 1 };
 }
 
-/** From each track's speed, m/s (a pivot turn, tracks running opposite ways, rumbles too). */
+/** The squeal's swells come at their rendered pace at this track speed, m/s. */
+export const SQUEAL_SPEED = 2.5;
+
+function linkVoice(track: number, out: LinkVoice): void {
+  const v = Math.abs(track);
+  const f = clamp01(v / MAX_SPEED);
+  out.hz = v / LINK_PITCH;
+  out.gain = clamp01(f * 4) * (0.6 + 0.4 * f);
+}
+
+/**
+ * From each track's speed, m/s (a pivot turn, tracks running opposite
+ * ways, rumbles too). Steering drags one track against the ground and
+ * loads its pins, so the squeal is strongest in a turn.
+ */
 export function trackVoice(leftTrack: number, rightTrack: number, out: TrackVoice): TrackVoice {
   const v = (Math.abs(leftTrack) + Math.abs(rightTrack)) / 2;
   const f = clamp01(v / MAX_SPEED);
   out.rumble = f ** 0.7;
-  out.rumbleCutoff = 90 + 500 * f;
-  out.clatter = clamp01(f * 4);
-  out.clatterHz = Math.min(MAX_CLATTER_HZ, v / LINK_PITCH);
+  out.rumbleCutoff = 140 + 500 * f;
+  linkVoice(leftTrack, out.left);
+  linkVoice(rightTrack, out.right);
+  out.clatter = (out.left.gain + out.right.gain) / 2;
+  out.clatterHz = (out.left.hz + out.right.hz) / 2;
+  const steer = clamp01(Math.abs(leftTrack - rightTrack) / 3);
+  out.squeal = clamp01(f * 5) * (0.3 + 0.7 * steer);
+  out.squealRate = Math.min(3, Math.max(0.15, v / SQUEAL_SPEED));
   return out;
 }
 
-/** The power traverse's whine: its pitch and loudness (0 to 1, before MIX.whine) from the turret's rate, rad/s. */
-export function whineVoice(rate: number, out: { freq: number; gain: number }): { freq: number; gain: number } {
+/** The power traverse's sound from the turret's rate: its electric motor's whine, the gear train's growl and the ring rumbling round. */
+export interface TraverseVoice {
+  /** The motor's whine, Hz, and its level, 0 to 1, before MIX.whine. */
+  freq: number;
+  gain: number;
+  /** The gear train's growl, 0 to 1, before MIX.traverseGear, and its teeth's beat, Hz. */
+  gear: number;
+  meshHz: number;
+  /** The turret ring's rumble, 0 to 1, before MIX.traverseRumble. */
+  rumble: number;
+}
+
+export function createTraverseVoice(): TraverseVoice {
+  return { freq: 0, gain: 0, gear: 0, meshHz: 0, rumble: 0 };
+}
+
+/** From the turret's power traverse rate, rad/s: silent at rest, everything rising with the speed either way. */
+export function traverseVoice(rate: number, out: TraverseVoice): TraverseVoice {
   const r = clamp01(Math.abs(rate) / MAX_TRAVERSE);
-  out.freq = 180 + 700 * r;
-  out.gain = r > 0.01 ? 0.3 + 0.7 * r : 0;
+  const on = r > 0.01;
+  out.freq = 110 + 430 * r;
+  out.gain = on ? 0.35 + 0.65 * r : 0;
+  out.meshHz = 8 + 125 * r;
+  out.gear = on ? 0.3 + 0.7 * r : 0;
+  out.rumble = on ? r : 0;
+  return out;
+}
+
+/**
+ * The gunner's handwheels (the traverse crank and the elevation wheel):
+ * their gears tick as they turn, HAND_TICKS_PER_TURN a turn. From how fast
+ * each is turning, turns a second.
+ */
+export function handGearVoice(crankTurns: number, wheelTurns: number, out: { hz: number; gain: number }): { hz: number; gain: number } {
+  const ticks = (Math.abs(crankTurns) + Math.abs(wheelTurns)) * HAND_TICKS_PER_TURN;
+  out.hz = Math.min(60, ticks);
+  out.gain = ticks < 0.5 ? 0 : clamp01(ticks / 10) ** 0.5;
+  return out;
+}
+
+/** What the tank is doing at one moment of the sound tour. */
+export interface TourState {
+  rpm: number;
+  /** How far the throttle is open, 0 to 1. */
+  load: number;
+  /** Each track's speed, m/s. */
+  left: number;
+  right: number;
+  inGear: boolean;
+  /** The power traverse's rate, rad/s. */
+  traverse: number;
+  /** The traverse crank and the elevation wheel, turns a second. */
+  crank: number;
+  wheel: number;
+}
+
+export function createTourState(): TourState {
+  return { rpm: IDLE_RPM, load: 0, left: 0, right: 0, inGear: false, traverse: 0, crank: 0, wheel: 0 };
+}
+
+/** How long the sound tour lasts, s. */
+export const TOUR_SECONDS = 30;
+
+/** 0 before `a`, 1 after `b`, easing between. */
+function ease(t: number, a: number, b: number): number {
+  const u = clamp01((t - a) / (b - a));
+  return u * u * (3 - 2 * u);
+}
+
+/**
+ * Practice → Tank sounds → Run through: the continuous sounds without
+ * driving or laying the gun, `t` s in. The engine idles, is revved out of
+ * gear and let fall; the tank pulls away up through the gears to top
+ * speed, turns left, and slows to a halt; the turret traverses under
+ * power one way and slowly back; then the traverse crank and the
+ * elevation wheel are turned by hand. The preview clips are rendered from
+ * it too.
+ */
+export function soundTour(t: number, out: TourState): TourState {
+  out.rpm = IDLE_RPM;
+  out.load = 0;
+  out.left = out.right = 0;
+  out.inGear = false;
+  out.traverse = out.crank = out.wheel = 0;
+  if (t < 9) {
+    // Idle, then a rev out of gear.
+    const up = ease(t, 3, 5.5) - ease(t, 6, 8.5);
+    out.rpm = IDLE_RPM + (2400 - IDLE_RPM) * up;
+    out.load = t >= 3 && t < 6 ? 0.9 : 0;
+  } else if (t < 22) {
+    // Pulling away: four changes up on the way to top speed, each letting the revs fall back.
+    const speed = MAX_SPEED * 0.9 * (ease(t, 9, 16.5) - ease(t, 19.5, 22));
+    const climbing = t < 16.5;
+    const gear = Math.min(4.999, ((t - 9) / 7.5) * 5);
+    const inThis = gear - Math.floor(gear);
+    out.rpm = climbing ? 1300 + 1200 * inThis : t < 19.5 ? 2300 : IDLE_RPM + 1500 * (1 - ease(t, 19.5, 22));
+    out.load = climbing ? (inThis < 0.08 ? 0.1 : 0.9) : t < 19.5 ? 0.55 : 0;
+    out.inGear = true;
+    // A turn to the left: the left track held back.
+    const turn = ease(t, 17, 17.6) - ease(t, 18.8, 19.4);
+    out.left = speed * (1 - 0.55 * turn);
+    out.right = speed * (1 + 0.1 * turn);
+  } else if (t < 27) {
+    // The power traverse: up to full speed, a stop, and slowly back.
+    out.rpm = 1400;
+    out.load = 0.2;
+    out.traverse = MAX_TRAVERSE * (ease(t, 22.3, 23.3) - ease(t, 24.3, 24.9)) - 0.3 * MAX_TRAVERSE * (ease(t, 25.2, 25.6) - ease(t, 26.4, 26.8));
+  } else {
+    // By hand: the traverse crank, then the elevation wheel.
+    out.crank = 1.5 * (ease(t, 27, 27.3) - ease(t, 28.2, 28.5));
+    out.wheel = 2 * (ease(t, 28.5, 28.8) - ease(t, 29.6, 29.9));
+  }
   return out;
 }
 
@@ -270,272 +551,4 @@ export class SoundCues {
     this.primed = true;
     return out;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Rendering the short sounds.
-
-const TAU = 2 * Math.PI;
-
-/** How long each short sound lasts, s (the grind is a loop this long, a whole number of its tooth beats). */
-export const SOUND_SECONDS: Record<SoundId, number> = {
-  clunk: 0.45,
-  grind: 0.5,
-  shot: 2.2,
-  breech: 0.6,
-  latch: 0.35,
-  casing: 1.1,
-  ram: 0.35,
-  bump: 0.7,
-  crank: 0.5,
-  catch: 0.9,
-  cough: 0.4,
-  stall: 1,
-};
-
-/** The starter's compression beat, Hz: a whole number of beats in the crank's loop, so it loops without a click. */
-export const CRANK_BEAT_HZ = 4;
-
-/** The grind's tooth beat, Hz: a whole number of beats in its loop, so it loops without a click. */
-export const GRIND_TEETH_HZ = 60;
-
-/** A decaying sine from `start`, s. */
-function partial(out: Float32Array, rate: number, start: number, freq: number, amp: number, tau: number): void {
-  const s = Math.floor(start * rate);
-  const n = Math.min(out.length - s, Math.ceil(tau * 9 * rate));
-  for (let i = 0; i < n; i++) {
-    const t = i / rate;
-    out[s + i] += amp * Math.sin(TAU * freq * t) * Math.exp(-t / tau);
-  }
-}
-
-/** A low thump: a sine gliding from f0 down to f1 as it decays. */
-function thump(out: Float32Array, rate: number, start: number, f0: number, f1: number, amp: number, tau: number): void {
-  const s = Math.floor(start * rate);
-  const n = Math.min(out.length - s, Math.ceil(tau * 9 * rate));
-  let phase = 0;
-  for (let i = 0; i < n; i++) {
-    const t = i / rate;
-    const f = f1 + (f0 - f1) * Math.exp((-2 * t) / tau);
-    phase += (TAU * f) / rate;
-    out[s + i] += amp * Math.sin(phase) * Math.exp(-t / tau);
-  }
-}
-
-/** A burst of noise through a one-pole low-pass at `cutoff`, Hz, decaying. */
-function noise(out: Float32Array, rate: number, start: number, amp: number, tau: number, cutoff: number, random: () => number): void {
-  const s = Math.floor(start * rate);
-  const n = Math.min(out.length - s, Math.ceil(tau * 9 * rate));
-  const a = 1 - Math.exp((-TAU * cutoff) / rate);
-  let y = 0;
-  for (let i = 0; i < n; i++) {
-    y += a * (random() * 2 - 1 - y);
-    out[s + i] += amp * y * Math.exp(-i / rate / tau);
-  }
-}
-
-/** Scale to a peak of `peak`. */
-function normalise(out: Float32Array<ArrayBuffer>, peak: number): Float32Array<ArrayBuffer> {
-  let max = 0;
-  for (let i = 0; i < out.length; i++) max = Math.max(max, Math.abs(out[i]));
-  if (max > 0) for (let i = 0; i < out.length; i++) out[i] *= peak / max;
-  return out;
-}
-
-/** Fade the last `seconds` out, so a sound cut at its length ends at silence. */
-function fadeOut(out: Float32Array<ArrayBuffer>, rate: number, seconds: number): Float32Array<ArrayBuffer> {
-  const n = Math.min(out.length, Math.floor(seconds * rate));
-  for (let i = 0; i < n; i++) out[out.length - 1 - i] *= i / n;
-  return out;
-}
-
-/** One short sound's samples (mono, at `rate` Hz), peaking at its MIX level. Deterministic. */
-export function renderSound(id: SoundId, rate: number): Float32Array<ArrayBuffer> {
-  const out = new Float32Array(Math.round(SOUND_SECONDS[id] * rate));
-  const random = rng(SOUND_IDS.indexOf(id) + 1);
-  switch (id) {
-    case 'clunk':
-      // A heavy gear sliding home: a dull thud and a short ring of the box.
-      thump(out, rate, 0, 95, 55, 1, 0.07);
-      noise(out, rate, 0, 0.5, 0.012, 2000, random);
-      partial(out, rate, 0, 520, 0.25, 0.06);
-      partial(out, rate, 0, 860, 0.18, 0.045);
-      partial(out, rate, 0.004, 1370, 0.12, 0.03);
-      break;
-    case 'grind': {
-      // Teeth clashing: a rasp and gritty noise, beating GRIND_TEETH_HZ times a second, silent at the loop's ends.
-      const a = 1 - Math.exp((-TAU * 900) / rate);
-      let lp = 0;
-      for (let i = 0; i < out.length; i++) {
-        const t = i / rate;
-        const beat = Math.sin(Math.PI * GRIND_TEETH_HZ * t) ** 4;
-        let rasp = 0;
-        for (let k = 1; k <= 8; k++) rasp += Math.sin(TAU * k * 2 * GRIND_TEETH_HZ * t) / k;
-        const x = random() * 2 - 1;
-        lp += a * (x - lp);
-        out[i] = beat * (0.5 * rasp + 1.2 * (x - lp));
-      }
-      break;
-    }
-    case 'shot':
-      // The crack, the boom and the rumble after it, and the breech flying open as the gun runs out.
-      noise(out, rate, 0, 1, 0.012, 12000, random);
-      thump(out, rate, 0, 120, 38, 1.2, 0.3);
-      noise(out, rate, 0.005, 1.4, 0.45, 250, random);
-      partial(out, rate, 0.12, 413, 0.2, 0.08);
-      partial(out, rate, 0.12, 737, 0.15, 0.06);
-      partial(out, rate, 0.121, 1190, 0.1, 0.05);
-      break;
-    case 'breech':
-      // The block slamming up: a hard strike and a ring of heavy steel.
-      noise(out, rate, 0, 0.8, 0.006, 5000, random);
-      thump(out, rate, 0, 110, 70, 0.7, 0.05);
-      partial(out, rate, 0, 180, 0.5, 0.15);
-      partial(out, rate, 0, 413, 0.45, 0.12);
-      partial(out, rate, 0, 737, 0.35, 0.09);
-      partial(out, rate, 0, 1190, 0.3, 0.07);
-      partial(out, rate, 0, 1830, 0.2, 0.05);
-      partial(out, rate, 0, 2650, 0.12, 0.035);
-      break;
-    case 'latch':
-      // The block dropping open by hand: a lighter clack.
-      noise(out, rate, 0, 0.6, 0.004, 4000, random);
-      partial(out, rate, 0, 413, 0.3, 0.06);
-      partial(out, rate, 0, 1190, 0.25, 0.04);
-      partial(out, rate, 0.002, 1830, 0.15, 0.03);
-      break;
-    case 'casing':
-      // A brass case landing and bouncing in the bin: ringing pings, each smaller.
-      [0, 0.14, 0.27, 0.36].forEach((at, k) => {
-        const a = 1 / (1 + 1.2 * k);
-        const detune = 1 + (random() - 0.5) * 0.06;
-        noise(out, rate, at, 0.3 * a, 0.003, 8000, random);
-        partial(out, rate, at, 1480 * detune, 0.5 * a, 0.09);
-        partial(out, rate, at, 3620 * detune, 0.3 * a, 0.06);
-        partial(out, rate, at, 6100 * detune, 0.15 * a, 0.04);
-      });
-      break;
-    case 'ram':
-      // The shell's rim seating in the chamber: a thunk.
-      thump(out, rate, 0, 140, 90, 0.8, 0.04);
-      noise(out, rate, 0, 0.4, 0.01, 1500, random);
-      partial(out, rate, 0, 640, 0.15, 0.05);
-      partial(out, rate, 0, 1010, 0.1, 0.04);
-      break;
-    case 'bump':
-      // The hull meeting something: a deep thud through the floor.
-      thump(out, rate, 0, 70, 40, 1, 0.14);
-      noise(out, rate, 0, 0.7, 0.08, 400, random);
-      partial(out, rate, 0, 230, 0.2, 0.08);
-      break;
-    case 'crank': {
-      // The starter motor's whirr, labouring against each cylinder's compression: CRANK_BEAT_HZ heaves a second.
-      const a = 1 - Math.exp((-TAU * 600) / rate);
-      let lp = 0;
-      for (let i = 0; i < out.length; i++) {
-        const t = i / rate;
-        const heave = Math.sin(Math.PI * CRANK_BEAT_HZ * t) ** 2;
-        const whirr = 0.45 * Math.sin(TAU * 96 * t) + 0.25 * Math.sin(TAU * 192 * t) + 0.12 * Math.sin(TAU * 288 * t);
-        const x = random() * 2 - 1;
-        lp += a * (x - lp);
-        out[i] = heave * (whirr * (0.6 + 0.4 * heave) + 0.5 * lp);
-      }
-      break;
-    }
-    case 'catch':
-      // Firing up: a ragged run of firings, quickening, and a puff of black smoke's roar.
-      for (let k = 0; k < 9; k++) {
-        const at = 0.02 + k * (0.11 - k * 0.007) + (random() - 0.5) * 0.01;
-        const a = 0.6 + 0.5 * random();
-        thump(out, rate, at, 130, 70, a, 0.025);
-        noise(out, rate, at, 0.8 * a, 0.03, 300, random);
-      }
-      noise(out, rate, 0.1, 0.5, 0.35, 180, random);
-      break;
-    case 'cough':
-      // A misfire: a hollow pop and a splutter.
-      thump(out, rate, 0, 110, 60, 1, 0.03);
-      noise(out, rate, 0, 0.9, 0.04, 500, random);
-      noise(out, rate, 0.07, 0.5, 0.05, 350, random);
-      thump(out, rate, 0.13, 90, 55, 0.5, 0.03);
-      break;
-    case 'stall':
-      // Dying: a few slowing, weakening firings, then the block shuddering to rest.
-      for (let k = 0; k < 5; k++) {
-        const at = 0.02 + k * 0.08 + k * k * 0.02;
-        const a = 1 - k * 0.17;
-        thump(out, rate, at, 120, 65, a, 0.03);
-        noise(out, rate, at, 0.7 * a, 0.035, 280, random);
-      }
-      thump(out, rate, 0.62, 60, 35, 0.8, 0.12);
-      partial(out, rate, 0.62, 210, 0.15, 0.08);
-      break;
-  }
-  normalise(out, MIX[id]);
-  return LOOPED.includes(id) ? out : fadeOut(out, rate, 0.03);
-}
-
-/**
- * The diesel's firing cycle at idle, peaking at 1, looping seamlessly:
- * ENGINE_CYCLE_FIRINGS firings at ENGINE_IDLE_HZ, each a dull thump of the
- * block, a chuff of exhaust and a short hard knock, with its timing and
- * strength varied a little so the beat is lumpy. Played faster as the
- * engine revs. Deterministic.
- */
-export function renderEngineCycle(rate: number): Float32Array<ArrayBuffer> {
-  const n = Math.round((ENGINE_CYCLE_FIRINGS / ENGINE_IDLE_HZ) * rate);
-  // Render with a tail, then fold the tail onto the start so the last firing rings into the first.
-  const tail = Math.round(0.12 * rate);
-  const work = new Float32Array(n + tail);
-  const random = rng(201);
-  const period = 1 / ENGINE_IDLE_HZ;
-  for (let k = 0; k < ENGINE_CYCLE_FIRINGS; k++) {
-    const at = (k + (random() - 0.5) * 0.12) * period + 0.004;
-    const a = 0.8 + random() * 0.4;
-    thump(work, rate, at, 120, 70, a, 0.012);
-    partial(work, rate, at, 190 * (0.95 + random() * 0.1), 0.35 * a, 0.007);
-    noise(work, rate, at, 0.9 * a, 0.018, 260, random);
-    noise(work, rate, at + 0.001, 0.28 * a * (0.6 + random() * 0.8), 0.0025, 3200, random);
-  }
-  const out = new Float32Array(n);
-  for (let i = 0; i < work.length; i++) out[i % n] += work[i];
-  let mean = 0;
-  for (let i = 0; i < n; i++) mean += out[i];
-  mean /= n;
-  for (let i = 0; i < n; i++) out[i] -= mean;
-  return normalise(out, 1);
-}
-
-/**
- * A loop of noise for the continuous sounds, peaking at 1: white (the
- * clatter, through a band-pass) or brown (the rumble), its ends meeting so
- * it loops without a click. Deterministic.
- */
-export function renderNoiseLoop(kind: 'white' | 'brown', rate: number, seconds: number): Float32Array<ArrayBuffer> {
-  const out = new Float32Array(Math.round(seconds * rate));
-  const random = rng(kind === 'white' ? 101 : 102);
-  let y = 0;
-  for (let i = 0; i < out.length; i++) {
-    const x = random() * 2 - 1;
-    if (kind === 'white') {
-      out[i] = x;
-    } else {
-      // Leaky integration keeps brown noise from wandering off.
-      y = 0.998 * y + 0.02 * x;
-      out[i] = y;
-    }
-  }
-  if (kind === 'brown') {
-    // Tilt it so the end meets the start, then take out the average.
-    const n = out.length;
-    const step = (out[n - 1] - out[0]) / (n - 1);
-    let mean = 0;
-    for (let i = 0; i < n; i++) {
-      out[i] -= step * i;
-      mean += out[i];
-    }
-    mean /= n;
-    for (let i = 0; i < n; i++) out[i] -= mean;
-  }
-  return normalise(out, 1);
 }

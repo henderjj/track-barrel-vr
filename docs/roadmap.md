@@ -138,7 +138,7 @@ Sound and graphics past Phase 1's placeholders (John, 2026-11-07). Nothing depen
 
 | ID | Feature | Status | Depends on | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| F6.1 | Sound pass: the engine, tracks, gun, breech, casings and the controls' clunks beyond F1.12's synthesised placeholders | Planned | F1.12 | | Recorded or better designed sounds; keep the Tank sounds setting and the voice duck |
+| F6.1 | Sound pass: the engine, tracks, gun, breech, casings and the controls' clunks beyond F1.12's synthesised placeholders | Headset check | F1.12 | PRNUM | [audio.md](audio.md): every sound rebuilt on the real tank, modelled not recorded (John's choice, 2026-11-09). The engine is the A57 multibank's burble (five petrol sixes, 40 to 130 Hz a bank) following the revs and the throttle through filters that stay put; gear whine; each track's rumble, clatter and squeal on its own side; the traverse's motor and gears; the handwheels' ticks; short sounds as blows on ringing steel and brass; a steel-cabin echo; sounds placed round the player's head; the gun's blast dips everything else. `src/sim/sound-render.ts`, `src/systems/tank-sound-graph.ts`; Practice → Tank sounds → Run through; `scripts/render-sound-preview.mjs` renders clips to listen to without a headset |
 | F6.2 | Graphics pass: the tank's exterior, the ground and range, the cabin's materials, and effects (dust, muzzle smoke, hits) | Planned | F1.15 | | Within the frame budget (72–90 fps on Quest 3) |
 | F6.3 | WWII tank crew avatars: uniforms, tanker helmets and headsets | Planned | F1.1b | | Low priority (John, 2026-11-07) |
 

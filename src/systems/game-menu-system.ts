@@ -24,7 +24,7 @@ import { PERISCOPE_BUTTONS, periscopeStatus } from './periscope-system.js';
 import { SIGHT_BUTTONS, sightStatus } from './sight-system.js';
 import { firingStatus } from './firing-system.js';
 import { loadingStatus, startLoading } from './loading-system.js';
-import { audioStatus, playEachSound } from './tank-audio-system.js';
+import { audioStatus, playEachSound, playSoundTour } from './tank-audio-system.js';
 import { hideLeverTest, showLeverTest } from './lever-system.js';
 import { hideMechanismBench, showMechanismBench } from './mechanism-bench-system.js';
 import { startScreen } from './start-screen-system.js';
@@ -422,6 +422,11 @@ export class GameMenuSystem extends createSystem({}) {
     ui.on('menu-audio-play', () => {
       // The menu stays open: the status line under it says whether sound is on.
       playEachSound();
+      this.render();
+    });
+    ui.on('menu-audio-tour', () => {
+      // The engine, tracks, traverse and handwheels put through their paces, half a minute, the menu still open.
+      playSoundTour();
       this.render();
     });
     ui.on('menu-levers', () => {

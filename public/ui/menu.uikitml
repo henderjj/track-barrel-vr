@@ -561,6 +561,7 @@
             <div class="label">Tank sounds</div>
             <div class="choices">
               <Button id="menu-audio-play" class="choice" size="sm" variant="secondary">Play each</Button>
+              <Button id="menu-audio-tour" class="choice" size="sm" variant="secondary">Run through</Button>
             </div>
           </div>
           <div id="menu-audio-status" class="hint">Sound</div>
