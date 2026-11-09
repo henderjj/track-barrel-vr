@@ -2901,7 +2901,11 @@ async function theConvoySeat() {
     !down.c.shown && down.s.head[1] < roofTop - 0.1 && !evalInApp('window.__interior.state().lids.driver'),
     `head ${fmt(down.s.head)}, lid open ${evalInApp('window.__interior.state().lids.driver')}`);
 
-  // The seat lever, right of the cushion: pull it back to raise the seat, and again to lower it.
+  // The seat lever, right of the cushion: drawn leaning forward where the hand finds it; pull it back to raise the seat, and again to lower it.
+  const resting = convoy();
+  check('The seat lever is drawn leaning forward at rest, where its grip is',
+    Math.abs(resting.drawn - resting.lever) < 0.01 && resting.lever > 40 * Math.PI / 180,
+    `lever ${(resting.lever * 180 / Math.PI).toFixed(1)}°, drawn ${(resting.drawn * 180 / Math.PI).toFixed(1)}°`);
   for (const want of [true, false]) {
     const lever = evalInApp('window.__convoy.lever()');
     handTo('controller-right', lever);
@@ -2911,7 +2915,7 @@ async function theConvoySeat() {
     handTo('controller-right', [lever[0], lever[1] + 0.045, lever[2] + 0.085]);
     const moved = await waitFor(`the seat ${want ? 'up' : 'down'} by its lever`, () => { const c = convoy(); return c.shown === want && c; }, 8000).catch(() => convoy());
     squeeze('controller-right', 0);
-    check(`Pulling the seat lever back ${want ? 'raises' : 'lowers'} the seat`, moved.shown === want, `lever ${(moved.lever * 180 / Math.PI).toFixed(1)}°, held ${moved.held}, seat ${moved.shown ? 'up' : 'down'}`);
+    check(`Pulling the seat lever back ${want ? 'raises' : 'lowers'} the seat, the lever drawn where the hand has it`, moved.shown === want && Math.abs(moved.drawn - moved.lever) < 0.01, `lever ${(moved.lever * 180 / Math.PI).toFixed(1)}°, drawn ${(moved.drawn * 180 / Math.PI).toFixed(1)}°, held ${moved.held}, seat ${moved.shown ? 'up' : 'down'}`);
     iwsdk(['xr', 'set-device-state'], {});
     await waitFor('the view clear', () => seated().fade === 0, 5000).catch(() => {});
   }
