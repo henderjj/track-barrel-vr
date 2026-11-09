@@ -340,20 +340,20 @@ async function seatChecks(host, guest, label, hostSeat = 'driver') {
     const seen = await waitFor(`the gunner's page to draw the driver's seat ${up ? 'raised' : 'lowered'}`, async () => {
       const g = await raisedOnGunner();
       const lift = g.legs ? g.legs[1] - HIPS.driver[1] : NaN;
-      return g.crew === up && (up ? lift > 0.28 && g.lid : Math.abs(lift) < 0.01) ? g : null;
+      return g.crew === up && (up ? lift > 0.25 && g.lid : Math.abs(lift) < 0.01) ? g : null;
     }, 8000).catch(() => null);
     check(`The driver ${up ? 'raising' : 'lowering'} their seat to ${up ? 'drive head out' : 'drive closed down'}: the gunner's page draws them ${up ? 'raised, their lid open' : 'back in the seat'} (${label})`,
       seen !== null, JSON.stringify(seen ?? await raisedOnGunner()));
     if (up) {
-      // The gunner's page owns the turret: with the driver's head out, it can't turn the barrel over their hatch.
+      // No gun stop for now (John, 2026-11-08): the gunner's turret turns past the head-out driver's hatch, on both pages.
       await gunner.page.evaluate(() => { window.__turret.forward(); window.__turret.crank(10); });
       const turrets = () => Promise.all([gunner, driver].map((p) => p.page.evaluate(() => ({ yaw: window.__turret.state().yawDeg, stops: window.__turret.headOutStops }))));
-      const stopped = await waitFor('the turret stopped short of the driver\'s hatch on both pages', async () => {
+      const turned = await waitFor('the turret turned 20° left on both pages', async () => {
         const [g, d] = await turrets();
-        return g.stops > 0 && g.yaw > 2 && g.yaw < 6 && Math.abs(d.yaw - g.yaw) < 0.5 ? [g, d] : null;
+        return g.stops === 0 && g.yaw > 19 && Math.abs(d.yaw - g.yaw) < 0.5 ? [g, d] : null;
       }, 8000).catch(() => null);
-      check(`With the driver's head out, the gunner's crank turning 20° left stops the turret short of the driver's hatch, on both pages (${label})`,
-        stopped !== null, JSON.stringify(stopped ?? await turrets()));
+      check(`With the driver's head out, the gunner's crank still turns the turret 20° left past their hatch, on both pages (${label})`,
+        turned !== null, JSON.stringify(turned ?? await turrets()));
       await gunner.page.evaluate(() => window.__turret.forward());
     }
   }

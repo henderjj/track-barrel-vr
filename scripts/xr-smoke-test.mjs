@@ -2855,12 +2855,12 @@ async function theConvoySeat() {
   const up = await waitFor('the seat raised and the view clear', () => {
     const c = convoy();
     const s = seated();
-    return c.shown && s.fade === 0 && s.head[1] > roofTop + 0.03 && { c, s };
+    return c.shown && s.fade === 0 && s.head[1] > roofTop + 0.01 && { c, s };
   }, 10000).catch(() => ({ c: convoy(), s: seated() }));
   const looks = evalInApp('({ lid: window.__interior.state().lids.driver, scope: window.__periscope.driver.head().at, eye: window.__seats.eye("driver") })');
   check('Practice → Head out raises the driver\'s seat: the eyes come up over the roof in the hatch, the lid lies open, the periscope is down, the view clear',
-    up.c.shown && up.s.mine === 'driver' && up.s.head[1] > roofTop + 0.03 && up.s.fade === 0 && looks.lid && looks.scope[1] < roofTop + 0.04 &&
-      looks.eye[1] - downEye[1] > 0.28 && flatGap(up.s.head, looks.eye) < 0.08,
+    up.c.shown && up.s.mine === 'driver' && up.s.head[1] > roofTop + 0.01 && up.s.fade === 0 && looks.lid && looks.scope[1] < roofTop + 0.04 &&
+      looks.eye[1] - downEye[1] > 0.25 && flatGap(up.s.head, looks.eye) < 0.08,
     `seat ${up.s.mine}, head ${fmt(up.s.head)}, eye point ${fmt(looks.eye)} (down ${fmt(downEye)}), fade ${up.s.fade}, lid open ${looks.lid}, periscope head at ${looks.scope[1].toFixed(3)}`);
   iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([looks.eye[0], looks.eye[1] - 0.4, looks.eye[2] - 6]) });
   await sleep(300);
@@ -2881,18 +2881,16 @@ async function theConvoySeat() {
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
 
-  // The gun stop: with the driver's head out, the turret can't turn the barrel over the hatch.
+  // No gun stop for now (John, 2026-11-08): with the driver's head out, the turret still turns past their hatch.
   evalInApp('(window.__turret.forward(), true)');
   await sleep(200);
-  const stopsBefore = evalInApp('window.__turret.headOutStops');
   evalInApp('(window.__turret.crank(10), true)');
-  const held = await waitFor('the turret stopped short of the hatch', () => {
-    const t = evalInApp('({ yaw: window.__turret.state().yawDeg, stops: window.__turret.headOutStops, sign: window.__turret.sign })');
-    return t.stops > stopsBefore && t;
-  }, 3000, 100).catch(() => evalInApp('({ yaw: window.__turret.state().yawDeg, stops: window.__turret.headOutStops, sign: window.__turret.sign })'));
-  check('Head out, the crank\'s 20° left stops the turret before the barrel reaches the driver\'s hatch, and the sign says why',
-    held.stops > stopsBefore && held.yaw > 2 && held.yaw < 6 && /head is out/.test(held.sign),
-    `turret ${held.yaw.toFixed(1)}° left, stops ${held.stops}, sign "${held.sign}"`);
+  const turned = await waitFor('the turret turned 20° left', () => {
+    const t = evalInApp('({ yaw: window.__turret.state().yawDeg, stops: window.__turret.headOutStops })');
+    return t.yaw > 19 && t;
+  }, 3000, 100).catch(() => evalInApp('({ yaw: window.__turret.state().yawDeg, stops: window.__turret.headOutStops })'));
+  check('Head out, the crank still turns the turret 20° left, past the driver\'s hatch (the gun stop is off)',
+    turned.yaw > 19 && turned.stops === 0, `turret ${turned.yaw.toFixed(1)}° left, stops ${turned.stops}`);
   evalInApp('(window.__turret.forward(), true)');
 
   await menuButtonPress();
@@ -2910,7 +2908,7 @@ async function theConvoySeat() {
     await sleep(600);
     squeeze('controller-right', 1);
     await waitFor('the hand on the seat lever', () => convoy().held, 3000, 100).catch(() => {});
-    handTo('controller-right', [lever[0], lever[1] - 0.04, lever[2] + 0.14]);
+    handTo('controller-right', [lever[0], lever[1] + 0.045, lever[2] + 0.085]);
     const moved = await waitFor(`the seat ${want ? 'up' : 'down'} by its lever`, () => { const c = convoy(); return c.shown === want && c; }, 8000).catch(() => convoy());
     squeeze('controller-right', 0);
     check(`Pulling the seat lever back ${want ? 'raises' : 'lowers'} the seat`, moved.shown === want, `lever ${(moved.lever * 180 / Math.PI).toFixed(1)}°, held ${moved.held}, seat ${moved.shown ? 'up' : 'down'}`);

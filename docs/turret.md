@@ -13,7 +13,7 @@ The turret turns and the gun elevates. The gunner lays the gun with three contro
 - The **gun** elevates on trunnions in the turret's front plate, so its breech dips beside the gunner as the muzzle rises.
 - The gunsight (F1.9, [gunsight.md](gunsight.md)) turns with the turret and looks along the gun as it elevates; its eyepiece stays still in the turret.
 - The **driver** sees the turret and gun move, the gunner's hands on the controls, and the crank and grip turning under them.
-- While the **driver's head is out** of their hatch (F2.8, [convoy-seat.md](convoy-seat.md)), the turret stops before the barrel turns over it, about 4° to 33° left of ahead, and the sign says "Driver's head is out": turn the other way round.
+- While the **driver's head is out** of their hatch (F2.8, [convoy-seat.md](convoy-seat.md)), the barrel passes about where their head is with the turret 4° to 33° left of ahead. Nothing stops it for now; a turret stop for that band is built and off (`HEAD_OUT_GUN_STOP`).
 - Game menu: **Practice → Lay the gun → Gunner** puts the player in the gunner's seat with a sign saying how to lay the gun; **Forward** turns the turret and the gun straight ahead (either player can press it). The line under it says who lays the gun and where it points.
 
 ## Numbers

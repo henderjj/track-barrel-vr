@@ -1,6 +1,6 @@
 import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial } from '@iwsdk/core';
 import { SEATS } from '../sim/cabin.js';
-import { CONVOY_GRIP, CONVOY_GRIP_OFFSET, CONVOY_MOVE } from '../sim/convoy-seat.js';
+import { CONVOY_GRIP, CONVOY_GRIP_OFFSET, CONVOY_MOVE, SEAT_LEVER_BRACKET, SEAT_LEVER_FROM_CUSHION } from '../sim/convoy-seat.js';
 import { litInside } from './cabin-light.js';
 import { beam, mergeParts, type Part } from './lowpoly.js';
 
@@ -41,8 +41,9 @@ export function driverSeatBaseParts(): Part[] {
 }
 
 /**
- * The driver's seat that moves: the cushion, its back and the column under
- * it, seat down. In the convoy position SeatSystem moves it by CONVOY_MOVE;
+ * The driver's seat that moves: the cushion, its back, the column under it
+ * and the seat lever's bracket and hinge on the cushion's right, seat down
+ * (ConvoySeatSystem hangs the lever on the hinge). In the convoy position SeatSystem moves it by CONVOY_MOVE;
  * the column then still reaches into the sleeve.
  */
 export function createDriverSeat(): Mesh {
@@ -54,6 +55,11 @@ export function createDriverSeat(): Mesh {
     { geometry: new BoxGeometry(0.44, 0.5, 0.07), color: LEATHER, position: [x, top + 0.25 - 0.02, z + 0.245] },
     beam(c, [c[0] - RISE.x * reach, c[1] - RISE.y * reach, c[2] - RISE.z * reach], 0.024, STEEL_LIGHT, 8),
   ];
+  // The seat lever's bracket, out from the cushion's side, and the hinge it turns on, across the seat.
+  const b = SEAT_LEVER_BRACKET;
+  const [px, py, pz] = [x + SEAT_LEVER_FROM_CUSHION[0], top + SEAT_LEVER_FROM_CUSHION[1], z + SEAT_LEVER_FROM_CUSHION[2]];
+  parts.push({ geometry: new BoxGeometry(b.to - b.from, b.height, b.depth), color: STEEL, position: [x + (b.from + b.to) / 2, py, pz] });
+  parts.push({ geometry: new CylinderGeometry(0.016, 0.016, 0.045, 8, 1), color: STEEL_LIGHT, position: [px, py, pz], rotation: [0, 0, Math.PI / 2] });
   const mesh = new Mesh(mergeParts(parts), material);
   mesh.name = DRIVER_SEAT_NAME;
   return mesh;

@@ -15,7 +15,9 @@ import {
   HEAD,
   LID_ASIDE,
   periscopeLowered,
+  SEAT_LEVER,
   SEAT_LEVER_PULL,
+  SEAT_LEVER_REST,
   SEAT_LEVER_RESET,
   seatAs,
   seatLeverPivot,
@@ -33,9 +35,9 @@ const DEG = Math.PI / 180;
 const hand = (x: number, y: number, z: number): HandInput => ({ fist: [x, y, z], across: [1, 0, 0], tip: null, trigger: 0, tracked: false });
 
 describe('the convoy position (docs/convoy-seat.md)', () => {
-  it('puts the eyes 5 cm over the roof, in the middle of the hatch', () => {
+  it('puts the eyes 2 cm over the roof, in the middle of the hatch', () => {
     const eye = CONVOY_SEAT.eye;
-    expect(eye[1] - (HULL.roof + HULL.wall)).toBeCloseTo(0.05, 6);
+    expect(eye[1] - (HULL.roof + HULL.wall)).toBeCloseTo(0.02, 6);
     // A little more than a Sherman seat's 25 cm: our roof plate is drawn thick.
     expect(CONVOY_RAISE).toBeGreaterThan(0.25);
     expect(CONVOY_RAISE).toBeLessThan(0.36);
@@ -52,7 +54,7 @@ describe('the convoy position (docs/convoy-seat.md)', () => {
     const [left, right, forward, back] = CONVOY_SEAT.headBox;
     const eye = CONVOY_SEAT.eye;
     const [hx0, hz0, hx1, hz1] = DRIVER_HATCH;
-    for (const room of [left, right, forward, back]) expect(room).toBeGreaterThan(0.1);
+    for (const room of [left, right, forward, back]) expect(room).toBeGreaterThan(0.09);
     expect(eye[0] - left).toBeGreaterThan(hx0 + 0.06);
     expect(eye[0] + right).toBeLessThan(hx1 - 0.06);
     expect(eye[2] - forward).toBeGreaterThan(hz0 + 0.06);
@@ -72,12 +74,12 @@ describe('the convoy position (docs/convoy-seat.md)', () => {
 
   it('swings the lid aside, flat and clear of the eyes, and lowers the periscope ahead out of the way', () => {
     expect(eyesFromLid()).toBeGreaterThanOrEqual(EYE_CLEARANCE);
-    // Lying flat beside the hole, its top under the eyes, nothing standing ahead of them.
-    expect(LID_ASIDE.y1).toBeLessThan(CONVOY_SEAT.eye[1]);
+    // Lying flat beside the hole, its top no higher than the eyes but for its thickness, nothing standing ahead of them.
+    expect(LID_ASIDE.y1).toBeLessThan(CONVOY_SEAT.eye[1] + 0.03);
     expect(LID_ASIDE.x1).toBeLessThan(DRIVER_HATCH[0]);
     // The periscope's head, lowered, stands under the eyes.
     const head = DRIVER_PERISCOPE.head;
-    expect(head.top - periscopeLowered(head)).toBeLessThan(CONVOY_SEAT.eye[1] - 0.03);
+    expect(head.top - periscopeLowered(head)).toBeLessThan(CONVOY_SEAT.eye[1] - 0.01);
   });
 
   it('fades out, moves the seat while black, and fades back in', () => {
@@ -100,12 +102,17 @@ describe('the convoy position (docs/convoy-seat.md)', () => {
 
   it('moves the seat once per pull of its lever', () => {
     const latch = { pulled: false };
-    expect(seatLeverPulled(latch, -5 * DEG)).toBe(false);
+    expect(seatLeverPulled(latch, SEAT_LEVER_REST - 5 * DEG)).toBe(false);
     expect(seatLeverPulled(latch, SEAT_LEVER_PULL - 0.01)).toBe(true);
     expect(seatLeverPulled(latch, SEAT_LEVER_PULL - 0.05)).toBe(false);
     expect(seatLeverPulled(latch, SEAT_LEVER_PULL + 0.05)).toBe(false);
     expect(seatLeverPulled(latch, SEAT_LEVER_RESET + 0.01)).toBe(false);
     expect(seatLeverPulled(latch, SEAT_LEVER_PULL - 0.01)).toBe(true);
+    // Short, leaning forward 45° like the parking brake, pulled back to move the seat.
+    expect(SEAT_LEVER.rest).toBeCloseTo(45 * DEG, 6);
+    expect(SEAT_LEVER.length).toBeLessThan(0.25);
+    expect(SEAT_LEVER_PULL).toBeLessThan(SEAT_LEVER_RESET);
+    expect(SEAT_LEVER_RESET).toBeLessThan(SEAT_LEVER.rest);
     // The lever rides with the seat, beside the right thigh.
     const down = seatLeverPivot(false, [0, 0, 0]);
     const up = seatLeverPivot(true, [0, 0, 0]);

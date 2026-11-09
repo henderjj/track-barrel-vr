@@ -17,8 +17,8 @@
 import { DRIVER_HATCH, GUN, HULL, type Seat, type SeatId, SEATS, TURRET } from './cabin.js';
 import type { LeverSpec, Vec3 } from './mechanism.js';
 
-/** How far the eyes stand over the roof's top in the convoy position, m: enough to see the road over the hood. */
-export const CONVOY_EYES_OVER_ROOF = 0.05;
+/** How far the eyes stand over the roof's top in the convoy position, m: enough to see the road over the hood (5 cm felt a bit high to John, 2026-11-08). */
+export const CONVOY_EYES_OVER_ROOF = 0.02;
 
 /** The seat's rise to the convoy position, m: the eyes from under the roof to `CONVOY_EYES_OVER_ROOF` over its top. */
 export const CONVOY_RAISE = HULL.roof + HULL.wall + CONVOY_EYES_OVER_ROOF - SEATS.driver.eye[1];
@@ -45,7 +45,7 @@ export const CONVOY_GRIP_OFFSET: Readonly<Vec3> = [0, CONVOY_RAISE - CONVOY_GRIP
 export const CONVOY_GRIP = { radius: 0.016, gripLength: 0.11, rodRadius: 0.009 } as const;
 
 /** How the neck keeps clear of the hatch's rim, m: the head box stops this far from it. */
-export const NECK_CLEARANCE = 0.07;
+export const NECK_CLEARANCE = 0.08;
 
 /**
  * How far the eyes may rise in the convoy position before the view fades, m:
@@ -125,30 +125,36 @@ export function stepConvoyMove(move: ConvoyMove, wanted: boolean, dt: number): n
 }
 
 /**
- * The seat lever, on the right of the cushion's front, moving with the seat:
- * pull it back and the seat goes up, pull it again and it comes down, as a
- * Sherman's seat had a lever to free it. A kit lever that springs back
- * upright; pulled past `SEAT_LEVER_PULL` it moves the seat once, and must go
- * back past `SEAT_LEVER_RESET` before it moves it again.
+ * The seat lever, on a bracket on the right of the cushion, moving with the
+ * seat: pull it back and the seat goes up, pull it again and it comes down,
+ * as a Sherman's seat had a lever to free it. Short, and leaning forward
+ * 45° at rest as the parking brake does (John's headset check, 2026-11-08).
+ * A kit lever that springs back to its lean; pulled back past
+ * `SEAT_LEVER_PULL` it moves the seat once, and must go back past
+ * `SEAT_LEVER_RESET` before it moves it again.
  */
 const DEG = Math.PI / 180;
-/** Pulled this far back (rad, negative), the seat lever moves the seat. */
-export const SEAT_LEVER_PULL = -22 * DEG;
-/** Back within this of upright (rad, negative), it may move the seat again. */
-export const SEAT_LEVER_RESET = -8 * DEG;
-/** The seat lever: 28 cm, springing back upright, pulled back up to 30°, a tick where it moves the seat. */
+/** Where the seat lever rests, leaning forward, rad (positive forward). */
+export const SEAT_LEVER_REST = 45 * DEG;
+/** Pulled back to this (rad), the seat lever moves the seat. */
+export const SEAT_LEVER_PULL = 20 * DEG;
+/** Forward past this again (rad), it may move the seat again. */
+export const SEAT_LEVER_RESET = 35 * DEG;
+/** The seat lever: 20 cm, springing back to a 45° lean, pulled back as far as 5°, a tick where it moves the seat. */
 export const SEAT_LEVER: LeverSpec = {
-  length: 0.28,
+  length: 0.2,
   gripLength: 0.07,
-  min: -30 * DEG,
-  max: 0,
-  rest: 0,
+  min: 5 * DEG,
+  max: SEAT_LEVER_REST,
+  rest: SEAT_LEVER_REST,
   spring: 10,
   detents: [SEAT_LEVER_PULL],
   deadband: 0,
 };
-/** The seat lever's pivot from the cushion's top middle, seat frame, m: right of the right thigh, at the cushion's front edge. */
-export const SEAT_LEVER_FROM_CUSHION: Readonly<Vec3> = [0.26, -0.06, -0.14];
+/** The seat lever's pivot from the cushion's top middle, seat frame, m: on a bracket right of the cushion, beside the right thigh; leaning forward, its grip ends at the cushion's front. */
+export const SEAT_LEVER_FROM_CUSHION: Readonly<Vec3> = [0.26, -0.01, -0.06];
+/** The bracket that holds the seat lever's pivot to the cushion's side, m: from the cushion's side out to the pivot, and its height and depth. */
+export const SEAT_LEVER_BRACKET = { from: 0.22, to: 0.245, height: 0.04, depth: 0.05 } as const;
 
 /** The seat lever's latch: true once a pull has moved the seat, until it goes back. Returns true on the pull that moves the seat. */
 export function seatLeverPulled(latch: { pulled: boolean }, angle: number): boolean {
@@ -191,7 +197,7 @@ export const LID_ASIDE = (() => {
   const [hx0, hz0, hx1, hz1] = DRIVER_HATCH;
   const top = HULL.roof + HULL.wall;
   // Far enough out that its post is clear of a raised head at the head box's front-left corner.
-  const gap = 0.06;
+  const gap = 0.08;
   const lift = 0.015;
   const thickness = 0.03;
   return {
@@ -214,6 +220,13 @@ export function eyesFromLid(): number {
 export const HEAD = { centre: [0, 0.02, 0.07] as const, radius: 0.11 } as const;
 /** The gap the gun's barrel keeps from a raised driver's head, m. */
 export const GUN_STOP_MARGIN = 0.03;
+
+/**
+ * Whether the turret stops short of a head-out driver (GUN_STOP). Off for
+ * now, at John's ask after his headset check (2026-11-08): the gun turns
+ * freely, through the driver's head if laid there.
+ */
+export const HEAD_OUT_GUN_STOP = false;
 
 /**
  * The turret turns the gun can't be laid through while the driver's head is
