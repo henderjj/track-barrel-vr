@@ -18,8 +18,6 @@
  * element so the echo canceller can see it (the "loopback workaround").
  */
 
-import { SPEECH_BAND_HZ, type SpeechReading } from '../sim/tank-audio.js';
-
 export type VoiceMode = 'spatial' | 'plain' | 'off';
 
 export interface Vec3Like {
@@ -54,9 +52,6 @@ export class Voice {
   private micAnalyser: AnalyserNode | null = null;
   private micSource: MediaStreamAudioSourceNode | null = null;
   private micData: Float32Array<ArrayBuffer> | null = null;
-  /** Both voices in the speech band only, for the duck (above the tank's engine, which the microphone hears from the speakers). */
-  private micSpeech: SpeechMeter | null = null;
-  private remoteSpeech: SpeechMeter | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   /** Keeps Chromium pulling the remote stream; muted in spatial mode (Web Audio plays it). */
   private sink: HTMLAudioElement | null = null;
@@ -200,8 +195,6 @@ export class Voice {
     this.source?.disconnect();
     this.panner?.disconnect();
     this.analyser?.disconnect();
-    this.remoteSpeech?.disconnect();
-    this.remoteSpeech = null;
     this.source = null;
     this.panner = null;
     this.analyser = null;
@@ -260,16 +253,6 @@ export class Voice {
     return rms(this.micAnalyser, this.micData);
   }
 
-  /** The crewmate's voice above SPEECH_BAND_HZ since the last read: what the tank sounds' duck listens to. Read once a frame. */
-  remoteSpeechLevel(): SpeechReading {
-    return this.remoteSpeech?.read() ?? SILENT;
-  }
-
-  /** This player's microphone above SPEECH_BAND_HZ since the last read (silent while muted): what the tank sounds' duck listens to. Read once a frame. */
-  micSpeechLevel(): SpeechReading {
-    return this.micSpeech?.read() ?? SILENT;
-  }
-
   /** True once the loopback route is playing the spatial mix. */
   get loopbackActive(): boolean {
     return this.loopOut?.srcObject != null;
@@ -281,8 +264,6 @@ export class Voice {
 
   dispose(): void {
     this.stopRemote();
-    this.micSpeech?.disconnect();
-    this.micSpeech = null;
     this.micSource?.disconnect();
     this.micSource = null;
     this.micAnalyser = null;
@@ -304,9 +285,7 @@ export class Voice {
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 512;
     this.levelData = new Float32Array(this.analyser.fftSize);
-    const input = reuseSource && this.source ? this.source : ctx.createMediaStreamSource(stream);
-    input.connect(this.analyser);
-    this.remoteSpeech = new SpeechMeter(ctx, input);
+    (reuseSource && this.source ? this.source : ctx.createMediaStreamSource(stream)).connect(this.analyser);
   }
 
   /** Listen to this player's own microphone (not played anywhere), to know when they speak. */
@@ -317,7 +296,6 @@ export class Voice {
     this.micAnalyser.fftSize = 512;
     this.micData = new Float32Array(this.micAnalyser.fftSize);
     this.micSource.connect(this.micAnalyser);
-    this.micSpeech = new SpeechMeter(ctx, this.micSource);
   }
 
   /** Route `node` through a local peer connection pair into an audio element (see the header comment). */
@@ -348,73 +326,6 @@ export class Voice {
     const answer = await b.createAnswer();
     await b.setLocalDescription({ type: 'answer', sdp: stereoOpus(answer.sdp ?? '') });
     await a.setRemoteDescription(b.localDescription!);
-  }
-}
-
-const SILENT: SpeechReading = Object.freeze({ level: 0, quiet: 0 });
-/** The speech meter measures in blocks this long, s. */
-const SPEECH_BLOCK = 0.01;
-
-/**
- * A level meter on the speech band: two high-passes at SPEECH_BAND_HZ
- * before an analyser, so the tank's engine and tracks, low-passed below
- * 900 Hz and heard by the headset's microphone from its own speakers,
- * hardly register (docs/audio.md).
- *
- * Each read covers everything heard since the last one (up to the
- * analyser's 0.7 s or so), in 10 ms blocks: the loudest block is the
- * level, the quietest the background under it. A single 10 ms look once a
- * frame missed short sounds whenever frames came slowly (a software-drawn
- * test browser draws a few a second), and a word that fell between looks.
- */
-class SpeechMeter {
-  private readonly ctx: BaseAudioContext;
-  private readonly input: AudioNode;
-  private readonly low: BiquadFilterNode;
-  private readonly high: BiquadFilterNode;
-  private readonly analyser: AnalyserNode;
-  private readonly data: Float32Array<ArrayBuffer>;
-  private readonly reading: SpeechReading = { level: 0, quiet: 0 };
-  private lastRead = -1;
-
-  constructor(ctx: BaseAudioContext, input: AudioNode) {
-    this.ctx = ctx;
-    this.input = input;
-    this.low = new BiquadFilterNode(ctx, { type: 'highpass', frequency: SPEECH_BAND_HZ, Q: Math.SQRT1_2 });
-    this.high = new BiquadFilterNode(ctx, { type: 'highpass', frequency: SPEECH_BAND_HZ, Q: Math.SQRT1_2 });
-    this.analyser = new AnalyserNode(ctx, { fftSize: 32768 });
-    this.data = new Float32Array(this.analyser.fftSize);
-    input.connect(this.low).connect(this.high).connect(this.analyser);
-  }
-
-  /** Allocation free: the same reading object each time. */
-  read(): SpeechReading {
-    const now = this.ctx.currentTime;
-    const block = Math.max(1, Math.round(SPEECH_BLOCK * this.ctx.sampleRate));
-    const data = this.data;
-    const elapsed = this.lastRead < 0 ? 0 : Math.round((now - this.lastRead) * this.ctx.sampleRate);
-    this.lastRead = now;
-    const blocks = Math.max(1, Math.min(Math.floor(data.length / block), Math.round(elapsed / block)));
-    this.analyser.getFloatTimeDomainData(data);
-    let loudest = 0;
-    let quietest = Number.POSITIVE_INFINITY;
-    for (let b = 0; b < blocks; b++) {
-      const end = data.length - b * block;
-      let sum = 0;
-      for (let i = end - block; i < end; i++) sum += data[i] * data[i];
-      const level = Math.sqrt(sum / block);
-      if (level > loudest) loudest = level;
-      if (level < quietest) quietest = level;
-    }
-    this.reading.level = loudest;
-    this.reading.quiet = quietest;
-    return this.reading;
-  }
-
-  disconnect(): void {
-    this.input.disconnect(this.low);
-    this.low.disconnect();
-    this.high.disconnect();
   }
 }
 

@@ -237,6 +237,48 @@ function peakVoiceLevel(page, ms) {
 }
 
 /**
+ * What the tank sounds put out (the audio graph's own output, after the duck)
+ * with nobody speaking and then with someone speaking: the page's voice
+ * levels are held at silence, then at a speaking level, and the output
+ * measured once the duck has settled each way.
+ */
+function measureDuckedOutput(page) {
+  return page.evaluate(async () => {
+    const voice = window.__net.voice;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const settle = async (ok) => {
+      const end = performance.now() + 20000;
+      while (!ok(window.__audio.state().duckGain) && performance.now() < end) await sleep(50);
+      await sleep(300);
+    };
+    const average = async (ms) => {
+      let sum = 0;
+      let n = 0;
+      const end = performance.now() + ms;
+      while (performance.now() < end) {
+        sum += window.__audio.outputLevel();
+        n++;
+        await sleep(25);
+      }
+      return sum / n;
+    };
+    try {
+      voice.micLevel = () => 0;
+      voice.remoteLevel = () => 0;
+      await settle((g) => g > 0.99);
+      const quiet = await average(2000);
+      voice.micLevel = () => 0.05;
+      await settle((g) => g < 0.255);
+      const ducked = await average(2000);
+      return { quiet, ducked, db: 20 * Math.log10(ducked / quiet), engineHz: window.__audio.state().engineHz };
+    } finally {
+      delete voice.micLevel;
+      delete voice.remoteLevel;
+    }
+  });
+}
+
+/**
  * The furthest the tank's sounds duck for the intercom over `ms`, dB (F1.12),
  * as the audio graph's own gain has it: what the player hears, not just
  * what the duck worked out.
@@ -1430,11 +1472,16 @@ async function main() {
     // Voice: the fake microphone beeps about once a second.
     const voicePeak = await peakVoiceLevel(b.page, 2500);
     check('Crewmate voice arrives', voicePeak > 0.01, `peak level ${voicePeak.toFixed(3)}`);
-    // F1.12: the voice plays plain, like an intercom, and the tank's sounds duck about 6 dB while either player speaks.
+    // F1.12: the voice plays plain, like an intercom, and the tank's sounds duck about 12 dB while either player speaks.
     const ducks = await Promise.all([a, b].map((p) => deepestDuck(p.page, 2500)));
     const modes = await Promise.all([a, b].map((p) => p.page.evaluate(() => window.__net.voice.mode)));
-    check('The intercom plays plain by default, and the tank sounds duck while someone speaks', modes.every((m) => m === 'plain') && ducks.every((d) => d < -4),
+    check('The intercom plays plain by default, and the tank sounds duck while someone speaks', modes.every((m) => m === 'plain') && ducks.every((d) => d < -8),
       `voice ${modes.join('/')}, deepest duck ${ducks.map((d) => `${d.toFixed(1)} dB`).join(' and ')}`);
+    // John's play test (2026-11-07): the menu said -6 dB but the engine sounded no quieter. Measure
+    // what the tank sounds actually put out, nobody speaking and then someone speaking.
+    const out = await measureDuckedOutput(a.page);
+    check('The tank sounds come out about 12 dB quieter while someone speaks', out.db < -11 && out.db > -13,
+      `output RMS ${out.quiet.toFixed(4)} with nobody speaking, ${out.ducked.toFixed(4)} speaking: ${out.db.toFixed(1)} dB (engine ${out.engineHz.toFixed(0)} Hz)`);
     // The game menu's mute buttons: Ann mutes her microphone, then Bo turns Ann's voice off.
     await a.page.evaluate(() => window.__gameMenu.click('row-mic-1'));
     await new Promise((r) => setTimeout(r, 500));

@@ -14,7 +14,7 @@ Everything is synthesised with Web Audio at load: no sample files, nothing from 
 - **A bump**: a deep thud through the floor when the hull meets an obstacle.
 - **The loading**: a thunk as the shell goes home, the breech block slamming shut as the lever closes, and a lighter clack when a hand opens it again.
 - **The gun**: a crack, a boom and a long rumble, the breech flying open as the gun runs out, then the casing ringing and bouncing in the bin half a second later.
-- **The intercom**: the crewmate's voice, plain (not positioned). While either player's voice is above the speaking level, the tank's sounds dip by 6 dB within a twentieth of a second, hold through the gaps between words, and come back over about half a second.
+- **The intercom**: the crewmate's voice, plain (not positioned). While either player's voice is above the speaking level, the tank's sounds dip by 12 dB within a twentieth of a second, hold through the gaps between words, and come back over about half a second.
 
 ## Numbers
 
@@ -28,7 +28,7 @@ All in `src/sim/tank-audio.ts`.
 | Link clatter | white noise through a 1.1 kHz band-pass, one tick per 15 cm of track, up to 45 a second |
 | Traverse whine | triangle, 180 to 880 Hz with the turret's rate up to 24°/s |
 | Mix peaks | gun 0.95, clunk 0.55, breech 0.5, bump 0.5, catch 0.5, stall 0.45, cough 0.42, ram 0.35, engine 0.32, crank 0.32, rumble 0.3, grind 0.3, casing 0.28, latch 0.25, siren 0.16, clatter 0.1, whine 0.03 |
-| Duck | −6 dB while a voice is speaking: its RMS level above 1 kHz (two high-passes) at or above 0.006 and at least 6 dB over its steady background (which follows a quieter level down in 0.15 s and a louder one up in 5 s, kept as it would be with the tank not ducked); attack 0.05 s, hold 0.35 s, release 0.4 s |
+| Duck | −12 dB (−6 dB until John's play test of 2026-11-07, which nobody could hear under a voice) while a voice's RMS level is at or above 0.01; attack 0.05 s, hold 0.35 s, release 0.4 s |
 | Short sounds | clunk 0.45 s, grind 0.5 s loop (30 tooth beats), shot 2.2 s, breech 0.6 s, latch 0.35 s, casing 1.1 s (four bounces), ram 0.35 s, bump 0.7 s |
 
 The short sounds are rendered once into buffers from decaying sines, gliding thumps and filtered noise bursts (`renderSound`), deterministic so both pages hear the same tank and the tests can check them. The noise loops for the rumble and clatter meet themselves at the join, so they loop without a click.
@@ -37,9 +37,7 @@ The short sounds are rendered once into buffers from decaying sines, gliding thu
 
 Nothing new goes over the network. Each page plays the tank as it draws it: the engine and tracks from the tank state (the host's simulation, or a guest's copy of it), the whine from the turret as drawn, the breech and ram from the loading as drawn (the gunner's own, or their packets), and the gun from every shot through `shotListeners`. The short sounds come from changes in that state (`SoundCues`): a new gear engaged, the bump count going up, the lever crossing just short of closed, the rammed flag. The breech opening by itself after a shot is part of the shot's sound, so the cue skips an opening within 1.2 s of a shot (the crewmate's copy of the lever arrives late). Alone, the page hears its own tank.
 
-The duck listens to both voices: this player's microphone and the crewmate's voice as heard, each through two high-passes at 1 kHz (`SpeechMeter` in `src/net/voice.ts`, `micSpeechLevel()` and `remoteSpeechLevel()`), passed on as `netLink.micSpeech` and `netLink.crewSpeech`. Muting either one takes it out of the duck.
-
-Why the high-passes and the background: the headset's microphone hears the tank from the headset's own speakers, and Chromium's echo canceller doesn't take out sound played through Web Audio; the crewmate's voice carries their tank the same way. At first the duck took any level over 0.01 for speech, so with the engine running it stayed in all the time: the menu said "ducked -6 dB" and nobody heard the engine dip (John's play test, 2026-11-07). The engine and tracks are low-passed below 900 Hz, so above 1 kHz they drop 20 dB (flat out) to 35 dB (idle) while speech keeps its consonants and upper formants. Each frame the meter reads everything heard since the last frame (up to about 0.7 s) in 10 ms blocks: the loudest block is the voice's level, the quietest the background under it. (At first it took one 10 ms look a frame, which in the software-drawn test browsers, a frame or two a second, mostly missed the fake microphone's 40 ms beeps above 1 kHz and failed the network test now and then.) What's left of a steady sound becomes the background (`VoiceGate` in `src/sim/tank-audio.ts`), and only a voice 6 dB over it counts. The background is kept as it would be with the tank not ducked (the level over the duck's gain): the microphone hears the ducked tank too, and a background that followed it down would take the tank coming back up for speech and pump. The raw levels (`netLink.micLevel`, `crewLevel`) still feed the run's talk time (F1.14).
+The duck listens to both voices: this player's microphone (a new analyser in `src/net/voice.ts`, `micLevel()`) and the crewmate's voice as heard (`remoteLevel()`), passed on as `netLink.micLevel` and `netLink.crewLevel`. Muting either one takes it out of the duck.
 
 ## The intercom
 
@@ -63,10 +61,10 @@ Its PC page makes no sound (it would only echo the headset's tank through the PC
 
 ## Tests
 
-- `test/tank-audio.test.ts`: the engine, track and whine numbers; the diesel cycle (seamless, a pulse per firing, uneven); the duck's attack, hold, release and quiet-room threshold, and the tank heard through both microphones: the duck lets go of it in a few seconds without pumping, still ducks for speech over it, and keeps hearing a crew that talks for a minute; every cue (and none on the first frame, no clunk into neutral or while grinding, no latch after a shot); every short sound's length, peak and fade to silence, rendered the same twice; the grind's seamless loop; the casing's bounces; the noise loops.
+- `test/tank-audio.test.ts`: the engine, track and whine numbers; the diesel cycle (seamless, a pulse per firing, uneven); the duck's attack, hold, release and quiet-room threshold; every cue (and none on the first frame, no clunk into neutral or while grinding, no latch after a shot); every short sound's length, peak and fade to silence, rendered the same twice; the grind's seamless loop; the casing's bounces; the noise loops.
 - `test/settings-menu.test.ts`: plain is the voice default; Tank sounds is saved and parsed.
 - `npm run test:xr` step 6i: the earlier steps' shifts, loading and shot were heard; driving quickens the diesel's beat and the tracks rumble; Practice → Tank sounds → Play each plays every short sound; the Tank sounds row turns them off and on.
-- `npm run test:net`: the voice is plain and both pages' tank sounds duck (the audio graph's own gain, not just the number) while the fake microphones beep; both pages hear the guest gunner's ram, breech, shot and casing, on a clean link and at 150 ms RTT.
+- `npm run test:net`: the voice is plain and both pages' tank sounds duck while the fake microphones beep; both pages hear the guest gunner's ram, breech, shot and casing, on a clean link and at 150 ms RTT.
 
 The emulator can't listen: the browser tests check what the page asks Web Audio to play. How it sounds is for the headset check.
 
@@ -79,6 +77,6 @@ On a Quest 3 after the deploy, with the cache cleared, seated. Wear the headset'
 3. Shift with a tiller pushed: the grind rasps until you let the tiller go, then the gear clunks in. Drive gently into a rock or a wall: a thud.
 4. **Practice → Load and fire**. Ram a shell (thunk), close the breech (slam), fire (crack and boom, the breech flying open, the casing ringing in the bin by your left leg). Open the breech by hand once without firing: a lighter clack. Turn the turret with the power grip: a thin whine that rises with the speed.
 5. **Settings → Sound and view → Tank sounds**: Quiet halves it, Off silences it at once, On brings it back. Leave it on.
-6. With a second headset (or the practice crewmate on a PC, which stays silent): talk. The crewmate's voice sounds plain, like headphones, not from where they sit. While either of you speaks, the engine and the gun dip a little and come back after you stop; say whether the dip is enough to hear each other over the engine flat out, and whether it pumps annoyingly. The game menu's line under Tank sounds says "ducked -6 dB" and who is speaking while someone speaks, and "nobody speaking" a moment after you both stop, with the engine running.
+6. With a second headset (or the practice crewmate on a PC, which stays silent): talk. The crewmate's voice sounds plain, like headphones, not from where they sit. While either of you speaks, the engine and the gun clearly dip (to about half as loud) and come back after you stop; say whether the dip is enough to hear each other over the engine flat out, and whether it pumps annoyingly. The game menu's line under Tank sounds says "ducked -12 dB" while someone speaks.
 7. As the driver with a crewmate gunner: you hear their shell go home, the breech close and the gun fire. As the gunner with a crewmate driver: you hear the engine and gears follow their driving.
 8. Press **X** for the perf HUD while driving and firing: report the frame time (the sounds run off the main thread; the game's JavaScript should be unchanged).

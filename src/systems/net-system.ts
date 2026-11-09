@@ -22,7 +22,6 @@ import { hipPoint, SEATS, seatToHull } from '../sim/cabin.js';
 import { seatAs } from '../sim/convoy-seat.js';
 import { createSeatedBody, solveSeatedBody } from '../sim/seated-body.js';
 import { copyCurls, createFingerCurls, type FingerCurls, setCurls } from '../sim/hand-pose.js';
-import type { SpeechReading } from '../sim/tank-audio.js';
 import { settings } from '../settings.js';
 import { crewPresence } from '../net/crew-presence.js';
 import { handCurls, handUse } from './grip-system.js';
@@ -129,8 +128,6 @@ function sentHoldKind(use: string | null): number {
  * and hand positions to send, a way to send packets, and handlers for packet
  * types other than poses.
  */
-const SILENT_VOICE: SpeechReading = Object.freeze({ level: 0, quiet: 0 });
-
 export const netLink = {
   connected: false,
   isHost: true,
@@ -172,9 +169,6 @@ export const netLink = {
   /** RMS levels, 0 to 1, of this player's microphone and the crewmate's voice as heard: the tank sounds duck while either speaks (F1.12). */
   micLevel: (): number => 0,
   crewLevel: (): number => 0,
-  /** The same above the tank's engine (the speech band, SPEECH_BAND_HZ) since the last read, loudest and quietest: what the duck listens to, so the tank heard through the microphone isn't taken for speech. Read once a frame. */
-  micSpeech: (): SpeechReading => SILENT_VOICE,
-  crewSpeech: (): SpeechReading => SILENT_VOICE,
 };
 
 export function lobbyBaseUrl(): string {
@@ -343,8 +337,6 @@ export class NetSystem extends createSystem({}) {
     netLink.toLocal = (peerMs) => this.session.clock.toLocal(peerMs);
     netLink.micLevel = () => this.voice.micLevel();
     netLink.crewLevel = () => this.voice.remoteLevel();
-    netLink.micSpeech = () => this.voice.micSpeechLevel();
-    netLink.crewSpeech = () => this.voice.remoteSpeechLevel();
 
     const self = this;
     this.debug = {
