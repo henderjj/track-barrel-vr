@@ -48,6 +48,9 @@ import {
   GEAR_LEVER_NAME,
   VOLT_DIAL,
   VOLTMETER,
+  ZONE_COLORS,
+  type ZoneKind,
+  zoneOf,
 } from '../sim/driver-station.js';
 import { chokeLevel, volts } from '../sim/engine.js';
 import { Button, Lever, MechEvent, PullKnob, Toggle } from '../sim/mechanism.js';
@@ -99,6 +102,8 @@ const FOLLOW_RATE = 20;
 const GRIND_EVERY = 0.08;
 /** The dials' face canvas, px. */
 const FACE_PX_W = 1024;
+/** How wide a dial's coloured bands are, a share of its radius: they end at the rim's inside, under the short marks. */
+const ZONE_WIDTH = 0.12;
 const FACE_PX_H = Math.round((FACE_PX_W * PANEL.height) / PANEL.width);
 
 interface StationDebug {
@@ -125,6 +130,8 @@ interface StationDebug {
   };
   /** What each gauge's needle points at, in its dial's units (speed km/h, rpm, coolant °C, oil bar, fuel 0-1, volts). */
   gauges(): Record<Dial['id'], number>;
+  /** The coloured band each gauge's reading (as gauges()) is in, null between bands, and each dial's bands (docs/gauge-zones.md). */
+  zones(): { at: Record<Dial['id'], ZoneKind | null>; bands: Record<Dial['id'], Dial['zones']> };
   /** The instrument box (F1.17): each switch and button's kit name, whether it is on (pressed in), how often pressed, and the lamps lit. */
   engine(): {
     names: Record<EngineControlId, string>;
@@ -281,6 +288,16 @@ export class DriverStationSystem extends createSystem({}) {
         const s = shownDriverState();
         if (s) for (const dial of [...DIALS, VOLT_DIAL]) out[dial.id] = gaugeValue(dial, s);
         return out;
+      },
+      zones: () => {
+        const at = {} as Record<Dial['id'], ZoneKind | null>;
+        const bands = {} as Record<Dial['id'], Dial['zones']>;
+        const s = shownDriverState();
+        for (const dial of [...DIALS, VOLT_DIAL]) {
+          at[dial.id] = zoneOf(dial, s ? gaugeValue(dial, s) : dial.min);
+          bands[dial.id] = dial.zones;
+        }
+        return { at, bands };
       },
       engine: () => {
         const on = {} as Record<EngineControlId, boolean>;
@@ -603,6 +620,7 @@ export class DriverStationSystem extends createSystem({}) {
     ctx.strokeStyle = '#1a1a14';
     ctx.lineWidth = 3;
     ctx.stroke();
+    zoneBands(ctx, VOLT_DIAL, vx, vy, r);
     ctx.fillStyle = '#1a1a14';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -776,6 +794,7 @@ export class DriverStationSystem extends createSystem({}) {
       ctx.strokeStyle = '#1a1a14';
       ctx.lineWidth = 3;
       ctx.stroke();
+      zoneBands(ctx, dial, cx, cy, r);
       // Marks: the numbered ones long, a short one between each pair.
       ctx.fillStyle = '#1a1a14';
       ctx.textAlign = 'center';
@@ -818,6 +837,26 @@ export class DriverStationSystem extends createSystem({}) {
     });
     return face;
   }
+}
+
+/**
+ * A dial's coloured bands (docs/gauge-zones.md): arcs just inside the rim,
+ * under the marks, from each band's start to its end along the needle's
+ * sweep. A needle angle is clockwise from up; the canvas's is clockwise from
+ * right, a quarter turn on.
+ */
+function zoneBands(ctx: CanvasRenderingContext2D, dial: Dial, cx: number, cy: number, r: number): void {
+  // Leave the pen as it was: the marks drawn next keep their own colour.
+  ctx.save();
+  ctx.lineWidth = r * ZONE_WIDTH;
+  ctx.lineCap = 'butt';
+  for (const zone of dial.zones) {
+    ctx.strokeStyle = ZONE_COLORS[zone.kind];
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * (0.95 - ZONE_WIDTH / 2), needleAngle(dial, zone.from) - Math.PI / 2, needleAngle(dial, zone.to) - Math.PI / 2);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /** A mark from the rim inwards by `length` of the radius. */
