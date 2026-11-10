@@ -29,7 +29,13 @@ import {
   KNOB_PROUD,
   PANEL_HOUSING,
   SWITCH_PANEL,
+  LOW_FUEL,
+  OVERHEAT_COOLANT,
+  VOLT_DIAL,
+  zoneOf,
 } from '../src/sim/driver-station.js';
+import { BATTERY_VOLTS, CHOKE_COOLANT, CRANK_VOLTS, RUNNING_VOLTS, volts, WARM_COOLANT } from '../src/sim/engine.js';
+import { DOWN_RPM, UP_RPM } from '../src/sim/gearbox.js';
 import { type HandInput, Lever, type Vec3 } from '../src/sim/mechanism.js';
 import {
   COOLANT_FULL,
@@ -359,6 +365,89 @@ describe('the driver\'s gauges (F1.5)', () => {
     expect(oilPressure(IDLE_RPM, COOLANT_IDLE)).toBeCloseTo(1.5, 6);
     expect(oilPressure(MAX_RPM, COOLANT_IDLE)).toBeCloseTo(5, 6);
     expect(oilPressure(MAX_RPM, COOLANT_FULL)).toBeLessThan(5);
+  });
+});
+
+describe('the gauges\' coloured bands (docs/gauge-zones.md)', () => {
+  const dial = (id: string) => [...DIALS, VOLT_DIAL].find((d) => d.id === id)!;
+
+  it('keeps every band inside its dial, lowest first and apart', () => {
+    for (const d of [...DIALS, VOLT_DIAL]) {
+      let last = d.min;
+      for (const z of d.zones) {
+        expect(z.from, `${d.id} ${z.kind}`).toBeGreaterThanOrEqual(last);
+        expect(z.to, `${d.id} ${z.kind}`).toBeGreaterThan(z.from);
+        expect(z.to, `${d.id} ${z.kind}`).toBeLessThanOrEqual(d.max);
+        last = z.to;
+      }
+    }
+    expect(dial('speed').zones).toHaveLength(0);
+  });
+
+  it('marks the revs: green where the automatic box keeps them, amber where it changes up, red from the governed top', () => {
+    const rpm = dial('rpm');
+    expect(zoneOf(rpm, IDLE_RPM)).toBeNull();
+    expect(zoneOf(rpm, DOWN_RPM)).toBe('normal');
+    expect(zoneOf(rpm, (DOWN_RPM + UP_RPM) / 2)).toBe('normal');
+    expect(zoneOf(rpm, UP_RPM + 100)).toBe('caution');
+    // The needle stops at the governor's top: on the red line.
+    expect(zoneOf(rpm, MAX_RPM)).toBe('danger');
+    expect(zoneOf(rpm, MAX_RPM - 1)).toBe('caution');
+  });
+
+  it('marks the coolant from the engine\'s own numbers: blue needs the choke, amber warming, green warm, red never reached', () => {
+    const coolant = dial('coolant');
+    expect(zoneOf(coolant, COOLANT_START)).toBe('cold');
+    expect(zoneOf(coolant, CHOKE_COOLANT - 0.1)).toBe('cold');
+    expect(zoneOf(coolant, CHOKE_COOLANT)).toBe('warming');
+    expect(zoneOf(coolant, WARM_COOLANT - 0.1)).toBe('warming');
+    expect(zoneOf(coolant, WARM_COOLANT)).toBe('normal');
+    expect(zoneOf(coolant, COOLANT_IDLE)).toBe('normal');
+    expect(zoneOf(coolant, COOLANT_FULL)).toBe('normal');
+    expect(zoneOf(coolant, OVERHEAT_COOLANT + 1)).toBe('danger');
+    // Warmed from cold at a fast idle, then run flat out for hours: blue, amber, green, never red.
+    const s = createTankDrive();
+    const seen: string[] = [];
+    s.rpm = 1300;
+    for (let i = 0; i < 300; i++) {
+      stepEngineGauges(s, 1);
+      const z = zoneOf(coolant, s.coolant)!;
+      if (seen[seen.length - 1] !== z) seen.push(z);
+    }
+    expect(seen).toEqual(['cold', 'warming', 'normal']);
+    s.rpm = MAX_RPM;
+    for (let i = 0; i < 4 * 3600; i++) stepEngineGauges(s, 1);
+    expect(s.coolant).toBeLessThan(OVERHEAT_COOLANT);
+    expect(zoneOf(coolant, s.coolant)).toBe('normal');
+  });
+
+  it('keeps a running engine\'s oil pressure in the green and puts a stopped one\'s in the red', () => {
+    const oil = dial('oil');
+    for (let rpm = IDLE_RPM; rpm <= MAX_RPM; rpm += 100) {
+      for (const coolant of [COOLANT_START, COOLANT_IDLE, COOLANT_FULL]) {
+        expect(zoneOf(oil, oilPressure(rpm, coolant)), `${rpm} rpm at ${coolant} °C`).toBe('normal');
+      }
+    }
+    expect(zoneOf(oil, oilPressure(0, COOLANT_IDLE))).toBe('danger');
+    expect(zoneOf(oil, oilPressure(IDLE_RPM * 0.3, COOLANT_FULL))).toBe('danger');
+  });
+
+  it('marks low fuel, which the reserve sits in', () => {
+    const fuel = dial('fuel');
+    expect(zoneOf(fuel, 1)).toBeNull();
+    expect(zoneOf(fuel, 0.5)).toBeNull();
+    expect(zoneOf(fuel, FUEL_RESERVE)).toBe('danger');
+    expect(LOW_FUEL).toBeGreaterThan(FUEL_RESERVE);
+  });
+
+  it('shows the voltmeter amber on the battery, under it while cranking, green with the generator charging', () => {
+    expect(zoneOf(VOLT_DIAL, volts({ power: true, running: false, cranking: false }))).toBe('caution');
+    expect(BATTERY_VOLTS).toBeGreaterThan(VOLT_DIAL.zones[0].from);
+    expect(zoneOf(VOLT_DIAL, volts({ power: true, running: false, cranking: true }))).toBeNull();
+    expect(CRANK_VOLTS).toBeLessThan(VOLT_DIAL.zones[0].from);
+    expect(zoneOf(VOLT_DIAL, volts({ power: true, running: true, cranking: false }))).toBe('normal');
+    expect(zoneOf(VOLT_DIAL, RUNNING_VOLTS)).toBe('normal');
+    expect(zoneOf(VOLT_DIAL, volts({ power: false, running: false, cranking: false }))).toBeNull();
   });
 });
 

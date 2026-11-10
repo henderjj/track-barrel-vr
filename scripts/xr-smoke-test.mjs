@@ -1400,6 +1400,7 @@ async function startingTheEngine() {
     ...evalInApp('(({ running, cranking, rpm, power, stalls }) => ({ running, cranking, rpm, power, stalls }))(window.__drive.state())'),
     box: evalInApp('window.__driverStation.engine()'),
     volts: evalInApp('window.__driverStation.gauges().volts'),
+    zones: evalInApp('window.__driverStation.zones().at'),
   });
   const off = engine();
   check('The tank starts with its engine stopped: the oil and generator lamps lit, the voltmeter at 24 V',
@@ -1423,6 +1424,15 @@ async function startingTheEngine() {
   }, 4000).catch(() => engine());
   check('Running, the lamps go out and the voltmeter reads the generator\'s 28 V',
     running.running && !running.box.lamps.oil && running.volts > 27, `lamps ${JSON.stringify(running.box.lamps)}, ${running.volts.toFixed(1)} V`);
+  // The gauges' coloured bands (docs/gauge-zones.md): stopped, the oil in the red and the voltmeter on the battery's amber;
+  // running (once the revs have risen to idle), both green.
+  const banded = await waitFor('the oil and volts bands green', () => {
+    const e = engine();
+    return e.zones.oil === 'normal' && e.zones.volts === 'normal' && e;
+  }, 3000).catch(() => engine());
+  check('The bands say what the readings mean: oil red and volts amber stopped, both green running',
+    off.zones.oil === 'danger' && off.zones.volts === 'caution' && banded.zones.oil === 'normal' && banded.zones.volts === 'normal',
+    `stopped oil ${off.zones.oil}, volts ${off.zones.volts}; running (${banded.rpm.toFixed(0)} rpm) oil ${banded.zones.oil}, volts ${banded.zones.volts}`);
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
 }

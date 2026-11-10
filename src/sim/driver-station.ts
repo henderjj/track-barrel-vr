@@ -12,8 +12,10 @@
  * a positive angle tipping its top forwards (-Z).
  */
 
-import { type Gear, LEVER_ORDER, NEUTRAL } from './gearbox.js';
+import { type Gear, DOWN_RPM, LEVER_ORDER, MAX_RPM, NEUTRAL, UP_RPM } from './gearbox.js';
 import { SEATS, VISION_SLIT } from './cabin.js';
+import { BATTERY_VOLTS, CHOKE_COOLANT, RUNNING_VOLTS, WARM_COOLANT } from './engine.js';
+import { COOLANT_FULL } from './tank-drive.js';
 import { TILLER } from './lever.js';
 import type { ButtonSpec, LeverSpec, PullSpec, ToggleSpec } from './mechanism.js';
 
@@ -186,7 +188,46 @@ export const PANEL = (() => {
   };
 })();
 
-/** A dial: what it reads, its range, and the face's numbers. Needles sweep clockwise through DIAL_SWEEP from the bottom left. */
+/**
+ * What a coloured band on a dial's rim means (John, 10 November 2026: the
+ * gauges should say what a reading means, not only what it is): cold (blue)
+ * an engine that needs the choke; warming (amber) one still warming up;
+ * normal (green) where it should run; caution (amber) a reading to act on
+ * soon; danger (red) one to act on now. docs/gauge-zones.md.
+ */
+export type ZoneKind = 'cold' | 'warming' | 'normal' | 'caution' | 'danger';
+/** A band on a dial's rim, in the dial's units, `from` below `to`. */
+export interface DialZone {
+  from: number;
+  to: number;
+  kind: ZoneKind;
+}
+/** Each kind's paint on the cream faces, picked to tell apart in the dim hull. */
+export const ZONE_COLORS: Readonly<Record<ZoneKind, string>> = {
+  cold: '#2f6fd0',
+  warming: '#e0a020',
+  normal: '#2f9a3c',
+  caution: '#e0a020',
+  danger: '#d02a22',
+};
+
+/**
+ * The coolant's red, °C: boiling under the radiator's cap. Hotter than the
+ * engine runs at full revs (COOLANT_FULL, 92 °C), so in Phase 1, where
+ * nothing fails (plan decision 7), the needle never reaches it.
+ */
+export const OVERHEAT_COOLANT = 100;
+/** Oil pressure under this is too low for a running engine, bar: only a stopping or stopped engine's needle drops there (a hot idle reads about 1.1). */
+export const LOW_OIL = 0.6;
+/** The oil pressure's green: from just under a hot idle's to a cold engine's at full revs, bar. */
+export const OIL_NORMAL = { from: 1, to: 5.2 } as const;
+/** Fuel under this share is low: about 24 minutes left at full revs. */
+export const LOW_FUEL = 0.2;
+/** The voltmeter's green, the generator charging round RUNNING_VOLTS, and its amber, the battery alone round BATTERY_VOLTS, V. */
+export const VOLTS_CHARGING = { from: RUNNING_VOLTS - 2, to: RUNNING_VOLTS + 2 } as const;
+export const VOLTS_BATTERY = { from: BATTERY_VOLTS - 2, to: VOLTS_CHARGING.from } as const;
+
+/** A dial: what it reads, its range, the face's numbers and its coloured bands. Needles sweep clockwise through DIAL_SWEEP from the bottom left. */
 export interface Dial {
   id: 'speed' | 'rpm' | 'coolant' | 'oil' | 'fuel' | 'volts';
   label: string;
@@ -196,16 +237,51 @@ export interface Dial {
   marks: readonly number[];
   /** How a mark's number is written on the face. */
   text: (mark: number) => string;
+  /** Coloured bands round the rim, lowest first, apart, inside min to max; none on the speedometer. */
+  zones: readonly DialZone[];
 }
 
 /** The gauges, left to right. */
 export const DIALS: readonly Dial[] = [
-  { id: 'speed', label: 'KM/H', min: 0, max: 40, marks: [0, 10, 20, 30, 40], text: String },
-  { id: 'rpm', label: 'RPM ×100', min: 0, max: 3000, marks: [0, 500, 1000, 1500, 2000, 2500, 3000], text: (m) => String(m / 100) },
-  { id: 'coolant', label: 'WATER °C', min: 0, max: 120, marks: [0, 30, 60, 90, 120], text: String },
-  { id: 'oil', label: 'OIL BAR', min: 0, max: 6, marks: [0, 2, 4, 6], text: String },
-  { id: 'fuel', label: 'FUEL', min: 0, max: 1, marks: [0, 0.5, 1], text: (m) => (m === 0 ? 'E' : m === 1 ? 'F' : '½') },
+  { id: 'speed', label: 'KM/H', min: 0, max: 40, marks: [0, 10, 20, 30, 40], text: String, zones: [] },
+  {
+    id: 'rpm', label: 'RPM ×100', min: 0, max: 3000, marks: [0, 500, 1000, 1500, 2000, 2500, 3000], text: (m) => String(m / 100),
+    // Green where the automatic box keeps it; amber above where it changes up; red past the governor's top, which the needle stops at.
+    zones: [
+      { from: DOWN_RPM, to: UP_RPM, kind: 'normal' },
+      { from: UP_RPM, to: MAX_RPM, kind: 'caution' },
+      { from: MAX_RPM, to: 3000, kind: 'danger' },
+    ],
+  },
+  {
+    id: 'coolant', label: 'WATER °C', min: 0, max: 120, marks: [0, 30, 60, 90, 120], text: String,
+    // Blue needs the choke to start; amber is still warming (a cold idle stalls); green from warm to the hottest it runs; red boils.
+    zones: [
+      { from: 0, to: CHOKE_COOLANT, kind: 'cold' },
+      { from: CHOKE_COOLANT, to: WARM_COOLANT, kind: 'warming' },
+      { from: WARM_COOLANT, to: COOLANT_FULL, kind: 'normal' },
+      { from: OVERHEAT_COOLANT, to: 120, kind: 'danger' },
+    ],
+  },
+  {
+    id: 'oil', label: 'OIL BAR', min: 0, max: 6, marks: [0, 2, 4, 6], text: String,
+    zones: [
+      { from: 0, to: LOW_OIL, kind: 'danger' },
+      { from: OIL_NORMAL.from, to: OIL_NORMAL.to, kind: 'normal' },
+    ],
+  },
+  {
+    id: 'fuel', label: 'FUEL', min: 0, max: 1, marks: [0, 0.5, 1], text: (m) => (m === 0 ? 'E' : m === 1 ? 'F' : '½'),
+    zones: [{ from: 0, to: LOW_FUEL, kind: 'danger' }],
+  },
 ];
+
+/** The band a reading of `value` falls in on `dial`, or null between bands; a value on the edge of two is in the upper one. */
+export function zoneOf(dial: Dial, value: number): ZoneKind | null {
+  let found: ZoneKind | null = null;
+  for (const z of dial.zones) if (value >= z.from && value <= z.to) found = z.kind;
+  return found;
+}
 /** A needle's sweep from its dial's minimum to its maximum, clockwise, radians; it starts at the bottom left. */
 export const DIAL_SWEEP = 270 * DEG;
 
@@ -331,6 +407,11 @@ export const VOLT_DIAL: Dial = {
   max: VOLTMETER.max,
   marks: VOLTMETER.marks,
   text: String,
+  // Amber on the battery alone (the starter dips it under), green with the generator charging.
+  zones: [
+    { from: VOLTS_BATTERY.from, to: VOLTS_BATTERY.to, kind: 'caution' },
+    { from: VOLTS_CHARGING.from, to: VOLTS_CHARGING.to, kind: 'normal' },
+  ],
 };
 
 export type LampId = 'oil' | 'generator' | 'brake';
