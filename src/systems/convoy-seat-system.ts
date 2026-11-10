@@ -37,7 +37,7 @@ export function headOut(up = !seating.convoy): boolean {
 
 interface ConvoyDebug {
   /** The seat as wanted and as it stands, the crewmate's, and the seat lever. */
-  state(): { wanted: boolean; shown: boolean; crew: boolean; up: boolean; lever: number; held: boolean; sent: number; received: number };
+  state(): { wanted: boolean; shown: boolean; crew: boolean; up: boolean; lever: number; drawn: number; held: boolean; sent: number; received: number };
   /** Practice → Head out: raise (true), lower (false) or swap. */
   headOut(up?: boolean): boolean;
   /** The seat lever's grip middle, hull space, for the tests' hands. */
@@ -60,6 +60,8 @@ interface ConvoyDebug {
 export class ConvoySeatSystem extends createSystem({}) {
   private lever = new Lever(SEAT_LEVER);
   private mount = new Group();
+  /** The lever's mesh turns in this, inside the mount (the mount stays still: it is the lever's frame). */
+  private turning = new Group();
   private latch = { pulled: false };
   private pivot: Vec3 = [0, 0, 0];
   private lastSent: boolean | null = null;
@@ -73,7 +75,8 @@ export class ConvoySeatSystem extends createSystem({}) {
     this.seat = this.world.getSceneEntity('hull')?.object3D?.getObjectByName(DRIVER_SEAT_NAME) ?? null;
     if (!this.seat) console.warn("[Convoy] no driver's seat in the hull: it won't be drawn rising");
     this.mount.name = 'Seat Lever';
-    this.mount.add(createLever(SEAT_LEVER));
+    this.turning.add(createLever(SEAT_LEVER));
+    this.mount.add(this.turning);
     this.world.createTransformEntity(this.mount);
     this.placeLever();
     this.cleanupFuncs.push(
@@ -101,6 +104,7 @@ export class ConvoySeatSystem extends createSystem({}) {
         crew: seating.crewConvoy,
         up: convoyUp(),
         lever: self.lever.angle,
+        drawn: -self.turning.rotation.x,
         held: self.lever.anyHeld,
         sent: self.sent,
         received: self.received,
@@ -145,5 +149,7 @@ export class ConvoySeatSystem extends createSystem({}) {
     if (this.seat) this.seat.position.set(up ? CONVOY_MOVE[0] : 0, up ? CONVOY_MOVE[1] : 0, up ? CONVOY_MOVE[2] : 0);
     seatLeverPivot(up, this.pivot);
     this.mount.position.set(this.pivot[0], this.pivot[1], this.pivot[2]);
+    // Drawn where the hand finds it: leaning forward at rest, back as it is pulled.
+    this.turning.rotation.x = -this.lever.angle;
   }
 }
