@@ -2197,9 +2197,10 @@ async function layingTheGun() {
  * 6j. The tank's sounds (F1.12): the driving, loading and firing steps
  *     before this one made their short sounds on the way (a gear going in,
  *     a shell rammed, the breech slammed, the shot and its casing). Driving
- *     raises the engine's note and the tracks rumble; Practice → Tank
- *     sounds → Play each plays every short sound; the menu's Tank sounds row
- *     turns them off and on. The emulator can't listen, so this checks what
+ *     raises the engine's note and roar, the gears whine and the tracks
+ *     rumble (F6.1); the traverse crank ticks; Practice → Tank sounds →
+ *     Play each plays every short sound and Run through revs the engine;
+ *     the menu's Tank sounds row turns them off and on. The emulator can't listen, so this checks what
  *     the page sends to Web Audio.
  */
 async function tankSounds() {
@@ -2219,12 +2220,26 @@ async function tankSounds() {
   await sleep(400);
   const idle = audio();
   evalInApp('(window.__drive.set({ left: 1, right: 1, gear: 1, throttle: 0 }), true)');
-  const driving = await waitFor('the engine note to climb', () => { const a = audio(); return a.engineHz > 52 && a.rumble > 0.2 && a; }, 8000)
+  const driving = await waitFor('the engine note to climb', () => { const a = audio(); return a.engineHz > 80 && a.rumble > 0.2 && a; }, 8000)
     .catch(() => audio());
   evalInApp('(window.__drive.set(null), window.__drive.reset(), true)');
-  check('Driving off quickens the diesel\'s beat (30 to 62 Hz) and the tracks rumble and clatter',
-    idle.engineHz >= 29 && idle.engineHz < 50 && idle.rumble < 0.01 && driving.engineHz > 52 && driving.engineHz <= 62 && driving.rumble > 0.2 && driving.clatterHz > 3,
-    `engine ${idle.engineHz.toFixed(0)} Hz at idle, ${driving.engineHz.toFixed(0)} Hz driving; rumble ${driving.rumble.toFixed(2)}, links ${driving.clatterHz.toFixed(1)} a second`);
+  check("Driving off raises the multibank's beat (40 Hz a bank at idle, 130 flat out) and its roar, the gears whine and each track rumbles and clatters",
+    idle.engineHz >= 39 && idle.engineHz < 60 && idle.rumble < 0.01 && idle.finalDrive === 0
+      && driving.engineHz > 80 && driving.engineHz <= 131 && driving.load > 0.5 && driving.roar > idle.roar * 2
+      && driving.finalDrive > 0 && driving.rumble > 0.2 && driving.leftHz > 3 && driving.rightHz > 3,
+    `engine ${idle.engineHz.toFixed(0)} Hz at idle, ${driving.engineHz.toFixed(0)} Hz driving (throttle ${driving.load.toFixed(2)}, roar ${idle.roar.toFixed(2)} to ${driving.roar.toFixed(2)}); `
+      + `final drives ${driving.finalDrive.toFixed(2)}, rumble ${driving.rumble.toFixed(2)}, links ${driving.leftHz.toFixed(1)} and ${driving.rightHz.toFixed(1)} a second`);
+
+  // The gunner's traverse crank ticks as it turns: 0.3 of a turn a second, as a slow hand would (by the clock,
+  // since a timer only gets a turn between the emulator's slow frames).
+  evalInApp('(window.__crankAt = performance.now(), window.__crankTimer = setInterval(() => { const now = performance.now(); window.__turret.crank(0.3 * (now - window.__crankAt) / 1000); window.__crankAt = now; }, 30), true)');
+  const ticking = await waitFor('the crank to tick', () => { const a = audio(); return a.handHz > 1 && a; }, 8000).catch(() => audio());
+  evalInApp('(clearInterval(window.__crankTimer), true)');
+  const quiet = await waitFor('the crank to fall quiet', () => { const a = audio(); return a.handHz < 0.5 && a; }, 8000).catch(() => audio());
+  const ear = ticking.ear;
+  check("The handwheels' gears tick while the crank turns, and the sounds are heard from the player's head in the tank",
+    ticking.handHz > 1 && quiet.handHz < 0.5 && Math.abs(ear[0]) < 1.2 && ear[1] > 0.8 && ear[1] < 2.6 && Math.abs(ear[2]) < 2.6,
+    `${ticking.handHz.toFixed(1)} ticks a second turning, ${quiet.handHz.toFixed(1)} after; ear at (${ear.map((v) => v.toFixed(2)).join(', ')})`);
 
   await menuButtonPress();
   const heard0 = audio().heard;
@@ -2237,6 +2252,17 @@ async function tankSounds() {
   check('Practice → Tank sounds → Play each plays every short sound, and the menu says whether sound is on',
     Object.keys(played).every((id) => played[id] > heard0[id]) && line.length > 0,
     `${Object.keys(played).filter((id) => played[id] > heard0[id]).join(', ')}; "${line}"`);
+
+  // Run through: the tour takes the engine up out of gear within a few seconds; pressed again, it stops.
+  await menuClick('menu-audio-tour');
+  const touring = await waitFor('the tour to rev the engine', () => { const a = audio(); return a.tour && a.engineHz > 100 && a; }, 12000)
+    .catch(() => audio());
+  const tourLine = evalInApp("window.__gameMenu.text('menu-audio-status')");
+  await menuClick('menu-audio-tour');
+  const toured = await waitFor('the tour to stop', () => { const a = audio(); return !a.tour && a.engineHz < 60 && a; }, 8000).catch(() => audio());
+  check('Practice → Tank sounds → Run through revs the engine with the tank standing still, and stops when pressed again',
+    touring.tour && touring.engineHz > 100 && touring.rumble < 0.01 && !toured.tour && toured.engineHz < 60,
+    `touring: engine ${touring.engineHz.toFixed(0)} Hz, "${tourLine}"; after: ${toured.tour ? 'still touring' : 'stopped'}, engine ${toured.engineHz.toFixed(0)} Hz`);
 
   await menuClick('row-sound-2');
   const off = await waitFor('the sounds off', () => { const a = audio(); return a.sound === 0 && a; }, 5000).catch(() => audio());

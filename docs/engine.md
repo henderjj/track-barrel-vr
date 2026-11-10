@@ -30,7 +30,7 @@ The numbers are in [`src/sim/engine.ts`](../src/sim/engine.ts), stepped by the d
 
 | What | Value | Why |
 | --- | --- | --- |
-| Cranking | 160 rpm, reached over 0.6 s | A starter turns a diesel at 100 to 200 rpm |
+| Cranking | 160 rpm, reached over 0.6 s | A starter turns a big engine at 100 to 200 rpm |
 | Catching | 1.5 s on the Starter button; on the Full procedure 1 s, plus 1.2 s cold without the choke (0.4 s at half choke), plus 0.8 s with the hand throttle below 5% or above 70% | Quick enough not to be a chore |
 | Starter | overheats after 30 s cranking; rests 15 s | A real starter needs a rest after about 30 s |
 | Choke | a T-handle 70 mm across, 50 mm of travel, in below a quarter, half from a quarter to three quarters, out above; in before 4 s after catching: dies; fully out more than 4 s: rough; 12 s more: floods; half out: never floods, rough once warm; only matters below 40 °C | A real choke cable was set part way while warming |
