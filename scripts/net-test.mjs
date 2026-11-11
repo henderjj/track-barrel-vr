@@ -722,6 +722,62 @@ async function firingChecks(host, guest, label) {
     heardBy(heard[0], heard0[0]).length === 4 && heardBy(heard[1], heard0[1]).length === 4,
     `driver heard ${heardBy(heard[0], heard0[0]).join(', ') || 'nothing'}; gunner heard ${heardBy(heard[1], heard0[1]).join(', ') || 'nothing'}`);
   await guest.page.evaluate(() => window.__turret.forward());
+  await ammoChecks(host, guest, label);
+}
+
+/**
+ * Ammunition types (F3.1), with the guest in the gunner's seat: the host
+ * driver fills the rack with smoke and the gunner's page takes it; the
+ * gunner fires a smoke round at the 250 m gun, which neither page counts
+ * as a hit, and both lay its screen; then an HE round bursting beside the
+ * gun, which the host counts by its blast and the gunner takes its word.
+ */
+async function ammoChecks(host, guest, label) {
+  const drill = (p) => p.page.evaluate(() => window.__loading.state());
+  const state = (p) => p.page.evaluate(() => ({ records: window.__firing.records(), hits: window.__firing.hits()[1], clouds: window.__smoke.clouds().length }));
+  await host.page.evaluate(() => window.__loading.setRack('smoke'));
+  const racked = await waitFor("the gunner's rack to fill with smoke", async () => {
+    const [h, g] = await Promise.all([drill(host), drill(guest)]);
+    return g.rack === 'smoke' && g.kinds.every((k) => k === 'smoke') && h.kinds.every((k) => k === 'smoke') ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`The driver's Ammunition rack reaches the gunner's page, and both draw the rack's rounds (${label})`, racked !== null,
+    racked ? '' : JSON.stringify(await Promise.all([host, guest].map(async (p) => { const d = await drill(p); return { rack: d.rack, kinds: d.kinds }; }))));
+
+  const fireRound = async (ammo, right, above) => {
+    const before = await Promise.all([host, guest].map(state));
+    await guest.page.evaluate(([k, r, a]) => {
+      window.__loading.loadNow(k);
+      window.__firing.aimAt(1, k, r, a);
+    }, [ammo, right, above]);
+    await waitFor('the host to draw the gun laid', async () => {
+      const [h, g] = await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__turret.state())));
+      return Math.abs(h.yaw - g.yaw) < 1e-4 && Math.abs(h.elevation - g.elevation) < 1e-4;
+    }, 8000).catch(() => null);
+    await guest.page.evaluate(() => window.__turret.pullTrigger());
+    return waitFor(`both pages to see the ${ammo} round decided`, async () => {
+      const [h, g] = await Promise.all([host, guest].map(state));
+      const hr = h.records[before[0].records.length];
+      const gr = g.records[before[1].records.length];
+      return hr && gr && gr.line !== '' && (ammo !== 'smoke' || (h.clouds > before[0].clouds && g.clouds > before[1].clouds))
+        ? { h, g, hr, gr, before } : null;
+    }, 15000).catch(() => null);
+  };
+
+  const smoke = await fireRound('smoke', 0, 0);
+  check(`A smoke round on the gun counts no hit, and both pages lay its screen (${label})`,
+    smoke !== null && smoke.hr.ammo === 'smoke' && smoke.gr.ammo === 'smoke' && smoke.hr.counted === -1 && smoke.gr.counted === -1
+      && smoke.h.hits === smoke.before[0].hits && smoke.gr.line.startsWith('Smoke'),
+    smoke ? `host "${smoke.hr.line}", gunner "${smoke.gr.line}", clouds ${smoke.h.clouds}/${smoke.g.clouds}`
+      : JSON.stringify(await Promise.all([host, guest].map(state))));
+
+  await host.page.evaluate(() => window.__loading.setRack('mixed'));
+  await waitFor("the gunner's rack mixed again", async () => (await drill(guest)).rack === 'mixed', 8000).catch(() => null);
+  const he = await fireRound('he', 3, -1.15);
+  check(`An HE round bursting beside the gun: the host counts it by its blast and the gunner takes its word (${label})`,
+    he !== null && he.hr.ammo === 'he' && he.hr.kind === 'ground' && he.hr.counted === 1 && he.gr.counted === 1
+      && he.h.hits === he.before[0].hits + 1 && he.g.hits === he.h.hits && /^HE burst \d m from the 250 m gun: hit$/.test(he.gr.line),
+    he ? `host "${he.hr.line}", gunner "${he.gr.line}", hits ${he.h.hits}/${he.g.hits}` : JSON.stringify(await Promise.all([host, guest].map(state))));
+  await guest.page.evaluate(() => window.__turret.forward());
 }
 
 /**

@@ -31,7 +31,9 @@
     parked at the start, laid and loaded, or from the driver's seat to watch
     the firing lamp; go to the biathlon course's start line or either firing
     line (F5.3a); start or stop a biathlon race, or be ready to fire at
-    either of its lines (F5.3b). Sights: go to the gunsight, lay the
+    either of its lines (F5.3b). Combat (Phase 3): fill the ammunition
+    rack with the mixed load or one round, and be ready to fire AP, HE or
+    smoke on the 250 m gun (F3.1). Sights: go to the gunsight, lay the
     gun on a target's range mark, the sight's render choices; go to the
     driver's or the gunner's periscope, turn both ahead, their power. Test rigs: ride the tank (spike
     S2), the lever test and the mechanism kit.
@@ -242,6 +244,7 @@
       <Button id="tab-view" class="tab" size="sm" variant="secondary">Sound and view</Button>
       <Button id="tab-tank" class="tab" size="sm" variant="secondary">Tank</Button>
       <Button id="tab-practice" class="tab" size="sm" variant="secondary">Practice</Button>
+      <Button id="tab-combat" class="tab" size="sm" variant="secondary">Combat</Button>
       <Button id="tab-sights" class="tab" size="sm" variant="secondary">Sights</Button>
       <Button id="tab-rigs" class="tab" size="sm" variant="secondary">Test rigs</Button>
     </div>
@@ -290,6 +293,14 @@
             <div class="choices">
               <Button id="call-fire" class="choice" size="sm" variant="secondary">Fire at will</Button>
               <Button id="call-hold" class="choice" size="sm" variant="secondary">Hold fire</Button>
+            </div>
+          </div>
+          <div id="row-calls-ammo" class="setting">
+            <div class="label">Gunner, load</div>
+            <div class="choices">
+              <Button id="call-ap" class="choice" size="sm" variant="secondary">AP</Button>
+              <Button id="call-he" class="choice" size="sm" variant="secondary">HE</Button>
+              <Button id="call-smoke" class="choice" size="sm" variant="secondary">Smoke</Button>
             </div>
           </div>
         </div>
@@ -607,6 +618,28 @@
             </div>
           </div>
           <div id="menu-race-status" class="hint">Biathlon race</div>
+        </div>
+      </div>
+      <div id="page-combat" class="page" style="display: none">
+        <div class="section">
+          <div class="setting">
+            <div class="label">Ammunition rack</div>
+            <div class="choices">
+              <Button id="menu-rack-mixed" class="choice" size="sm" variant="secondary">Mixed</Button>
+              <Button id="menu-rack-ap" class="choice" size="sm" variant="secondary">All AP</Button>
+              <Button id="menu-rack-he" class="choice" size="sm" variant="secondary">All HE</Button>
+              <Button id="menu-rack-smoke" class="choice" size="sm" variant="secondary">All smoke</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Ready on the gun</div>
+            <div class="choices">
+              <Button id="menu-ammo-ready-ap" class="choice" size="sm" variant="secondary">AP</Button>
+              <Button id="menu-ammo-ready-he" class="choice" size="sm" variant="secondary">HE</Button>
+              <Button id="menu-ammo-ready-smoke" class="choice" size="sm" variant="secondary">Smoke</Button>
+            </div>
+          </div>
+          <div id="menu-ammo-status" class="hint">Ammunition</div>
         </div>
       </div>
       <div id="page-sights" class="page" style="display: none">

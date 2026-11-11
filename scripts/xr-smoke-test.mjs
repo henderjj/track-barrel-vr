@@ -867,7 +867,7 @@ async function loadingAndFiring() {
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-loading-closed.png'], {});
   const stats = evalInApp('({ ...window.__loading.stats })');
   check('Pulling the lever back closes the breech on the rammed shell; the load counts and waits for the trigger',
-    onLever && loaded && closed.loaded && Math.abs(closed.lever - Math.PI / 2) < 1e-6 && stats.last > 0 && stats.fumbles === 0 && closed.board[2] === 'Loaded: fire!',
+    onLever && loaded && closed.loaded && Math.abs(closed.lever - Math.PI / 2) < 1e-6 && stats.last > 0 && stats.fumbles === 0 && closed.board[2] === 'Loaded AP: fire!',
     `lever ${closed.lever.toFixed(2)} rad, loads ${stats.loads}, ${stats.last?.toFixed(1)} s, board "${closed.board.join(' | ')}"`);
 
   // Lay the gun on the 100 m target, take the power grip and pull its trigger.
@@ -2766,6 +2766,79 @@ async function partOne() {
 
   // 6r. The biathlon race (F5.3b).
   await theBiathlonRace();
+
+  // 6s. Ammunition types (F3.1).
+  await theAmmunition();
+}
+
+/**
+ * 6s. Ammunition types (F3.1): Combat → Ammunition rack → All HE fills
+ *     every rack slot with HE and Mixed puts the mixed rack back; Combat →
+ *     Ready on the gun → HE seats a solo player as gunner laid on the 250 m
+ *     gun and loaded with HE, whose shot hits it; an HE round laid to burst
+ *     on the ground 3 m beside the gun counts by its blast; Ready on the
+ *     gun → Smoke fires a smoke round that counts no hit and lays a screen
+ *     that grows and hides the gun from the tank (screenshot from the
+ *     gunner's eyes).
+ */
+async function theAmmunition() {
+  const loading = () => evalInApp('window.__loading.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  await menuButtonPress();
+  await menuClick('menu-rack-he');
+  const allHe = await waitFor('the rack all HE', () => { const s = loading(); return s.kinds.every((k) => k === 'he') && s; }, 5000).catch(() => loading());
+  check('Combat → Ammunition rack → All HE fills every rack slot with HE, and the button shows it',
+    allHe.rack === 'he' && allHe.kinds.every((k) => k === 'he') && evalInApp("window.__gameMenu.selected('menu-rack-he')"),
+    `rack ${allHe.rack}: ${allHe.kinds.join(', ')}`);
+  await menuClick('menu-rack-mixed');
+  const mixed = await waitFor('the mixed rack', () => { const s = loading(); return s.rack === 'mixed' && s; }, 5000).catch(() => loading());
+  check('Mixed puts back AP in the lower row, HE and smoke above', mixed.kinds.join() === 'ap,ap,he,smoke', mixed.kinds.join(', '));
+
+  await menuClick('menu-ammo-ready-he');
+  const ready = await waitFor('laid on the gun and loaded with HE', () => evalInApp('window.__rangeRun.pending') === -1 && loading().loaded && loading().loadedRound === 'he' && evalInApp('window.__seats.mine') === 'gunner', 8000).catch(() => false);
+  const predicted = evalInApp("window.__firing.predict('he')");
+  check('Combat → Ready on the gun → HE seats a solo player as gunner, loaded with HE and laid for its drop on the 250 m gun',
+    ready && predicted.kind === 'target' && predicted.target === 1,
+    `seat ${evalInApp('window.__seats.mine')}, loaded ${loading().loadedRound}, the shot would: ${predicted.line}; board "${loading().board[2]}"`);
+  const fireAndWait = async (label) => {
+    const n = evalInApp('window.__firing.records().length');
+    evalInApp('(window.__turret.pullTrigger(), true)');
+    return waitFor(label, () => { const r = evalInApp('window.__firing.records()'); return r.length > n && evalInApp('window.__firing.flying()') === 0 && r[r.length - 1]; }, 6000).catch(() => null);
+  };
+  const hits0 = evalInApp('window.__firing.hits()[1]');
+  const he = await fireAndWait('the HE round to land');
+  check('The HE round hits the gun', he !== null && he.ammo === 'he' && he.counted === 1 && evalInApp('window.__firing.hits()[1]') === hits0 + 1,
+    he ? `"${he.line}"` : 'no shot');
+
+  // Laid 3 m right of the gun's middle and down at its foot: it bursts on the ground beside it.
+  evalInApp("(window.__loading.loadNow('he'), window.__firing.aimAt(1, 'he', 3, -1.15), true)");
+  await sleep(300);
+  const blast = await fireAndWait('the HE round to burst beside the gun');
+  check("An HE round bursting on the ground beside the gun counts by its blast",
+    blast !== null && blast.kind === 'ground' && blast.counted === 1 && /^HE burst \d m from the 250 m gun: hit$/.test(blast.line),
+    blast ? `"${blast.line}"` : 'no shot');
+
+  await menuButtonPress();
+  await menuClick('menu-ammo-ready-smoke');
+  await waitFor('loaded with smoke', () => evalInApp('window.__rangeRun.pending') === -1 && loading().loadedRound === 'smoke', 8000).catch(() => null);
+  const clouds0 = evalInApp('window.__smoke.clouds().length');
+  const smoke = await fireAndWait('the smoke round to land');
+  const grown = await waitFor('the screen to grow', () => { const c = evalInApp('window.__smoke.clouds()'); return c.length > clouds0 && c[c.length - 1].radius > 8 && c[c.length - 1]; }, 15000).catch(() => null);
+  // From the muzzle's height at the tank to the gun's middle, world space.
+  const hidden = evalInApp(`(() => {
+    const t = window.__drive.state();
+    const g = window.__range.targets()[1];
+    return window.__smoke.blocks([t.x, (t.y ?? 0) + 2.4, t.z], [g.x, 1.2, g.z]);
+  })()`);
+  const eye = evalInApp('window.__seats.eye("gunner")');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin(eye) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([eye[0] + 2, eye[1], eye[2] - 30]) });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-smoke-screen.png'], {});
+  check('A smoke round on the gun counts no hit and lays a screen that grows and hides the gun',
+    smoke !== null && smoke.ammo === 'smoke' && smoke.counted === -1 && grown !== null && hidden,
+    `${smoke ? `"${smoke.line}"` : 'no shot'}, cloud ${grown ? `radius ${grown.radius.toFixed(1)} m at (${grown.x.toFixed(0)}, ${grown.z.toFixed(0)})` : 'none'}, hides the gun ${hidden}`);
+  iwsdk(['xr', 'set-device-state'], {});
 }
 
 /**

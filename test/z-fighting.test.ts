@@ -4,6 +4,8 @@ import * as avatar from '../src/scene-assets/avatar.scene-asset.js';
 import * as cabin from '../src/scene-assets/cabin.scene-asset.js';
 import * as ride from '../src/scene-assets/ride.scene-asset.js';
 import * as loading from '../src/scene-assets/loading.scene-asset.js';
+import * as smoke from '../src/scene-assets/smoke.scene-asset.js';
+import { AMMO_KINDS, MIXED_RACK } from '../src/sim/ammo.js';
 import {
   BREECH_MOUTH,
   casingRest,
@@ -125,7 +127,8 @@ function addLoading(turret: Object3D, gun: Object3D, load: Loading): void {
   lever.rotation.x = load.closed ? LEVER_CLOSED : 0;
   recoil.add(block, lever);
   RACK_SLOTS.forEach((slot, i) => {
-    const shell = loading.createShell(i);
+    // The mixed rack (F3.1): each slot's round in its own colours.
+    const shell = loading.createShell(i, MIXED_RACK[i]);
     if (load.rammed && i === 0) {
       // Home in the breech, gun space.
       shell.position.set(BREECH_MOUTH[0], BREECH_MOUTH[1], BREECH_MOUTH[2] - SHELL_LENGTH / 2);
@@ -467,9 +470,14 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
-  it('on a shell and a casing', () => {
-    expectNone([loading.createShell(0)], CABIN_GAP);
+  it('on a shell of each round (F3.1) and a casing', () => {
+    for (const kind of AMMO_KINDS) expectNone([loading.createShell(0, kind)], CABIN_GAP);
     expectNone([loading.createCasing(0)], CABIN_GAP);
+  });
+
+  it('on an HE burst and a smoke cloud (F3.1)', () => {
+    expectNone([loading.createBurst('he')], WORLD_GAP);
+    expectNone([smoke.createSmokeCloud(0)], WORLD_GAP);
   });
 
   it('on the lever test rig, with its tillers upright and at both limits', async () => {

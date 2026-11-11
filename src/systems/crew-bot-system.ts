@@ -1,6 +1,7 @@
 import { createSystem, Euler, Matrix4, Quaternion, Vector3, VisibilityState } from '@iwsdk/core';
 import type { PoseSample } from '../net/pose-codec.js';
 import { settings } from '../settings.js';
+import { AMMO, type AmmoKind } from '../sim/ammo.js';
 import { aimAt, COURSE_TARGET_FIRST, targetFaces } from '../sim/ballistics.js';
 import { boardDown, BOARD_FIRST, lineClosed, lineFor } from '../sim/biathlon.js';
 import { boxAt, LINE_ACROSS } from '../sim/course.js';
@@ -49,7 +50,7 @@ import { lastShot } from './firing-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { firingLampLit } from './firing-lamp-system.js';
 import { handUse } from './grip-system.js';
-import { loadingShown, scriptLoadingHand } from './loading-system.js';
+import { loadedRound, loadingShown, scriptLoadingHand } from './loading-system.js';
 import { raceLineNow, shownRun } from './range-run-system.js';
 import { findControl, type ScriptedHand, scriptedHands } from './mechanism-system.js';
 import { FLAG_LEFT_TRACKED, FLAG_RIGHT_TRACKED, netLink } from './net-system.js';
@@ -216,6 +217,8 @@ export class CrewBotSystem extends createSystem({}) {
   /** The targets it won't lay on now: hit already, or not this place's (the range's three, or the firing box's own line). */
   private skip: boolean[] = this.faces.map(() => false);
   private target = -1;
+  /** The round it loads (F3.1): AP until the driver calls for another. */
+  private round: AmmoKind = 'ap';
   private aim = { yaw: 0, elevation: 0 };
   private path = createPath();
   private pathCount = 0;
@@ -413,6 +416,9 @@ export class CrewBotSystem extends createSystem({}) {
       this.driver.call(call, s ? s.heading : 0);
     } else if (call === 'fire' || call === 'hold') {
       this.fireAtWill = call === 'fire';
+    } else if (call === 'ap' || call === 'he' || call === 'smoke') {
+      // The next round it takes from the rack (F3.1).
+      this.round = call;
     }
   }
 
@@ -464,7 +470,7 @@ export class CrewBotSystem extends createSystem({}) {
     const name = this.target >= 0 ? `the ${Math.round(this.facesRange(this.target))} m target` : 'no target in sight';
     const fire = this.fireAtWill ? '' : ', holding fire';
     switch (this.phase) {
-      case 'load': return `loading${fire}`;
+      case 'load': return `loading${this.round === 'ap' ? '' : ` ${AMMO[this.round].short}`}${fire}`;
       case 'lay': return `laying on ${name}${fire}`;
       default: return `fired at ${name}`;
     }
@@ -580,8 +586,8 @@ export class CrewBotSystem extends createSystem({}) {
         this.holdElevation(this.aim.elevation);
         return;
       }
-      if (shot && shot !== this.shotBefore && shot.kind === 'target' && shot.target >= 0) {
-        this.hit[shot.target] = true;
+      if (shot && shot !== this.shotBefore && shot.counted >= 0) {
+        this.hit[shot.counted] = true;
         this.hits++;
         sendCrewCall('target');
       }
@@ -648,7 +654,8 @@ export class CrewBotSystem extends createSystem({}) {
     const turret = turretState();
     const tank = tankState();
     const right = this.hands.right;
-    aimAt(tank, this.faces[this.target], muzzlePoint, this.aim);
+    // Laid for the round in the breech (F3.1): HE and smoke need the gun higher.
+    aimAt(tank, this.faces[this.target], muzzlePoint, this.aim, AMMO[loadedRound() ?? 'ap'].speed);
     const yawError = wrapAngle(this.aim.yaw - turret.yaw);
     const demand = traverseDemand(yawError, turret.rate, powerTraverseRate(engineRpm()), MAX_TRAVERSE_ACCEL);
     this.twist(twistForDemand(POWER_GRIP, demand));
@@ -682,7 +689,9 @@ export class CrewBotSystem extends createSystem({}) {
       return true;
     }
     if (this.pathCount === 0) {
-      const shell = s.shells.findIndex((x) => x.place === 'rack');
+      // The round it was asked for if the rack has one (F3.1), else the first there.
+      let shell = s.shells.findIndex((x, i) => x.place === 'rack' && s.kinds[i] === this.round);
+      if (shell < 0) shell = s.shells.findIndex((x) => x.place === 'rack');
       restingHandInSeat(SEATS.gunner, 'right', this.p);
       this.pathCount = loadPlan(s, shell >= 0 ? s.shells[shell].centre : null, turretState().elevation, this.p, this.path);
       this.pathTime = -1;

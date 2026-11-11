@@ -25,7 +25,9 @@ import {
   createCasing,
   createMuzzleFlash,
   createShell,
+  shellGeometry,
 } from '../scene-assets/loading.scene-asset.js';
+import { AMMO, AMMO_KINDS, type AmmoKind, parseRackChoice, type RackChoice } from '../sim/ammo.js';
 import { GUN, SEATS, seatToHull, TURRET } from '../sim/cabin.js';
 import {
   boardLines,
@@ -93,9 +95,30 @@ export function resetLoading(): void {
   active?.start();
 }
 
-/** Practice → Ready to fire (F1.11): a shell rammed and the breech closed at once, on the gunner's page. */
-export function loadForPractice(): void {
-  active?.loadNow();
+/** Practice → Ready to fire (F1.11): a shell rammed and the breech closed at once, on the gunner's page; `kind` (F3.1) asks for that round. */
+export function loadForPractice(kind: AmmoKind | null = null): void {
+  active?.loadNow(kind);
+}
+
+/**
+ * The Combat tab's Ammunition rack (F3.1): fill the rack with `choice` on
+ * both pages (the gunner's page loads from it; the other keeps it for a
+ * swap of seats), sent as the reliable event `rack`.
+ */
+export function setAmmoRack(choice: RackChoice): void {
+  active?.setRack(choice, true);
+}
+
+/** What the rack holds on this page (F3.1). */
+export function ammoRack(): RackChoice {
+  return active?.drill.rack ?? 'mixed';
+}
+
+/** The round in the breech (F3.1), or null: the drill's on the page that loads, as drawn on the other. */
+export function loadedRound(): AmmoKind | null {
+  if (active?.isOwner()) return active.drill.loadedKind();
+  const s = active?.shown;
+  return s != null && s.breechShell >= 0 ? s.kinds[s.breechShell] : null;
 }
 
 /**
@@ -132,6 +155,17 @@ export function loadingShown(): Readonly<LoadingSnapshot> | null {
  */
 export function scriptLoadingHand(side: Side, hand: DrillTestHandFn | null): void {
   active?.scriptHand(side, hand);
+}
+
+/** One line for the Combat tab (F3.1): the rack's rounds, what is loaded, and where the last shot went. */
+export function ammoStatus(): string {
+  const a = active;
+  if (a == null) return '';
+  const s = a.shown;
+  const rack = s.kinds.map((k, i) => (s.shells[i].place === 'spent' ? '-' : AMMO[k].short)).join(', ');
+  const loaded = s.loaded && s.breechShell >= 0 ? `loaded ${AMMO[s.kinds[s.breechShell]].short}` : 'not loaded';
+  const shot = lastShotLine();
+  return `Rack ${rack}; ${loaded}.${shot ? ` ${shot}` : ''}`;
 }
 
 /** One line for the menu: who loads, and the loads so far. */
@@ -180,6 +214,8 @@ export class LoadingSystem extends createSystem({}) {
   private turret: Entity | null = null;
   private recoilPart: Object3D | null = null;
   private shells: Mesh[] = [];
+  /** Each shell's round as drawn, so its geometry is swapped only when that changes (F3.1). */
+  private kindDrawn: AmmoKind[] = [];
   /** Whether each shell was last drawn spent (hidden), so only a change of it touches `visible`. */
   private spentDrawn: boolean[] = [];
   private casings: Mesh[] = [];
@@ -188,7 +224,7 @@ export class LoadingSystem extends createSystem({}) {
   private flash: Mesh | null = null;
   private board!: { ctx: CanvasRenderingContext2D; texture: CanvasTexture };
   /** What the board shows now. */
-  private boardKey = { loads: -1, last: 0, best: 0, fumbles: 0, streak: 0, bestStreak: 0, phase: -1, shot: '', spent: 0 };
+  private boardKey = { loads: -1, last: 0, best: 0, fumbles: 0, streak: 0, bestStreak: 0, phase: -1, shot: '', spent: 0, round: -1 };
   private boardText: [string, string, string] = ['', '', ''];
   private wasOwner = true;
   private time = 0;
@@ -231,6 +267,10 @@ export class LoadingSystem extends createSystem({}) {
       axis.set(1, 0, 0).transformDirection(lever.matrixWorld);
     });
     netLink.handlers.set(PacketType.LoadingState, (view) => this.onLoadingState(view));
+    netLink.events.set('rack', (e) => {
+      const choice = parseRackChoice(e.rack);
+      if (choice !== null) this.setRack(choice, false);
+    });
     const onShot = () => this.gunFired();
     shotListeners.add(onShot);
     this.cleanupFuncs.push(
@@ -239,6 +279,7 @@ export class LoadingSystem extends createSystem({}) {
         if (active === this) active = null;
       },
       () => netLink.handlers.delete(PacketType.LoadingState),
+      () => netLink.events.delete('rack'),
       () => shotListeners.delete(onShot),
     );
 
@@ -258,6 +299,9 @@ export class LoadingSystem extends createSystem({}) {
           lever: s.lever,
           leverHandle: self.hull(gunToTurret(leverHandle(s.lever, [0, 0, 0]), turretState().elevation, self.gun.recoil, [0, 0, 0])),
           breechShell: s.breechShell,
+          kinds: [...s.kinds],
+          rack: self.drill.rack,
+          loadedRound: s.breechShell >= 0 ? s.kinds[s.breechShell] : null,
           depth: s.depth,
           rammed: s.rammed,
           loaded: s.loaded,
@@ -273,6 +317,8 @@ export class LoadingSystem extends createSystem({}) {
       },
       stats: self.drill.stats,
       start: () => self.start(),
+      setRack: (choice: RackChoice) => self.setRack(choice, true),
+      loadNow: (kind: AmmoKind | null = null) => self.loadNow(kind),
       reset: () => self.drill.reset(),
       setTestHand: (side: Side, hand: DrillTestHandFn | null) => self.scriptHand(side, hand),
       /** Where the breech mouth and the lever's pivot are, hull space, with the gun as drawn; the lever's sizes; the seated eye point. */
@@ -295,8 +341,10 @@ export class LoadingSystem extends createSystem({}) {
   /** The shells and casings in the turret; the block, lever and muzzle flash on the gun's recoiling part; the board on the wall. */
   private build(turret: Entity): void {
     for (let i = 0; i < this.drill.shells.length; i++) {
-      const shell = createShell(i);
+      const kind = this.drill.kinds[i];
+      const shell = createShell(i, kind);
       this.shells.push(shell);
+      this.kindDrawn.push(kind);
       this.spentDrawn.push(false);
       this.world.createTransformEntity(shell, { parent: turret });
     }
@@ -339,10 +387,20 @@ export class LoadingSystem extends createSystem({}) {
     console.info('[Loading] Practice: load and fire');
   }
 
-  /** Practice: loaded at once (the gunner's page does it). */
-  loadNow(): void {
+  /** The rack's choice (F3.1), here and, if `send`, on the other page. */
+  setRack(choice: RackChoice, send: boolean): void {
+    this.drill.setRack(choice);
+    if (send && netLink.connected) {
+      const event = { t: 'rack', rack: choice };
+      netLink.sendEvent(event);
+    }
+    console.info(`[Loading] rack: ${choice}`);
+  }
+
+  /** Practice: loaded at once (the gunner's page does it), with round `kind` if asked. */
+  loadNow(kind: AmmoKind | null = null): void {
     if (!this.isOwner()) return;
-    this.drill.loadNow();
+    this.drill.loadNow(kind);
     this.practiceLoads++;
     this.clearHandUse();
     console.info('[Loading] Practice: loaded');
@@ -384,8 +442,9 @@ export class LoadingSystem extends createSystem({}) {
     drill.update(dt, this.hands.left, this.hands.right);
     const pulls = takeTriggerPulls();
     if (pulls > 0) {
+      const round = drill.loadedKind() ?? 'ap';
       if (drill.fire()) {
-        fireShell();
+        fireShell(round);
       } else {
         // A dry click: nothing in the breech.
         this.pulse('right', 0.2, 15);
@@ -586,6 +645,11 @@ export class LoadingSystem extends createSystem({}) {
         this.spentDrawn[i] = spent;
         mesh.visible = !spent;
       }
+      const kind = s.kinds[i];
+      if (kind !== this.kindDrawn[i]) {
+        this.kindDrawn[i] = kind;
+        mesh.geometry = shellGeometry(kind);
+      }
       mesh.position.set(shell.centre[0], shell.centre[1], shell.centre[2]);
       // The model's nose points to -Z; shells are round, so their roll doesn't show.
       this.axis.set(shell.axis[0], shell.axis[1], shell.axis[2]);
@@ -655,10 +719,12 @@ export class LoadingSystem extends createSystem({}) {
   private boardKeyUnchanged(s: LoadingSnapshot, shot: string): boolean {
     const phase = s.loaded ? 3 : s.breechShell >= 0 ? (s.rammed ? 2 : 1) : s.lever > 0.3 ? 4 : 0;
     const spent = spentShells(s);
+    const round = s.breechShell >= 0 ? AMMO_KINDS.indexOf(s.kinds[s.breechShell]) : -1;
     const k = this.boardKey;
     if (
       k.loads === s.loads && Object.is(k.last, s.last) && Object.is(k.best, s.best) && k.fumbles === s.fumbles &&
-      k.streak === s.streak && k.bestStreak === s.bestStreak && k.phase === phase && k.shot === shot && k.spent === spent
+      k.streak === s.streak && k.bestStreak === s.bestStreak && k.phase === phase && k.shot === shot && k.spent === spent &&
+      k.round === round
     ) {
       return true;
     }
@@ -671,6 +737,7 @@ export class LoadingSystem extends createSystem({}) {
     k.phase = phase;
     k.shot = shot;
     k.spent = spent;
+    k.round = round;
     return false;
   }
 
