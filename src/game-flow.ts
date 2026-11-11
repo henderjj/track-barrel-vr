@@ -95,7 +95,7 @@ export function menuCrewLine(state: SessionState, room: string, crewmate: string
 }
 
 /** The game menu's tabs, top to bottom (`tab-<id>` and `page-<id>` in public/ui/menu.uikitml). */
-export const MENU_TABS = ['crew', 'you', 'comfort', 'view', 'tank', 'practice', 'sights', 'rigs'] as const;
+export const MENU_TABS = ['crew', 'you', 'comfort', 'view', 'tank', 'practice', 'combat', 'sights', 'rigs'] as const;
 export type MenuTab = (typeof MENU_TABS)[number];
 
 /** The tab the menu opens on, the first time. */

@@ -94,7 +94,7 @@ The indicators the crew read most, and a game mode that needs no enemies, so the
 
 | ID | Feature | Status | Depends on | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| F3.1 | Ammunition types: AP, HE and smoke with distinct effects and rack slots | Planned | F1.10 | | |
+| F3.1 | Ammunition types: AP, HE and smoke with distinct effects and rack slots | Building | F1.10 | | [ammunition.md](ammunition.md): `src/sim/ammo.ts`; mixed rack (AP, AP, HE, smoke), each round painted; AP 600 m/s direct hits, HE 450 m/s with a 5 m blast on soft targets, smoke lays a drifting opaque screen (`SmokeSystem`) and never counts; an HE scale on the sight; the loading packet gains each shell's round, `shot` its round, `shot-hit` the target counted; new Combat tab (Ammunition rack, Ready on the gun); Calls → Gunner, load AP/HE/Smoke for the crewmate |
 | F3.2 | Enemy anti-tank guns that shoot back (static) | Planned | F3.1 | | Decide enemy AI scope first |
 | F3.3 | Enemy tanks on fixed routes | Planned | F3.2 | | |
 | F3.4 | Tank damage model: hit zones, armour, crew hits | Planned | F3.2 | | Crew exposure in the hatch comes with the hatches (F2.1, now Phase 5) |

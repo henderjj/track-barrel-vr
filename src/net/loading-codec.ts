@@ -7,12 +7,14 @@
  * the turret) to the other at 45 Hz: the breech lever's angle, the shell in
  * the breech and how far in, whether it is rammed and the breech loaded,
  * each shell's place and pose in turret space (so the other page draws the
- * shell in the gunner's hand), and the stats the loading board shows.
+ * shell in the gunner's hand), the stats the loading board shows, and
+ * (since F3.1) each shell's round on the end.
  * Shots go as reliable events instead (src/systems/firing-system.ts).
  *
  * When the packet grows, decode the old length too (see decodePose).
  */
 
+import { AMMO_KINDS, MIXED_RACK } from '../sim/ammo.js';
 import { type LoadingSnapshot, SHELL_COUNT, SHELL_PLACES } from '../sim/loading.js';
 import { PacketType } from './pose-codec.js';
 import type { TankHeader } from './tank-codec.js';
@@ -23,7 +25,10 @@ const HEADER = 7;
 const BREECH = 16;
 /** Each shell: place(1), centre (3 int16, mm), axis (3 int16). */
 const SHELL = 13;
-export const LOADING_STATE_BYTES = HEADER + BREECH + SHELL_COUNT * SHELL;
+/** The packet before F3.1, without the kinds: still decoded, every shell then of the mixed rack. */
+export const LOADING_STATE_BYTES_V1 = HEADER + BREECH + SHELL_COUNT * SHELL;
+/** Since F3.1: each shell's round, one byte each (an index into AMMO_KINDS), on the end. */
+export const LOADING_STATE_BYTES = LOADING_STATE_BYTES_V1 + SHELL_COUNT;
 
 const ANGLE_SCALE = 1e4;
 const AXIS_SCALE = 30000;
@@ -71,12 +76,13 @@ export function encodeLoadingState(buffer: ArrayBuffer, seq: number, timeMs: num
     }
     o += SHELL;
   }
+  for (let i = 0; i < SHELL_COUNT; i++) view.setUint8(o + i, Math.max(0, AMMO_KINDS.indexOf(s.kinds[i])));
   return LOADING_STATE_BYTES;
 }
 
 /** Decode a LoadingState packet into `out`; returns false if it isn't one. */
 export function decodeLoadingState(view: DataView, header: TankHeader, out: LoadingSnapshot): boolean {
-  if (view.byteLength < LOADING_STATE_BYTES || view.getUint8(0) !== PacketType.LoadingState) {
+  if (view.byteLength < LOADING_STATE_BYTES_V1 || view.getUint8(0) !== PacketType.LoadingState) {
     return false;
   }
   header.seq = view.getUint16(1);
@@ -103,6 +109,10 @@ export function decodeLoadingState(view: DataView, header: TankHeader, out: Load
       shell.axis[k] = view.getInt16(o + 7 + 2 * k) / AXIS_SCALE;
     }
     o += SHELL;
+  }
+  const kinds = view.byteLength >= LOADING_STATE_BYTES;
+  for (let i = 0; i < SHELL_COUNT; i++) {
+    out.kinds[i] = (kinds ? AMMO_KINDS[view.getUint8(o + i)] : undefined) ?? MIXED_RACK[i % MIXED_RACK.length];
   }
   return true;
 }

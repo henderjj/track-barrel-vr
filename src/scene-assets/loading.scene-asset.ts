@@ -1,5 +1,6 @@
-import { BoxGeometry, ConeGeometry, CylinderGeometry, IcosahedronGeometry, Mesh, MeshBasicMaterial, MeshStandardMaterial } from '@iwsdk/core';
+import { BoxGeometry, type BufferGeometry, ConeGeometry, CylinderGeometry, IcosahedronGeometry, Mesh, MeshBasicMaterial, MeshStandardMaterial } from '@iwsdk/core';
 import { mergeParts, type Part } from './lowpoly.js';
+import { AMMO, type AmmoKind } from '../sim/ammo.js';
 import { SEATS, TURRET } from '../sim/cabin.js';
 import {
   BREECH_MOUTH,
@@ -30,7 +31,6 @@ const RACK_WOOD = 0x7a5534;
 const BIN = 0x4b4a3c;
 const BIN_DARK = 0x2c2b25;
 const BRASS = 0xc9a03a;
-const SHELL_BODY = 0x4d5a3a;
 const COPPER = 0xb0643a;
 const PRIMER = 0x3a3024;
 const LEVER_RED = 0x8a2c22;
@@ -156,23 +156,38 @@ export function breechFittings(halfWidth: number): Part[] {
 
 const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
 
+/** Each round's shell geometry, built once (F3.1): LoadingSystem swaps a shell's geometry when its slot's round changes. */
+const shellGeometries = new Map<AmmoKind, BufferGeometry>();
+
 /**
- * A shell, centred on its middle with its nose to -Z: a brass case with a
- * rim and primer at the base, a copper driving band, and an olive projectile
- * with a pointed nose.
+ * A shell's geometry for round `kind`, centred on its middle with its nose
+ * to -Z: a brass case with a rim and primer at the base, a copper driving
+ * band, and the projectile with a pointed nose in the round's colour, a
+ * band of its marking colour standing 4 mm proud round it (F3.1: AP black
+ * with a silver band, HE olive with yellow, smoke grey with yellow).
  */
-export function createShell(i: number): Mesh {
+export function shellGeometry(kind: AmmoKind): BufferGeometry {
+  const cached = shellGeometries.get(kind);
+  if (cached) return cached;
   const h = SHELL_LENGTH / 2;
   const caseFront = h - CASE_LENGTH;
+  const { body, band } = AMMO[kind];
   const geometry = mergeParts([
     tubeZ(SHELL_RADIUS, 0, 0, h - 0.005, caseFront, BRASS, 10),
     tubeZ(SHELL_RADIUS + 0.004, 0, 0, h, h - 0.01, BRASS, 10),
     tubeZ(0.01, 0, 0, h + 0.004, h - 0.004, PRIMER, 6),
-    tubeZ(0.04, 0, 0, caseFront + 0.005, -0.215, SHELL_BODY, 10),
+    tubeZ(0.04, 0, 0, caseFront + 0.005, -0.215, body, 10),
     tubeZ(0.045, 0, 0, caseFront - 0.01, caseFront - 0.025, COPPER, 10),
-    { geometry: new ConeGeometry(0.04, h - 0.21, 10, 1), color: SHELL_BODY, position: [0, 0, -(h + 0.21) / 2], rotation: ALONG_Z },
+    tubeZ(0.044, 0, 0, -0.165, -0.195, band, 10),
+    { geometry: new ConeGeometry(0.04, h - 0.21, 10, 1), color: body, position: [0, 0, -(h + 0.21) / 2], rotation: ALONG_Z },
   ]);
-  const mesh = new Mesh(geometry, material);
+  shellGeometries.set(kind, geometry);
+  return geometry;
+}
+
+/** A shell of round `kind` (armour piercing unless said), centred on its middle with its nose to -Z (shellGeometry). */
+export function createShell(i: number, kind: AmmoKind = 'ap'): Mesh {
+  const mesh = new Mesh(shellGeometry(kind), material);
   mesh.name = `Shell ${i + 1}`;
   return mesh;
 }
@@ -258,8 +273,24 @@ export function createTracer(): Mesh {
   return mesh;
 }
 
-/** Where a shell lands: a ball of dirt (the system grows and shrinks it), or a bright one on a target. */
-export function createBurst(hit: boolean): Mesh {
+/**
+ * Where a shell lands: a ball of dirt (the system grows and shrinks it), a
+ * bright one on a target, or (`'he'`, F3.1) an HE round's burst: an orange
+ * fireball inside a ball of dark smoke and dirt, the smoke's faces between
+ * the fire's so both show.
+ */
+export function createBurst(hit: boolean | 'he'): Mesh {
+  if (hit === 'he') {
+    const mesh = new Mesh(
+      mergeParts([
+        { geometry: new IcosahedronGeometry(1, 0), color: 0x3a332c },
+        { geometry: new IcosahedronGeometry(0.85, 0), color: 0xff8a2a, rotation: [0.6, 0.4, 0] },
+      ]),
+      new MeshBasicMaterial({ vertexColors: true }),
+    );
+    mesh.name = 'HE Burst';
+    return mesh;
+  }
   const mesh = new Mesh(
     new IcosahedronGeometry(1, 0),
     hit ? glow(0xffd060) : new MeshStandardMaterial({ color: 0x6b5a40, flatShading: true, roughness: 1, metalness: 0 }),
