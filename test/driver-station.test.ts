@@ -395,30 +395,30 @@ describe('the gauges\' coloured bands (docs/gauge-zones.md)', () => {
     expect(zoneOf(rpm, MAX_RPM - 1)).toBe('caution');
   });
 
-  it('marks the coolant from the engine\'s own numbers: blue needs the choke, amber warming, green warm, red only labouring in a low gear (F3.7)', () => {
+  it('marks the coolant from the engine\'s own numbers: blue needs the choke, red only labouring in a low gear, nothing between (F3.7; John, 12 November 2026)', () => {
     const coolant = dial('coolant');
+    expect(coolant.zones.map((z) => z.kind)).toEqual(['cold', 'danger']);
     expect(zoneOf(coolant, COOLANT_START)).toBe('cold');
     expect(zoneOf(coolant, CHOKE_COOLANT - 0.1)).toBe('cold');
-    expect(zoneOf(coolant, CHOKE_COOLANT)).toBe('warming');
-    expect(zoneOf(coolant, WARM_COOLANT - 0.1)).toBe('warming');
-    expect(zoneOf(coolant, WARM_COOLANT)).toBe('normal');
-    expect(zoneOf(coolant, COOLANT_IDLE)).toBe('normal');
-    expect(zoneOf(coolant, COOLANT_FULL)).toBe('normal');
+    expect(zoneOf(coolant, CHOKE_COOLANT + 0.1)).toBeNull();
+    expect(zoneOf(coolant, WARM_COOLANT)).toBeNull();
+    expect(zoneOf(coolant, COOLANT_IDLE)).toBeNull();
+    expect(zoneOf(coolant, COOLANT_FULL)).toBeNull();
     expect(zoneOf(coolant, OVERHEAT_COOLANT + 1)).toBe('danger');
-    // Warmed from cold at a fast idle, then run flat out in neutral for hours: blue, amber, green, never red.
+    // Warmed from cold at a fast idle, then run flat out in neutral for hours: out of the blue, never into the red.
     const s = createTankDrive();
-    const seen: string[] = [];
+    const seen: (string | null)[] = [];
     s.rpm = 1300;
     for (let i = 0; i < 300; i++) {
       stepEngineGauges(s, 1);
-      const z = zoneOf(coolant, s.coolant)!;
-      if (seen[seen.length - 1] !== z) seen.push(z);
+      const z = zoneOf(coolant, s.coolant);
+      if (seen.length === 0 || seen[seen.length - 1] !== z) seen.push(z);
     }
-    expect(seen).toEqual(['cold', 'warming', 'normal']);
+    expect(seen).toEqual(['cold', null]);
     s.rpm = MAX_RPM;
     for (let i = 0; i < 4 * 3600; i++) stepEngineGauges(s, 1);
     expect(s.coolant).toBeLessThan(OVERHEAT_COOLANT);
-    expect(zoneOf(coolant, s.coolant)).toBe('normal');
+    expect(zoneOf(coolant, s.coolant)).toBeNull();
   });
 
   it('keeps a running engine\'s oil pressure in the green and puts a stopped one\'s in the red', () => {
