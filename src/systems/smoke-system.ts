@@ -1,6 +1,6 @@
 import { createSystem, type Mesh } from '@iwsdk/core';
 import { createSmokeCloud } from '../scene-assets/smoke.scene-asset.js';
-import { SMOKE, smokeBlocks, type SmokeCloud, smokeCentre, smokeRadius } from '../sim/ammo.js';
+import { SMOKE, SMOKE_WIND_DIR, smokeBlocks, type SmokeCloud, smokeCentre, smokeHalfLength, smokeRadius } from '../sim/ammo.js';
 import type { Vec3 } from '../sim/ballistics.js';
 import { wrapTile } from '../sim/terrain.js';
 import { tankState } from './drive-system.js';
@@ -19,8 +19,8 @@ export function smokeNow(): number {
 }
 
 interface SmokeDebug {
-  /** Each cloud: where it is now (world space), its radius and age. */
-  clouds(): { x: number; y: number; z: number; radius: number; age: number }[];
+  /** Each cloud: where it landed and where its middle is now (world space), its radius across, how far it reaches each way along the wind, and its age. */
+  clouds(): { x: number; y: number; z: number; laidX: number; laidZ: number; radius: number; halfLength: number; age: number }[];
   /** Lay a cloud at world x, z (on the ground at y), as a smoke round landing there would. */
   lay(x: number, y: number, z: number): void;
   /** Whether the line between two world points passes through smoke now. */
@@ -30,7 +30,8 @@ interface SmokeDebug {
 /**
  * Smoke screens (F3.1, docs/ammunition.md): where a smoke round lands, on
  * either page (FiringSystem's landedListeners: both pages fly every shot
- * alike), a bank of smoke grows, holds and thins away, drifting downwind.
+ * alike), a bank of smoke grows, holds and thins away, staying where it
+ * landed while the wind draws it out downwind into a longer bank.
  * Nothing goes over the network: the shot does it. The clouds are children
  * of the ground, so they stay put in the world as the tank drives, and the
  * gunsight and periscopes see them as the eye does. Runs after
@@ -48,6 +49,8 @@ export class SmokeSystem extends createSystem({}) {
     for (let i = 0; i < SMOKE.max; i++) {
       const mesh = createSmokeCloud(i);
       mesh.visible = false;
+      // Its long axis (x) downwind.
+      mesh.rotation.y = Math.atan2(-SMOKE_WIND_DIR[1], SMOKE_WIND_DIR[0]);
       mesh.frustumCulled = false;
       this.meshes.push(mesh);
       if (ground) this.world.createTransformEntity(mesh, { parent: ground });
@@ -68,7 +71,8 @@ export class SmokeSystem extends createSystem({}) {
       clouds: () =>
         self.clouds.map((c) => {
           const at = smokeCentre(c, self.time, [0, 0, 0]);
-          return { x: at[0], y: at[1], z: at[2], radius: smokeRadius(self.time - c.laidAt), age: self.time - c.laidAt };
+          const age = self.time - c.laidAt;
+          return { x: at[0], y: at[1], z: at[2], laidX: c.x, laidZ: c.z, radius: smokeRadius(age), halfLength: smokeHalfLength(age), age };
         }),
       lay: (x, y, z) => self.lay(x, y, z),
       blocks: (a, b) => smokeBlocks(self.clouds, self.time, a, b),
@@ -95,14 +99,15 @@ export class SmokeSystem extends createSystem({}) {
     for (let i = 0; i < this.meshes.length; i++) {
       const mesh = this.meshes[i];
       const c = this.clouds[i];
-      const r = c ? smokeRadius(this.time - c.laidAt) : 0;
+      const age = c ? this.time - c.laidAt : 0;
+      const r = c ? smokeRadius(age) : 0;
       if (r <= 0) {
         if (mesh.visible) mesh.visible = false;
         continue;
       }
       const at = smokeCentre(c, this.time, this.centre);
       mesh.position.set(at[0] - offX, at[1], at[2] - offZ);
-      mesh.scale.set(r, r * SMOKE.squash, r);
+      mesh.scale.set(smokeHalfLength(age), r * SMOKE.squash, r);
       if (!mesh.visible) mesh.visible = true;
     }
   }
