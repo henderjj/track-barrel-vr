@@ -14,7 +14,7 @@
  * outside is built round them.
  */
 
-import { GROUND_Y, HULL, TURRET } from './cabin.js';
+import { GLACIS, GROUND_Y, HULL, TURRET } from './cabin.js';
 
 /** The upper hull over the tracks: its sides' outer faces at x = ±halfWidth, its floor (over the tracks) at `floor`, m. */
 export const SPONSON = { halfWidth: 1.64, floor: 0.5 } as const;
@@ -29,8 +29,47 @@ export const DECK_TOP = HULL.roof + HULL.wall;
  */
 export const HULL_REAR = { plate: 3.5, lowY: 0.25, bellyEnd: 3.1, bottom: -0.1 } as const;
 
-/** The nose's rounded transmission cover, between the tracks: how far it bulges out of the nose plate, and its top and bottom, hull space, m. */
-export const NOSE = { bulge: 0.2, top: 0.8, bottom: -0.1 } as const;
+/** The glacis's outside: its inner face (src/sim/cabin.ts, GLACIS) moved out along its normal by the plate's thickness. */
+const GLACIS_LINE = (() => {
+  const { noseTop, hoodBottom, face } = GLACIS;
+  const t = HULL.wall;
+  const dz = face - HULL.front;
+  const dy = hoodBottom - noseTop;
+  const len = Math.hypot(dz, dy);
+  // A point on it and its way up (z per m of rise).
+  return { z: HULL.front - (t * dy) / len, y: noseTop + (t * dz) / len, run: dz / dy };
+})();
+
+/** The glacis's outside at height `y`, hull z. */
+export function glacisOutsideZ(y: number): number {
+  return GLACIS_LINE.z + (y - GLACIS_LINE.y) * GLACIS_LINE.run;
+}
+/** The glacis's outside at hull z `z`, its height. */
+function glacisOutsideY(z: number): number {
+  return GLACIS_LINE.y + (z - GLACIS_LINE.z) / GLACIS_LINE.run;
+}
+
+/**
+ * The glacis as a Sherman's, seen from the side, (hull z, y) points, m: one
+ * long plate at the cabin's glacis's slope (cabin.ts, 57° from upright, the
+ * Sherman's 56°), from its foot over the sprockets, at the sponsons' floor,
+ * up to the hood's face (`top`, where the cabin's own glacis meets it, so
+ * the driver's view out of the slit is as before). Ahead of the cabin's
+ * nose plate it is solid; over the sponsons it carries on up to the deck
+ * (`deck`), either side of the hoods.
+ */
+export const GLACIS_OUTSIDE = {
+  foot: [glacisOutsideZ(SPONSON.floor), SPONSON.floor] as const,
+  top: [GLACIS.face - HULL.wall, glacisOutsideY(GLACIS.face - HULL.wall)] as const,
+  deck: [glacisOutsideZ(DECK_TOP), DECK_TOP] as const,
+} as const;
+
+/**
+ * The transmission's rounded cover under the glacis, between the tracks:
+ * from the glacis's foot round to the belly under the cabin's nose plate,
+ * bulging `bulge` past the straight line between them, m.
+ */
+export const NOSE = { bulge: 0.12, bottom: -0.1 } as const;
 
 /** The tracks: the middle of each across (x = ±x), its width and thickness, and the distance between its shoes, m (16 1/2 in shoes, 6 in pitch). */
 export const TRACK = { x: 1.41, width: 0.42, thickness: 0.05, pitch: 0.15 } as const;
@@ -53,7 +92,7 @@ export const BOGIES = {
 } as const;
 
 /** The drive sprocket at the front and the idler at the back: middles (hull z, y) and radii (to the track's inside), m. */
-export const SPROCKET = { z: -2.28, y: 0.1, radius: 0.3, teeth: 13 } as const;
+export const SPROCKET = { z: -2.62, y: 0.08, radius: 0.3, teeth: 13 } as const;
 export const IDLER = { z: 3.2, y: 0.05, radius: 0.24 } as const;
 
 /**
@@ -63,8 +102,8 @@ export const IDLER = { z: 3.2, y: 0.05, radius: 0.24 } as const;
  */
 export const OUTLINE_EXTENT = {
   halfWidth: SPONSON.halfWidth,
-  // The towing shackles stand a little out of the nose's cover.
-  front: HULL.front - HULL.wall - NOSE.bulge - 0.08,
+  // The glacis's foot, the furthest forward.
+  front: glacisOutsideZ(SPONSON.floor) - 0.03,
   // The air cleaners on the rear plate stand furthest back.
   rear: HULL_REAR.plate + 0.24,
 } as const;

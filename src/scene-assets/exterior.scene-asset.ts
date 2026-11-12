@@ -13,10 +13,12 @@ import {
   Vector3,
 } from '@iwsdk/core';
 import { beam, type Part } from './lowpoly.js';
-import { DRIVER_HATCH_ROUND, GLACIS, HULL, SEATS, TURRET, VISION_SLIT } from '../sim/cabin.js';
+import { DRIVER_HATCH_ROUND, GLACIS, GLACIS_SLOPE, HULL, SEATS, TURRET, VISION_SLIT } from '../sim/cabin.js';
 import {
   BOGIES,
   DECK_TOP,
+  GLACIS_OUTSIDE,
+  glacisOutsideZ,
   HULL_REAR,
   IDLER,
   NOSE,
@@ -376,46 +378,61 @@ function runningGearParts(side: -1 | 1): Part[] {
 }
 
 /**
- * The nose between the tracks: the transmission's rounded cover in three
- * bolted pieces (the early M4A4's), with towing clevises at its foot.
+ * The nose: the long glacis plate from the hood's face down to its foot
+ * over the sprockets, solid ahead of the cabin's own nose plate and glacis;
+ * under it, between the tracks, the transmission's rounded cover in three
+ * bolted pieces (the early M4A4's) round to the belly, with towing
+ * shackles; and the bow machine gun's ball in the glacis ahead of the
+ * assistant driver.
  */
 function noseParts(): Part[] {
   const parts: Part[] = [];
   const front = HULL.front - HULL.wall;
-  const { bulge, top, bottom } = NOSE;
-  // The cover's profile: an arc from the nose plate's foot out by `bulge` and back up to under the glacis.
-  const chord = top - bottom;
-  const radius = (chord * chord) / 4 / (2 * bulge) + bulge / 2;
-  const middle = (top + bottom) / 2;
-  const centreZ = front - bulge + radius;
-  const half = Math.asin(chord / 2 / radius);
-  const outline: [number, number][] = [];
-  const steps = 10;
-  for (let i = 0; i <= steps; i++) {
-    const a = -half + (2 * half * i) / steps;
-    outline.push([centreZ - radius * Math.cos(a), middle + radius * Math.sin(a)]);
-  }
-  const width = 2 * (HULL.halfWidth + HULL.wall) - 0.08;
-  parts.push(sideways([...outline, [front + 0.02, top], [front + 0.02, bottom]], -width / 2, width, PAINT));
-  // The flanges where its three pieces bolt together, standing proud of it, with bolt heads.
-  const flange: [number, number][] = [];
-  for (let i = 0; i <= steps; i++) {
-    const a = -half + (2 * half * i) / steps;
-    flange.push([centreZ - (radius + 0.025) * Math.cos(a), middle + (radius + 0.025) * Math.sin(a)]);
-  }
-  for (const fx of [-0.38, 0.38]) {
-    parts.push(sideways([...flange, [front + 0.035, top], [front + 0.035, bottom]], fx - 0.03, 0.06, PAINT_DARK));
-  }
-  // Towing clevises at the foot.
-  for (const cx of [-0.62, 0.62]) {
-    const z = centreZ - radius * Math.cos(half * 0.6) - 0.03;
-    const y = middle - radius * Math.sin(half * 0.6) + 0.02;
-    parts.push(box([0.14, 0.1, 0.12], [cx, y, z + 0.03], PAINT_DARK));
+  const w = HULL.halfWidth + HULL.wall;
+  const g = GLACIS_OUTSIDE;
+  // Where the cabin's glacis's outside meets its nose plate's outside.
+  const knee: [number, number] = [front, g.top[1] - (g.top[0] - front) / ((g.top[0] - g.foot[0]) / (g.top[1] - g.foot[1]))];
+  parts.push(sideways([[g.foot[0], g.foot[1]], [g.top[0], g.top[1]], knee, [front, g.foot[1]]], -w, 2 * w, PAINT));
+  // The cover: an arc from the glacis's foot to the belly under the nose plate.
+  const a: [number, number] = [g.foot[0], g.foot[1]];
+  const b: [number, number] = [front + 0.03, NOSE.bottom];
+  const arc = (bulge: number): [number, number][] => {
+    const mz = (a[0] + b[0]) / 2;
+    const my = (a[1] + b[1]) / 2;
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    // Out (forwards and down) square to the chord.
+    const nz = -(a[1] - b[1]) / len;
+    const ny = -(b[0] - a[0]) / len;
+    const points: [number, number][] = [];
+    for (let i = 0; i <= 10; i++) {
+      const k = i / 10;
+      const out = bulge * 4 * k * (1 - k);
+      points.push([a[0] + (b[0] - a[0]) * k + nz * out, a[1] + (b[1] - a[1]) * k + ny * out]);
+    }
+    return points;
+  };
+  const cover = arc(NOSE.bulge);
+  const width = 2 * w - 0.04;
+  parts.push(sideways([...cover, [front + 0.04, NOSE.bottom], [front + 0.04, g.foot[1] - 0.01]], -width / 2, width, PAINT));
+  // The flanges where its three pieces bolt together, standing proud of it.
+  const flange = arc(NOSE.bulge + 0.025).slice(1, -1);
+  for (const fx of [-0.4, 0.4]) parts.push(sideways([...flange, [front + 0.05, NOSE.bottom + 0.02], [front + 0.05, g.foot[1] - 0.03]], fx - 0.03, 0.06, PAINT_DARK));
+  // Towing shackles on brackets low on the cover.
+  const low = cover[7];
+  for (const cx of [-0.7, 0.7]) {
+    parts.push(box([0.14, 0.1, 0.12], [cx, low[1], low[0] + 0.03], PAINT_DARK));
     const shackle = new TorusGeometry(0.055, 0.016, 5, 12, Math.PI);
     shackle.rotateY(Math.PI / 2);
     shackle.rotateX(Math.PI);
-    parts.push({ geometry: shackle, color: STEEL, position: [cx, y - 0.02, z - 0.05] });
+    parts.push({ geometry: shackle, color: STEEL, position: [cx, low[1] - 0.02, low[0] - 0.03] });
   }
+  // The bow machine gun's ball and barrel, ahead of the one inside (cabin.scene-asset.ts), level with it.
+  const ballY = GLACIS.noseTop + 0.16;
+  const ballZ = glacisOutsideZ(ballY);
+  const mgX = -SEATS.driver.cushion[0];
+  // Its front half, its flat back turned into the glacis's plane, clear of the cabin.
+  parts.push({ geometry: new SphereGeometry(0.1, 12, 7, Math.PI, Math.PI), color: PAINT_DARK, position: [mgX, ballY, ballZ], rotation: [GLACIS_SLOPE, 0, 0] });
+  parts.push(lens(0.02, 0.3, [mgX, ballY, ballZ - 0.2], STEEL, 8));
   return parts;
 }
 
@@ -470,23 +487,11 @@ function hoodParts(): Part[] {
   return parts;
 }
 
-/** The glacis's outside at height `y` (between the nose's top and the hood's bottom), hull z. */
-function glacisOutside(y: number): number {
-  const { noseTop, hoodBottom, face } = GLACIS;
-  const t = HULL.wall;
-  const len = Math.hypot(face - HULL.front, hoodBottom - noseTop);
-  // The inside's line moved out along its normal (forwards and up) by the wall's thickness.
-  const nz = -(hoodBottom - noseTop) / len;
-  const ny = (face - HULL.front) / len;
-  const k = (y - (noseTop + t * ny)) / (hoodBottom - noseTop);
-  return HULL.front + t * nz + k * (face - HULL.front);
-}
-
 /** Headlights in their brush guards on the glacis's top corners, over the sponsons. */
 function headlightParts(): Part[] {
   const parts: Part[] = [];
   const y = GLACIS.hoodBottom - 0.06;
-  const z = glacisOutside(y);
+  const z = glacisOutsideZ(y);
   for (const side of [-1, 1]) {
     const x = side * (SPONSON.halfWidth - 0.2);
     parts.push(lens(0.075, 0.12, [x, y + 0.07, z - 0.08], PAINT_DARK));

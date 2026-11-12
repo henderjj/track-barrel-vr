@@ -27,7 +27,7 @@ import {
   TURRET_RING,
   VISION_SLIT,
 } from '../sim/cabin.js';
-import { HULL_REAR, SPONSON, TURRET_INSIDE_ROUNDING, TURRET_SHELL } from '../sim/exterior.js';
+import { GLACIS_OUTSIDE, HULL_REAR, SPONSON, TURRET_INSIDE_ROUNDING } from '../sim/exterior.js';
 import { hullOutsideParts, mantletParts, turretShellParts } from './exterior.scene-asset.js';
 import { ELEVATING_GEAR, MANTLET_DEPTH, mountToTurret, POWER_GRIP, STATION, type StationMount, TRUNNION } from '../sim/turret.js';
 import { DOME_LAMPS } from '../sim/interior.js';
@@ -226,9 +226,17 @@ function sideWall(side: -1 | 1, bottom: number, top: number): Part[] {
   const color = (_tri: number, c: Vector3) => (Math.abs(Math.abs(c.x) - w) < 0.001 ? IVORY : PAINT);
   // The lower wall's top runs up into the sponson, so no face of it lies in the sponson's floor.
   const lower: [number, number][] = [[HULL.front - t, bottom], [HULL.front - t, floor + 0.04], [r.plate, floor + 0.04], [r.plate, r.lowY], [r.bellyEnd, bottom]];
-  const upper: [number, number][] = [...frontProfile(t, floor, top), [r.plate, top], [r.plate, floor]];
-  const out = SPONSON.halfWidth - w;
-  return [sideways(lower, side < 0 ? -w - t : w, t, color), sideways(upper, side < 0 ? -w - out : w, out, color)];
+  // The cabin's wall above it, cut to the cabin's front; outboard of it the sponson, its front the long glacis
+  // carried on up to the deck (src/sim/exterior.ts).
+  const wall: [number, number][] = [...frontProfile(t, floor, top), [r.plate, top], [r.plate, floor]];
+  const g = GLACIS_OUTSIDE;
+  const sponson: [number, number][] = [[g.foot[0], floor], [g.deck[0], top], [r.plate, top], [r.plate, floor]];
+  const out = SPONSON.halfWidth - w - t;
+  return [
+    sideways(lower, side < 0 ? -w - t : w, t, color),
+    sideways(wall, side < 0 ? -w - t : w, t, color),
+    sideways(sponson, side < 0 ? -w - t - out : w + t, out, () => PAINT),
+  ];
 }
 
 /** Everything fixed to the hull, as seen from inside: plates, floor, the driver's seat, dash and slit, tracks. */
@@ -274,7 +282,21 @@ function hullParts(): Part[] {
   );
   // The roof over the cabin, the sponsons and the engine deck, with the turret ring and the driver's round hatch cut out.
   const deck = SPONSON.halfWidth;
-  const outline = rectangle(new Shape(), -deck, GLACIS.face - t, deck, HULL_REAR.plate) as Shape;
+  // Over the sponsons it starts where their glacis meets it, behind the hoods' face.
+  const hood = GLACIS.face - t;
+  const sponsonFront = GLACIS_OUTSIDE.deck[0];
+  const outline = new Shape(
+    [
+      [-deck, sponsonFront],
+      [-outer, sponsonFront],
+      [-outer, hood],
+      [outer, hood],
+      [outer, sponsonFront],
+      [deck, sponsonFront],
+      [deck, HULL_REAR.plate],
+      [-deck, HULL_REAR.plate],
+    ].map(([x, z]) => new Vector2(x, z)),
+  );
   outline.holes.push(new Path().absarc(0, TURRET.z, TURRET.ringRadius, 0, Math.PI * 2, true));
   const hatch = DRIVER_HATCH_ROUND;
   outline.holes.push(new Path().absarc(hatch.x, hatch.z, hatch.radius, 0, Math.PI * 2, true));
