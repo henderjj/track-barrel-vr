@@ -783,6 +783,7 @@ async function ammoChecks(host, guest, label) {
   await guest.page.evaluate(() => window.__turret.forward());
   await enemyChecks(host, guest, label);
   await enemyTankChecks(host, guest, label);
+  await damageChecks(host, guest, label);
 }
 
 /**
@@ -913,6 +914,49 @@ async function enemyTankChecks(host, guest, label) {
   check(`Stop takes the enemy tanks away on both pages (${label})`, stopped !== null);
   await guest.page.evaluate(() => window.__turret.forward());
   await host.page.evaluate(([x, z, h]) => window.__drive.place(x, z, h), [was.x, was.z, was.heading]);
+}
+
+/**
+ * The damage model (F3.4) with the guest as gunner: the host's turret hit
+ * knocks out the guest's power traverse; the guest's practice hit on
+ * their own crewman wounds the gunner on both pages, the red only on the
+ * guest's; the host's engine hits stop the engine on both; the guest's
+ * Repair mends it all on both.
+ */
+async function damageChecks(host, guest, label) {
+  const damage = (p) => p.page.evaluate(() => window.__damage.state());
+  await host.page.evaluate(() => window.__damage.test('turret'));
+  await waitFor("the guest to hear the traverse is out", async () => (await damage(guest)).traverse, 8000).catch(() => null);
+  const yaw0 = await guest.page.evaluate(() => window.__turret.state().yaw);
+  await guest.page.evaluate(() => window.__turret.set({ traverse: 1 }));
+  await new Promise((r) => setTimeout(r, 1500));
+  const yaw1 = await guest.page.evaluate(() => window.__turret.state().yaw);
+  await guest.page.evaluate(() => window.__turret.set(null));
+  check(`The host's turret hit knocks out the guest gunner's power traverse (${label})`, (await damage(guest)).traverse && Math.abs(yaw1 - yaw0) < 1e-3,
+    `turned ${(yaw1 - yaw0).toFixed(4)} rad`);
+
+  await guest.page.evaluate(() => window.__damage.test('crew'));
+  const wound = await waitFor('the gunner wounded on both pages', async () => {
+    const [h, g] = await Promise.all([damage(host), damage(guest)]);
+    return h.gunner === 1 && g.gunner === 1 && g.dark > 0 ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`The guest's own practice hit wounds the gunner on both pages, the red over the guest's eyes only (${label})`,
+    wound !== null && wound.h.dark === 0, wound ? `guest dark ${wound.g.dark.toFixed(2)}, host dark ${wound.h.dark}` : JSON.stringify(await damage(guest)));
+
+  await host.page.evaluate(() => { window.__damage.test('engine'); window.__damage.test('engine'); });
+  const dead = await waitFor('the engine stopped on both pages', async () => {
+    const [h, g] = await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__drive.state())));
+    return !h.running && !g.running && g.stallCause === 'hit' && (await damage(guest)).engine === 2 ? g : null;
+  }, 8000).catch(() => null);
+  check(`Two engine hits on the host stop the engine on both pages (${label})`, dead !== null);
+
+  await guest.page.evaluate(() => window.__damage.repair());
+  const mended = await waitFor('repaired on both pages', async () => {
+    const [h, g] = await Promise.all([damage(host), damage(guest)]);
+    const t = await guest.page.evaluate(() => window.__drive.state());
+    return h.hits === 0 && g.hits === 0 && !g.traverse && t.running ? g : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Repair mends it all on both pages, the engine running again (${label})`, mended !== null);
 }
 
 /**

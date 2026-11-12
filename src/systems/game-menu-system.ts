@@ -10,6 +10,7 @@ import { body, chooseBody } from './body-height-system.js';
 import { OPEN_MENU_EVENT } from './net-system.js';
 import { PanelUi } from './panel-ui.js';
 import { driveStatus, heatStatus, resetTank, setEngineHeat, startDriving } from './drive-system.js';
+import { damageStatus, repairTank, TEST_HITS, testHit } from './damage-system.js';
 import { enemyStatus, meetGun, meetTank, startEnemies } from './enemy-system.js';
 import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-system.js';
 import { goUpTheRange, rangeStatus } from './range-system.js';
@@ -473,6 +474,17 @@ export class GameMenuSystem extends createSystem({}) {
         meetTank(j);
       });
     }
+    // Damage (F3.4): the menu stays open, its line saying what is damaged.
+    ui.on('menu-damage-repair', () => {
+      repairTank();
+      this.render();
+    });
+    for (const kind of TEST_HITS) {
+      ui.on(`menu-damage-${kind}`, () => {
+        testHit(kind);
+        this.render();
+      });
+    }
     ui.on('menu-loading', () => {
       this.setOpen(false);
       startLoading();
@@ -588,6 +600,7 @@ export class GameMenuSystem extends createSystem({}) {
       this.ui?.setText('menu-heat-status', heatStatus());
       this.ui?.setText('menu-enemy-status', enemyStatus());
       this.ui?.setText('menu-tanks-status', enemyStatus('tanks'));
+      this.ui?.setText('menu-damage-status', damageStatus());
       this.ui?.setText('menu-run-status', runStatus());
       this.ui?.setText('menu-course-status', courseStatus());
       this.ui?.setText('menu-race-status', raceStatus());
@@ -669,6 +682,7 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-heat-status', heatStatus());
     ui.setText('menu-enemy-status', enemyStatus());
     ui.setText('menu-tanks-status', enemyStatus('tanks'));
+    ui.setText('menu-damage-status', damageStatus());
     ui.setText('menu-run-status', runStatus());
     const run = shownRun();
     ui.setText('menu-run-start', run.phase === 'running' && run.mode === 'range' ? 'Restart' : 'Start');

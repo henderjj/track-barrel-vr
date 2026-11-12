@@ -195,6 +195,8 @@ export interface TankDrive extends EngineState {
   coolant: number;
   /** Fuel left, 0 (empty) to 1 (full): burnt with the revs, slowly, never below FUEL_RESERVE in Phase 1. */
   fuel: number;
+  /** A broken track or the transmission hit (F3.4): the tracks don't turn, as if the parking brake held them. */
+  immobile: boolean;
 }
 
 /** A tank at rest at (x, z), facing `heading`, on the ground, in neutral, its engine running but cold. */
@@ -207,7 +209,7 @@ export function createTankDrive(x = 0, z = 0, heading = 0): TankDrive {
     coolant: COOLANT_START, fuel: 1,
     running: true, cranking: false, power: true, rough: false, crankTime: 0, starterRest: 0, runTime: 0, coldStart: false,
     chokeTime: 0, bogTime: 0, coldTime: 0, coughTimer: 0, heatTime: 0, stalls: 0, coughs: 0, stallCause: 'none', switchedOn: true,
-    lastStart: 'starter',
+    lastStart: 'starter', damage: 0, immobile: false,
   };
   settle(s);
   return s;
@@ -244,6 +246,8 @@ export function copyEngine(from: TankDrive, to: TankDrive): TankDrive {
   to.stallCause = from.stallCause;
   to.switchedOn = from.switchedOn;
   to.lastStart = from.lastStart;
+  to.damage = from.damage;
+  to.immobile = from.immobile;
   return to;
 }
 
@@ -269,6 +273,12 @@ export function stepDrive(
   feel: GroundFeel = FULL_BUMPS,
 ): TankDrive {
   if (dt <= 0) return s;
+  if (s.immobile && !c.parkingBrake) {
+    // Immobilised (F3.4): the tracks held as the parking brake holds them.
+    Object.assign(heldControls, c);
+    heldControls.parkingBrake = true;
+    c = heldControls;
+  }
   const slope = groundUnder(s.x, s.z, s.heading, slopeSample).pitch;
   stepEngine(s, c, dt);
   stepGearbox(s, c, dt);
@@ -377,7 +387,8 @@ export function stepEngineGauges(s: TankDrive, dt: number): void {
     return;
   }
   const load = engineLoad(s.rpm);
-  const hot = coolantTarget(s.rpm, s.gear);
+  // A damaged engine (F3.4) runs hotter: a holed radiator.
+  const hot = coolantTarget(s.rpm, s.gear) + (s.damage === 1 ? LEAK_HEAT : 0);
   const seconds = hot <= s.coolant ? COOLANT_SECONDS : s.coolant >= COOLANT_FULL ? OVERHEAT_SECONDS : WARM_SECONDS;
   s.coolant += (hot - s.coolant) * (1 - Math.exp(-dt / seconds));
   const burn = (FUEL_AT_IDLE + (1 - FUEL_AT_IDLE) * load) / (FUEL_HOURS * 3600);
@@ -401,6 +412,11 @@ interface GroundSample {
 }
 const sample: GroundSample = { height: 0, pitch: 0, roll: 0 };
 const slopeSample: GroundSample = { height: 0, pitch: 0, roll: 0 };
+/** The controls an immobilised tank steps with: the driver's, its tracks held. */
+const heldControls: DriverControls = createControls();
+
+/** A damaged engine's coolant heads this much hotter (F3.4: a holed radiator), °C: at full load it boils over into the red. */
+export const LEAK_HEAT = 25;
 
 /** The ground under a tank at (x, z) facing `heading`: its mean height under the track ends, and the slope along and across. */
 export function groundUnder(x: number, z: number, heading: number, out: GroundSample): GroundSample {
