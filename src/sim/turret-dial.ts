@@ -15,6 +15,7 @@
  */
 
 import { HULL, TURRET, VISION_SLIT } from './cabin.js';
+import { HULL_REAR, SPONSON } from './exterior.js';
 import { MAX_TRAVERSE, MAX_TRAVERSE_ACCEL } from './comfort.js';
 import type { Vec3 } from './mechanism.js';
 import { approach } from './tank-drive.js';
@@ -64,11 +65,11 @@ export const TURRET_DIAL = (() => {
  * tracks fills a little over half the face; the clock's numbers go round it.
  */
 export const DIAL_HULL = (() => {
-  /** The hull's outside, with the tracks, nose to tail, hull space, m (cabin.scene-asset.ts draws these). */
+  /** The hull's outside, with the tracks under its sponsons, nose to tail, hull space, m (src/sim/exterior.ts). */
   const halfWidth = HULL.halfWidth + HULL.wall;
-  const trackHalfWidth = halfWidth + 0.62;
+  const trackHalfWidth = SPONSON.halfWidth;
   const front = HULL.front - HULL.wall;
-  const rear = HULL.rear + HULL.wall + 0.6;
+  const rear = HULL_REAR.plate;
   const reach = Math.max(TURRET.z - front, rear - TURRET.z);
   return {
     halfWidth,

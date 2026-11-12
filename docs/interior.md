@@ -20,7 +20,7 @@ After the first pass John reported: it reads as a tank and nothing flickers, but
 - **Tillers.** The handles stand 42 cm under the eyes (55 before) and 32 cm ahead, and swing 20° each way (25° before): full forwards is 45 cm ahead, within a seated arm's reach with no lean.
 - **The instrument box** on a Sherman is at the driver's left front, by the steering levers (figure 9's "instrument box", top left), which is where ours was. It now stands in front instead, on the glacis between the tillers like a car's dashboard: a glance 37° down from the slit, 57 cm away.
 - **Gunner.** The elevation wheel, the traverse crank and the power grip are 5 cm higher (their hubs 39 cm under the eyes), the crank 9 cm further in, and the race ring the turret turns on is narrower and out at the hole's edge (its inner edge 87 cm from the middle, 83 before), so the crank and the fist on it turn clear of it.
-- **The turret's roof** reads as a cast turret's: chamfers along the roof's edges and down the four corners take away the box, the hatch is round with a collar under it and a round lid, and the roof has the ventilator's housing over the loader's side and a rib behind the lamp.
+- **The turret's roof** reads as a cast turret's: its corners and the roof's edges are rounded (chamfered before the cast outside, [exterior.md](exterior.md)), the hatch is round with a collar under it and a round lid, and the roof has the ventilator's housing over the loader's side and a rib behind the lamp.
 
 ## John's second headset check (2026-10-30)
 
@@ -74,7 +74,7 @@ John found the fade to black came in too early, and only the middle of the view 
 | Gunner's head box | 50 cm left, 58 cm right, 16 cm forward, 50 cm back; eyes up 41 cm (22, 35, 14 and 45 cm, up 35, before the fourth pass) | The turret's wall and the roof 9 cm off at its edges; open to the left over the breech and behind |
 | Elevation wheel, crank, power grip | turret (0.37, 1.86, −0.59), (0.52, 1.86, −0.52), (0.71, 1.63, −0.45) | Hubs 39 cm under the eyes; the crank's fist inside the ring; the elevation wheel faces sideways, its handle on the gun's side, and drives a toothed arc on the gun, all inside the ring ([turret.md](turret.md)) |
 | Turret ring | race ring 91 cm out, 4 cm tube (90 cm, 7 cm before) | Its inner edge at 87 cm, clear of the crank |
-| Turret roof | 12 cm chamfers along its edges and down its corners; round hatch 54 cm across; ventilator 24 cm across | A cast turret, not a box |
+| Turret roof | corners and roof edges rounded, 15 cm (12 cm chamfers before); round hatch 54 cm across; ventilator 24 cm across | A cast turret, not a box |
 | Interior ambient | 6% of the sky's light, a little warm, 55% of that on the hull floor | Dark, as a closed steel box is (26% read as bright) |
 | Hatch daylight | 1.2 of daylight from 45 cm above each open hatch, falling straight down (the cosine from straight down to the 12th power), half as bright 1.2 m away | A tight pool under each hatch |
 | Slit daylight | 0.25 of daylight from just inside the slit, half as bright 35 cm away | Lights the hood's inside face a little |

@@ -18,9 +18,8 @@ import { driverStationParts } from './driver-station.scene-asset.js';
 import { beam, mergeParts, type Part } from './lowpoly.js';
 import { GEARBOX } from '../sim/driver-station.js';
 import {
-  DRIVER_HATCH,
+  DRIVER_HATCH_ROUND,
   GLACIS,
-  GROUND_Y,
   GUN,
   HULL,
   SEATS,
@@ -28,6 +27,8 @@ import {
   TURRET_RING,
   VISION_SLIT,
 } from '../sim/cabin.js';
+import { GLACIS_OUTSIDE, HULL_REAR, SPONSON, TURRET_INSIDE_ROUNDING } from '../sim/exterior.js';
+import { hullOutsideParts, mantletParts, turretShellParts } from './exterior.scene-asset.js';
 import { ELEVATING_GEAR, MANTLET_DEPTH, mountToTurret, POWER_GRIP, STATION, type StationMount, TRUNNION } from '../sim/turret.js';
 import { DOME_LAMPS } from '../sim/interior.js';
 import { LID_ASIDE } from '../sim/convoy-seat.js';
@@ -64,8 +65,6 @@ const STEEL = 0x3c3d3f;
 const STEEL_LIGHT = 0x5b5d60;
 const LEATHER = 0x5a3d26;
 const RUBBER = 0x1e1e1e;
-const TRACK = 0x34322e;
-const WHEEL = 0x5f5b3e;
 
 type Vec3 = readonly [number, number, number];
 
@@ -116,6 +115,21 @@ function roof(outline: Shape, top: number, thickness: number): Part {
   };
 }
 
+/** A square `half` either side of the middle, its corners rounded with `radius`, as a shape in the XZ plane (x, z points). */
+function roundedSquare(half: number, radius: number): Shape {
+  const shape = new Shape();
+  const c = half - radius;
+  shape.moveTo(c, -half);
+  shape.absarc(c, -c, radius, -Math.PI / 2, 0, false);
+  shape.lineTo(half, c);
+  shape.absarc(c, c, radius, 0, Math.PI / 2, false);
+  shape.lineTo(-c, half);
+  shape.absarc(-c, c, radius, Math.PI / 2, Math.PI, false);
+  shape.lineTo(-half, -c);
+  shape.absarc(-c, -c, radius, Math.PI, (3 * Math.PI) / 2, false);
+  return shape;
+}
+
 function rectangle(path: Path, x0: number, z0: number, x1: number, z1: number): Path {
   path.moveTo(x0, z0);
   path.lineTo(x1, z0);
@@ -127,13 +141,12 @@ function rectangle(path: Path, x0: number, z0: number, x1: number, z1: number): 
 
 /** The gunner's round hatch in the turret roof, turret space, over their seat: its middle's x and z and its radius, m (src/sim/interior.ts's GUNNER_HATCH_MIDDLE). */
 const GUNNER_HATCH = { x: SEATS.gunner.eye[0], z: SEATS.gunner.eye[2] + 0.1, radius: 0.27 } as const;
-/** The cast turret's rounding inside: how far the chamfers along the roof's edges and down its corners reach across each face, m. */
-const TURRET_FILLET = 0.12;
 /**
  * The plate at the turret's foot, turret space: it stands `lift` above the hull roof it turns on and is `thickness`
- * thick, its hole round the ring clear of the ring's torus, m.
+ * thick, its top just over the cast shell's foot (src/sim/exterior.ts), its hole round the ring clear of the ring's
+ * torus, m.
  */
-const TURRET_FOOT = { lift: 0.01, thickness: 0.03, hole: TURRET_RING.radius + TURRET_RING.tube + 0.01 } as const;
+const TURRET_FOOT = { lift: 0.01, thickness: 0.04, hole: TURRET_RING.radius + TURRET_RING.tube + 0.01 } as const;
 
 /** A seat: cushion, backrest and a post down to its floor, in its frame. */
 function seatParts(cushion: Vec3, floorY: number): Part[] {
@@ -198,13 +211,32 @@ function frontArmour(bottom: number): Part {
   });
 }
 
-/** A side wall, cut to the front's slope: ivory on the face towards the cabin. */
-function sideWall(side: -1 | 1, bottom: number, top: number): Part {
+/**
+ * A side of the hull, ivory on the face towards the cabin: the lower hull's
+ * wall between the track and the cabin, up to the sponson's floor, and over
+ * it the sponson, out over the track (src/sim/exterior.ts), cut to the
+ * front's slope. Both run back past the cabin to the rear plate, the lower
+ * one's foot sloping up to it.
+ */
+function sideWall(side: -1 | 1, bottom: number, top: number): Part[] {
   const t = HULL.wall;
   const w = HULL.halfWidth;
-  const front = frontProfile(t, bottom, top);
-  const outline: [number, number][] = [...front, [HULL.rear + t, top], [HULL.rear + t, bottom]];
-  return sideways(outline, side < 0 ? -w - t : w, t, (_tri, c) => (Math.abs(Math.abs(c.x) - w) < 0.001 ? IVORY : PAINT));
+  const r = HULL_REAR;
+  const floor = SPONSON.floor;
+  const color = (_tri: number, c: Vector3) => (Math.abs(Math.abs(c.x) - w) < 0.001 ? IVORY : PAINT);
+  // The lower wall's top runs up into the sponson, so no face of it lies in the sponson's floor.
+  const lower: [number, number][] = [[HULL.front - t, bottom], [HULL.front - t, floor + 0.04], [r.plate, floor + 0.04], [r.plate, r.lowY], [r.bellyEnd, bottom]];
+  // The cabin's wall above it, cut to the cabin's front; outboard of it the sponson, its front the long glacis
+  // carried on up to the deck (src/sim/exterior.ts).
+  const wall: [number, number][] = [...frontProfile(t, floor, top), [r.plate, top], [r.plate, floor]];
+  const g = GLACIS_OUTSIDE;
+  const sponson: [number, number][] = [[g.foot[0], floor], [g.deck[0], top], [r.plate, top], [r.plate, floor]];
+  const out = SPONSON.halfWidth - w - t;
+  return [
+    sideways(lower, side < 0 ? -w - t : w, t, color),
+    sideways(wall, side < 0 ? -w - t : w, t, color),
+    sideways(sponson, side < 0 ? -w - t - out : w + t, out, () => PAINT),
+  ];
 }
 
 /** Everything fixed to the hull, as seen from inside: plates, floor, the driver's seat, dash and slit, tracks. */
@@ -224,11 +256,16 @@ function hullParts(): Part[] {
   const parts: Part[] = [
     // Floor plate.
     box([2 * w, 0.1, HULL.rear - HULL.front], [0, -0.05, (HULL.rear + HULL.front) / 2], FLOOR),
-    // Side walls, running the hull's full length and cut to the front's slope; the front and the bulkhead fit between them.
-    sideWall(-1, bottom, top),
-    sideWall(1, bottom, top),
+    // Side walls and sponsons, running the hull's full length and cut to the front's slope; the front and the bulkhead fit
+    // between them.
+    ...sideWall(-1, bottom, top),
+    ...sideWall(1, bottom, top),
     // The bulkhead in front of the engine.
     plate([2 * w, height, t], [0, midY, HULL.rear + t / 2], inside),
+    // The engine compartment behind it: its floor, the rear plate and the lower plate sloping under to the belly.
+    box([2 * w, 0.1, HULL_REAR.bellyEnd - HULL.rear - 0.04], [0, -0.05, (HULL_REAR.bellyEnd + HULL.rear + 0.04) / 2], PAINT),
+    box([2 * w, top - HULL_REAR.lowY, t], [0, (top + HULL_REAR.lowY) / 2, HULL_REAR.plate - t / 2], PAINT),
+    rearSlope(bottom),
     // The nose and the glacis, up to the hood's face.
     frontArmour(bottom),
   ];
@@ -243,11 +280,26 @@ function hullParts(): Part[] {
     plate([s.x - s.width / 2 + w, s.height, t], [(s.x - s.width / 2 - w) / 2, s.y, fz], inside),
     plate([w - (s.x + s.width / 2), s.height, t], [(s.x + s.width / 2 + w) / 2, s.y, fz], inside),
   );
-  // The roof, with the turret ring and the driver's hatch cut out.
-  const outline = rectangle(new Shape(), -outer, GLACIS.face - t, outer, rear) as Shape;
+  // The roof over the cabin, the sponsons and the engine deck, with the turret ring and the driver's round hatch cut out.
+  const deck = SPONSON.halfWidth;
+  // Over the sponsons it starts where their glacis meets it, behind the hoods' face.
+  const hood = GLACIS.face - t;
+  const sponsonFront = GLACIS_OUTSIDE.deck[0];
+  const outline = new Shape(
+    [
+      [-deck, sponsonFront],
+      [-outer, sponsonFront],
+      [-outer, hood],
+      [outer, hood],
+      [outer, sponsonFront],
+      [deck, sponsonFront],
+      [deck, HULL_REAR.plate],
+      [-deck, HULL_REAR.plate],
+    ].map(([x, z]) => new Vector2(x, z)),
+  );
   outline.holes.push(new Path().absarc(0, TURRET.z, TURRET.ringRadius, 0, Math.PI * 2, true));
-  const [hx0, hz0, hx1, hz1] = DRIVER_HATCH;
-  outline.holes.push(rectangle(new Path(), hx0, hz1, hx1, hz0));
+  const hatch = DRIVER_HATCH_ROUND;
+  outline.holes.push(new Path().absarc(hatch.x, hatch.z, hatch.radius, 0, Math.PI * 2, true));
   parts.push(roof(outline, top, t));
 
   // The driver's place: seat, the gearbox's hump beside their legs, and the station's fixed parts (F1.5).
@@ -265,20 +317,15 @@ function hullParts(): Part[] {
   // The rest of a Sherman's front compartment (docs/interior.md).
   parts.push(...hullDetailParts());
 
-  // The engine compartment behind the bulkhead.
-  parts.push(box([2 * outer, height - 0.28, 0.6], [0, bottom + (height - 0.28) / 2, rear + 0.3], PAINT));
-  // Tracks with their road wheels standing proud on the outside, and the fenders over them.
-  for (const side of [-1, 1]) {
-    const trackX = side * (outer + 0.32);
-    parts.push(box([0.6, 0.5 - GROUND_Y, 5.6], [trackX, (0.5 + GROUND_Y) / 2, -0.2], TRACK));
-    parts.push(box([0.68, 0.04, 5.7], [side * (outer + 0.34), 0.54, -0.2], PAINT_DARK));
-    for (let i = 0; i < 6; i++) {
-      const wheel = new CylinderGeometry(0.3, 0.3, 0.06, 10, 1);
-      wheel.rotateZ(Math.PI / 2);
-      parts.push({ geometry: wheel, color: WHEEL, position: [side * (outer + 0.63), -0.12, -2.45 + i * 0.9] });
-    }
-  }
   return parts;
+}
+
+/** The lower rear plate, sloping from the belly's end up and back to the foot of the rear plate, between the lower walls. */
+function rearSlope(bottom: number): Part {
+  const r = HULL_REAR;
+  const t = HULL.wall;
+  const w = HULL.halfWidth;
+  return sideways([[r.bellyEnd - 0.06, bottom], [r.bellyEnd, bottom], [r.plate, r.lowY], [r.plate, r.lowY + t], [r.plate - t, r.lowY + t]], -w, 2 * w, () => PAINT);
 }
 
 const RED = 0xa8281c;
@@ -375,39 +422,14 @@ function turretDetailParts(): Part[] {
 }
 
 /**
- * What makes the turret's inside read as a cast Sherman turret's rather than
- * a box, turret space: chamfers along the roof's four edges and down the
- * four corners, a collar round the hatch, the ventilator's housing in the
- * roof over the loader's side and a rib across the roof behind the hatch.
+ * The turret roof's underside, turret space: a collar round the hatch, the
+ * ventilator's housing over the loader's side and a rib across the roof
+ * behind the hatch. The cast turret's rounded inside is the shell's
+ * (exterior.scene-asset.ts).
  */
 function turretRoofParts(): Part[] {
   const parts: Part[] = [];
   const inner = TURRET.halfWidth - HULL.wall;
-  const f = TURRET_FILLET;
-  const thick = 0.03;
-  // The roof's edges: a plate at 45° across each top corner, its face f in from the wall and down from the roof.
-  const across = f * Math.SQRT2;
-  const mid = inner - f / 2 + thick / (2 * Math.SQRT2);
-  const midY = TURRET.roof - f / 2 + thick / (2 * Math.SQRT2);
-  // Their ends sink into the walls.
-  const length = 2 * inner + 0.04;
-  for (const side of [-1, 1]) {
-    parts.push({ geometry: new BoxGeometry(thick, across, length), color: IVORY, position: [side * mid, midY, 0], rotation: [0, 0, side * (Math.PI / 4)] });
-    parts.push({ geometry: new BoxGeometry(length, across, thick), color: IVORY, position: [0, midY, side * mid], rotation: [-side * (Math.PI / 4), 0, 0] });
-  }
-  // The corners, from just above the walls' foot up to the roof's chamfers.
-  const bottom = HULL.roof + HULL.wall + 0.02;
-  const height = TURRET.roof - f / 2 - bottom;
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      parts.push({
-        geometry: new BoxGeometry(across, height, thick),
-        color: IVORY,
-        position: [sx * mid, bottom + height / 2, sz * mid],
-        rotation: [0, sx * sz * (Math.PI / 4), 0],
-      });
-    }
-  }
   // A collar round the hatch, under the roof.
   const h = GUNNER_HATCH;
   const collar = new TorusGeometry(h.radius + 0.03, 0.03, 4, 20);
@@ -421,8 +443,8 @@ function turretRoofParts(): Part[] {
     const half = Math.sqrt(vent.radius * vent.radius - (i * 0.045) ** 2) - 0.01;
     parts.push(box([2 * half, 0.012, 0.014], [vent.x, TURRET.roof - vent.depth - 0.012, vent.z + i * 0.045], STEEL_LIGHT));
   }
-  // A rib across the roof behind the hatch and the dome lamp, between the chamfers, its top sunk into the roof.
-  parts.push(box([2 * (inner - f), 0.045, 0.06], [0, TURRET.roof - 0.0125, 0.72], IVORY_SHADE));
+  // A rib across the roof behind the hatch and the dome lamp, its ends and top sunk into the rounded roof.
+  parts.push(box([2 * (inner - TURRET_INSIDE_ROUNDING / 2), 0.045, 0.06], [0, TURRET.roof - 0.0125, 0.72], IVORY_SHADE));
   return parts;
 }
 
@@ -442,17 +464,20 @@ function createHatchLids(hatch: 'driver' | 'gunner'): Mesh[] {
   let shut: BufferGeometry;
   let underside: number;
   if (hatch === 'driver') {
-    // Lifted and swung aside, lying flat beside the hole on its post, so nothing stands in front of a driver's face
-    // with their head out (docs/convoy-seat.md); clear of the turret's overhang.
-    const [hx0, hz0, hx1, hz1] = DRIVER_HATCH;
+    // The round lid, lifted and swung aside, lying flat beside the hole on its post, so nothing stands in front of a
+    // driver's face with their head out (docs/convoy-seat.md); clear of the turret's overhang.
+    const h = DRIVER_HATCH_ROUND;
     const top = HULL.roof + HULL.wall;
     const a = LID_ASIDE;
-    open.push(box([a.x1 - a.x0, a.y1 - a.y0, a.z1 - a.z0], [(a.x0 + a.x1) / 2, (a.y0 + a.y1) / 2, (a.z0 + a.z1) / 2], PAINT_DARK));
+    const lid = new CylinderGeometry((a.x1 - a.x0) / 2, (a.x1 - a.x0) / 2, a.y1 - a.y0, 28, 1);
+    open.push({ geometry: lid, color: PAINT_DARK, position: [(a.x0 + a.x1) / 2, (a.y0 + a.y1) / 2, (a.z0 + a.z1) / 2] });
     open.push({ geometry: new CylinderGeometry(a.post.radius, a.post.radius, a.y0 - top + 0.02, 8, 1), color: PAINT_DARK, position: [a.post.x, (top - 0.01 + a.y0 + 0.01) / 2, a.post.z] });
+    // Its arm from the post to the lid's edge.
+    open.push(box([a.post.x - a.x1 + 0.06, 0.02, 0.05], [(a.post.x + a.x1) / 2 - 0.03, (a.y0 + a.y1) / 2, a.post.z], PAINT_DARK));
     underside = HULL.roof - LID_PLUG.under;
     const height = top + LID_PLUG.over - underside;
-    shut = new BoxGeometry(hx1 - hx0 + 2 * LID_PLUG.rim, height, hz1 - hz0 + 2 * LID_PLUG.rim);
-    shut.translate((hx0 + hx1) / 2, underside + height / 2, (hz0 + hz1) / 2);
+    shut = new CylinderGeometry(h.radius + LID_PLUG.rim, h.radius + LID_PLUG.rim, height, 28, 1);
+    shut.translate(h.x, underside + height / 2, h.z);
   } else {
     // The round lid, standing open behind the hole.
     const h = GUNNER_HATCH;
@@ -491,30 +516,18 @@ const lampMaterial = new MeshBasicMaterial({ vertexColors: true, toneMapped: fal
 
 /** Everything fixed to the turret, in turret space: walls, roof and hatch, gun and breech, basket, the gunner's seat and sight. */
 function turretParts(): Part[] {
-  const w = TURRET.halfWidth;
-  const t = HULL.wall;
   const bottom = HULL.roof + HULL.wall;
-  const top = TURRET.roof + t;
-  const height = TURRET.roof - bottom;
-  const midY = (TURRET.roof + bottom) / 2;
-  const inside: Vec3 = [0, (HULL.roof + TURRET.roof) / 2, 0];
-  const parts: Part[] = [
-    plate([t, height, TURRET.rear - TURRET.front], [-w + t / 2, midY, 0], inside),
-    plate([t, height, TURRET.rear - TURRET.front], [w - t / 2, midY, 0], inside),
-    plate([2 * (w - t), height, t], [0, midY, TURRET.front + t / 2], inside),
-    plate([2 * (w - t), height, t], [0, midY, TURRET.rear - t / 2], inside),
-  ];
-  const outline = rectangle(new Shape(), -w, TURRET.front, w, TURRET.rear) as Shape;
-  const h = GUNNER_HATCH;
-  outline.holes.push(new Path().absarc(h.x, h.z, h.radius, 0, Math.PI * 2, true));
-  parts.push(roof(outline, top, t));
-  // The turret's foot: a plate from its walls in to the ring, so where a turned turret's corners overhang the hull's sides
-  // nobody sees the ground past the hull roof's edge. Its edges are sunk in the walls.
-  const foot = rectangle(new Shape(), -w + t / 2, TURRET.front + t / 2, w - t / 2, TURRET.rear - t / 2) as Shape;
-  foot.holes.push(new Path().absarc(0, 0, TURRET_FOOT.hole, 0, Math.PI * 2, true));
   const footTop = bottom + TURRET_FOOT.lift + TURRET_FOOT.thickness;
+  // The cast turret: its rounded outside, its square inside with rounded corners, its roof and the hatch's hole
+  // (docs/exterior.md); its inside starts in the foot plate.
+  const parts: Part[] = turretShellParts(footTop - 0.02);
+  // The turret's foot: a plate from its walls in to the ring, so where a turned turret overhangs the hull's sides
+  // nobody sees the ground past the hull roof's edge. Its edge is sunk in the walls' inside.
+  const inner = TURRET.halfWidth - HULL.wall + 0.01;
+  const foot = roundedSquare(inner, TURRET_INSIDE_ROUNDING + 0.01);
+  foot.holes.push(new Path().absarc(0, 0, TURRET_FOOT.hole, 0, Math.PI * 2, true));
   parts.push({ ...roof(foot, footTop, TURRET_FOOT.thickness), color: (_tri: number, c: Vector3) => (c.y > footTop - 0.005 ? IVORY : PAINT) });
-  // The cast turret's inside, rounded rather than a box (docs/interior.md).
+  // The roof's underside: the hatch's collar, the ventilator and a rib.
   parts.push(...turretRoofParts());
   // The ring the turret turns on.
   // The ring the turret turns on, flattened, with the basket's posts hanging from it.
@@ -593,8 +606,7 @@ function stationParts(): Part[] {
  * (gunRecoilParts), and the gunsight hangs on it (F1.9).
  */
 function gunParts(): Part[] {
-  const z0 = TRUNNION.z;
-  return [box([0.9, 0.32, MANTLET_DEPTH], [0, 0.01, TURRET.front - MANTLET_DEPTH / 2 + 0.01 - z0], PAINT), ...elevatingArcParts()];
+  return [...mantletParts(), ...elevatingArcParts()];
 }
 
 /**
@@ -664,11 +676,16 @@ function gunRecoilParts(): Part[] {
 
 const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
 
-/** The hull, with everything fixed to it, in one mesh. */
+/** The name of the hull's outside's mesh: the tracks and running gear, the nose's cover, the hoods, lights, the engine deck and the rear (docs/exterior.md). */
+export const HULL_OUTSIDE_NAME = 'Hull Outside';
+
+/** The hull, with everything fixed to it, in one mesh, and what stands on its outside in another. */
 export function createHull(): Mesh {
   const mesh = new Mesh(mergeParts(hullParts()), material);
   mesh.name = 'Hull';
-  mesh.add(createLampLenses('hull'), ...createHatchLids('driver'), createDriverSeat());
+  const outside = new Mesh(mergeParts(hullOutsideParts()), material);
+  outside.name = HULL_OUTSIDE_NAME;
+  mesh.add(outside, createLampLenses('hull'), ...createHatchLids('driver'), createDriverSeat());
   return mesh;
 }
 

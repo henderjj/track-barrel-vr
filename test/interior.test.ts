@@ -17,7 +17,7 @@ import { Lever, type Vec3, Wheel } from '../src/sim/mechanism.js';
 import { DRIVER_PERISCOPE } from '../src/sim/periscope.js';
 import { ELEVATION_WHEEL, STATION, TRAVERSE_CRANK, TRUNNION } from '../src/sim/turret.js';
 import { interiorUniforms, setCabinLook, setInteriorTurret } from '../src/scene-assets/cabin-light.js';
-import { createGun, createHull, createTurret, HATCH_LID_NAMES } from '../src/scene-assets/cabin.scene-asset.js';
+import { createGun, createHull, createTurret, HATCH_LID_NAMES, HULL_OUTSIDE_NAME } from '../src/scene-assets/cabin.scene-asset.js';
 import { DEFAULT_SETTINGS } from '../src/settings.js';
 import { type Object3D, Raycaster, Vector3 } from '@iwsdk/core';
 
@@ -264,6 +264,9 @@ describe("the head boxes against the cabin's meshes (John's headset check, 2026-
   ray.far = 0.5;
   const shown = (o: Object3D | null): boolean => o === null || (o.visible && shown(o.parent));
   const hull = createHull();
+  // The hull's outside (tracks, wheels and fittings) stands outside the armour, away from the head boxes
+  // (test/exterior.test.ts holds it there); leaving it out keeps these thousands of rays quick.
+  hull.remove(hull.getObjectByName(HULL_OUTSIDE_NAME)!);
   const turret = createTurret();
   turret.position.set(0, 0, TURRET.z);
   const gun = createGun();
@@ -333,6 +336,8 @@ describe("the convoy position's head box against the cabin's meshes (docs/convoy
     const shown = (o: Object3D | null): boolean => o === null || (o.visible && shown(o.parent));
     const hull = createHull();
     hull.getObjectByName(DRIVER_SEAT_NAME)!.position.set(...CONVOY_MOVE);
+    // The hull's outside stands clear of the hatch (test/exterior.test.ts); left out to keep the rays quick.
+    hull.remove(hull.getObjectByName(HULL_OUTSIDE_NAME)!);
     const turret = createTurret();
     turret.position.set(0, 0, TURRET.z);
     const gun = createGun();
