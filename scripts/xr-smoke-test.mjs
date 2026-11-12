@@ -2878,11 +2878,12 @@ async function theDamage() {
   const later = evalInApp('window.__enemy.state().shots');
   check('Three hits through the armour knock the tank out: its engine stops, the guns hold their fire, and the sign says so',
     out.out && !tank().running && later === shots && /^Knocked out/.test(outSign), `shots ${shots} → ${later}, sign "${outSign}"`);
+  // Stop the guns first: repaired, the tank is a target again, and on a slow runner gun A's next shell can land before the check reads.
+  evalInApp('(window.__enemy.stop(), true)');
   await menuButtonPress();
   await menuClick('menu-damage-repair');
   const mended = await waitFor('repaired', () => { const d = damage(); return !d.out && d.hits === 0 && tank().running && d; }, 5000).catch(() => damage());
   check('Damage → Repair puts it all right', !mended.out && mended.hits === 0, `"${evalInApp("window.__gameMenu.text('menu-damage-status')")}"`);
-  evalInApp('(window.__enemy.stop(), true)');
   await menuButtonPress();
   evalInApp('(window.__drive.reset("keep"), true)');
 }
