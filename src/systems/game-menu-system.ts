@@ -9,7 +9,7 @@ import { otherSeat, parseSeat, SEAT_IDS, SEATS } from '../sim/cabin.js';
 import { body, chooseBody } from './body-height-system.js';
 import { OPEN_MENU_EVENT } from './net-system.js';
 import { PanelUi } from './panel-ui.js';
-import { driveStatus, resetTank, startDriving } from './drive-system.js';
+import { driveStatus, heatStatus, resetTank, setEngineHeat, startDriving } from './drive-system.js';
 import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-system.js';
 import { goUpTheRange, rangeStatus } from './range-system.js';
 import { raceStatus, readyAtLine, readyToFire, runStatus, shownRun, startRace, startRun, stopRun } from './range-run-system.js';
@@ -433,6 +433,13 @@ export class GameMenuSystem extends createSystem({}) {
         readyToFire(GUN_TARGET, 'gunner', kind);
       });
     }
+    // Engine heat (F3.7): the menu stays open, its line showing the coolant.
+    for (const heat of ['hot', 'normal'] as const) {
+      ui.on(`menu-heat-${heat}`, () => {
+        setEngineHeat(heat);
+        this.render();
+      });
+    }
     ui.on('menu-loading', () => {
       this.setOpen(false);
       startLoading();
@@ -545,6 +552,7 @@ export class GameMenuSystem extends createSystem({}) {
       this.ui?.setText('menu-turret-status', turretStatus());
       this.ui?.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
       this.ui?.setText('menu-ammo-status', ammoStatus());
+      this.ui?.setText('menu-heat-status', heatStatus());
       this.ui?.setText('menu-run-status', runStatus());
       this.ui?.setText('menu-course-status', courseStatus());
       this.ui?.setText('menu-race-status', raceStatus());
@@ -623,6 +631,7 @@ export class GameMenuSystem extends createSystem({}) {
     const rack = ammoRack();
     for (const choice of RACK_CHOICES) this.select(`menu-rack-${choice}`, choice === rack);
     ui.setText('menu-ammo-status', ammoStatus());
+    ui.setText('menu-heat-status', heatStatus());
     ui.setText('menu-run-status', runStatus());
     const run = shownRun();
     ui.setText('menu-run-start', run.phase === 'running' && run.mode === 'range' ? 'Restart' : 'Start');

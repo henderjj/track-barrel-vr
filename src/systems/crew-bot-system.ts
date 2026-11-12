@@ -461,6 +461,7 @@ export class CrewBotSystem extends createSystem({}) {
   private driverLine(): string {
     const t = this.task;
     if (t === null) return drive.parkingBrake ? 'letting off the parking brake' : this.driver.describe();
+    if (t.kind === 'cool') return 'waiting for the engine to cool before starting it';
     if (t.kind === 'throttle') return 'setting the hand throttle';
     if (t.kind === 'choke') return t.to === 1 ? 'pulling the choke out' : t.to === 0.5 ? 'easing the choke half in' : 'pushing the choke in';
     return t.id === 'starter' ? 'starting the engine' : `switching the ${t.id} on`;
@@ -504,7 +505,8 @@ export class CrewBotSystem extends createSystem({}) {
     left.trigger = 0;
     if (this.task) {
       const t = this.task;
-      if (t.kind === 'press') this.onControl('left', ENGINE_NAMES[t.id], null);
+      if (t.kind === 'cool') this.onControl('left', TILLER.left, leverGrip(DRIVER_TILLER, tillerAngle(0), this.p));
+      else if (t.kind === 'press') this.onControl('left', ENGINE_NAMES[t.id], null);
       else if (t.kind === 'choke') {
         // The knob taken and drawn out (or pushed in) to where the task wants it.
         this.p[0] = 0;
@@ -525,7 +527,8 @@ export class CrewBotSystem extends createSystem({}) {
     this.raceOrders();
     // It drives with the automatic box (DriveSystem gives the crewmate's page no other), so its hands stay on the tillers.
     // The firing lamp lit (F2.5): it holds the tank steady for the shot.
-    const wish = this.driver.update(dt, tank, this.wish, firingLampLit());
+    // Running hot (F3.7): it halts and idles until the engine has cooled.
+    const wish = this.driver.update(dt, tank, this.wish, firingLampLit(), s.coolant);
     this.onControl('left', TILLER.left, leverGrip(DRIVER_TILLER, tillerAngle(wish.left), this.p));
     this.onControl('right', TILLER.right, leverGrip(DRIVER_TILLER, tillerAngle(wish.right), this.p));
   }

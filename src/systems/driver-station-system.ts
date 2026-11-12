@@ -32,6 +32,7 @@ import {
   gearOfLever,
   type LampId,
   LAMPS,
+  TEMP_LAMP_COOLANT,
   needleAngle,
   onSwitchPanel,
   PANEL,
@@ -555,6 +556,7 @@ export class DriverStationSystem extends createSystem({}) {
     this.lampLit.oil = power && stopped;
     this.lampLit.generator = power && stopped;
     this.lampLit.brake = power && (mine ? drive.parkingBrake : shown?.parkingBrake ?? false);
+    this.lampLit.temp = power && (s?.coolant ?? 0) >= TEMP_LAMP_COOLANT;
     for (const lamp of LAMPS) this.lamps[lamp.id].color.setHex(lamp.color).multiplyScalar(this.lampLit[lamp.id] ? 1 : LAMP_DARK);
     const target = s ? volts(s) : 0;
     this.voltsShown += (target - this.voltsShown) * (1 - Math.exp(-VOLT_RATE * dt));

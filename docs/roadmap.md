@@ -94,13 +94,13 @@ The indicators the crew read most, and a game mode that needs no enemies, so the
 
 | ID | Feature | Status | Depends on | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| F3.1 | Ammunition types: AP, HE and smoke with distinct effects and rack slots | Building | F1.10 | #91 | [ammunition.md](ammunition.md): `src/sim/ammo.ts`; mixed rack (AP, AP, HE, smoke), each round painted; AP 600 m/s direct hits, HE 450 m/s with a 5 m blast on soft targets, smoke lays a drifting opaque screen (`SmokeSystem`) and never counts; an HE scale on the sight; the loading packet gains each shell's round, `shot` its round, `shot-hit` the target counted; new Combat tab (Ammunition rack, Ready on the gun); Calls → Gunner, load AP/HE/Smoke for the crewmate |
+| F3.1 | Ammunition types: AP, HE and smoke with distinct effects and rack slots | Headset check | F1.10 | #91 | [ammunition.md](ammunition.md): `src/sim/ammo.ts`; mixed rack (AP, AP, HE, smoke), each round painted; AP 600 m/s direct hits, HE 450 m/s with a 5 m blast on soft targets, smoke lays a drifting opaque screen (`SmokeSystem`) and never counts; an HE scale on the sight; the loading packet gains each shell's round, `shot` its round, `shot-hit` the target counted; new Combat tab (Ammunition rack, Ready on the gun); Calls → Gunner, load AP/HE/Smoke for the crewmate |
 | F3.2 | Enemy anti-tank guns that shoot back (static) | Planned | F3.1 | | Decide enemy AI scope first |
 | F3.3 | Enemy tanks on fixed routes | Planned | F3.2 | | |
 | F3.4 | Tank damage model: hit zones, armour, crew hits | Planned | F3.2 | | Crew exposure in the hatch comes with the hatches (F2.1, now Phase 5) |
 | F3.5 | Fires: fixed extinguisher handles and a handheld extinguisher | Planned | F3.4 | | |
 | F3.6 | Electrical faults: fuse swaps at the radio and fuse panel | Planned | F3.4 | | |
-| F3.7 | Overheating and engine management | Planned | F1.5 | | |
+| F3.7 | Overheating and engine management | Building | F1.5 | | [overheating.md](overheating.md): labouring revved past 2,250 rpm in a low gear heats the coolant into the red; TEMP lamp at 100 °C, power fade from 108, knock from 112, stall after 8 s at 118, no restart above 110; Combat → Engine heat; crewmate halts to cool |
 | F3.8 | Gun jams and misfires | Planned | F1.10 | | |
 | F3.9 | Thrown track repaired outside the tank | Cut | F3.4, F2.1 | | Dropped (John, 2026-11-07); it needed leaving the seat |
 
