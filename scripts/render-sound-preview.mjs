@@ -17,6 +17,10 @@
  *   starting  From the driver's seat: the starter, the engine catching, a
  *             gear going in, a grind and the gear after it, a bump, a
  *             cough and a stall.
+ *   cruise    From the driver's seat: eight seconds at a medium speed, the
+ *             revs climbing from 1800 to 2250 as the tank gathers way from
+ *             10 to 14 km/h: what the recording of a real Sherman that
+ *             the sounds were measured against does (docs/audio.md).
  *
  * Needs Playwright's Chromium (docs/testing.md, "In a cloud container").
  */
@@ -29,7 +33,7 @@ import { chromium } from 'playwright';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const outDir = resolve(args[0] ?? join(root, 'artifacts', 'sound-preview'));
-const SCENES = ['tour', 'gunnery', 'starting'];
+const SCENES = ['tour', 'gunnery', 'starting', 'cruise'];
 const scenes = args.length > 1 ? args.slice(1) : SCENES;
 const RATE = 48000;
 
@@ -122,6 +126,19 @@ async function renderScene(name, rate) {
         v.cranking = t >= 0.5 && t < 2.3;
         // A change without the clutch: the gears grind until it is pressed.
         v.grinding = t >= 7.6 && t < 9.1;
+      },
+    },
+    cruise: {
+      seconds: 8,
+      seat: 'driver',
+      sounds: [],
+      at(t, v) {
+        const u = ease(t, 0.5, 7.5);
+        const rpm = 1800 + 450 * u;
+        const speed = 2.8 + 1.2 * u;
+        T.engineVoice(rpm, 0.6, v.engine);
+        T.driveVoice(rpm, speed, true, 0.6, v.drive);
+        T.trackVoice(speed, speed, v.tracks);
       },
     },
   };
