@@ -40,11 +40,8 @@ export class CrewStatusSystem extends createSystem({}) {
   private canvas!: HTMLCanvasElement;
   private ctx!: CanvasRenderingContext2D;
   private texture!: CanvasTexture;
-  private shown: CrewStatus = 'solo';
   /** What the sign says now ('' while hidden). */
   private signText = '';
-  private history: CrewStatus[] = ['solo'];
-  private changes = 1;
   private placed = false;
   private headPos = new Vector3();
   private headQuat = new Quaternion();
@@ -74,21 +71,12 @@ export class CrewStatusSystem extends createSystem({}) {
       get message() { return crewPresence.message(); },
       get signVisible() { return self.sign.visible; },
       get signText() { return self.signText; },
-      history: this.history,
-      get changes() { return self.changes; },
+      history: crewPresence.history,
+      get changes() { return crewPresence.changes; },
     };
   }
 
   update(delta: number): void {
-    const status = crewPresence.status;
-    if (status !== this.shown) {
-      this.shown = status;
-      this.history.push(status);
-      this.changes++;
-      if (this.history.length > 16) {
-        this.history.shift();
-      }
-    }
     const text = crewPresence.paused ? crewPresence.message() : '';
     if (text !== this.signText) {
       this.signText = text;

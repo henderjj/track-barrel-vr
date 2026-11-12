@@ -45,6 +45,16 @@ Run what covers the change, cheapest first, and leave the full run to CI:
    - a change that only touches docs needs neither.
 3. Before marking a pull request ready, run both browser tests if the change could reach either; CI runs them anyway, but a red run costs a full cycle.
 
+### A check must hold at any frame rate
+
+The browser tests' pages are drawn in software, and how fast depends on the machine: about six frames a second in a cloud container, and from five down to under three on GitHub's runners, changing from hour to hour (the network test's log gives it as "packet interval": 160 ms on a good day, 390 ms on a bad one). A page sends a pose packet and looks at its connection once a frame, so everything a check sees happens in steps that long. Three checks of the network test failed in turn on a slow afternoon (2026-11-12, on two unrelated pull requests) for taking a frame to be short:
+
+- **Wait for the thing, not for a time.** "Head and hand poses arrive intact" read the crewmate's pose 800 ms after sending it; at 390 ms a frame the sender's frame, the buffer's delay and the receiver's frame come to more. It now waits until the pose is drawn (`waitFor`) and then judges it as before.
+- **Don't sample what can pass between frames.** A reconnect takes about 0.4 s, so a page could miss it between two frames and its status history never show the pause. `CrewPresence` now keeps the history itself and hears of the session's changes at once (`NetSystem.updatePresence`), not at the next frame.
+- **Take the geometry of sparse packets out of a tolerance.** The crewmate is drawn along straight lines between the poses sent, and a straight line between two points of a circle cuts inside it: 0.03 mm for packets 22 ms apart, 9 mm at 375 ms, 35 mm when one of those is lost. "Crewmate moves smoothly" allows 20 mm off the circle, or that cut plus 10 mm where the packets were further apart (`measureMotion` reads when each one was sent).
+
+To see how a check fares on a slow machine, run the test on two cores: `taskset -c 0,1 npm run test:net`.
+
 ## Z-fighting
 
 Two faces of different colours that face the same way, lie in (nearly) the same plane and overlap flicker through each other in the headset as the head moves: the depth buffer can't tell which is in front. In the game this template came from, a crate's edges, a hatch's edges and a jetty's root all did, and an emulator screenshot rarely shows it. `test/z-fighting.test.ts` looks for such pairs in the built geometry (the helper is `test/support/coplanar.ts`): the hull with the turret turned several ways and its gun, controls and loading (breech open and closed, a shell rammed, the gun recoiled, casings in the bin) in several poses, the driver's station with its levers and needles, the driver's turret dial with its pointer turned, the firing lamp and its repeater, the test range's ground with its roads, targets, markers and obstacles, the biathlon course's track, gates, boxes and boards on the ground, the spikes' set-ups (the sight in the turret, the riding blockout, the lever rig), a shell and a casing, the mechanism kit's bench with its controls in several poses, and the crew's avatar parts. A failure lists each pair: how far apart, how much overlaps, where (in the mesh's own space) and which way it faces.
