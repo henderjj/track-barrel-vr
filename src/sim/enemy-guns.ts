@@ -10,6 +10,7 @@
  */
 
 import type { HitFace, Vec3 } from './ballistics.js';
+import { ENEMY_TANK, ENEMY_TANKS, type RoutePose, routePose, wrapRoute } from './enemy-tanks.js';
 import { rng } from './random.js';
 import { groundHeight, wrapTile } from './terrain.js';
 import { clockHour } from './turret-dial.js';
@@ -78,6 +79,59 @@ export const ENEMY_GUN = {
   leadError: 1,
 } as const;
 
+/**
+ * Every enemy the battery runs: the three guns first, then the tanks
+ * (F3.3, src/sim/enemy-tanks.ts). An enemy's index here is its index in
+ * the battery, in shots, and (after ENEMY_TARGET_FIRST) among the shells'
+ * targets.
+ */
+export const ENEMY_COUNT = ENEMY_GUNS.length + ENEMY_TANKS.length;
+/** Where the tanks start among the enemies. */
+export const FIRST_TANK = ENEMY_GUNS.length;
+
+/** The two kinds of enemy, started and stopped apart: Combat → Enemy guns, Combat → Enemy tanks. */
+export type EnemyGroup = 'guns' | 'tanks';
+
+/** Which group enemy `i` is in. */
+export function groupOf(i: number): EnemyGroup {
+  return i >= FIRST_TANK ? 'tanks' : 'guns';
+}
+
+/** Enemy `i`'s name: "Gun A", "Tank B". */
+export function enemyName(i: number): string {
+  return i >= FIRST_TANK ? (ENEMY_TANKS[i - FIRST_TANK]?.name ?? '') : (ENEMY_GUNS[i]?.name ?? '');
+}
+
+/** How an enemy looks, lays and fires: a gun's numbers, or a tank's. */
+export interface EnemySpec {
+  muzzleSpeed: number;
+  spotRange: number;
+  lookEvery: number;
+  layFirst: number;
+  reload: number;
+  loseAfter: number;
+  muzzleHeight: number;
+  dispersion: number;
+  layError: readonly number[];
+  lead: number;
+  leadError: number;
+}
+
+const TANK_SPEC: EnemySpec = {
+  ...ENEMY_GUN,
+  muzzleSpeed: ENEMY_TANK.muzzleSpeed,
+  spotRange: ENEMY_TANK.spotRange,
+  layFirst: ENEMY_TANK.layFirst,
+  reload: ENEMY_TANK.reload,
+  loseAfter: ENEMY_TANK.loseAfter,
+  muzzleHeight: ENEMY_TANK.muzzleHeight,
+};
+
+/** Enemy `i`'s numbers. */
+export function specOf(i: number): EnemySpec {
+  return i >= FIRST_TANK ? TANK_SPEC : ENEMY_GUN;
+}
+
 /** The gun's shield, the face a shell hits it on: half its width and height, and its middle above the ground, m. */
 export const GUN_SHIELD = { halfWidth: 1.05, halfHeight: 0.62, middle: 0.82 } as const;
 
@@ -96,21 +150,70 @@ export function enemyGunFaces(): HitFace[] {
   }));
 }
 
-/** Gun `i`'s copy nearest (x, z), world x and z, into `out`. */
-export function gunNear(i: number, x: number, z: number, out: [number, number]): [number, number] {
-  const g = ENEMY_GUNS[i];
-  out[0] = x + wrapTile(g.x - x);
-  out[1] = z + wrapTile(g.z - z);
+const pose: RoutePose = { x: 0, z: 0, heading: 0 };
+
+/** Enemy `i`'s copy nearest (x, z), world x and z, into `out`: a gun where it stands, a tank `d` m along its route. */
+export function gunNear(i: number, x: number, z: number, out: [number, number], d = 0): [number, number] {
+  let ex: number;
+  let ez: number;
+  if (i >= FIRST_TANK) {
+    routePose(ENEMY_TANKS[i - FIRST_TANK], d, pose);
+    ex = pose.x;
+    ez = pose.z;
+  } else {
+    ex = ENEMY_GUNS[i].x;
+    ez = ENEMY_GUNS[i].z;
+  }
+  out[0] = x + wrapTile(ex - x);
+  out[1] = z + wrapTile(ez - z);
   return out;
 }
 
-/** Gun `i`'s muzzle nearest the tank at (x, z), world space, into `out`. */
-export function muzzleNear(i: number, x: number, z: number, out: Vec3): Vec3 {
-  const at = gunNear(i, x, z, [0, 0]);
+/**
+ * Enemy `i`'s muzzle nearest the tank at (x, z), world space, into `out`:
+ * a gun's where it stands; a tank's (`d` m along its route) its turret
+ * turned on the tank, the muzzle ahead of it.
+ */
+export function muzzleNear(i: number, x: number, z: number, out: Vec3, d = 0): Vec3 {
+  const at = gunNear(i, x, z, [0, 0], d);
   out[0] = at[0];
-  out[1] = groundHeight(at[0], at[1]) + ENEMY_GUN.muzzleHeight;
   out[2] = at[1];
+  if (i >= FIRST_TANK) {
+    const dx = x - at[0];
+    const dz = z - at[1];
+    const n = Math.hypot(dx, dz) || 1;
+    out[0] += (dx / n) * ENEMY_TANK.muzzleAhead;
+    out[2] += (dz / n) * ENEMY_TANK.muzzleAhead;
+  }
+  out[1] = groundHeight(at[0], at[1]) + specOf(i).muzzleHeight;
   return out;
+}
+
+/**
+ * Tank `i` (an enemy index) as a face for the crew's shells, seen from
+ * (fromX, fromZ): its silhouette as it shows that way, its front, side or
+ * between, square to the line of sight, `ahead` m on along its route (where
+ * a shell fired now finds it), into `out`.
+ */
+export function tankFace(i: number, d: number, ahead: number, fromX: number, fromZ: number, out: HitFace): HitFace {
+  routePose(ENEMY_TANKS[i - FIRST_TANK], d + ahead, pose);
+  const dx = wrapTile(fromX - pose.x);
+  const dz = wrapTile(fromZ - pose.z);
+  const yaw = Math.atan2(dx, dz);
+  // Its hull's along (-sin h, -cos h) and the line of sight's angle to it.
+  const rel = yaw - Math.atan2(-Math.sin(pose.heading), -Math.cos(pose.heading));
+  out.x = pose.x;
+  out.z = pose.z;
+  out.y = groundHeight(pose.x, pose.z) + ENEMY_TANK.height / 2;
+  out.halfWidth = 0.5 * (Math.abs(Math.cos(rel)) * ENEMY_TANK.width + Math.abs(Math.sin(rel)) * ENEMY_TANK.length);
+  out.halfHeight = ENEMY_TANK.height / 2;
+  out.yaw = yaw;
+  return out;
+}
+
+/** The tanks as faces for the shells, at their routes' starts facing the range's start (EnemySystem turns them each frame). */
+export function enemyTankFaces(): HitFace[] {
+  return ENEMY_TANKS.map((_, j) => tankFace(FIRST_TANK + j, 0, 0, 0, 0, { x: 0, y: 0, z: 0, halfWidth: 0, halfHeight: 0, yaw: 0 }));
 }
 
 /** The ground blocks the line from a to b (world space): it stands above the line anywhere along it, sampled every `step` m. */
@@ -143,8 +246,10 @@ export interface TankTarget {
   speed: number;
 }
 
-/** One gun's state. */
+/** One enemy's state, a gun's or a tank's. */
 export interface EnemyGunState {
+  /** Its group is started: it is there (drawn, and among the shells' targets while alive). */
+  present: boolean;
   alive: boolean;
   /** It sees the tank now (as of its last look). */
   sees: boolean;
@@ -160,6 +265,11 @@ export interface EnemyGunState {
   look: number;
   /** It has fired at least once since the battery started: the crew has seen its flash. */
   revealed: boolean;
+  /** A tank: how far along its route there and back, m, and whether it is driving on (it halts while it has the crew's tank). */
+  d: number;
+  moving: boolean;
+  /** A tank held where it is (tests). */
+  held: boolean;
 }
 
 /** A shot a gun fired: from its muzzle to where the shell went (world space), whether it hit the tank, and how long it flies, s. */
@@ -185,13 +295,13 @@ function normal(random: () => number): number {
 }
 
 /**
- * The battery: the three guns, what they see and when they fire. The host
- * steps it; `on` false, the guns are gone (not drawn, not hit). A shell
- * that kills a gun calls kill().
+ * The battery: the three guns and the two tanks (F3.3), what they see,
+ * where the tanks drive and when they fire. The host steps it; a group not
+ * started is gone (not drawn, not hit). A shell that kills one calls
+ * kill().
  */
 export class EnemyBattery {
-  on = false;
-  readonly guns: EnemyGunState[] = ENEMY_GUNS.map(() => EnemyBattery.freshGun());
+  readonly guns: EnemyGunState[] = Array.from({ length: ENEMY_COUNT }, () => EnemyBattery.freshGun());
   /** Hits the tank has taken, and shots fired at it, since it was started. */
   hits = 0;
   shotsFired = 0;
@@ -206,47 +316,80 @@ export class EnemyBattery {
   }
 
   private static freshGun(): EnemyGunState {
-    return { alive: true, sees: false, tracking: false, ready: 0, blind: 0, shots: 0, look: 0, revealed: false };
+    return { present: false, alive: true, sees: false, tracking: false, ready: 0, blind: 0, shots: 0, look: 0, revealed: false, d: 0, moving: true, held: false };
   }
 
-  /** Start (or restart) the battery: every gun alive, none yet seeing the tank. */
-  start(seed?: number): void {
+  /** Any group is started. */
+  get on(): boolean {
+    return this.guns.some((g) => g.present);
+  }
+
+  /** Whether `group` is started. */
+  groupOn(group: EnemyGroup): boolean {
+    return this.guns.some((g, i) => g.present && groupOf(i) === group);
+  }
+
+  /**
+   * Start (or restart) a group, the guns unless said: each of them there and
+   * alive, none yet seeing the tank, the tanks at their routes' starts.
+   * Starting with nothing else running counts hits and shots afresh.
+   */
+  start(seed?: number, group: EnemyGroup = 'guns'): void {
     if (seed !== undefined) this.random = rng(seed);
-    this.on = true;
-    for (let i = 0; i < this.guns.length; i++) this.guns[i] = EnemyBattery.freshGun();
-    this.hits = 0;
-    this.shotsFired = 0;
+    if (!this.on) {
+      this.hits = 0;
+      this.shotsFired = 0;
+    }
+    for (let i = 0; i < this.guns.length; i++) {
+      if (groupOf(i) !== group) continue;
+      this.guns[i] = EnemyBattery.freshGun();
+      this.guns[i].present = true;
+    }
     this.version++;
   }
 
-  stop(): void {
-    if (!this.on) return;
-    this.on = false;
+  /** Stop a group, or every enemy. */
+  stop(group?: EnemyGroup): void {
+    let changed = false;
+    this.guns.forEach((g, i) => {
+      if (!g.present || (group && groupOf(i) !== group)) return;
+      g.present = false;
+      changed = true;
+    });
+    if (changed) this.version++;
+  }
+
+  /** Put tank `i` (an enemy index) `d` m along its route (Combat → Meet). */
+  placeTank(i: number, d: number): void {
+    const g = this.guns[i];
+    if (i < FIRST_TANK || !g) return;
+    g.d = wrapRoute(ENEMY_TANKS[i - FIRST_TANK], d);
     this.version++;
   }
 
-  /** A shell knocked gun `i` out. Returns whether it was alive. */
+  /** A shell knocked enemy `i` out. Returns whether it was there and alive. */
   kill(i: number): boolean {
     const g = this.guns[i];
-    if (!this.on || !g?.alive) return false;
+    if (!g?.present || !g.alive) return false;
     g.alive = false;
     g.tracking = false;
     g.sees = false;
+    g.moving = false;
     this.version++;
     return true;
   }
 
-  /** Guns still in action. */
-  alive(): number {
-    return this.guns.filter((g) => g.alive).length;
+  /** Enemies there and still in action, of a group or all. */
+  alive(group?: EnemyGroup): number {
+    return this.guns.filter((g, i) => g.present && g.alive && (!group || groupOf(i) === group)).length;
   }
 
-  /** Whether gun `i` (alive) could see the tank now: in range, the ground and `clear` (the smoke) letting the line through. */
+  /** Whether enemy `i` (alive) could see the tank now: in range, the ground and `clear` (the smoke) letting the line through. */
   canSee(i: number, tank: Readonly<TankTarget>, clear: SightCheck): boolean {
-    const m = muzzleNear(i, tank.x, tank.z, this.muzzle);
+    const m = muzzleNear(i, tank.x, tank.z, this.muzzle, this.guns[i].d);
     const dx = tank.x - m[0];
     const dz = tank.z - m[2];
-    if (Math.hypot(dx, dz) > ENEMY_GUN.spotRange) return false;
+    if (Math.hypot(dx, dz) > specOf(i).spotRange) return false;
     // Its eye on the tank's turret top, a little under it.
     this.eye[0] = tank.x;
     this.eye[1] = tank.ground + TANK_SILHOUETTE.height - 0.3;
@@ -256,39 +399,48 @@ export class EnemyBattery {
   }
 
   /**
-   * `dt` seconds on: each gun looks every lookEvery, takes the tank when it
-   * sees it, lays for layFirst and fires every reload while it still sees
-   * it; out of sight loseAfter, it loses it. Shots fired go into `out`
-   * (cleared first); returns how many.
+   * `dt` seconds on: each enemy looks every lookEvery, takes the tank when
+   * it sees it, lays for layFirst and fires every reload while it still
+   * sees it; out of sight loseAfter, it loses it. A tank drives along its
+   * route while it hasn't the tank, and halts while it has. Shots fired go
+   * into `out` (cleared first); returns how many.
    */
   step(dt: number, tank: Readonly<TankTarget>, clear: SightCheck, out: EnemyShot[]): number {
     out.length = 0;
-    if (!this.on) return 0;
     for (let i = 0; i < this.guns.length; i++) {
       const g = this.guns[i];
-      if (!g.alive) continue;
+      if (!g.present || !g.alive) continue;
+      const spec = specOf(i);
       g.look -= dt;
       if (g.look <= 0) {
-        g.look += ENEMY_GUN.lookEvery;
-        if (g.look <= 0) g.look = ENEMY_GUN.lookEvery;
+        g.look += spec.lookEvery;
+        if (g.look <= 0) g.look = spec.lookEvery;
         g.sees = this.canSee(i, tank, clear);
       }
       if (g.sees) {
         g.blind = 0;
         if (!g.tracking) {
           g.tracking = true;
-          g.ready = ENEMY_GUN.layFirst;
+          g.ready = spec.layFirst;
           g.shots = 0;
         }
       } else if (g.tracking) {
         g.blind += dt;
-        if (g.blind >= ENEMY_GUN.loseAfter) g.tracking = false;
+        if (g.blind >= spec.loseAfter) g.tracking = false;
+      }
+      if (i >= FIRST_TANK) {
+        const moving = !g.tracking && !g.held;
+        if (moving !== g.moving) {
+          g.moving = moving;
+          this.version++;
+        }
+        if (moving) g.d = wrapRoute(ENEMY_TANKS[i - FIRST_TANK], g.d + ENEMY_TANK.speed * dt);
       }
       if (!g.tracking) continue;
       g.ready -= dt;
       if (g.ready > 0 || !g.sees) continue;
       out.push(this.fire(i, tank));
-      g.ready = ENEMY_GUN.reload;
+      g.ready = spec.reload;
     }
     return out.length;
   }
@@ -296,7 +448,7 @@ export class EnemyBattery {
   /** Gun `i` fires at the tank now (the tests and the Practice button call it too): where the shell goes and whether it hits. */
   fire(i: number, tank: Readonly<TankTarget>): EnemyShot {
     const g = this.guns[i];
-    const shot = resolveShot(i, tank, g.shots, this.random);
+    const shot = resolveShot(i, tank, g.shots, this.random, g.d);
     g.shots++;
     g.revealed = true;
     this.shotsFired++;
@@ -308,35 +460,37 @@ export class EnemyBattery {
   }
 }
 
-/** The spread of a gun's `shots`th shot on a sighting (0 first) at `range` m on a tank moving `speed` m/s, m (one standard deviation). */
-export function shotSpread(shots: number, range: number, speed: number): number {
-  const lay = ENEMY_GUN.layError[Math.min(shots, ENEMY_GUN.layError.length - 1)];
-  const mils = Math.hypot(ENEMY_GUN.dispersion, lay);
-  const moved = Math.abs(speed) * (range / ENEMY_GUN.muzzleSpeed);
-  return Math.hypot((range * mils) / 1000, moved * ENEMY_GUN.leadError);
+/** The spread of an enemy's `shots`th shot on a sighting (0 first) at `range` m on a tank moving `speed` m/s, m (one standard deviation). */
+export function shotSpread(shots: number, range: number, speed: number, spec: EnemySpec = ENEMY_GUN): number {
+  const lay = spec.layError[Math.min(shots, spec.layError.length - 1)];
+  const mils = Math.hypot(spec.dispersion, lay);
+  const moved = Math.abs(speed) * (range / spec.muzzleSpeed);
+  return Math.hypot((range * mils) / 1000, moved * spec.leadError);
 }
 
 /**
- * Where gun `i`'s shell goes, fired at the tank as it is now. The shell
+ * Where enemy `i`'s shell goes (a tank's `along` m along its route), fired
+ * at the tank as it is now. The shell
  * flies range / muzzleSpeed; the tank moves on meanwhile and the gun leads
  * it by `lead` of that. Its errors across and up (shotSpread) put it on the
  * tank (inside its silhouette as the gun sees it: front, side or between)
  * or past it: low, it strikes the ground short; high or wide, it lands well
  * beyond.
  */
-export function resolveShot(i: number, tank: Readonly<TankTarget>, shots: number, random: () => number): EnemyShot {
-  const from = muzzleNear(i, tank.x, tank.z, [0, 0, 0]);
+export function resolveShot(i: number, tank: Readonly<TankTarget>, shots: number, random: () => number, along = 0): EnemyShot {
+  const spec = specOf(i);
+  const from = muzzleNear(i, tank.x, tank.z, [0, 0, 0], along);
   const dx0 = tank.x - from[0];
   const dz0 = tank.z - from[2];
   const range = Math.hypot(dx0, dz0);
-  const flight = range / ENEMY_GUN.muzzleSpeed;
+  const flight = range / spec.muzzleSpeed;
   // Where the tank will be when the shell gets there, and where the gun aims.
   const vx = -Math.sin(tank.heading) * tank.speed;
   const vz = -Math.cos(tank.heading) * tank.speed;
   const ax = tank.x + vx * flight;
   const az = tank.z + vz * flight;
-  const aimX = tank.x + vx * flight * ENEMY_GUN.lead;
-  const aimZ = tank.z + vz * flight * ENEMY_GUN.lead;
+  const aimX = tank.x + vx * flight * spec.lead;
+  const aimZ = tank.z + vz * flight * spec.lead;
   // Along the line of fire and across it (to its right).
   const dx = ax - from[0];
   const dz = az - from[2];
@@ -345,7 +499,7 @@ export function resolveShot(i: number, tank: Readonly<TankTarget>, shots: number
   const uz = dz / d;
   const rx = -uz;
   const rz = ux;
-  const spread = shotSpread(shots, range, tank.speed);
+  const spread = shotSpread(shots, range, tank.speed, spec);
   const across = (aimX - ax) * rx + (aimZ - az) * rz + normal(random) * spread;
   const up = normal(random) * spread;
   // The tank's half width as the gun sees it: its front, its side or between.
@@ -374,39 +528,81 @@ export function resolveShot(i: number, tank: Readonly<TankTarget>, shots: number
     from,
     to,
     hit,
-    flight: travelled / ENEMY_GUN.muzzleSpeed,
+    flight: travelled / spec.muzzleSpeed,
     clock: clockTo(tank.heading, from[0] - tank.x, from[2] - tank.z),
     range,
   };
 }
 
-/** The battery's state as both pages share it (the `enemy` event): on, which guns are alive, and the hits taken. */
+/**
+ * The battery's state as both pages share it (the `enemy` event): whether
+ * any enemy is there, which are there and alive, the tanks' places on their
+ * routes and whether they are driving on, and the hits taken.
+ */
 export interface EnemyShared {
   on: boolean;
+  present: boolean[];
   alive: boolean[];
+  d: number[];
+  moving: boolean[];
   hits: number;
   shots: number;
   v: number;
 }
 
+/** An empty shared state: nothing there. */
+export function noEnemies(): EnemyShared {
+  return {
+    on: false,
+    present: Array.from({ length: ENEMY_COUNT }, () => false),
+    alive: Array.from({ length: ENEMY_COUNT }, () => true),
+    d: Array.from({ length: ENEMY_COUNT }, () => 0),
+    moving: Array.from({ length: ENEMY_COUNT }, () => false),
+    hits: 0,
+    shots: 0,
+    v: 0,
+  };
+}
+
 /** The battery's shared state, into `out`. */
 export function sharedOf(b: EnemyBattery, out: EnemyShared): EnemyShared {
   out.on = b.on;
+  out.present.length = 0;
   out.alive.length = 0;
-  for (const g of b.guns) out.alive.push(g.alive);
+  out.d.length = 0;
+  out.moving.length = 0;
+  for (const g of b.guns) {
+    out.present.push(g.present);
+    out.alive.push(g.alive);
+    out.d.push(Math.round(g.d * 100) / 100);
+    out.moving.push(g.moving);
+  }
   out.hits = b.hits;
   out.shots = b.shotsFired;
   out.v = b.version;
   return out;
 }
 
-/** Read the `enemy` event's state, or null if it is malformed. */
+/** Whether a group is there in a shared state. */
+export function sharedGroupOn(s: Readonly<EnemyShared>, group: EnemyGroup): boolean {
+  return s.present.some((p, i) => p && groupOf(i) === group);
+}
+
+/** Read the `enemy` event's state, or null if it is malformed. A message from before F3.3 has the guns only, there while `on`. */
 export function parseShared(raw: unknown): EnemyShared | null {
   const e = raw as Partial<Record<keyof EnemyShared, unknown>>;
   if (typeof e?.on !== 'boolean' || !Array.isArray(e.alive) || typeof e.hits !== 'number' || typeof e.v !== 'number') return null;
+  const list = (v: unknown) => (Array.isArray(v) ? (v as unknown[]) : []);
+  const present = list(e.present);
+  const d = list(e.d);
+  const moving = list(e.moving);
+  const on = e.on;
   return {
-    on: e.on,
-    alive: ENEMY_GUNS.map((_, i) => (e.alive as unknown[])[i] !== false),
+    on,
+    present: Array.from({ length: ENEMY_COUNT }, (_, i) => (Array.isArray(e.present) ? present[i] === true : on && i < FIRST_TANK)),
+    alive: Array.from({ length: ENEMY_COUNT }, (_, i) => (e.alive as unknown[])[i] !== false),
+    d: Array.from({ length: ENEMY_COUNT }, (_, i) => (typeof d[i] === 'number' && Number.isFinite(d[i]) ? (d[i] as number) : 0)),
+    moving: Array.from({ length: ENEMY_COUNT }, (_, i) => moving[i] === true),
     hits: e.hits,
     shots: typeof e.shots === 'number' ? e.shots : 0,
     v: e.v,
@@ -417,7 +613,7 @@ export function parseShared(raw: unknown): EnemyShared | null {
 export function parseShot(raw: unknown): EnemyShot | null {
   const e = raw as Record<string, unknown>;
   const vec = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n));
-  if (typeof e?.gun !== 'number' || !ENEMY_GUNS[e.gun] || !vec(e.from) || !vec(e.to) || typeof e.hit !== 'boolean' || typeof e.flight !== 'number') return null;
+  if (typeof e?.gun !== 'number' || !Number.isInteger(e.gun) || e.gun < 0 || e.gun >= ENEMY_COUNT || !vec(e.from) || !vec(e.to) || typeof e.hit !== 'boolean' || typeof e.flight !== 'number') return null;
   return {
     gun: e.gun,
     from: e.from,
@@ -429,11 +625,17 @@ export function parseShot(raw: unknown): EnemyShot | null {
   };
 }
 
-/** One line for the menu and the signs. */
-export function batteryLine(s: Readonly<EnemyShared>): string {
-  if (!s.on) return 'Enemy guns off';
-  const alive = s.alive.filter(Boolean).length;
-  const out = s.alive.length - alive;
-  if (alive === 0) return `All ${s.alive.length} guns knocked out. Hits taken ${s.hits}`;
-  return `${alive} of ${s.alive.length} guns in action, ${out} knocked out. Hits taken ${s.hits} of ${s.shots} shots`;
+/** One line for the menu, for the guns or the tanks. */
+export function batteryLine(s: Readonly<EnemyShared>, group: EnemyGroup = 'guns'): string {
+  const word = group === 'guns' ? 'guns' : 'tanks';
+  if (!sharedGroupOn(s, group)) return `Enemy ${word} off`;
+  let count = 0;
+  let alive = 0;
+  s.present.forEach((p, i) => {
+    if (!p || groupOf(i) !== group) return;
+    count++;
+    if (s.alive[i]) alive++;
+  });
+  if (alive === 0) return `All ${count} ${word} knocked out. Hits taken ${s.hits}`;
+  return `${alive} of ${count} ${word} in action, ${count - alive} knocked out. Hits taken ${s.hits} of ${s.shots} shots`;
 }

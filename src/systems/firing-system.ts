@@ -3,10 +3,12 @@ import { createBurst, createTracer } from '../scene-assets/loading.scene-asset.j
 import { AMMO, type AmmoKind, ammoIndex, parseAmmo } from '../sim/ammo.js';
 import {
   aimAt,
+  armouredTargets,
   createShotResult,
   decideShot,
   describeRound,
   flyShell,
+  type HitFace,
   hullDirToWorld,
   hullToWorld,
   shellAt,
@@ -97,6 +99,23 @@ export function setFaceOff(i: number, off: boolean): void {
   if (f) f.off = off;
 }
 
+/** Target `i` as the shells find it now (F3.3: an enemy tank's face moves as it drives), or null. */
+export function liveFace(i: number): Readonly<HitFace> | null {
+  return active?.faces[i] ?? null;
+}
+
+/** Move target `i` (F3.3: an enemy tank as it drives, its silhouette turned square to the crew's tank). */
+export function setFacePose(i: number, pose: Readonly<Omit<HitFace, 'off'>>): void {
+  const f = active?.faces[i];
+  if (!f) return;
+  f.x = pose.x;
+  f.y = pose.y;
+  f.z = pose.z;
+  f.halfWidth = pose.halfWidth;
+  f.halfHeight = pose.halfHeight;
+  f.yaw = pose.yaw;
+}
+
 /** The gunner's page fires the gun: the shell, round `ammo`, leaves the muzzle as this page draws the tank and turret. LoadingSystem calls it once the breech has fired. */
 export function fireShell(ammo: AmmoKind = 'ap'): void {
   active?.fire(ammo);
@@ -156,6 +175,7 @@ export class FiringSystem extends createSystem({}) {
   readonly hits: number[] = targetFaces().map(() => 0);
   readonly faces = targetFaces();
   private soft = softTargets();
+  private armoured = armouredTargets();
   private decision: ShotDecision = { target: -1, blast: Number.NaN };
   private shots: Shot[] = [];
   private count = 0;
@@ -222,7 +242,7 @@ export class FiringSystem extends createSystem({}) {
         const dir: Vec3 = [0, 0, 0];
         self.aimNow(origin, dir);
         const result = flyShell(origin, dir, self.faces, createShotResult(), undefined, AMMO[ammo].speed);
-        decideShot(ammo, result, self.faces, self.soft, self.decision);
+        decideShot(ammo, result, self.faces, self.soft, self.decision, self.armoured);
         return self.record(-1, ammo, result, self.decision, origin, dir);
       },
       aimAt: (i, ammo = 'ap', rightBy = 0, aboveBy = 0) => {
@@ -308,7 +328,7 @@ export class FiringSystem extends createSystem({}) {
   /** The host decides what a shot hit (F3.1: by its round), counts it, and tells the guest. */
   private decide(shot: Shot): void {
     const result = shot.flight;
-    const decision = decideShot(shot.ammo, result, this.faces, this.soft, this.decision);
+    const decision = decideShot(shot.ammo, result, this.faces, this.soft, this.decision, this.armoured);
     if (decision.target >= 0) this.hits[decision.target]++;
     this.record(shot.id, shot.ammo, result, decision, shot.origin, shot.dir);
     for (const listener of decidedListeners) listener(decision.target, result.time);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ENEMY_COUNT } from '../src/sim/enemy-guns.js';
 import {
   BOARD_COUNT,
   BOARD_FIRST,
@@ -42,7 +43,7 @@ describe('biathlon race rules (F5.3b)', () => {
     expect(BOARD_FIRST).toBe(COURSE_TARGET_FIRST);
     expect(BOARD_COUNT).toBe(6);
     // The enemy guns (F3.2) come after the boards.
-    expect(targetFaces()).toHaveLength(BOARD_FIRST + BOARD_COUNT + 3);
+    expect(targetFaces()).toHaveLength(BOARD_FIRST + BOARD_COUNT + ENEMY_COUNT);
     expect(lineFor(0)).toBe(0);
     expect(lineFor(1)).toBe(1);
     expect(lineFor(2)).toBe(-1);

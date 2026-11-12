@@ -18,6 +18,8 @@ import {
   ENEMY_GUN,
   ENEMY_GUNS,
   EnemyBattery,
+  ENEMY_COUNT,
+  noEnemies,
   type EnemyShared,
   type EnemyShot,
   groundBlocks,
@@ -224,20 +226,21 @@ describe('enemy anti-tank guns (F3.2)', () => {
     const b = new EnemyBattery();
     b.start(4);
     b.kill(1);
-    const s = sharedOf(b, { on: false, alive: [], hits: 0, shots: 0, v: 0 });
+    const s = sharedOf(b, noEnemies());
     const back = parseShared(JSON.parse(JSON.stringify({ t: 'enemy', ...s })));
     expect(back).toEqual(s);
     expect(parseShared({ on: 'yes' })).toBeNull();
     const shot = resolveShot(2, onLane(ENEMY_GUNS[2].meetZ), 0, rng(3));
     expect(parseShot(JSON.parse(JSON.stringify({ t: 'enemy-shot', ...shot })))).toEqual(shot);
-    expect(parseShot({ gun: 7, from: [0, 0, 0], to: [0, 0, 0], hit: true, flight: 1 })).toBeNull();
+    expect(parseShot({ gun: ENEMY_COUNT, from: [0, 0, 0], to: [0, 0, 0], hit: true, flight: 1 })).toBeNull();
     expect(parseShot({ gun: 0, from: [0, 0], to: [0, 0, 0], hit: true, flight: 1 })).toBeNull();
   });
 
   it('says how the fight stands', () => {
-    const s: EnemyShared = { on: false, alive: [true, true, true], hits: 0, shots: 0, v: 0 };
+    const s: EnemyShared = noEnemies();
     expect(batteryLine(s)).toBe('Enemy guns off');
     s.on = true;
+    s.present.fill(true, 0, ENEMY_GUNS.length);
     s.alive[0] = false;
     s.hits = 1;
     s.shots = 4;

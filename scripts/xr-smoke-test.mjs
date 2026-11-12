@@ -2775,6 +2775,90 @@ async function partOne() {
 
   // 6u. Enemy anti-tank guns (F3.2).
   await theEnemyGuns();
+
+  // 6v. Enemy tanks on fixed routes (F3.3).
+  await theEnemyTanks();
+}
+
+/**
+ * 6v. Enemy tanks on fixed routes (F3.3): Combat → Enemy tanks → Meet A
+ *     draws both tanks and parks the tank on the lane where tank A sees it,
+ *     and tank A halts for it. Its shots (fired at once through the hook)
+ *     strike and a hit is called. HE laid on tank A bursts on its armour to
+ *     no effect; AP knocks it out (its wreck drawn, the sign). With the
+ *     tank back at the start, out of its sight, tank B drives along its
+ *     route. Stop takes the tanks away.
+ */
+async function theEnemyTanks() {
+  const enemy = () => evalInApp('window.__enemy.state()');
+  const A = 3;
+  const B = 4;
+  iwsdk(['xr', 'set-device-state'], {});
+  await menuButtonPress();
+  await menuClick('menu-tanks-meet-0');
+  const met = await waitFor('the tanks drawn and tank A halted for the tank', () => {
+    const e = enemy();
+    const t = evalInApp('window.__drive.state()');
+    return e.present[A] && e.guns[A].drawn && e.guns[B].drawn && !e.faceOff[A] && Math.abs(t.z + 230) < 1 && e.guns[A].sees && !e.guns[A].moving && e;
+  }, 15000).catch(() => enemy());
+  check('Combat → Enemy tanks → Meet A: both tanks are drawn, and tank A sees the tank and halts for it',
+    met.guns[A].drawn && met.guns[B].drawn && met.guns[A].sees && !met.guns[A].moving && !met.faceOff[A],
+    `drawn ${met.guns[A].drawn}/${met.guns[B].drawn}, A sees ${met.guns[A].sees}, moving ${met.guns[A].moving}, at (${Math.round(met.guns[A].x)}, ${Math.round(met.guns[A].z)}), "${evalInApp("window.__gameMenu.text('menu-tanks-status')")}"`);
+  evalInApp(`(window.__enemy.hold(${A}, true), true)`);
+
+  // Tank A fires until it hits.
+  let hit = null;
+  let fired = 0;
+  for (let n = 0; n < 6 && !hit; n++) {
+    const before = evalInApp('window.__enemy.shots().length');
+    evalInApp(`(window.__enemy.fireNow(${A}), true)`);
+    fired++;
+    // Tank B may fire too: take tank A's shot.
+    const shot = await waitFor("tank A's shot to strike", () => evalInApp('window.__enemy.shots()').slice(before).find((x) => x.gun === 3), 5000).catch(() => null);
+    if (shot?.hit) hit = shot;
+    await sleep(800);
+  }
+  const hitSign = hit ? await waitFor('the hit on the sign', () => /^Hit! Tank A/.test(evalInApp('window.__enemy.sign')) && evalInApp('window.__enemy.sign'), 5000).catch(() => evalInApp('window.__enemy.sign')) : '';
+  check("Tank A's shells strike the tank, and a hit is called on the sign",
+    hit !== null && /^Hit! Tank A, \d+ o'clock, \d+ m$/.test(hitSign), `${fired} shots, sign "${hitSign}"`);
+
+  // HE on its armour does nothing; AP knocks it out.
+  const target = 9 + A;
+  const fireAt = async (round) => {
+    const records = evalInApp('window.__firing.records().length');
+    evalInApp(`(window.__loading.loadNow('${round}'), window.__firing.aimAt(${target}, '${round}'), true)`);
+    await sleep(300);
+    evalInApp(`(window.__firing.fire('${round}'), true)`);
+    return waitFor(`the ${round} shot's result`, () => evalInApp('window.__firing.records()')[records], 10000).catch(() => null);
+  };
+  const he = await fireAt('he');
+  await sleep(1500);
+  check('HE on tank A bursts on its armour to no effect', he?.counted === -1 && /no effect on its armour/.test(he?.line ?? '') && enemy().alive[A],
+    he ? `"${he.line}"` : 'no shot');
+  const ap = await fireAt('ap');
+  const out = await waitFor('tank A knocked out', () => { const e = enemy(); return !e.alive[A] && e; }, 10000).catch(() => enemy());
+  const outSign = await waitFor('the knock-out on the sign', () => /^Tank A knocked out/.test(evalInApp('window.__enemy.sign')) && evalInApp('window.__enemy.sign'), 5000).catch(() => evalInApp('window.__enemy.sign'));
+  check('AP on tank A knocks it out: its wreck is drawn, shells pass where it stood, and the sign says so',
+    !out.alive[A] && out.alive[B] && out.guns[A].drawn && out.faceOff[A] && ap?.counted === target && /^Tank A knocked out/.test(outSign),
+    `${ap ? `"${ap.line}"` : 'no shot'}, alive ${out.alive.join('/')}, sign "${outSign}"`);
+
+  // Back at the start, out of its sight, tank B drives along its route.
+  evalInApp('window.__drive.place(0, 0, 0)');
+  // It loses the tank after 4 s out of sight, then drives on.
+  await waitFor('tank B to drive on', () => enemy().guns[B].moving, 20000).catch(() => null);
+  const from = enemy().guns[B];
+  await sleep(3000);
+  const to = enemy().guns[B];
+  check('Out of its sight, tank B drives along its route', to.moving && Math.hypot(to.x - from.x, to.z - from.z) > 0.5,
+    `moved ${Math.hypot(to.x - from.x, to.z - from.z).toFixed(1)} m, along ${from.along.toFixed(1)} → ${to.along.toFixed(1)} m`);
+
+  await menuButtonPress();
+  await menuClick('menu-tanks-stop');
+  const stopped = await waitFor('the tanks gone', () => { const e = enemy(); return !e.present[A] && !e.present[B] && !e.guns[A].drawn && !e.guns[B].drawn && e; }, 5000).catch(() => enemy());
+  check('Enemy tanks → Stop takes the tanks away', !stopped.present[B] && stopped.faceOff[B] && !stopped.guns[B].drawn,
+    `"${evalInApp("window.__gameMenu.text('menu-tanks-status')")}"`);
+  await menuButtonPress();
+  evalInApp('(window.__drive.reset("keep"), true)');
 }
 
 /**
@@ -2840,11 +2924,11 @@ async function theEnemyGuns() {
   const met = await waitFor('the guns drawn and the tank where gun A sees it', () => {
     const e = enemy();
     const t = evalInApp('window.__drive.state()');
-    return e.on && e.guns.every((g) => g.drawn) && e.faceOff.every((off) => !off) && Math.abs(t.z + 80) < 1 && e;
+    return e.on && e.guns.slice(0, 3).every((g) => g.drawn) && e.faceOff.slice(0, 3).every((off) => !off) && Math.abs(t.z + 80) < 1 && e;
   }, 10000).catch(() => enemy());
   const sees = evalInApp('window.__enemy.canSee(0)');
   check('Combat → Enemy guns → Meet A: the three guns are drawn, their shields there to hit, and gun A sees the tank',
-    met.on && met.guns.every((g) => g.drawn) && met.faceOff.every((off) => !off) && sees,
+    met.on && met.guns.slice(0, 3).every((g) => g.drawn) && met.faceOff.slice(0, 3).every((off) => !off) && sees,
     `on ${met.on}, drawn ${met.guns.map((g) => g.drawn).join('/')}, gun A sees ${sees}, "${evalInApp("window.__gameMenu.text('menu-enemy-status')")}"`);
 
   // Gun A fires until it hits (each shot corrects the last).

@@ -17,7 +17,7 @@
 
 import { AMMO, type AmmoKind } from './ammo.js';
 import { COURSE_BOARD, COURSE_TARGETS, courseBoardMiddle } from './course.js';
-import { ENEMY_GUNS, enemyGunFaces } from './enemy-guns.js';
+import { ENEMY_COUNT, enemyGunFaces, enemyName, enemyTankFaces, FIRST_TANK } from './enemy-guns.js';
 import { RANGE_TARGETS, targetFace } from './range.js';
 import type { TankDrive } from './tank-drive.js';
 import { groundHeight, wrapTile } from './terrain.js';
@@ -298,7 +298,8 @@ export interface ShotDecision {
  * The target a shot counts against, by its round: AP and HE count a
  * direct hit; HE also takes a soft target (`soft[i]`, an anti-tank gun's
  * board) within its blast of where it burst, the nearest; smoke counts
- * nothing (it lays its screen). Into `out`.
+ * nothing (it lays its screen). Only AP counts on an armoured target
+ * (`armoured[i]`, an enemy tank, F3.3). Into `out`.
  */
 export function decideShot(
   ammo: AmmoKind,
@@ -306,13 +307,14 @@ export function decideShot(
   faces: readonly HitFace[],
   soft: readonly boolean[],
   out: ShotDecision = { target: -1, blast: Number.NaN },
+  armoured?: readonly boolean[],
 ): ShotDecision {
   out.target = -1;
   out.blast = Number.NaN;
   const spec = AMMO[ammo];
   if (!spec.hits) return out;
   if (result.kind === 'target') {
-    out.target = result.target;
+    if (ammo === 'ap' || !armoured?.[result.target]) out.target = result.target;
     return out;
   }
   if (spec.blast <= 0 || result.kind !== 'ground') return out;
@@ -350,6 +352,8 @@ export function describeRound(
     if (decision.target >= 0 && Number.isFinite(decision.blast)) {
       return `${name} burst ${Math.max(1, Math.round(decision.blast))} m from ${names[decision.target]}: hit`;
     }
+    // On an armoured target (F3.3): it bursts on the armour to no effect.
+    if (result.kind === 'target' && decision.target < 0) return `${name} on ${names[result.target]}: no effect on its armour`;
     return `${name} ${describeShot(result, origin, dir, faces, names).replace(/^H/, 'h').replace(/^M/, 'm')}`;
   }
   if (result.kind === 'target') return `${name} on ${names[result.target]}`;
@@ -388,29 +392,36 @@ export function courseFaces(): HitFace[] {
  * Everything a shell can hit: the range's three targets (indices 0 to 2,
  * as RANGE_TARGETS: the range run counts these), then the course's six
  * boards (3 to 8, as COURSE_TARGETS), then the three enemy guns' shields
- * (9 to 11, as ENEMY_GUNS, F3.2), `off` until the battery is started.
+ * (9 to 11, as ENEMY_GUNS, F3.2) and the two enemy tanks (12 and 13,
+ * F3.3, turned and moved by EnemySystem as they drive), each `off` until
+ * its group is started.
  * FiringSystem decides hits against these; its target numbers index this
  * list.
  */
 export function targetFaces(): HitFace[] {
-  return [...rangeFaces(), ...courseFaces(), ...enemyGunFaces().map((f) => ({ ...f, off: true }))];
+  return [...rangeFaces(), ...courseFaces(), ...[...enemyGunFaces(), ...enemyTankFaces()].map((f) => ({ ...f, off: true }))];
 }
 
 /** Which of targetFaces() are soft, an anti-tank gun's board or an enemy gun: an HE burst within its blast counts on it (F3.1). */
 export function softTargets(): boolean[] {
-  return [...RANGE_TARGETS.map((t) => t.kind === 'gun'), ...COURSE_TARGETS.map(() => false), ...ENEMY_GUNS.map(() => true)];
+  return [...RANGE_TARGETS.map((t) => t.kind === 'gun'), ...COURSE_TARGETS.map(() => false), ...Array.from({ length: ENEMY_COUNT }, (_, i) => i < FIRST_TANK)];
+}
+
+/** Which of targetFaces() are armoured, the enemy tanks (F3.3): only AP counts on them; HE bursts on their armour to no effect. */
+export function armouredTargets(): boolean[] {
+  return [...RANGE_TARGETS.map(() => false), ...COURSE_TARGETS.map(() => false), ...Array.from({ length: ENEMY_COUNT }, (_, i) => i >= FIRST_TANK)];
 }
 
 /** Where the course's boards start in targetFaces(). */
 export const COURSE_TARGET_FIRST = RANGE_TARGETS.length;
-/** Where the enemy guns start in targetFaces() (F3.2). */
+/** Where the enemies start in targetFaces(): the guns (F3.2), then the tanks (F3.3, from ENEMY_TARGET_FIRST + FIRST_TANK). */
 export const ENEMY_TARGET_FIRST = COURSE_TARGET_FIRST + COURSE_TARGETS.length;
 
 /** Every target by name, in targetFaces()'s order. */
 export const TARGET_NAMES: readonly string[] = [
   ...RANGE_TARGET_NAMES,
   ...COURSE_TARGETS.map((t) => t.name),
-  ...ENEMY_GUNS.map((g) => g.name.replace('Gun', 'gun')),
+  ...Array.from({ length: ENEMY_COUNT }, (_, i) => enemyName(i).replace(/^G/, 'g').replace(/^T/, 't')),
 ];
 
 /** A world-space direction in hull space (the inverse of hullDirToWorld), into `out` (which may be `d`). */

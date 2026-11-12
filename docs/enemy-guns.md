@@ -52,6 +52,8 @@ The host runs the battery and decides everything:
 
 Alone, this page is the host.
 
+Since F3.3 the same battery and events also run the enemy tanks ([enemy-tanks.md](enemy-tanks.md)): enemies 0 to 2 are the guns and 3 and 4 the tanks, the guns and the tanks start and stop apart, and `window.__enemy.state().guns` lists all five.
+
 ## The practice crewmate
 
 As gunner it engages a gun once that gun has fired (the crew has seen its flash) and is within the fog: before any range board, the nearest such gun, loading HE if the rack has it. It fires from a halt as before, asking the driver to halt. As driver it has nothing new to do: call it forward and halt it as before.
