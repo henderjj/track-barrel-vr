@@ -14,7 +14,7 @@
  * the parking brake and the switch strip stay where they are: set them before
  * going up.
  */
-import { DRIVER_HATCH, GUN, HULL, type Seat, type SeatId, SEATS, TURRET } from './cabin.js';
+import { DRIVER_HATCH, DRIVER_HATCH_ROUND, GUN, HULL, type Seat, type SeatId, SEATS, TURRET } from './cabin.js';
 import type { LeverSpec, Vec3 } from './mechanism.js';
 
 /** How far the eyes stand over the roof's top in the convoy position, m: enough to see the road over the hood (5 cm felt a bit high to John, 2026-11-08). */
@@ -58,6 +58,17 @@ const down = SEATS.driver;
 const raisedEye = [down.eye[0], down.eye[1] + CONVOY_RAISE, down.eye[2] + CONVOY_BACK] as const;
 
 /**
+ * Where the head may go in the round hatch, hull space: a box round the
+ * hatch's middle `halfWidth` either side and `halfDepth` fore and aft, its
+ * corners `NECK_CLEARANCE` in from the rim (the seat's head box is a box), m.
+ */
+export const HATCH_HEAD_ROOM = (() => {
+  const halfWidth = 0.15;
+  const room = DRIVER_HATCH_ROUND.radius - NECK_CLEARANCE;
+  return { halfWidth, halfDepth: Math.sqrt(room * room - halfWidth * halfWidth) };
+})();
+
+/**
  * The driver's seat in the convoy position: the eye point, the cushion and
  * the floor under the player's real floor all up and back. The head is in
  * the hatch: the box stops the neck `NECK_CLEARANCE` from the rim; above
@@ -68,10 +79,10 @@ export const CONVOY_SEAT: Seat = {
   floorY: down.floorY + CONVOY_RAISE,
   eye: raisedEye,
   headBox: [
-    raisedEye[0] - DRIVER_HATCH[0] - NECK_CLEARANCE,
-    DRIVER_HATCH[2] - raisedEye[0] - NECK_CLEARANCE,
-    raisedEye[2] - DRIVER_HATCH[1] - NECK_CLEARANCE,
-    DRIVER_HATCH[3] - raisedEye[2] - NECK_CLEARANCE,
+    raisedEye[0] - (DRIVER_HATCH_ROUND.x - HATCH_HEAD_ROOM.halfWidth),
+    DRIVER_HATCH_ROUND.x + HATCH_HEAD_ROOM.halfWidth - raisedEye[0],
+    raisedEye[2] - (DRIVER_HATCH_ROUND.z - HATCH_HEAD_ROOM.halfDepth),
+    DRIVER_HATCH_ROUND.z + HATCH_HEAD_ROOM.halfDepth - raisedEye[2],
   ],
   headUp: CONVOY_HEAD_UP,
   cushion: [down.cushion[0], down.cushion[1] + CONVOY_RAISE, down.cushion[2] + CONVOY_BACK],
@@ -188,10 +199,10 @@ export function periscopeLowered(head: { bottom: number; top: number }): number 
 }
 
 /**
- * The hatch's lid swung open beside the hole, as the convoy position needs:
- * lifted a little and swung outboard (left) about a post at the hole's
- * front-left corner, lying flat, so nothing stands ahead of the driver's face.
- * Its box (x0, x1, y0, y1, z0, z1), hull space, m.
+ * The hatch's round lid swung open beside the hole, as the convoy position
+ * needs: lifted a little and swung outboard (left) about a post at the
+ * hole's left, lying flat, so nothing stands ahead of the driver's face.
+ * The box round it (x0, x1, y0, y1, z0, z1), hull space, m.
  */
 export const LID_ASIDE = (() => {
   const [hx0, hz0, hx1, hz1] = DRIVER_HATCH;
@@ -207,7 +218,8 @@ export const LID_ASIDE = (() => {
     y1: top + lift + thickness,
     z0: hz0,
     z1: hz1,
-    post: { x: hx0 - gap / 2, z: hz0 + 0.03, radius: 0.025 },
+    // Between the hole and the lid, a little ahead of their middles, its arm out to the lid.
+    post: { x: hx0 - gap / 2, z: (hz0 + hz1) / 2 - 0.12, radius: 0.025 },
   };
 })();
 

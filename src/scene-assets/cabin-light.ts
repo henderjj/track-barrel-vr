@@ -102,7 +102,9 @@ bool cabinInside(vec3 p) {
   float s = sin(cabinYaw);
   float z = p.z - ${f(TURRET.z)};
   vec2 t = vec2(p.x * c - z * s, p.x * s + z * c);
-  return abs(t.x) < ${f(TURRET_INSIDE.halfWidth + 0.03)} && abs(t.y) < ${f(TURRET_INSIDE.halfWidth + 0.03)} && p.y > ${f(TURRET_INSIDE.floor)} && p.y < ${f(TURRET_INSIDE.roof + 0.03)};
+  // The rounded box of src/sim/interior.ts's turretInsideDistance.
+  vec3 q = max(vec3(abs(t.x), p.y, abs(t.y)) - vec3(${f(TURRET_INSIDE.halfWidth - TURRET_INSIDE.rounding)}, ${f(TURRET_INSIDE.roof - TURRET_INSIDE.rounding)}, ${f(TURRET_INSIDE.halfWidth - TURRET_INSIDE.rounding)}), 0.0);
+  return p.y > ${f(TURRET_INSIDE.floor)} && length(q) < ${f(TURRET_INSIDE.rounding + 0.03)};
 }
 
 vec3 cabinLight(vec3 p, vec3 n) {

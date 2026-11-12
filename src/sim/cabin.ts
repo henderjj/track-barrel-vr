@@ -207,15 +207,20 @@ export const SEATS: Readonly<Record<SeatId, Seat>> = {
 };
 
 /**
- * The driver's hatch in the hull roof, over their head (x0, z0, x1, z1), m:
- * from 10 cm ahead of their eyes, so the periscope's head stands on the
- * roof in front of it.
+ * The driver's round hatch in the hull roof, over their head: its middle
+ * (x, z) and its radius, m. Its front edge is 12 cm ahead of their eyes, so
+ * the periscope's head stands on the roof in front of it; its middle is 18
+ * cm ahead, under where the head comes up with the seat raised (F2.8). Round,
+ * as John asked (2026-11-11, docs/exterior.md); square before.
  */
+export const DRIVER_HATCH_ROUND = { x: SEATS.driver.eye[0], z: SEATS.driver.eye[2] + 0.18, radius: 0.3 } as const;
+
+/** The square round the driver's hatch (x0, z0, x1, z1), m. */
 export const DRIVER_HATCH = [
-  SEATS.driver.eye[0] - 0.25,
-  SEATS.driver.eye[2] - 0.1,
-  SEATS.driver.eye[0] + 0.25,
-  SEATS.driver.eye[2] + 0.4,
+  DRIVER_HATCH_ROUND.x - DRIVER_HATCH_ROUND.radius,
+  DRIVER_HATCH_ROUND.z - DRIVER_HATCH_ROUND.radius,
+  DRIVER_HATCH_ROUND.x + DRIVER_HATCH_ROUND.radius,
+  DRIVER_HATCH_ROUND.z + DRIVER_HATCH_ROUND.radius,
 ] as const;
 
 /** The gunsight's eyepiece, in turret space, m: 18 cm ahead of the gunner's eyes, over the elevation wheel. */
