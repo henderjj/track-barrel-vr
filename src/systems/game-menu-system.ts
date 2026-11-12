@@ -23,16 +23,20 @@ import { seating } from './seating.js';
 import { PERISCOPE_BUTTONS, periscopeStatus } from './periscope-system.js';
 import { SIGHT_BUTTONS, sightStatus } from './sight-system.js';
 import { firingStatus } from './firing-system.js';
-import { loadingStatus, startLoading } from './loading-system.js';
+import { ammoRack, ammoStatus, loadingStatus, setAmmoRack, startLoading } from './loading-system.js';
 import { audioStatus, playEachSound, playSoundTour } from './tank-audio-system.js';
 import { hideLeverTest, showLeverTest } from './lever-system.js';
 import { hideMechanismBench, showMechanismBench } from './mechanism-bench-system.js';
 import { startScreen } from './start-screen-system.js';
 import { crewCallStatus, sendCrewCall } from './crew-bot-system.js';
 import type { CrewCall } from '../sim/crew-bot.js';
+import { AMMO_KINDS, RACK_CHOICES } from '../sim/ammo.js';
+
+/** The range's anti-tank gun's board (src/sim/range.ts RANGE_TARGETS, the 250 m one): the Combat tab's Ready on the gun lays on it, a soft target for HE's blast. */
+const GUN_TARGET = 1;
 
 /** The Calls section's buttons: `call-<call>`. */
-const CALL_BUTTONS: readonly CrewCall[] = ['advance', 'halt', 'reverse', 'left', 'right', 'route', 'course', 'fire', 'hold'];
+const CALL_BUTTONS: readonly CrewCall[] = ['advance', 'halt', 'reverse', 'left', 'right', 'route', 'course', 'fire', 'hold', 'ap', 'he', 'smoke'];
 
 /** Where the menu stands in VR when opened: ahead of the head and a little below the eyes, m. */
 const DISTANCE = 1.3;
@@ -415,6 +419,20 @@ export class GameMenuSystem extends createSystem({}) {
         this.render();
       });
     }
+    // The Combat tab (F3.1): the rack's rounds stay a choice in effect; Ready on the gun parks, lays on the 250 m gun and loads that round.
+    for (const choice of RACK_CHOICES) {
+      ui.on(`menu-rack-${choice}`, () => {
+        setAmmoRack(choice);
+        this.render();
+      });
+    }
+    for (const kind of AMMO_KINDS) {
+      ui.on(`menu-ammo-ready-${kind}`, () => {
+        this.setOpen(false);
+        stopRide();
+        readyToFire(GUN_TARGET, 'gunner', kind);
+      });
+    }
     ui.on('menu-loading', () => {
       this.setOpen(false);
       startLoading();
@@ -526,6 +544,7 @@ export class GameMenuSystem extends createSystem({}) {
       }
       this.ui?.setText('menu-turret-status', turretStatus());
       this.ui?.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
+      this.ui?.setText('menu-ammo-status', ammoStatus());
       this.ui?.setText('menu-run-status', runStatus());
       this.ui?.setText('menu-course-status', courseStatus());
       this.ui?.setText('menu-race-status', raceStatus());
@@ -580,6 +599,7 @@ export class GameMenuSystem extends createSystem({}) {
     ui.show('row-calls-drive', seating.mine === 'gunner');
     ui.show('row-calls-turn', seating.mine === 'gunner');
     ui.show('row-calls-gun', seating.mine === 'driver');
+    ui.show('row-calls-ammo', seating.mine === 'driver');
     ui.setText('menu-calls-status', crewCallStatus());
     // Mute is offered only while the microphone is open.
     const micNote = c.micError ? 'Unavailable' : !c.micOn ? 'Off (allow it on the page)' : '';
@@ -600,6 +620,9 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-range-status', rangeStatus());
     ui.setText('menu-turret-status', turretStatus());
     ui.setText('menu-loading-status', `${loadingStatus()}. ${firingStatus()}`);
+    const rack = ammoRack();
+    for (const choice of RACK_CHOICES) this.select(`menu-rack-${choice}`, choice === rack);
+    ui.setText('menu-ammo-status', ammoStatus());
     ui.setText('menu-run-status', runStatus());
     const run = shownRun();
     ui.setText('menu-run-start', run.phase === 'running' && run.mode === 'range' ? 'Restart' : 'Start');

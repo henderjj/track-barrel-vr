@@ -12,6 +12,7 @@ import {
 } from '@iwsdk/core';
 import { GpuTimer } from '../perf/gpu-timer.js';
 import { createSightEyepiece, createSightHead, createSightLensGeometry } from '../scene-assets/sight.scene-asset.js';
+import { AMMO } from '../sim/ammo.js';
 import { turnAboutHead } from '../sim/cabin.js';
 import {
   type AimPoint,
@@ -468,32 +469,44 @@ function createReticle(): CanvasTexture {
       chevron(ctx, px(0) + side * k * 4 * mrad, py(0), mrad);
     }
   }
-  // Range marks below the chevron, right of a stem from it: long and
-  // labelled in hundreds of metres every 200 m. At 600 m/s they are only
-  // about 1.4 mils per 100 m apart, so the labels are only as tall as the
-  // gap between two long marks allows.
-  const marks = rangeMarks();
-  const last = marks[marks.length - 1];
-  const gap = (marks[1].drop - marks[0].drop) * half;
+  // Range marks below the chevron either side of a stem from it: long and
+  // labelled in hundreds of metres every 200 m. The AP's on the right; the
+  // slower HE's and smoke's on the left (F3.1, src/sim/ammo.ts), headed
+  // "AP" and "HE". At 600 m/s the AP's are only about 1.4 mils per 100 m
+  // apart, so the labels are only as tall as the gap between two long
+  // marks allows.
+  const scales = [
+    { side: 1, marks: rangeMarks(TRUE_HALF_FIELD, AMMO.ap.speed), name: AMMO.ap.short },
+    { side: -1, marks: rangeMarks(TRUE_HALF_FIELD, AMMO.he.speed), name: AMMO.he.short },
+  ];
+  const deepest = Math.max(...scales.map((sc) => sc.marks[sc.marks.length - 1].drop));
+  const apMarks = scales[0].marks;
+  const gap = (apMarks[1].drop - apMarks[0].drop) * half;
   ctx.lineWidth = 2.5;
   ctx.beginPath();
   ctx.moveTo(px(0), py(0) + 3 * mrad);
-  ctx.lineTo(px(0), py(-last.drop));
+  ctx.lineTo(px(0), py(-deepest));
   ctx.stroke();
   ctx.font = `bold ${Math.round(Math.min(7 * mrad, gap * 1.8))}px sans-serif`;
   ctx.textBaseline = 'middle';
-  for (const mark of marks) {
-    const y = py(-mark.drop);
-    const length = (mark.major ? 5 : 2.5) * mrad;
-    ctx.lineWidth = mark.major ? 3 : 2.5;
-    ctx.beginPath();
-    ctx.moveTo(px(0), y);
-    ctx.lineTo(px(0) + length, y);
-    ctx.stroke();
-    if (mark.major) {
-      ctx.fillText(`${mark.range / 100}`, px(0) + length + mrad, y);
+  for (const { side, marks, name } of scales) {
+    ctx.textAlign = side > 0 ? 'left' : 'right';
+    for (const mark of marks) {
+      const y = py(-mark.drop);
+      const length = (mark.major ? 5 : 2.5) * mrad;
+      ctx.lineWidth = mark.major ? 3 : 2.5;
+      ctx.beginPath();
+      ctx.moveTo(px(0), y);
+      ctx.lineTo(px(0) + side * length, y);
+      ctx.stroke();
+      if (mark.major) {
+        ctx.fillText(`${mark.range / 100}`, px(0) + side * (length + mrad), y);
+      }
     }
+    // The scale's name above its first mark, out beside the stem.
+    ctx.fillText(name, px(0) + side * 2 * mrad, py(-marks[0].drop) - 3 * mrad);
   }
+  ctx.textAlign = 'left';
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
   return texture;

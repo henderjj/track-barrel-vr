@@ -25,6 +25,7 @@
  *   so it rises and dips with the gun.
  */
 
+import { AMMO, type AmmoKind, MIXED_RACK, type RackChoice, rackKinds } from './ammo.js';
 import { GUN, SEATS, TURRET } from './cabin.js';
 
 export type Vec3 = [number, number, number];
@@ -466,6 +467,8 @@ export interface LoadingSnapshot {
   rammed: boolean;
   loaded: boolean;
   shells: { place: ShellPlace; centre: Vec3; axis: Vec3 }[];
+  /** Each shell's round (F3.1), by rack slot: the mixed rack, or one kind for practice, or all AP at a biathlon line. */
+  kinds: AmmoKind[];
   /** The stats the board shows. */
   loads: number;
   last: number;
@@ -483,6 +486,7 @@ export function createLoadingSnapshot(): LoadingSnapshot {
     rammed: false,
     loaded: false,
     shells: RACK_SLOTS.map((slot) => ({ place: 'rack' as ShellPlace, centre: [...slot] as Vec3, axis: [0, 0, -1] as Vec3 })),
+    kinds: RACK_SLOTS.map((_, i) => MIXED_RACK[i % MIXED_RACK.length]),
     loads: 0,
     last: Number.NaN,
     best: Number.NaN,
@@ -508,6 +512,7 @@ export function copyLoadingSnapshot(from: LoadingSnapshot, to: LoadingSnapshot):
     b.axis[0] = a.axis[0];
     b.axis[1] = a.axis[1];
     b.axis[2] = a.axis[2];
+    to.kinds[i] = from.kinds[i];
   }
   to.loads = from.loads;
   to.last = from.last;
@@ -603,6 +608,10 @@ export class LoadingDrill {
    * empty. Infinity (the default) refills the rack after every shot.
    */
   rounds = Number.POSITIVE_INFINITY;
+  /** What the rack holds (F3.1): the mixed rack, or one kind for practice. */
+  rack: RackChoice = 'mixed';
+  /** Each shell's round, by its slot: from `rack`, or all AP while the rounds are limited. */
+  readonly kinds: AmmoKind[] = rackKinds('mixed', false, new Array<AmmoKind>(SHELL_COUNT));
 
   private wasPressed: Record<Side, boolean> = { left: false, right: false };
   /** Each hand's depth along the bore last frame, for an open hand pushing on a base. */
@@ -641,6 +650,7 @@ export class LoadingDrill {
   /** Start again: every shell in the rack, the breech open and empty, the stats cleared, the rounds no longer limited. */
   reset(): void {
     this.rounds = Number.POSITIVE_INFINITY;
+    rackKinds(this.rack, false, this.kinds);
     for (let i = 0; i < this.shells.length; i++) {
       this.toRack(i);
     }
@@ -667,7 +677,26 @@ export class LoadingDrill {
    */
   setRounds(n: number): void {
     this.rounds = Math.max(0, n);
+    rackKinds(this.rack, Number.isFinite(this.rounds), this.kinds);
     this.fitRounds();
+    this.version++;
+  }
+
+  /**
+   * Fill the rack with `choice` (F3.1): the mixed rack, or every slot one
+   * kind. Each shell takes its slot's kind at once, wherever it is (the one
+   * in the breech too: practice, not a drill to keep honest). A limited
+   * biathlon line stays all AP.
+   */
+  setRack(choice: RackChoice): void {
+    this.rack = choice;
+    rackKinds(choice, Number.isFinite(this.rounds), this.kinds);
+    this.version++;
+  }
+
+  /** The round in the breech, or null. */
+  loadedKind(): AmmoKind | null {
+    return this.breechShell >= 0 ? this.kinds[this.breechShell] : null;
   }
 
   /** Shells not spent: in the rack, a hand, the breech or on the floor. */
@@ -787,9 +816,21 @@ export class LoadingDrill {
   /**
    * Practice (F1.11's Ready to fire): a shell rammed and the breech closed
    * at once, as if loaded, without counting as a load. Hands let go first.
-   * Does nothing if already loaded.
+   * `kind` (F3.1) asks for a round: the rack's first of that kind if it has
+   * one (a round of another kind already in the breech goes back to the
+   * rack). Does nothing if already loaded (with that kind).
    */
-  loadNow(): void {
+  loadNow(kind: AmmoKind | null = null): void {
+    if (this.loaded && (kind === null || this.loadedKind() === kind)) return;
+    if (this.breechShell >= 0 && kind !== null && this.loadedKind() !== kind && this.kinds.includes(kind)) {
+      // Another round in the breech: back in the rack.
+      for (const side of SIDES) if (this.holds[side] === this.breechShell) this.holds[side] = HOLD_NONE;
+      this.toRack(this.breechShell);
+      this.breechShell = -1;
+      this.depth = 0;
+      this.rammed = false;
+      this.loaded = false;
+    }
     if (this.loaded) return;
     // A shell in a hand goes back in the rack (not dropped: no fumble).
     for (const side of SIDES) {
@@ -799,7 +840,9 @@ export class LoadingDrill {
       else if (hold >= 0) this.shells[hold].heldBy = null;
     }
     if (this.breechShell < 0) {
-      let i = this.shells.findIndex((s) => s.place === 'rack');
+      // The kind asked for if the rack has one, else the first in the rack.
+      let i = kind === null ? -1 : this.shells.findIndex((s, j) => s.place === 'rack' && this.kinds[j] === kind);
+      if (i < 0) i = this.shells.findIndex((s) => s.place === 'rack');
       // No rounds left at a biathlon line: nothing to load.
       if (i < 0 && Number.isFinite(this.rounds)) return;
       if (i < 0) i = 0;
@@ -840,7 +883,10 @@ export class LoadingDrill {
     out.depth = this.depth;
     out.rammed = this.rammed;
     out.loaded = this.loaded;
-    for (let i = 0; i < this.shells.length; i++) copyShellPose(this.shells[i], out.shells[i]);
+    for (let i = 0; i < this.shells.length; i++) {
+      copyShellPose(this.shells[i], out.shells[i]);
+      out.kinds[i] = this.kinds[i];
+    }
     const st = this.stats;
     out.loads = st.loads;
     out.last = st.last;
@@ -1195,7 +1241,8 @@ export function boardLines(s: LoadingSnapshot, shot = ''): [string, string, stri
   const second = `Fumbles ${s.fumbles}   ${streak}`;
   let third: string;
   if (s.loaded) {
-    third = 'Loaded: fire!';
+    const kind = s.breechShell >= 0 ? s.kinds[s.breechShell] : undefined;
+    third = kind ? `Loaded ${AMMO[kind].short}: fire!` : 'Loaded: fire!';
   } else if (s.breechShell >= 0 && s.rammed) {
     third = 'Rammed: close the breech';
   } else if (s.breechShell >= 0) {

@@ -1,16 +1,19 @@
 import { createSystem, type Entity, type Mesh, Vector3 } from '@iwsdk/core';
 import { createBurst, createTracer } from '../scene-assets/loading.scene-asset.js';
+import { AMMO, type AmmoKind, ammoIndex, parseAmmo } from '../sim/ammo.js';
 import {
   aimAt,
   createShotResult,
-  describeShot,
+  decideShot,
+  describeRound,
   flyShell,
   hullDirToWorld,
   hullToWorld,
-  MUZZLE_SPEED,
   shellAt,
   shellVelocity,
+  type ShotDecision,
   type ShotResult,
+  softTargets,
   TARGET_NAMES,
   targetFaces,
   type Vec3,
@@ -26,8 +29,8 @@ const SHOTS = 4;
 /** The tracer's length behind the shell, m (about a hundredth of a second of flight), and how far away it stops growing thinner, m. */
 const TRACER_LENGTH = 7;
 const TRACER_FULL_SIZE = 40;
-/** The burst where a shell lands: how big it gets (m), how long it takes to grow and then to die away, s. */
-const BURST = { dirt: 1.6, hit: 1.2, grow: 0.12, fade: 0.7 } as const;
+/** The burst where a shell lands: how big it gets (m), how long it takes to grow and then to die away, s. An HE burst (F3.1) is bigger and lasts longer. */
+const BURST = { dirt: 1.6, hit: 1.2, he: 4, grow: 0.12, fade: 0.7, heFade: 1.1 } as const;
 /** A burst stays at least this big as seen, for each this many metres away (a 1.6 m burst would be a dot at 500 m), m. */
 const BURST_FULL_SIZE = 250;
 
@@ -35,6 +38,8 @@ const BURST_FULL_SIZE = 250;
 interface Shot {
   /** Its id: the firing page's count, odd from a guest, even from the host. Negative for a free slot. */
   id: number;
+  /** Its round (F3.1). */
+  ammo: AmmoKind;
   origin: Vec3;
   dir: Vec3;
   /** Local time it left the muzzle, s. */
@@ -46,13 +51,21 @@ interface Shot {
   tracer: Mesh;
   burst: Mesh;
   hitBurst: Mesh;
+  heBurst: Mesh;
 }
 
 /** What a shot's result says, kept for the board, the menu and the tests. */
 export interface ShotRecord {
   id: number;
+  /** Its round (F3.1). */
+  ammo: AmmoKind;
+  /** What the shell struck: a target (its index in `target`), the ground or nothing. */
   kind: ShotResult['kind'];
   target: number;
+  /** The target it counts as hit (F3.1: a direct hit with AP or HE, or an HE burst beside a soft target; never smoke), or -1. */
+  counted: number;
+  /** How far from that target an HE round burst, m (NaN for a direct hit or none). */
+  blast: number;
   point: Vec3;
   time: number;
   line: string;
@@ -60,6 +73,9 @@ export interface ShotRecord {
 
 /** Things that want to hear of every shot, this page's or the crewmate's (LoadingSystem recoils the gun and throws the casing). */
 export const shotListeners = new Set<(own: boolean) => void>();
+
+/** Things that want to hear where every shell lands, on both pages as each draws it: its round and the point, world space (SmokeSystem lays a smoke round's screen, F3.1). */
+export const landedListeners = new Set<(ammo: AmmoKind, point: Readonly<Vec3>) => void>();
 
 /**
  * The host's word on every shot, its own page's or the crewmate's: the
@@ -72,9 +88,9 @@ export const decidedListeners = new Set<(target: number, flight: number) => void
 
 let active: FiringSystem | null = null;
 
-/** The gunner's page fires the gun: the shell leaves the muzzle as this page draws the tank and turret. LoadingSystem calls it once the breech has fired. */
-export function fireShell(): void {
-  active?.fire();
+/** The gunner's page fires the gun: the shell, round `ammo`, leaves the muzzle as this page draws the tank and turret. LoadingSystem calls it once the breech has fired. */
+export function fireShell(ammo: AmmoKind = 'ap'): void {
+  active?.fire(ammo);
 }
 
 /** The last shot's result as a line ("Hit: the 250 m gun", "Miss the 500 m tank: 20 m short"), or '' before any. */
@@ -102,12 +118,12 @@ interface FiringDebug {
   hits(): number[];
   /** Shots in the air now. */
   flying(): number;
-  /** Fire a shell as if the breech had fired (tests): it leaves the muzzle as the turret is laid. */
-  fire(): void;
-  /** Where a shell from the muzzle as laid now would land, world space, and what it would hit. */
-  predict(): ShotRecord;
-  /** Lay the gun on target `i` (the range's three, then the course's six) from where the tank stands (tests; the page that owns the turret). */
-  aimAt(i: number): { yaw: number; elevation: number };
+  /** Fire a shell as if the breech had fired (tests): it leaves the muzzle as the turret is laid; AP unless `ammo` says. */
+  fire(ammo?: AmmoKind): void;
+  /** Where a shell (AP unless `ammo` says) from the muzzle as laid now would land, world space, and what it would hit. */
+  predict(ammo?: AmmoKind): ShotRecord;
+  /** Lay the gun on target `i` (the range's three, then the course's six) from where the tank stands (tests; the page that owns the turret), for round `ammo` (AP unless said); `aboveBy` m higher or `rightBy` m right of its middle. */
+  aimAt(i: number, ammo?: AmmoKind, rightBy?: number, aboveBy?: number): { yaw: number; elevation: number };
   readonly sent: number;
   readonly received: number;
 }
@@ -130,6 +146,8 @@ export class FiringSystem extends createSystem({}) {
   readonly records: ShotRecord[] = [];
   readonly hits: number[] = targetFaces().map(() => 0);
   private faces = targetFaces();
+  private soft = softTargets();
+  private decision: ShotDecision = { target: -1, blast: Number.NaN };
   private shots: Shot[] = [];
   private count = 0;
   private time = 0;
@@ -153,12 +171,25 @@ export class FiringSystem extends createSystem({}) {
       const tracer = createTracer();
       const burst = createBurst(false);
       const hitBurst = createBurst(true);
-      for (const mesh of [tracer, burst, hitBurst]) {
+      const heBurst = createBurst('he');
+      for (const mesh of [tracer, burst, hitBurst, heBurst]) {
         mesh.visible = false;
         mesh.frustumCulled = false;
         if (ground) this.world.createTransformEntity(mesh, { parent: ground });
       }
-      this.shots.push({ id: -1, origin: [0, 0, 0], dir: [0, 0, -1], firedAt: 0, flight: createShotResult(), landed: true, tracer, burst, hitBurst });
+      this.shots.push({
+        id: -1,
+        ammo: 'ap',
+        origin: [0, 0, 0],
+        dir: [0, 0, -1],
+        firedAt: 0,
+        flight: createShotResult(),
+        landed: true,
+        tracer,
+        burst,
+        hitBurst,
+        heBurst,
+      });
     }
 
     netLink.events.set('shot', (e) => this.onShot(e));
@@ -176,16 +207,20 @@ export class FiringSystem extends createSystem({}) {
       records: () => self.records.map((r) => ({ ...r, point: [...r.point] as Vec3 })),
       hits: () => [...self.hits],
       flying: () => self.shots.filter((s) => s.id >= 0 && !s.landed).length,
-      fire: () => self.fire(),
-      predict: () => {
+      fire: (ammo = 'ap') => self.fire(ammo),
+      predict: (ammo = 'ap') => {
         const origin: Vec3 = [0, 0, 0];
         const dir: Vec3 = [0, 0, 0];
         self.aimNow(origin, dir);
-        const result = flyShell(origin, dir, self.faces, createShotResult());
-        return self.record(-1, result, origin, dir);
+        const result = flyShell(origin, dir, self.faces, createShotResult(), undefined, AMMO[ammo].speed);
+        decideShot(ammo, result, self.faces, self.soft, self.decision);
+        return self.record(-1, ammo, result, self.decision, origin, dir);
       },
-      aimAt: (i) => {
-        const aim = aimAt(tankState(), self.faces[i], muzzlePoint);
+      aimAt: (i, ammo = 'ap', rightBy = 0, aboveBy = 0) => {
+        const f = self.faces[i];
+        // Off the face's middle by `rightBy` to the right as the gun sees it, (cos yaw, 0, -sin yaw).
+        const face = { ...f, x: f.x + Math.cos(f.yaw) * rightBy, y: f.y + aboveBy, z: f.z - Math.sin(f.yaw) * rightBy };
+        const aim = aimAt(tankState(), face, muzzlePoint, undefined, AMMO[ammo].speed);
         aimTurret(aim.yaw, aim.elevation);
         return aim;
       },
@@ -194,21 +229,21 @@ export class FiringSystem extends createSystem({}) {
     };
   }
 
-  /** The gun fires on this page: from the muzzle as drawn, along the bore. */
-  fire(): void {
+  /** The gun fires on this page, round `ammo`: from the muzzle as drawn, along the bore. */
+  fire(ammo: AmmoKind = 'ap'): void {
     const id = 2 * this.count++ + (netLink.isHost ? 0 : 1);
-    const shot = this.start(id, this.time);
+    const shot = this.start(id, this.time, ammo);
     if (shot == null) return;
     this.aimNow(shot.origin, shot.dir);
     this.fly(shot);
     if (netLink.connected) {
-      const event = { t: 'shot', id, o: [...shot.origin], d: [...shot.dir] };
+      const event = { t: 'shot', id, k: ammoIndex(ammo), o: [...shot.origin], d: [...shot.dir] };
       netLink.sendEvent(event);
       this.sent++;
     }
     for (const listener of shotListeners) listener(true);
     if (netLink.isHost) this.decide(shot);
-    console.info(`[Firing] shot ${id} from (${shot.origin.map((v) => v.toFixed(1)).join(', ')})`);
+    console.info(`[Firing] shot ${id} (${AMMO[ammo].short}) from (${shot.origin.map((v) => v.toFixed(1)).join(', ')})`);
   }
 
   /** Where the shell leaves from and which way, world space, as this page draws the tank and the turret. */
@@ -226,7 +261,8 @@ export class FiringSystem extends createSystem({}) {
     const d = e.d as number[] | undefined;
     if (!Number.isFinite(id) || !Array.isArray(o) || !Array.isArray(d) || o.length !== 3 || d.length !== 3) return;
     this.received++;
-    const shot = this.start(id, this.time);
+    // A page on a build before F3.1 sends no round: armour piercing, its only one.
+    const shot = this.start(id, this.time, parseAmmo(e.k));
     if (shot == null) return;
     for (let k = 0; k < 3; k++) {
       shot.origin[k] = Number(o[k]);
@@ -249,23 +285,34 @@ export class FiringSystem extends createSystem({}) {
     if (Array.isArray(p) && p.length === 3) for (let k = 0; k < 3; k++) result.point[k] = Number(p[k]);
     result.time = Number(e.time) || 0;
     const shot = this.shots.find((s) => s.id === Number(e.id));
-    if (result.target >= 0) this.hits[result.target] = Number(e.hits) || this.hits[result.target] + 1;
-    this.record(Number(e.id), result, shot?.origin ?? result.point, shot?.dir ?? [0, 0, -1]);
+    const ammo = shot?.ammo ?? parseAmmo(e.k);
+    // A host on a build before F3.1 counted every direct hit, and sends no `counted`.
+    const counted = e.counted === undefined ? result.target : Number(e.counted);
+    const decision: ShotDecision = {
+      target: Number.isInteger(counted) && counted >= 0 && counted < this.hits.length ? counted : -1,
+      blast: e.blast == null ? Number.NaN : Number(e.blast),
+    };
+    if (decision.target >= 0) this.hits[decision.target] = Number(e.hits) || this.hits[decision.target] + 1;
+    this.record(Number(e.id), ammo, result, decision, shot?.origin ?? result.point, shot?.dir ?? [0, 0, -1]);
   }
 
-  /** The host decides what a shot hit, counts it, and tells the guest. */
+  /** The host decides what a shot hit (F3.1: by its round), counts it, and tells the guest. */
   private decide(shot: Shot): void {
     const result = shot.flight;
-    if (result.kind === 'target') this.hits[result.target]++;
-    this.record(shot.id, result, shot.origin, shot.dir);
-    for (const listener of decidedListeners) listener(result.kind === 'target' ? result.target : -1, result.time);
+    const decision = decideShot(shot.ammo, result, this.faces, this.soft, this.decision);
+    if (decision.target >= 0) this.hits[decision.target]++;
+    this.record(shot.id, shot.ammo, result, decision, shot.origin, shot.dir);
+    for (const listener of decidedListeners) listener(decision.target, result.time);
     if (netLink.connected) {
       const event = {
         t: 'shot-hit',
         id: shot.id,
+        k: ammoIndex(shot.ammo),
         kind: result.kind,
         target: result.target,
-        hits: result.target >= 0 ? this.hits[result.target] : 0,
+        counted: decision.target,
+        blast: Number.isFinite(decision.blast) ? decision.blast : null,
+        hits: decision.target >= 0 ? this.hits[decision.target] : 0,
         p: [...result.point],
         time: result.time,
       };
@@ -273,14 +320,24 @@ export class FiringSystem extends createSystem({}) {
     }
   }
 
-  private record(id: number, result: ShotResult, origin: Readonly<Vec3>, dir: Readonly<Vec3>): ShotRecord {
+  private record(
+    id: number,
+    ammo: AmmoKind,
+    result: ShotResult,
+    decision: Readonly<ShotDecision>,
+    origin: Readonly<Vec3>,
+    dir: Readonly<Vec3>,
+  ): ShotRecord {
     const record: ShotRecord = {
       id,
+      ammo,
       kind: result.kind,
       target: result.target,
+      counted: decision.target,
+      blast: decision.blast,
       point: [...result.point] as Vec3,
       time: result.time,
-      line: describeShot(result, origin, dir, this.faces, TARGET_NAMES),
+      line: describeRound(ammo, result, decision, origin, dir, this.faces, TARGET_NAMES),
     };
     if (id >= 0) {
       this.records.push(record);
@@ -291,19 +348,21 @@ export class FiringSystem extends createSystem({}) {
   }
 
   /** A free slot for a new shot (the oldest if all are busy). */
-  private start(id: number, time: number): Shot | null {
-    let shot = this.shots.find((s) => s.id < 0 || (s.landed && time - s.firedAt - s.flight.time > BURST.grow + BURST.fade));
+  private start(id: number, time: number, ammo: AmmoKind): Shot | null {
+    let shot = this.shots.find((s) => s.id < 0 || (s.landed && time - s.firedAt - s.flight.time > BURST.grow + BURST.heFade));
     if (shot == null) shot = this.shots.reduce((a, b) => (a.firedAt < b.firedAt ? a : b));
     shot.id = id;
+    shot.ammo = ammo;
     shot.firedAt = time;
     shot.landed = false;
     shot.burst.visible = false;
     shot.hitBurst.visible = false;
+    shot.heBurst.visible = false;
     return shot;
   }
 
   private fly(shot: Shot): void {
-    flyShell(shot.origin, shot.dir, this.faces, shot.flight);
+    flyShell(shot.origin, shot.dir, this.faces, shot.flight, undefined, AMMO[shot.ammo].speed);
   }
 
   update(delta: number): void {
@@ -320,6 +379,7 @@ export class FiringSystem extends createSystem({}) {
       if (!shot.landed && t >= end) {
         shot.landed = true;
         shot.tracer.visible = false;
+        if (shot.flight.kind !== 'none') for (const listener of landedListeners) listener(shot.ammo, shot.flight.point);
       }
       if (!shot.landed) this.drawTracer(shot, t, offX, offZ);
       else this.drawBurst(shot, t - end, offX, offZ);
@@ -327,29 +387,37 @@ export class FiringSystem extends createSystem({}) {
   }
 
   private drawTracer(shot: Shot, t: number, offX: number, offZ: number): void {
-    const p = shellAt(shot.origin, shot.dir, t, this.p);
-    const v = shellVelocity(shot.dir, t, this.v);
+    const speed = AMMO[shot.ammo].speed;
+    const p = shellAt(shot.origin, shot.dir, t, this.p, speed);
+    const v = shellVelocity(shot.dir, t, this.v, speed);
     const tracer = shot.tracer;
     tracer.position.set(p[0] - offX, p[1], p[2] - offZ);
     this.dir.set(v[0], v[1], v[2]).normalize();
     // The rod runs back from the shell along -Z of its own: point its +Z along the flight.
     tracer.quaternion.setFromUnitVectors(this.back, this.dir);
-    const flown = t * MUZZLE_SPEED;
+    const flown = t * speed;
     tracer.getWorldPosition(this.at);
     const thick = Math.max(1, this.at.distanceTo(this.eye) / TRACER_FULL_SIZE);
     tracer.scale.set(thick, thick, Math.min(TRACER_LENGTH, Math.max(0.1, flown)));
     tracer.visible = true;
   }
 
+  /**
+   * Where it landed: AP a bright flash on a target or a dirt burst on the
+   * ground; HE (F3.1) a big orange burst either way; smoke a small dirt
+   * puff (its screen is SmokeSystem's).
+   */
   private drawBurst(shot: Shot, since: number, offX: number, offZ: number): void {
-    const hit = shot.flight.kind === 'target';
-    const mesh = hit ? shot.hitBurst : shot.burst;
-    if (shot.flight.kind === 'none' || since > BURST.grow + BURST.fade) {
+    const he = shot.ammo === 'he';
+    const hit = shot.flight.kind === 'target' && shot.ammo === 'ap';
+    const mesh = he ? shot.heBurst : hit ? shot.hitBurst : shot.burst;
+    const fade = he ? BURST.heFade : BURST.fade;
+    if (shot.flight.kind === 'none' || since > BURST.grow + fade) {
       if (mesh.visible) mesh.visible = false;
       return;
     }
-    const size = hit ? BURST.hit : BURST.dirt;
-    const grow = since < BURST.grow ? since / BURST.grow : 1 - (since - BURST.grow) / BURST.fade;
+    const size = he ? BURST.he : hit ? BURST.hit : shot.ammo === 'smoke' ? BURST.dirt * 0.6 : BURST.dirt;
+    const grow = since < BURST.grow ? since / BURST.grow : 1 - (since - BURST.grow) / fade;
     const p = shot.flight.point;
     mesh.position.set(p[0] - offX, p[1], p[2] - offZ);
     mesh.getWorldPosition(this.at);

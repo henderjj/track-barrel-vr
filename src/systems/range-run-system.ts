@@ -10,6 +10,7 @@ import {
 } from '@iwsdk/core';
 import { crewPresence } from '../net/crew-presence.js';
 import { boardCoverSpot, createBoardCover, createHitFlag, RUN_CLOCKS, type RunClockPlace } from '../scene-assets/range-run.scene-asset.js';
+import { AMMO, type AmmoKind, ammoIndex, parseAmmo } from '../sim/ammo.js';
 import { aimAt, targetFaces } from '../sim/ballistics.js';
 import { BOARD_FIRST, boardDown, boardsDown, BOARDS_PER_LINE, lineClosed, lineFor } from '../sim/biathlon.js';
 import { BOX_Z, boxSpot, COURSE_START, COURSE_TARGETS } from '../sim/course.js';
@@ -42,7 +43,7 @@ import { goToFiringLine, shownCourse } from './course-system.js';
 import { placeTank, resetTank, tankState } from './drive-system.js';
 import { decidedListeners } from './firing-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
-import { limitRounds, loadForPractice, loadingRounds, resetLoading } from './loading-system.js';
+import { limitRounds, loadedRound, loadForPractice, loadingRounds, resetLoading } from './loading-system.js';
 import { netLink } from './net-system.js';
 import { seating } from './seating.js';
 import { aimTurret, turretForward } from './turret-system.js';
@@ -104,10 +105,11 @@ export function readyAtLine(k: number): void {
  * target `i` and loaded, so one pull of the trigger hits it. Alone, the
  * player goes to `seat` (the gunner's, or the driver's to watch the firing
  * lamp, F2.5); in a crew the seats stay and the gunner's page lays and
- * loads. Marks a run on now as assisted.
+ * loads. Marks a run on now as assisted. `ammo` (F3.1, the Combat tab)
+ * loads that round, laid for its speed; else the rack's first.
  */
-export function readyToFire(i: number, seat: SeatId = 'gunner'): void {
-  active?.ready(i, seat);
+export function readyToFire(i: number, seat: SeatId = 'gunner', ammo: AmmoKind | null = null): void {
+  active?.ready(i, seat, ammo);
 }
 
 /** One line for the game menu's Range run row. */
@@ -235,6 +237,8 @@ export class RangeRunSystem extends createSystem({}) {
   private wasDone = false;
   private doneAt = 0;
   private pendingTarget = -1;
+  /** The round Ready to fire asked for (F3.1), or null for the rack's first. */
+  private pendingAmmo: AmmoKind | null = null;
   private pendingSince = 0;
   /** Where Ready to fire waits for the tank to stand: the range's start, or a firing box. */
   private pendingX = 0;
@@ -283,7 +287,9 @@ export class RangeRunSystem extends createSystem({}) {
       // A firing line's box (F5.3b), or the range's start.
       const line = Number(e.line);
       const [x, z] = Number.isInteger(line) && line >= 0 && line < BOX_Z.length ? boxSpot(line) : [this.start.x, this.start.z];
-      if (Number.isInteger(target) && target >= 0 && target < this.faces.length && ownsGun()) this.pend(target, x, z);
+      // A round asked for (F3.1), or null for the rack's first.
+      const ammo = e.k == null ? null : parseAmmo(e.k);
+      if (Number.isInteger(target) && target >= 0 && target < this.faces.length && ownsGun()) this.pend(target, x, z, ammo);
     });
     const onDecided = (target: number, flight: number) => {
       if (netLink.isHost) this.run.shot(target, flight);
@@ -352,16 +358,16 @@ export class RangeRunSystem extends createSystem({}) {
     }
   }
 
-  ready(i: number, seat: SeatId = 'gunner'): void {
+  ready(i: number, seat: SeatId = 'gunner', ammo: AmmoKind | null = null): void {
     if (!(i >= 0 && i < RANGE_TARGETS.length)) return;
     // Alone, into the gunner's seat to pull the trigger (or the driver's, to watch the firing lamp); in a crew the seats stay.
     if (!netLink.connected) seating.ask(seat);
     // Parked with the engine running warm, for the power traverse (F1.17).
     resetTank('warm');
     this.ask('assist');
-    if (ownsGun()) this.pend(i, this.start.x, this.start.z);
+    if (ownsGun()) this.pend(i, this.start.x, this.start.z, ammo);
     else {
-      const event = { t: 'range-ready', target: i };
+      const event = { t: 'range-ready', target: i, k: ammo === null ? null : ammoIndex(ammo) };
       netLink.sendEvent(event);
     }
     console.info(`[RangeRun] ready to fire on the ${RANGE_TARGETS[i].range} m target`);
@@ -391,9 +397,10 @@ export class RangeRunSystem extends createSystem({}) {
     console.info(`[RangeRun] ready at line ${k + 1}, on ${COURSE_TARGETS[board].name}`);
   }
 
-  /** The gunner's page: lay on target `i` (of targetFaces) and load, once the tank stands at (x, z). */
-  private pend(i: number, x: number, z: number): void {
+  /** The gunner's page: lay on target `i` (of targetFaces) and load (round `ammo`, or the rack's first), once the tank stands at (x, z). */
+  private pend(i: number, x: number, z: number, ammo: AmmoKind | null = null): void {
     this.pendingTarget = i;
+    this.pendingAmmo = ammo;
     this.pendingSince = this.time;
     this.pendingX = x;
     this.pendingZ = z;
@@ -470,9 +477,10 @@ export class RangeRunSystem extends createSystem({}) {
     }
     const tank = tankState();
     if (Math.hypot(tank.x - this.pendingX, tank.z - this.pendingZ) > AT_START || Math.abs(tank.speed) > STILL) return;
-    const aim = aimAt(tank, this.faces[i], muzzlePoint);
+    loadForPractice(this.pendingAmmo);
+    // Laid for the round loaded (F3.1): HE and smoke fly slower than AP.
+    const aim = aimAt(tank, this.faces[i], muzzlePoint, undefined, AMMO[loadedRound() ?? 'ap'].speed);
     aimTurret(aim.yaw, aim.elevation);
-    loadForPractice();
     this.pendingTarget = -1;
   }
 

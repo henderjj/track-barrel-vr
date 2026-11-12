@@ -31,6 +31,7 @@ import { RangeSystem } from './systems/range-system.js';
 import { RideSystem } from './systems/ride-system.js';
 import { SeatSystem } from './systems/seat-system.js';
 import { SightSystem } from './systems/sight-system.js';
+import { SmokeSystem } from './systems/smoke-system.js';
 import { TankAudioSystem } from './systems/tank-audio-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
 import { TurretDialSystem } from './systems/turret-dial-system.js';
@@ -82,6 +83,8 @@ World.create(
   world.registerSystem(LoadingSystem);
   // The shell's flight, after LoadingSystem fires it.
   world.registerSystem(FiringSystem);
+  // Smoke screens (F3.1): after FiringSystem, whose shells landing lay them.
+  world.registerSystem(SmokeSystem);
   // The range run (F1.11): after FiringSystem, whose decided shots it counts on the host.
   world.registerSystem(RangeRunSystem);
   // The callout card in each seat (F2.6): hangs on the hull and turret, drawn once; nothing per frame.

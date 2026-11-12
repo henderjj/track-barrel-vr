@@ -9,10 +9,13 @@
  * ground repeats every TILE, and so do the targets drawn on it, so every
  * test against them is made with the offset wrapped to the nearest copy.
  *
- * Phase 1 has one shell, armour piercing, at one muzzle speed, falling
- * under gravity with no drag (plan §4.6). F3.1 adds HE and smoke.
+ * Shells fall under gravity with no drag (plan §4.6). Phase 1 had one,
+ * armour piercing, at MUZZLE_SPEED; F3.1 (src/sim/ammo.ts) adds HE and
+ * smoke, slower, so the flight's sums take the round's speed (MUZZLE_SPEED,
+ * the AP's, when left out).
  */
 
+import { AMMO, type AmmoKind } from './ammo.js';
 import { COURSE_BOARD, COURSE_TARGETS, courseBoardMiddle } from './course.js';
 import { RANGE_TARGETS, targetFace } from './range.js';
 import type { TankDrive } from './tank-drive.js';
@@ -29,8 +32,8 @@ export const MAX_FLIGHT = 4;
 export const FLIGHT_STEP = 1 / 240;
 
 /** Where the shell is `t` seconds after leaving `origin` along unit `dir`, into `out`. */
-export function shellAt(origin: Readonly<Vec3>, dir: Readonly<Vec3>, t: number, out: Vec3): Vec3 {
-  const v = MUZZLE_SPEED * t;
+export function shellAt(origin: Readonly<Vec3>, dir: Readonly<Vec3>, t: number, out: Vec3, speed = MUZZLE_SPEED): Vec3 {
+  const v = speed * t;
   out[0] = origin[0] + dir[0] * v;
   out[1] = origin[1] + dir[1] * v - 0.5 * GRAVITY * t * t;
   out[2] = origin[2] + dir[2] * v;
@@ -38,10 +41,10 @@ export function shellAt(origin: Readonly<Vec3>, dir: Readonly<Vec3>, t: number, 
 }
 
 /** The shell's velocity `t` seconds after leaving the muzzle, into `out`, m/s. */
-export function shellVelocity(dir: Readonly<Vec3>, t: number, out: Vec3): Vec3 {
-  out[0] = dir[0] * MUZZLE_SPEED;
-  out[1] = dir[1] * MUZZLE_SPEED - GRAVITY * t;
-  out[2] = dir[2] * MUZZLE_SPEED;
+export function shellVelocity(dir: Readonly<Vec3>, t: number, out: Vec3, speed = MUZZLE_SPEED): Vec3 {
+  out[0] = dir[0] * speed;
+  out[1] = dir[1] * speed - GRAVITY * t;
+  out[2] = dir[2] * speed;
   return out;
 }
 
@@ -49,8 +52,8 @@ export function shellVelocity(dir: Readonly<Vec3>, t: number, out: Vec3): Vec3 {
  * How far below the bore's line a shell is at `range` m (horizontal), m:
  * what the sight's range marks allow for (F1.9). For a flat shot.
  */
-export function dropAt(range: number): number {
-  const t = range / MUZZLE_SPEED;
+export function dropAt(range: number, speed = MUZZLE_SPEED): number {
+  const t = range / speed;
   return 0.5 * GRAVITY * t * t;
 }
 
@@ -96,12 +99,13 @@ export function flyShell(
   faces: readonly HitFace[],
   out: ShotResult,
   ground: (x: number, z: number) => number = groundHeight,
+  speed = MUZZLE_SPEED,
 ): ShotResult {
-  shellAt(origin, dir, 0, a);
+  shellAt(origin, dir, 0, a, speed);
   const steps = Math.ceil(MAX_FLIGHT / FLIGHT_STEP);
   for (let k = 1; k <= steps; k++) {
     const t1 = k * FLIGHT_STEP;
-    shellAt(origin, dir, t1, b);
+    shellAt(origin, dir, t1, b, speed);
     let best = Infinity;
     let hit = -1;
     for (let i = 0; i < faces.length; i++) {
@@ -117,23 +121,23 @@ export function flyShell(
     let groundAt = Infinity;
     if (hb <= 0) groundAt = ha <= 0 ? 0 : ha / (ha - hb);
     if (hit >= 0 && best <= groundAt) {
-      return finish(out, 'target', hit, t1 - FLIGHT_STEP + best * FLIGHT_STEP, origin, dir);
+      return finish(out, 'target', hit, t1 - FLIGHT_STEP + best * FLIGHT_STEP, origin, dir, speed);
     }
     if (groundAt <= 1) {
-      return finish(out, 'ground', -1, t1 - FLIGHT_STEP + groundAt * FLIGHT_STEP, origin, dir);
+      return finish(out, 'ground', -1, t1 - FLIGHT_STEP + groundAt * FLIGHT_STEP, origin, dir, speed);
     }
     a[0] = b[0];
     a[1] = b[1];
     a[2] = b[2];
   }
-  return finish(out, 'none', -1, MAX_FLIGHT, origin, dir);
+  return finish(out, 'none', -1, MAX_FLIGHT, origin, dir, speed);
 }
 
-function finish(out: ShotResult, kind: HitKind, target: number, time: number, origin: Readonly<Vec3>, dir: Readonly<Vec3>): ShotResult {
+function finish(out: ShotResult, kind: HitKind, target: number, time: number, origin: Readonly<Vec3>, dir: Readonly<Vec3>, speed: number): ShotResult {
   out.kind = kind;
   out.target = target;
   out.time = time;
-  shellAt(origin, dir, time, out.point);
+  shellAt(origin, dir, time, out.point, speed);
   if (kind === 'ground') out.point[1] = groundHeight(out.point[0], out.point[2]);
   return out;
 }
@@ -214,6 +218,17 @@ export function describeShot(
 ): string {
   if (result.kind === 'target') return `Hit: ${names[result.target]}`;
   if (result.kind === 'none' || faces.length === 0) return 'Miss: lost in the distance';
+  const miss = missFrom(result, origin, dir, faces);
+  return `Miss ${names[miss.nearest]}${miss.parts ? `: ${miss.parts}` : ''}`;
+}
+
+/** Where a shot landed against the target nearest its line: that target's index, and "20 m short, 3 m right" ('' when on it). */
+export function missFrom(
+  result: ShotResult,
+  origin: Readonly<Vec3>,
+  dir: Readonly<Vec3>,
+  faces: readonly HitFace[],
+): { nearest: number; parts: string } {
   // The target nearest the shot's line, seen from above.
   const hx = dir[0];
   const hz = dir[2];
@@ -247,7 +262,95 @@ export function describeShot(
   const parts: string[] = [];
   if (Math.abs(long) >= 1) parts.push(`${Math.round(Math.abs(long))} m ${long < 0 ? 'short' : 'over'}`);
   if (Math.abs(across) >= 0.5) parts.push(`${Math.round(Math.abs(across))} m ${across > 0 ? 'left' : 'right'}`);
-  return `Miss ${names[nearest]}${parts.length ? `: ${parts.join(', ')}` : ''}`;
+  return { nearest, parts: parts.join(', ') };
+}
+
+/**
+ * How far point `p` (world space) is from face `f`'s rectangle, m, taking
+ * the face's nearest copy on the repeating ground: what an HE burst's
+ * blast is measured by (F3.1).
+ */
+export function distanceToFace(p: Readonly<Vec3>, f: Readonly<HitFace>): number {
+  const nx = Math.sin(f.yaw);
+  const nz = Math.cos(f.yaw);
+  const dx = wrapTile(p[0] - f.x);
+  const dz = wrapTile(p[2] - f.z);
+  const dy = p[1] - f.y;
+  const out = dx * nx + dz * nz;
+  const across = dx * nz - dz * nx;
+  const ax = Math.max(0, Math.abs(across) - f.halfWidth);
+  const ay = Math.max(0, Math.abs(dy) - f.halfHeight);
+  return Math.hypot(out, ax, ay);
+}
+
+/** What the host makes of a shot (F3.1): the target it counts as hit (-1 for none), and, for an HE burst beside a soft one, how far off it burst (NaN for a direct hit or none). */
+export interface ShotDecision {
+  target: number;
+  blast: number;
+}
+
+/**
+ * The target a shot counts against, by its round: AP and HE count a
+ * direct hit; HE also takes a soft target (`soft[i]`, an anti-tank gun's
+ * board) within its blast of where it burst, the nearest; smoke counts
+ * nothing (it lays its screen). Into `out`.
+ */
+export function decideShot(
+  ammo: AmmoKind,
+  result: Readonly<ShotResult>,
+  faces: readonly HitFace[],
+  soft: readonly boolean[],
+  out: ShotDecision = { target: -1, blast: Number.NaN },
+): ShotDecision {
+  out.target = -1;
+  out.blast = Number.NaN;
+  const spec = AMMO[ammo];
+  if (!spec.hits) return out;
+  if (result.kind === 'target') {
+    out.target = result.target;
+    return out;
+  }
+  if (spec.blast <= 0 || result.kind !== 'ground') return out;
+  let best = spec.blast;
+  for (let i = 0; i < faces.length; i++) {
+    if (!soft[i]) continue;
+    const d = distanceToFace(result.point, faces[i]);
+    if (d <= best) {
+      best = d;
+      out.target = i;
+      out.blast = d;
+    }
+  }
+  return out;
+}
+
+/**
+ * describeShot for a round (F3.1): AP as before; HE says "HE hit", or
+ * "HE burst 3 m from the 250 m gun: hit" for its blast, or "HE miss ...";
+ * smoke says where its screen went down: "Smoke on the 250 m gun", or
+ * "Smoke 20 m short of the 250 m gun".
+ */
+export function describeRound(
+  ammo: AmmoKind,
+  result: ShotResult,
+  decision: Readonly<ShotDecision>,
+  origin: Readonly<Vec3>,
+  dir: Readonly<Vec3>,
+  faces: readonly HitFace[],
+  names: readonly string[],
+): string {
+  if (ammo === 'ap') return describeShot(result, origin, dir, faces, names);
+  const name = AMMO[ammo].short;
+  if (ammo === 'he') {
+    if (decision.target >= 0 && Number.isFinite(decision.blast)) {
+      return `${name} burst ${Math.max(1, Math.round(decision.blast))} m from ${names[decision.target]}: hit`;
+    }
+    return `${name} ${describeShot(result, origin, dir, faces, names).replace(/^H/, 'h').replace(/^M/, 'm')}`;
+  }
+  if (result.kind === 'target') return `${name} on ${names[result.target]}`;
+  if (result.kind === 'none' || faces.length === 0) return `${name} lost in the distance`;
+  const miss = missFrom(result, origin, dir, faces);
+  return miss.parts ? `${name} ${miss.parts} of ${names[miss.nearest]}` : `${name} on ${names[miss.nearest]}`;
 }
 
 /** The test range's targets as faces to hit (src/sim/range.ts), their heights put on the ground under them. */
@@ -286,6 +389,11 @@ export function targetFaces(): HitFace[] {
   return [...rangeFaces(), ...courseFaces()];
 }
 
+/** Which of targetFaces() are soft, an anti-tank gun's board: an HE burst within its blast counts on it (F3.1). */
+export function softTargets(): boolean[] {
+  return [...RANGE_TARGETS.map((t) => t.kind === 'gun'), ...COURSE_TARGETS.map(() => false)];
+}
+
 /** Where the course's boards start in targetFaces(). */
 export const COURSE_TARGET_FIRST = RANGE_TARGETS.length;
 
@@ -314,8 +422,8 @@ export function worldDirToHull(tank: Readonly<Pick<TankDrive, 'heading' | 'pitch
  * The angle above the horizontal to fire at to land `rise` m higher at
  * `distance` m away (horizontal), the flat solution; NaN out of reach.
  */
-export function launchAngle(distance: number, rise: number): number {
-  const v2 = MUZZLE_SPEED * MUZZLE_SPEED;
+export function launchAngle(distance: number, rise: number, speed = MUZZLE_SPEED): number {
+  const v2 = speed * speed;
   const g = GRAVITY;
   const root = v2 * v2 - g * (g * distance * distance + 2 * rise * v2);
   if (root < 0) return Number.NaN;
@@ -334,13 +442,15 @@ const aimDir: Vec3 = [0, 0, 0];
  * world position is compared with the tank's put back into the middle
  * tile, as the ground is drawn. `muzzle(yaw, elevation, out)` gives the
  * muzzle in hull space (turret.ts's muzzlePoint); it is refined a few
- * times, since the muzzle moves as the gun is laid.
+ * times, since the muzzle moves as the gun is laid. `speed` is the round's
+ * (src/sim/ammo.ts): HE and smoke need the gun laid higher.
  */
 export function aimAt(
   tank: Readonly<Pick<TankDrive, 'x' | 'y' | 'z' | 'heading' | 'pitch' | 'roll'>>,
   face: Readonly<HitFace>,
   muzzle: (yaw: number, elevation: number, out: Vec3) => Vec3,
   out: { yaw: number; elevation: number } = { yaw: 0, elevation: 0 },
+  speed = MUZZLE_SPEED,
 ): { yaw: number; elevation: number } {
   let yaw = 0;
   let elevation = 0;
@@ -351,7 +461,7 @@ export function aimAt(
     const dx = face.x - wrapTile(w[0]);
     const dz = face.z - wrapTile(w[2]);
     const distance = Math.hypot(dx, dz);
-    const angle = launchAngle(distance, face.y - w[1]);
+    const angle = launchAngle(distance, face.y - w[1], speed);
     const c = Math.cos(angle);
     dir[0] = (dx / distance) * c;
     dir[1] = Math.sin(angle);

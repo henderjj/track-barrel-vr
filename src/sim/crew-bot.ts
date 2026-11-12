@@ -98,7 +98,7 @@ function wrap(a: number): number {
  * event `crew-call`; the other page shows them on a sign, and the
  * practice crewmate does what they say.
  */
-export const CREW_CALLS = ['advance', 'halt', 'reverse', 'left', 'right', 'route', 'course', 'fire', 'hold', 'on-the-way', 'target'] as const;
+export const CREW_CALLS = ['advance', 'halt', 'reverse', 'left', 'right', 'route', 'course', 'fire', 'hold', 'on-the-way', 'target', 'ap', 'he', 'smoke'] as const;
 export type CrewCall = (typeof CREW_CALLS)[number];
 
 /** What each call says on the sign. */
@@ -114,6 +114,9 @@ export const CALL_WORDS: Readonly<Record<CrewCall, string>> = {
   hold: 'Gunner, hold fire',
   'on-the-way': 'On the way!',
   target: 'Target!',
+  ap: 'Gunner, AP',
+  he: 'Gunner, HE',
+  smoke: 'Gunner, smoke',
 };
 
 /** The seat a call is made from: the gunner calls the driver, the driver the gunner. */
@@ -129,6 +132,9 @@ export const CALL_FROM: Readonly<Record<CrewCall, SeatId>> = {
   hold: 'driver',
   'on-the-way': 'gunner',
   target: 'gunner',
+  ap: 'driver',
+  he: 'driver',
+  smoke: 'driver',
 };
 
 /** A call from the network, or null if it isn't one. */
