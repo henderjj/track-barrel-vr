@@ -356,7 +356,7 @@ function runningGearParts(side: -1 | 1): Part[] {
   }
   // The sprocket: the final drive's hub out of the hull's side, two toothed rings on it.
   const sp = SPROCKET;
-  parts.push(wheel(0.13, Math.abs(x - hullSide) + 0.18, [(x + hullSide) / 2 + side * 0.04, sp.y, sp.z], PAINT_DARK, 14));
+  parts.push(wheel(0.13, Math.abs(x - hullSide) + 0.12, [(x + hullSide) / 2 + side * 0.07, sp.y, sp.z], PAINT_DARK, 14));
   const off = ROAD_WHEEL.gap / 2 + ROAD_WHEEL.width / 2;
   for (const s of [-1, 1]) {
     const wx = x + s * off;

@@ -57,7 +57,7 @@ export const CLEARANCE = -GROUND_Y;
  * the outside drawn as an M4A4's, docs/exterior.md). It is what meets
  * obstacles; the gun overhangs it (F1.8 decides about that).
  */
-export const FOOTPRINT = { halfWidth: OUTLINE_EXTENT.halfWidth, front: OUTLINE_EXTENT.front, rear: OUTLINE_EXTENT.rear + 0.15 } as const;
+export const FOOTPRINT = { halfWidth: OUTLINE_EXTENT.halfWidth, front: OUTLINE_EXTENT.front, rear: OUTLINE_EXTENT.rear } as const;
 /** Distance between the tracks' middles, m: it turns their speed difference into a turn rate. */
 export const TRACK_GAUGE = 3.0;
 /**

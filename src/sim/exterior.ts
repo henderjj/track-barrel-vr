@@ -63,8 +63,10 @@ export const IDLER = { z: 3.2, y: 0.05, radius: 0.24 } as const;
  */
 export const OUTLINE_EXTENT = {
   halfWidth: SPONSON.halfWidth,
-  front: HULL.front - HULL.wall - NOSE.bulge,
-  rear: HULL_REAR.plate,
+  // The towing shackles stand a little out of the nose's cover.
+  front: HULL.front - HULL.wall - NOSE.bulge - 0.08,
+  // The air cleaners on the rear plate stand furthest back.
+  rear: HULL_REAR.plate + 0.24,
 } as const;
 
 /** A circle in the side view (hull z, y) and its radius, m. */
@@ -134,8 +136,8 @@ export const TURRET_SHELL = {
   rear: 1.3,
   frontCorner: 0.4,
   rearCorner: 0.42,
-  /** The shell's foot: just over the hull's deck it turns on. */
-  foot: DECK_TOP + 0.01,
+  /** The shell's foot: over the hull's deck it turns on, and over the hatches' lids shut on it (3 cm), as it sweeps over them. */
+  foot: DECK_TOP + 0.045,
   /** The roof's top: TURRET.roof's plate's top, as before (the gunner's periscope and hatch stand on it). */
   top: TURRET.roof + HULL.wall,
   /** The roof's edge: its radius, and how far the sides have leant in where it starts. */
