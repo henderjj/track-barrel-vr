@@ -37,6 +37,7 @@ import {
   stepGearbox,
   realControls,
   stepRpm,
+  UP_RPM,
 } from './gearbox.js';
 import {
   AIR_COOLANT,
@@ -102,6 +103,16 @@ export const COOLANT_FULL = 92;
 export const COOLANT_SECONDS = 150;
 export const WARM_SECONDS = 60;
 export const COOL_SECONDS = 900;
+/**
+ * Overheating (F3.7, docs/overheating.md): revved past UP_RPM in a low
+ * gear, the engine labours and its coolant heads up to STRAIN_HEAT more
+ * than COOLANT_FULL, by GEAR_STRAIN's share for the gear (none in
+ * neutral or top), rising over OVERHEAT_SECONDS once past COOLANT_FULL.
+ * Changing up or easing off brings it back down over COOLANT_SECONDS.
+ */
+export const STRAIN_HEAT = 35;
+export const GEAR_STRAIN: readonly number[] = [0, 1, 0.7, 0.4, 0.15, 0, 0.6];
+export const OVERHEAT_SECONDS = 120;
 export const FUEL_HOURS = 2;
 export const FUEL_RESERVE = 0.1;
 const FUEL_AT_IDLE = 0.2;
@@ -195,7 +206,7 @@ export function createTankDrive(x = 0, z = 0, heading = 0): TankDrive {
     touching: false, bumps: 0, odometer: 0, shiftTimer: 0,
     coolant: COOLANT_START, fuel: 1,
     running: true, cranking: false, power: true, rough: false, crankTime: 0, starterRest: 0, runTime: 0, coldStart: false,
-    chokeTime: 0, bogTime: 0, coldTime: 0, coughTimer: 0, stalls: 0, coughs: 0, stallCause: 'none', switchedOn: true,
+    chokeTime: 0, bogTime: 0, coldTime: 0, coughTimer: 0, heatTime: 0, stalls: 0, coughs: 0, stallCause: 'none', switchedOn: true,
     lastStart: 'starter',
   };
   settle(s);
@@ -227,6 +238,7 @@ export function copyEngine(from: TankDrive, to: TankDrive): TankDrive {
   to.runTime = from.runTime;
   to.coldStart = from.coldStart;
   to.chokeTime = from.chokeTime;
+  to.heatTime = from.heatTime;
   to.stalls = from.stalls;
   to.coughs = from.coughs;
   to.stallCause = from.stallCause;
@@ -348,6 +360,16 @@ export function engineLoad(rpm: number): number {
   return clamp((rpm - IDLE_RPM) / (MAX_RPM - IDLE_RPM), 0, 1);
 }
 
+/** How hard the engine labours (F3.7), 0 to 1: revved past UP_RPM, by the gear's GEAR_STRAIN. */
+export function engineStrain(rpm: number, gear: Gear): number {
+  return clamp((rpm - UP_RPM) / (MAX_RPM - UP_RPM), 0, 1) * (GEAR_STRAIN[gear] ?? 0);
+}
+
+/** Where the coolant heads while the engine runs at `rpm` in `gear`, °C. */
+export function coolantTarget(rpm: number, gear: Gear): number {
+  return COOLANT_IDLE + (COOLANT_FULL - COOLANT_IDLE) * engineLoad(rpm) + STRAIN_HEAT * engineStrain(rpm, gear);
+}
+
 /** The coolant and the fuel, `dt` seconds on at the tank's RPM. */
 export function stepEngineGauges(s: TankDrive, dt: number): void {
   if (!s.running) {
@@ -355,15 +377,20 @@ export function stepEngineGauges(s: TankDrive, dt: number): void {
     return;
   }
   const load = engineLoad(s.rpm);
-  const hot = COOLANT_IDLE + (COOLANT_FULL - COOLANT_IDLE) * load;
-  s.coolant += (hot - s.coolant) * (1 - Math.exp(-dt / (hot > s.coolant ? WARM_SECONDS : COOLANT_SECONDS)));
+  const hot = coolantTarget(s.rpm, s.gear);
+  const seconds = hot <= s.coolant ? COOLANT_SECONDS : s.coolant >= COOLANT_FULL ? OVERHEAT_SECONDS : WARM_SECONDS;
+  s.coolant += (hot - s.coolant) * (1 - Math.exp(-dt / seconds));
   const burn = (FUEL_AT_IDLE + (1 - FUEL_AT_IDLE) * load) / (FUEL_HOURS * 3600);
   s.fuel = Math.max(FUEL_RESERVE, s.fuel - burn * dt);
 }
 
-/** The oil pressure for the gauge, bar: about 1.5 at idle and 5 at top RPM, a little lower when the engine runs hot, falling to nothing below idle. */
+/**
+ * The oil pressure for the gauge, bar: about 1.5 at idle and 5 at top RPM,
+ * a little lower when the engine runs hot, and lower again overheating
+ * (F3.7: down to 0.8 less from 112 °C), falling to nothing below idle.
+ */
 export function oilPressure(rpm: number, coolant: number): number {
-  const thin = clamp((coolant - COOLANT_IDLE) / (COOLANT_FULL - COOLANT_IDLE), 0, 1) * 0.4;
+  const thin = clamp((coolant - COOLANT_IDLE) / (COOLANT_FULL - COOLANT_IDLE), 0, 2) * 0.4;
   return (1.5 + 3.5 * engineLoad(rpm) - thin) * clamp(rpm / IDLE_RPM, 0, 1);
 }
 

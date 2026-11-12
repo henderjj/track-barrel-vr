@@ -54,10 +54,10 @@ export interface EngineControls {
 
 /**
  * Why the engine last stalled: nothing yet, bogged by the clutch, idling too
- * slowly cold, the choke in too soon, flooded, or the clutch let out against
- * the parking brake (F1.18).
+ * slowly cold, the choke in too soon, flooded, the clutch let out against
+ * the parking brake (F1.18), or overheated (F3.7).
  */
-export const STALL_CAUSES = ['none', 'bog', 'cold', 'choke', 'flood', 'brake'] as const;
+export const STALL_CAUSES = ['none', 'bog', 'cold', 'choke', 'flood', 'brake', 'heat'] as const;
 export type StallCause = (typeof STALL_CAUSES)[number];
 
 /** The engine's part of the tank's state (all of it in TankDrive). */
@@ -83,6 +83,8 @@ export interface EngineState {
   coldTime: number;
   /** Time since the last cough while rough, s. */
   coughTimer: number;
+  /** How long it has run at HEAT_STALL_COOLANT or hotter, s (F3.7): long enough and it stalls. */
+  heatTime: number;
   /** How many stalls, and coughs, so far (each wraps at 256 in the packet): the signs, stats and sounds count them. */
   stalls: number;
   coughs: number;
@@ -126,6 +128,28 @@ export const BOG_STALL_ACCEL = 2;
 /** Running rough it coughs this often, s, and each cough knocks this share off the revs. */
 export const COUGH_EVERY = 0.9;
 const COUGH_DIP = 0.12;
+/**
+ * Overheating (F3.7, docs/overheating.md), °C of coolant. From HOT_COOLANT
+ * the TEMP lamp lights (the gauge's red); from FADE_COOLANT the engine
+ * loses pull, down to HOT_PULL of it at HEAT_STALL_COOLANT; from
+ * KNOCK_COOLANT it runs rough, knocking; held at HEAT_STALL_COOLANT for
+ * HEAT_STALL_SECONDS it stalls, and it won't fire again hotter than
+ * RESTART_COOLANT. What heats it is the tank-drive's (engineStrain).
+ */
+export const HOT_COOLANT = 100;
+export const FADE_COOLANT = 108;
+export const KNOCK_COOLANT = 112;
+export const HEAT_STALL_COOLANT = 118;
+export const HEAT_STALL_SECONDS = 8;
+export const RESTART_COOLANT = 110;
+export const HOT_PULL = 0.5;
+
+/** How much of its pull the engine keeps for its heat: all of it to FADE_COOLANT, HOT_PULL from HEAT_STALL_COOLANT. */
+export function heatPull(coolant: number): number {
+  const t = (coolant - FADE_COOLANT) / (HEAT_STALL_COOLANT - FADE_COOLANT);
+  return t <= 0 ? 1 : t >= 1 ? HOT_PULL : 1 - (1 - HOT_PULL) * t;
+}
+
 /** The voltmeter: the battery alone, while cranking, and with the generator charging, V. */
 export const BATTERY_VOLTS = 24;
 export const CRANK_VOLTS = 20;
@@ -178,10 +202,10 @@ export function volts(s: Pick<EngineState, 'power' | 'running' | 'cranking'>): n
   return s.running ? RUNNING_VOLTS : s.cranking ? CRANK_VOLTS : BATTERY_VOLTS;
 }
 
-/** How much of its pull the engine has: none stopped, COLD_PULL cold in the Full procedure. */
+/** How much of its pull the engine has: none stopped, COLD_PULL cold in the Full procedure, less when overheating (heatPull). */
 export function enginePullShare(s: Pick<EngineState, 'running' | 'coolant'>, c: Pick<EngineControls, 'start'>): number {
   if (!s.running) return 0;
-  return c.start === 'full' && s.coolant < WARM_COOLANT ? COLD_PULL : 1;
+  return (c.start === 'full' && s.coolant < WARM_COOLANT ? COLD_PULL : 1) * heatPull(s.coolant);
 }
 
 /** Start the engine at once (Practice shortcuts, the Running setting). */
@@ -195,6 +219,7 @@ export function startEngine(s: EngineState): void {
   s.bogTime = 0;
   s.coldTime = 0;
   s.coughTimer = 0;
+  s.heatTime = 0;
   s.rough = false;
 }
 
@@ -208,6 +233,7 @@ export function stopEngine(s: EngineState, cause: StallCause = 'none'): void {
   s.bogTime = 0;
   s.coldTime = 0;
   s.coughTimer = 0;
+  s.heatTime = 0;
   if (cause !== 'none') {
     s.stalls++;
     s.stallCause = cause;
@@ -247,7 +273,8 @@ export function stepEngine(s: EngineState, c: GearboxControls & EngineControls, 
     s.starterRest = STARTER_REST;
     s.crankTime = 0;
     s.cranking = false;
-  } else if (keyed && s.crankTime >= catchSeconds(s, c)) {
+  } else if (keyed && s.crankTime >= catchSeconds(s, c) && s.coolant <= RESTART_COOLANT) {
+    // Hotter than RESTART_COOLANT it turns over but won't fire (F3.7).
     const cold = full && s.coolant < CHOKE_COOLANT;
     startEngine(s);
     s.coldStart = cold;
@@ -303,6 +330,17 @@ function run(s: EngineState, c: GearboxControls & EngineControls, dt: number, fu
       s.coldTime = 0;
     }
   }
+  // Overheating (F3.7): knocking, and held too hot, it stalls.
+  if (s.coolant >= HEAT_STALL_COOLANT) {
+    s.heatTime += dt;
+    if (s.heatTime >= HEAT_STALL_SECONDS) {
+      stopEngine(s, 'heat');
+      return;
+    }
+  } else {
+    s.heatTime = 0;
+  }
+  if (s.coolant >= KNOCK_COOLANT) s.rough = true;
   if (!s.rough) {
     s.coughTimer = 0;
     return;

@@ -23,7 +23,7 @@ import {
 } from './loading.js';
 import { MAX_SPEED, MAX_YAW_RATE } from './comfort.js';
 import type { EngineControlId } from './driver-station.js';
-import { CHOKE_COOLANT, CHOKE_HOLD, chokeLevel, type EngineStart, WARM_COOLANT } from './engine.js';
+import { CHOKE_COOLANT, CHOKE_HOLD, chokeLevel, type EngineStart, HOT_COOLANT, RESTART_COOLANT, WARM_COOLANT } from './engine.js';
 import { TRACK_GAUGE } from './tank-drive.js';
 import { BOX_Z, COURSE_PATH, COURSE_START, eastSideAt, FINISH_Z, JOIN, type Path, PENALTY_OWN, PENALTY_PATH } from './course.js';
 import { wrapTile } from './terrain.js';
@@ -366,6 +366,10 @@ export interface TankView {
   speed: number;
 }
 
+/** The bot driver halts to cool the engine from this coolant, °C (the TEMP lamp), and drives on under BOT_COOL_RESUME (F3.7). */
+export const BOT_COOL_HALT = HOT_COOLANT;
+export const BOT_COOL_RESUME = 96;
+
 /**
  * The bot driver. Following calls (the default): it stands until told to
  * advance or reverse, holding its heading; Left and Right turn it a
@@ -385,6 +389,8 @@ export class BotDriver {
   arrivals = 0;
   /** Holding the tank steady for the gun: the firing lamp is lit (F2.5). */
   steady = false;
+  /** Halted to let the engine cool (F3.7): from BOT_COOL_HALT until under BOT_COOL_RESUME. */
+  cooling = false;
   /** The race's word (F5.3b), set each frame by its system. */
   readonly orders: RaceOrders = { on: false, go: false, laps: 0, hold: false, owed: 0 };
   /** Penalty loops it has gone round in this race (the tests count them). */
@@ -456,11 +462,15 @@ export class BotDriver {
    * into `out`. While `steady` (the firing lamp is lit, F2.5) it holds the
    * tank still for the shot: tillers centred, no turning, and a route's
    * halt doesn't run out; calls heard meanwhile wait until the lamp goes out.
+   * With the engine running hot (`coolant`, F3.7) it halts and lets it idle
+   * until it has cooled, then carries on as it was.
    */
-  update(dt: number, tank: TankView, out: DriveWish, steady = false): DriveWish {
+  update(dt: number, tank: TankView, out: DriveWish, steady = false, coolant = 0): DriveWish {
     if (Number.isNaN(this.heading)) this.heading = tank.heading;
     this.steady = steady;
-    if (steady) {
+    if (coolant >= BOT_COOL_HALT) this.cooling = true;
+    else if (coolant < BOT_COOL_RESUME) this.cooling = false;
+    if (steady || this.cooling) {
       out.left = 0;
       out.right = 0;
       return out;
@@ -564,6 +574,7 @@ export class BotDriver {
   /** One line for the menu and the tests. */
   describe(): string {
     if (this.steady) return 'holding steady: the gun is ready';
+    if (this.cooling) return 'halted to let the engine cool';
     if (this.mode === 'route') {
       const leg = ROUTE[this.leg];
       const where = `${Math.round(-leg.z)} m up the road`;
@@ -598,6 +609,8 @@ export type StartTask =
   | { kind: 'press'; id: EngineControlId; hold: boolean }
   | { kind: 'throttle'; to: number }
   | { kind: 'choke'; to: 0 | 0.5 | 1 }
+  /** Too hot to fire (F3.7): wait for it to cool, hands on the tillers. */
+  | { kind: 'cool' }
   | null;
 
 /** The hand throttle a little open to start on, and at a third (1400 rpm) to warm up. */
@@ -636,6 +649,8 @@ export function startTask(
     if (engine.coolant >= CHOKE_COOLANT && choke > 0) return { kind: 'choke', to: 0 };
     if (c.throttle < START_THROTTLE - 0.1 || c.throttle > START_THROTTLE + 0.25) return { kind: 'throttle', to: START_THROTTLE };
   }
+  // Overheated (F3.7): it won't fire until it cools, so don't wear the starter out on it.
+  if (engine.coolant > RESTART_COOLANT) return { kind: 'cool' };
   // A hot starter must rest: wait with the hand off it.
   if (engine.starterHot) return null;
   return { kind: 'press', id: 'starter', hold: true };

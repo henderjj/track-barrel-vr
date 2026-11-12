@@ -14,9 +14,9 @@ Each dial in the instrument box between the tillers ([driver-station.md](driver-
 | Water °C | 0–40 | blue | to `CHOKE_COOLANT` (src/sim/engine.ts) | Cold: starting needs the choke |
 | Water °C | 40–71 | amber | `CHOKE_COOLANT` to `WARM_COOLANT` | Warming: push the choke in; in the Full procedure a cold engine coughs and stalls at an 800 rpm idle, so keep the hand throttle at a third |
 | Water °C | 71–92 | green | `WARM_COOLANT` to `COOLANT_FULL` (src/sim/tank-drive.ts) | Warm: from the manual's 160 °F to the hottest it runs flat out |
-| Water °C | 100–120 | red | `OVERHEAT_COOLANT` (src/sim/driver-station.ts) | Boiling. Nothing fails in Phase 1 (plan decision 7), so the engine tops out at 92 °C and never reaches it |
+| Water °C | 100–120 | red | `OVERHEAT_COOLANT` (src/sim/driver-station.ts) | Boiling. Since F3.7 an engine labouring revved past the change-up point in a low gear gets there, and the TEMP lamp lights with it ([overheating.md](overheating.md)); in neutral or top it tops out at 92 °C |
 | Oil bar | 0–0.6 | red | `LOW_OIL` | Too low for a running engine: only a stopping or stopped engine reads here |
-| Oil bar | 1–5.2 | green | `OIL_NORMAL` | Every running engine, from a hot idle (1.1) to a cold one flat out (5.0) |
+| Oil bar | 1–5.2 | green | `OIL_NORMAL` | Every running engine, from a hot idle (1.1) to a cold one flat out (5.0). An overheating one idles below it (F3.7: 0.7 at 118 °C) |
 | Fuel | E–⅕ | red | `LOW_FUEL` | Low: about 24 minutes left flat out. The Phase 1 tank never burns below its reserve (`FUEL_RESERVE`, a tenth), which sits in the red |
 | Volts | 22–26 | amber | round `BATTERY_VOLTS` (24) | The battery alone: the engine is not charging it. Cranking dips the needle under the band (20 V) |
 | Volts | 26–30 | green | round `RUNNING_VOLTS` (28) | The generator charging: the engine is running |
@@ -34,7 +34,7 @@ Colours: blue `#2f6fd0`, amber `#e0a020`, green `#2f9a3c` and red `#d02a22` on t
 
 ## Tests
 
-- `test/driver-station.test.ts`: every band inside its dial, lowest first and apart; the revs' bands at the gearbox's change points and the governed top; the coolant's at the engine's choke and warm temperatures, a cold engine warmed at a fast idle passing blue, amber, green in that order and never reaching red flat out for four hours; every running engine's oil pressure in the green and a stopped one's in the red; the fuel reserve in the red; the voltmeter amber on the battery, under the band while cranking and green running.
+- `test/driver-station.test.ts`: every band inside its dial, lowest first and apart; the revs' bands at the gearbox's change points and the governed top; the coolant's at the engine's choke and warm temperatures, a cold engine warmed at a fast idle passing blue, amber, green in that order and never reaching red flat out in neutral for four hours; every running engine's oil pressure in the green and a stopped one's in the red; the fuel reserve in the red; the voltmeter amber on the battery, under the band while cranking and green running.
 - `npm run test:xr`, step 6d' (starting the engine): stopped, the oil gauge is in the red and the voltmeter in the amber; running, both are green.
 
 ## Headset check
