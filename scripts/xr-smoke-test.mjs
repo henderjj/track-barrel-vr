@@ -3153,6 +3153,22 @@ async function theAmmunition() {
   check('A smoke round on the gun counts no hit and lays a screen that grows and hides the gun',
     smoke !== null && smoke.ammo === 'smoke' && smoke.counted === -1 && grown !== null && hidden,
     `${smoke ? `"${smoke.line}"` : 'no shot'}, cloud ${grown ? `radius ${grown.radius.toFixed(1)} m at (${grown.x.toFixed(0)}, ${grown.z.toFixed(0)})` : 'none'}, hides the gun ${hidden}`);
+
+  // The bank stays where it landed: its upwind end holds while the wind draws it out downwind.
+  const upwind = (c) => {
+    const n = Math.hypot(c.x - c.laidX, c.z - c.laidZ) || 1;
+    return [c.x - ((c.x - c.laidX) / n) * c.halfLength, c.z - ((c.z - c.laidZ) / n) * c.halfLength];
+  };
+  const last = () => { const c = evalInApp('window.__smoke.clouds()'); return c[c.length - 1]; };
+  // Fully grown first (4 s): while it grows its upwind edge spreads too.
+  const before = await waitFor('the bank fully grown', () => { const c = last(); return c && c.age > 4.5 && c; }, 20000).catch(() => last());
+  await waitFor('the wind to draw the bank out', () => { const c = last(); return c && c.halfLength > before.halfLength + 2 && c; }, 20000).catch(() => null);
+  const after = last();
+  const held = Math.hypot(upwind(after)[0] - upwind(before)[0], upwind(after)[1] - upwind(before)[1]);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-smoke-stretched.png'], {});
+  check('The smoke bank stays where it landed, its upwind end put, while the wind draws it out downwind',
+    after.halfLength > before.halfLength + 2 && held < 0.5,
+    `half length ${before.halfLength.toFixed(1)} → ${after.halfLength.toFixed(1)} m over ${(after.age - before.age).toFixed(1)} s, upwind end moved ${held.toFixed(2)} m`);
   iwsdk(['xr', 'set-device-state'], {});
 }
 

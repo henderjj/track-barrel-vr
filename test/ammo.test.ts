@@ -13,7 +13,10 @@ import {
   smokeBlocks,
   type SmokeCloud,
   smokeCentre,
+  smokeHalfLength,
   smokeRadius,
+  smokeTail,
+  SMOKE_WIND_DIR,
   type AmmoKind,
 } from '../src/sim/ammo.js';
 import {
@@ -157,12 +160,50 @@ describe('smoke screen (F3.1)', () => {
     expect(smokeRadius(SMOKE_LIFE)).toBe(0);
   });
 
-  it('drifts downwind', () => {
+  it('stays where it landed while the wind draws it out downwind, its upwind end put', () => {
     const c: SmokeCloud = { x: 10, y: 2, z: -100, laidAt: 5 };
+    const wind = Math.hypot(SMOKE.windX, SMOKE.windZ);
+    // The upwind end: the middle less the half length, back along the wind.
+    const upwind = (t: number) => {
+      const at = smokeCentre(c, t, [0, 0, 0]);
+      const l = smokeHalfLength(t - c.laidAt);
+      return [at[0] - SMOKE_WIND_DIR[0] * l, at[2] - SMOKE_WIND_DIR[1] * l];
+    };
+    const grown = 5 + SMOKE.grow;
+    const late = 5 + SMOKE.grow + SMOKE.hold - 1;
+    expect(upwind(late)[0]).toBeCloseTo(upwind(grown)[0], 6);
+    expect(upwind(late)[1]).toBeCloseTo(upwind(grown)[1], 6);
+    expect(upwind(late)[0]).toBeCloseTo(10 - SMOKE.radius * SMOKE_WIND_DIR[0], 6);
+    // Ten seconds on, the tail is the wind's ten seconds long, and the bank half that further downwind.
     const at = smokeCentre(c, 15, [0, 0, 0]);
-    expect(at[0]).toBeCloseTo(10 + SMOKE.windX * 10, 6);
-    expect(at[2]).toBeCloseTo(-100 + SMOKE.windZ * 10, 6);
+    expect(smokeTail(10)).toBeCloseTo(wind * 10, 6);
+    expect(at[0]).toBeCloseTo(10 + SMOKE.windX * 5, 6);
+    expect(at[2]).toBeCloseTo(-100 + SMOKE.windZ * 5, 6);
     expect(at[1]).toBeGreaterThan(2);
+    expect(smokeHalfLength(10)).toBeCloseTo(SMOKE.radius + wind * 5, 6);
+    // The tail stops growing; gone, the bank has no length.
+    expect(smokeTail(1000)).toBe(SMOKE.maxTail);
+    expect(smokeHalfLength(SMOKE_LIFE)).toBe(0);
+  });
+
+  it('blocks along its whole drawn-out length, not just round where it landed', () => {
+    const c: SmokeCloud = { x: 0, y: 0, z: -200, laidAt: 0 };
+    const t = SMOKE.grow + 30;
+    const l = smokeHalfLength(30 + SMOKE.grow);
+    const at = smokeCentre(c, t, [0, 0, 0]);
+    // A sight line crossing the bank a little short of its downwind end, square to the wind.
+    const k = l - 3;
+    const x = at[0] + SMOKE_WIND_DIR[0] * k;
+    const z = at[2] + SMOKE_WIND_DIR[1] * k;
+    const across = [-SMOKE_WIND_DIR[1], SMOKE_WIND_DIR[0]];
+    const from: Vec3 = [x - across[0] * 100, 2, z - across[1] * 100];
+    const to: Vec3 = [x + across[0] * 100, 2, z + across[1] * 100];
+    expect(l).toBeGreaterThan(SMOKE.radius + 10);
+    expect(smokeBlocks([c], t, from, to)).toBe(true);
+    // And one past its end.
+    const x2 = at[0] + SMOKE_WIND_DIR[0] * (l + 2);
+    const z2 = at[2] + SMOKE_WIND_DIR[1] * (l + 2);
+    expect(smokeBlocks([c], t, [x2 - across[0] * 100, 2, z2 - across[1] * 100], [x2 + across[0] * 100, 2, z2 + across[1] * 100])).toBe(false);
   });
 
   it('blocks a line through it, not one beside it or over it, and not once gone', () => {

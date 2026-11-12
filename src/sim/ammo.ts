@@ -91,9 +91,12 @@ export function parseRackChoice(raw: unknown): RackChoice | null {
 
 /**
  * A smoke round's screen: a bank of smoke that grows fast where the round
- * lands, holds, then thins away, drifting downwind. Sized from the M89's
- * (a cloud some 20 m across within seconds, lasting about a minute in a
- * light wind), so one round hides a tank at a few hundred metres.
+ * lands, holds, then thins away. It stays where the round landed, the burning
+ * filler feeding it, and the wind draws it out downwind into a longer bank,
+ * its upwind end staying put (not the whole bank sliding, as at first: John,
+ * 2026-11-12). Sized from the M89's (a cloud some 20 m across within
+ * seconds, lasting about a minute in a light wind), so one round hides a
+ * tank at a few hundred metres.
  */
 export const SMOKE = {
   /** Its radius once grown, m, and when it starts (the first puff), m. */
@@ -105,9 +108,11 @@ export const SMOKE = {
   grow: 4,
   hold: 40,
   fade: 12,
-  /** The wind it drifts on, m/s: a light breeze from the west, across the range. */
+  /** The wind that draws it out, m/s: a light breeze from the west, across the range. */
   windX: 0.8,
   windZ: 0.2,
+  /** The tail the wind draws out downwind grows at the wind's speed up to this long, m. */
+  maxTail: 24,
   /** Clouds at once: the oldest gives way to a new one. */
   max: 4,
 } as const;
@@ -128,6 +133,21 @@ export function smokeRadius(age: number): number {
   return SMOKE.radius * (1 - f);
 }
 
+const WIND = Math.hypot(SMOKE.windX, SMOKE.windZ);
+/** The way the wind blows, a unit vector in world x and z: the bank's long axis. */
+export const SMOKE_WIND_DIR: readonly [number, number] = [SMOKE.windX / WIND, SMOKE.windZ / WIND];
+
+/** How long a tail the wind has drawn out downwind `age` s after the cloud was laid, m. */
+export function smokeTail(age: number): number {
+  return Math.min(SMOKE.maxTail, WIND * Math.max(0, age));
+}
+
+/** How far a cloud reaches each way along the wind from its middle `age` s after it was laid, m: its radius and half its tail (0 once gone). */
+export function smokeHalfLength(age: number): number {
+  const r = smokeRadius(age);
+  return r > 0 ? r + smokeTail(age) / 2 : 0;
+}
+
 /** A cloud laid by a smoke round: where it landed (world space, on the ground) and when, s on the page's own clock. */
 export interface SmokeCloud {
   x: number;
@@ -136,13 +156,18 @@ export interface SmokeCloud {
   laidAt: number;
 }
 
-/** Where a cloud's middle is at `time` (it drifts downwind; the middle stands a radius's squash above the ground), into `out`. */
+/**
+ * Where a cloud's middle is at `time`, into `out`: half its tail downwind of
+ * where it landed, so its upwind end stays put while the wind draws it out;
+ * the middle stands a radius's squash above the ground.
+ */
 export function smokeCentre(c: Readonly<SmokeCloud>, time: number, out: [number, number, number]): [number, number, number] {
   const age = Math.max(0, time - c.laidAt);
   const r = smokeRadius(age);
-  out[0] = c.x + SMOKE.windX * age;
+  const half = smokeTail(age) / 2;
+  out[0] = c.x + SMOKE_WIND_DIR[0] * half;
   out[1] = c.y + r * SMOKE.squash * 0.5;
-  out[2] = c.z + SMOKE.windZ * age;
+  out[2] = c.z + SMOKE_WIND_DIR[1] * half;
   return out;
 }
 
@@ -150,8 +175,9 @@ const centre: [number, number, number] = [0, 0, 0];
 
 /**
  * Whether the line from `a` to `b` (world space) passes through any of
- * `clouds` at `time`: the clouds as ellipsoids, `radius` across and
- * `radius × squash` high. What the enemies' eyes (F3.2) can't see through.
+ * `clouds` at `time`: the clouds as ellipsoids, `smokeHalfLength` each way
+ * along the wind, `radius` each way across it and `radius × squash` high, as
+ * SmokeSystem draws them. What the enemies' eyes (F3.2) can't see through.
  * The tile's repeats are left out: a cloud is only ever near where it was
  * laid. Allocation free.
  */
@@ -162,17 +188,24 @@ export function smokeBlocks(
   b: Readonly<[number, number, number]>,
 ): boolean {
   for (const c of clouds) {
-    const r = smokeRadius(time - c.laidAt);
+    const age = time - c.laidAt;
+    const r = smokeRadius(age);
     if (r <= 0) continue;
     smokeCentre(c, time, centre);
     const h = r * SMOKE.squash;
-    // Into the cloud's own space, where it is a unit ball.
-    const px = (a[0] - centre[0]) / r;
+    const l = smokeHalfLength(age);
+    // Into the cloud's own space, where it is a unit ball: x along the wind, z across it.
+    const [ux, uz] = SMOKE_WIND_DIR;
+    const ax = a[0] - centre[0];
+    const az = a[2] - centre[2];
+    const bx = b[0] - a[0];
+    const bz = b[2] - a[2];
+    const px = (ax * ux + az * uz) / l;
     const py = (a[1] - centre[1]) / h;
-    const pz = (a[2] - centre[2]) / r;
-    const dx = (b[0] - a[0]) / r;
+    const pz = (ax * -uz + az * ux) / r;
+    const dx = (bx * ux + bz * uz) / l;
     const dy = (b[1] - a[1]) / h;
-    const dz = (b[2] - a[2]) / r;
+    const dz = (bx * -uz + bz * ux) / r;
     const dd = dx * dx + dy * dy + dz * dz;
     // The nearest point of the segment to the ball's middle.
     const s = dd > 0 ? Math.max(0, Math.min(1, -(px * dx + py * dy + pz * dz) / dd)) : 0;
