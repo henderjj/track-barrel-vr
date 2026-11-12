@@ -171,8 +171,8 @@ async function measureMotion(sender, receiver, seconds) {
   );
   const before = await netStats(receiver.page);
   const sentFrom = await sender.page.evaluate(() => performance.now());
-  // At least `seconds`, and on a slow runner (six or seven frames a second) on until there are enough frames to
-  // judge, up to three times as long: the checks need about 20 of them.
+  // At least `seconds`, and on a slow runner (from six frames a second down to two) on until there are enough
+  // frames to judge, up to ten times as long: the checks need 20 of them.
   const samples = await receiver.page.evaluate(
     (ms) =>
       new Promise((resolve) => {
@@ -182,7 +182,7 @@ async function measureMotion(sender, receiver, seconds) {
           const p = window.__net.remotePose();
           if (p) out.push([p.head.px, p.head.pz, performance.now(), window.__net.remoteAtMs]);
           const took = performance.now() - start;
-          if (took < ms || (out.length < 25 && took < ms * 3)) requestAnimationFrame(frame);
+          if (took < ms || (out.length < 25 && took < ms * 10)) requestAnimationFrame(frame);
           else resolve(out);
         };
         frame();
@@ -1009,7 +1009,9 @@ async function runChecks(host, guest, label) {
   check(`The guest's Start begins a run on the host, the tank back at the start (${label})`,
     started !== null && Math.hypot(tank.x, tank.z) < 0.5,
     started ? `run ${started.h.id}, clocks ${started.h.clock.toFixed(2)} / ${started.g.clock.toFixed(2)} s` : JSON.stringify(await Promise.all([run(host), run(guest)])));
-  await waitFor('the clock to run', async () => (await run(host)).clock > 0.5, 8000).catch(() => null);
+  // The clock counts in from about -3 s and a page moves it on by no more than a frame's worth at a time: at three
+  // frames a second it takes 8 s to pass 0.5 s, so give it time. What is judged is that the two pages agree.
+  await waitFor('the clock to run', async () => (await run(host)).clock > 0.5, 30000).catch(() => null);
   const [h1, g1] = await Promise.all([run(host), run(guest)]);
   check(`Both pages' run clocks agree (${label})`, h1.clock > 0 && Math.abs(h1.clock - g1.clock) < 0.4,
     `host ${h1.clock.toFixed(2)} s, guest ${g1.clock.toFixed(2)} s`);
