@@ -782,6 +782,7 @@ async function ammoChecks(host, guest, label) {
     he ? `host "${he.hr.line}", gunner "${he.gr.line}", hits ${he.h.hits}/${he.g.hits}` : JSON.stringify(await Promise.all([host, guest].map(state))));
   await guest.page.evaluate(() => window.__turret.forward());
   await enemyChecks(host, guest, label);
+  await enemyTankChecks(host, guest, label);
 }
 
 /**
@@ -800,7 +801,7 @@ async function enemyChecks(host, guest, label) {
   });
   const started = await waitFor('both pages to draw the guns', async () => {
     const [h, g] = await Promise.all([enemy(host), enemy(guest)]);
-    return h.on && g.on && g.guns.every((x) => x.drawn) && g.faceOff.every((off) => !off) ? { h, g } : null;
+    return h.on && g.on && g.guns.slice(0, 3).every((x) => x.drawn) && g.faceOff.slice(0, 3).every((off) => !off) ? { h, g } : null;
   }, 8000).catch(() => null);
   check(`The host's enemy guns appear on both pages, their shields there to hit (${label})`, started !== null,
     started ? '' : JSON.stringify(await Promise.all([host, guest].map(enemy))));
@@ -846,6 +847,70 @@ async function enemyChecks(host, guest, label) {
     return !g.on && g.guns.every((x) => !x.drawn) && g.faceOff.every(Boolean) ? g : null;
   }, 8000).catch(() => null);
   check(`Stop takes the enemy guns away on both pages (${label})`, stopped !== null);
+  await guest.page.evaluate(() => window.__turret.forward());
+  await host.page.evaluate(([x, z, h]) => window.__drive.place(x, z, h), [was.x, was.z, was.heading]);
+}
+
+/**
+ * Enemy tanks (F3.3): the host's tanks drive on both pages, close
+ * together; the guest's Meet B has the host place tank B and park the
+ * tank; the guest gunner's AP knocks tank B out on both pages; Stop takes
+ * them away on both.
+ */
+async function enemyTankChecks(host, guest, label) {
+  const enemy = (p) => p.page.evaluate(() => window.__enemy.state());
+  const A = 3;
+  const B = 4;
+  const was = await host.page.evaluate(() => window.__drive.state());
+  await host.page.evaluate(() => {
+    window.__drive.place(0, 0, 0);
+    window.__enemy.start(2, 'tanks');
+  });
+  const started = await waitFor('both pages to draw the tanks driving', async () => {
+    const [h, g] = await Promise.all([enemy(host), enemy(guest)]);
+    return g.present[A] && g.guns[A].drawn && g.guns[B].drawn && !g.faceOff[A] && g.guns[A].moving && h.guns[A].along > 2 ? { h, g } : null;
+  }, 10000).catch(() => null);
+  const [h1, g1] = await Promise.all([enemy(host), enemy(guest)]);
+  const apart = Math.hypot(h1.guns[A].x - g1.guns[A].x, h1.guns[A].z - g1.guns[A].z);
+  check(`The host's enemy tanks drive on both pages, drawn within a few metres of each other (${label})`, started !== null && apart < 6,
+    `tank A ${apart.toFixed(1)} m apart (host ${h1.guns[A].along.toFixed(1)} m along, guest ${g1.guns[A].along.toFixed(1)} m)`);
+
+  await guest.page.evaluate(() => window.__enemy.meetTank(1));
+  const met = await waitFor("the guest's Meet B on both pages", async () => {
+    const [h, g] = await Promise.all([enemy(host), enemy(guest)]);
+    const t = await guest.page.evaluate(() => window.__drive.state());
+    return Math.abs(t.z + 300) < 1 && h.guns[B].sees && !g.guns[B].moving ? { h, g } : null;
+  }, 15000).catch(() => null);
+  check(`The guest's Meet B parks the tank where tank B sees it, and tank B halts on both pages (${label})`, met !== null,
+    met ? '' : JSON.stringify((await enemy(guest)).guns[B]));
+  await host.page.evaluate((i) => window.__enemy.hold(i, true), B);
+
+  const records = (p) => p.page.evaluate(() => window.__firing.records());
+  const before = (await records(host)).length;
+  await guest.page.evaluate((t) => {
+    window.__loading.loadNow('ap');
+    window.__firing.aimAt(t, 'ap');
+  }, 9 + B);
+  await waitFor('the host to draw the gun laid on tank B', async () => {
+    const [h, g] = await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__turret.state())));
+    return Math.abs(h.yaw - g.yaw) < 1e-4 && Math.abs(h.elevation - g.elevation) < 1e-4;
+  }, 8000).catch(() => null);
+  await guest.page.evaluate(() => window.__turret.pullTrigger());
+  const out = await waitFor('tank B knocked out on both pages', async () => {
+    const [h, g] = await Promise.all([enemy(host), enemy(guest)]);
+    return !h.alive[B] && !g.alive[B] && g.faceOff[B] ? { h, g } : null;
+  }, 15000).catch(() => null);
+  const record = (await records(host))[before];
+  check(`The guest gunner's AP on tank B knocks it out on both pages (${label})`,
+    out !== null && record?.counted === 9 + B && out.g.alive[A],
+    `${record ? `host "${record.line}"` : 'no shot'}, alive ${JSON.stringify(out?.g.alive ?? (await enemy(guest)).alive)}`);
+
+  await host.page.evaluate(() => window.__enemy.stop('tanks'));
+  const stopped = await waitFor('the tanks gone on both pages', async () => {
+    const g = await enemy(guest);
+    return !g.present[A] && !g.present[B] && !g.guns[A].drawn && !g.guns[B].drawn && g.faceOff[B] ? g : null;
+  }, 8000).catch(() => null);
+  check(`Stop takes the enemy tanks away on both pages (${label})`, stopped !== null);
   await guest.page.evaluate(() => window.__turret.forward());
   await host.page.evaluate(([x, z, h]) => window.__drive.place(x, z, h), [was.x, was.z, was.heading]);
 }

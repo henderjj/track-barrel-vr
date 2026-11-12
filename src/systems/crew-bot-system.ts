@@ -5,6 +5,7 @@ import { AMMO, type AmmoKind } from '../sim/ammo.js';
 import { aimAt, COURSE_TARGET_FIRST, ENEMY_TARGET_FIRST, TARGET_NAMES, targetFaces } from '../sim/ballistics.js';
 import { boardDown, BOARD_FIRST, lineClosed, lineFor } from '../sim/biathlon.js';
 import { boxAt, LINE_ACROSS } from '../sim/course.js';
+import { FIRST_TANK } from '../sim/enemy-guns.js';
 import { RANGE_TARGETS } from '../sim/range.js';
 import { hullToSeat, SEATS, seatToHull, type SeatId } from '../sim/cabin.js';
 import { NECK_BASE, NOD_SHARE } from '../sim/seated-body.js';
@@ -46,7 +47,7 @@ import {
   wrapAngle,
 } from '../sim/turret.js';
 import { drive, engineRpm, engineStart, shownDriverState, tankState } from './drive-system.js';
-import { lastShot } from './firing-system.js';
+import { lastShot, liveFace } from './firing-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { firingLampLit } from './firing-lamp-system.js';
 import { handUse } from './grip-system.js';
@@ -602,7 +603,7 @@ export class CrewBotSystem extends createSystem({}) {
       this.phase = 'load';
     }
     if (!loading.loaded) this.phase = 'load';
-    // Enemy guns (F3.2): one alive that has shown itself by firing, in sight, comes before any board, with HE.
+    // Enemies (F3.2, F3.3): a gun alive that has shown itself by firing, or a tank alive (in the open, it shows itself), in sight, comes before any board: HE for a gun, AP for a tank.
     this.foe = this.enemyTarget(tank.x, tank.z);
     if (this.phase === 'load') {
       // The left hand holds the elevation wheel where it is; the right loads.
@@ -692,15 +693,30 @@ export class CrewBotSystem extends createSystem({}) {
     }
   }
 
-  /** The enemy gun to engage (F3.2): the nearest alive that has fired, within the fog, as a target index; or -1. */
+  /**
+   * The enemy to engage (F3.2, F3.3): the nearest alive within the fog, a
+   * gun once it has fired, a tank at once; as a target index, or -1. The
+   * tanks' faces are taken from FiringSystem's as they move, so it lays on
+   * where a shell will find them.
+   */
   private enemyTarget(x: number, z: number): number {
     const enemy = enemyShared();
     if (!enemy.on) return -1;
     for (let i = 0; i < this.faces.length; i++) {
       const j = i - ENEMY_TARGET_FIRST;
-      this.foeSkip[i] = j < 0 || j >= enemy.alive.length || !enemy.alive[j] || !enemyRevealed(j);
+      const tank = j >= FIRST_TANK;
+      this.foeSkip[i] = j < 0 || j >= enemy.alive.length || !enemy.present[j] || !enemy.alive[j] || (!tank && !enemyRevealed(j));
+      if (tank && !this.foeSkip[i]) {
+        const live = liveFace(i);
+        if (live) Object.assign(this.faces[i], live);
+      }
     }
     return chooseTarget(x, z, this.faces, this.foeSkip, sightLimit());
+  }
+
+  /** The round for the enemy it engages: AP for a tank's armour, HE for a gun. */
+  private foeRound(): AmmoKind {
+    return this.foe - ENEMY_TARGET_FIRST >= FIRST_TANK ? 'ap' : 'he';
   }
 
   /** The right hand's loading: plan a move from how the breech stands, go to its start, play it; true once loaded. */
@@ -716,7 +732,7 @@ export class CrewBotSystem extends createSystem({}) {
     }
     if (this.pathCount === 0) {
       // The round it was asked for if the rack has one (F3.1), else the first there.
-      const round = this.foe >= 0 ? 'he' : this.round;
+      const round = this.foe >= 0 ? this.foeRound() : this.round;
       let shell = s.shells.findIndex((x, i) => x.place === 'rack' && s.kinds[i] === round);
       if (shell < 0) shell = s.shells.findIndex((x) => x.place === 'rack');
       restingHandInSeat(SEATS.gunner, 'right', this.p);

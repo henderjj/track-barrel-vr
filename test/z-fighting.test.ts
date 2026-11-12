@@ -486,6 +486,21 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     expectNone([createEnemyGun(0, true)], WORLD_GAP);
   });
 
+  it('on an enemy tank, its turret turned every way, and knocked out (F3.3)', async () => {
+    const { Group } = await import('@iwsdk/core');
+    const { createEnemyTank, createEnemyTankWreck } = await import('../src/scene-assets/enemy-tank.scene-asset.js');
+    for (const turn of [0, 0.8, Math.PI / 2, 2.4, Math.PI]) {
+      const { hull, turret } = createEnemyTank(0);
+      turret.rotation.y = turn;
+      const tank = new Group();
+      tank.add(hull);
+      hull.add(turret);
+      tank.updateMatrixWorld(true);
+      expectNone([tank], WORLD_GAP);
+    }
+    expectNone([createEnemyTankWreck(0)], WORLD_GAP);
+  });
+
   it('on the lever test rig, with its tillers upright and at both limits', async () => {
     const { Group } = await import('@iwsdk/core');
     const { LEVER_RIG, TILLER } = await import('../src/sim/lever.js');

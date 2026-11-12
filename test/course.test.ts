@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ENEMY_COUNT } from '../src/sim/enemy-guns.js';
 import {
   aimAt,
   COURSE_TARGET_FIRST,
@@ -195,7 +196,7 @@ describe('biathlon course (F5.3a)', () => {
   it('lets the gun, laid from each box, hit each of its line\'s boards; a miss names the nearest board', () => {
     const faces = targetFaces();
     // Then the enemy guns (F3.2), off until their battery starts.
-    expect(faces.length).toBe(RANGE_TARGETS.length + COURSE_TARGETS.length + 3);
+    expect(faces.length).toBe(RANGE_TARGETS.length + COURSE_TARGETS.length + ENEMY_COUNT);
     expect(TARGET_NAMES.length).toBe(faces.length);
     COURSE_TARGETS.forEach((t, j) => {
       const [x, z, heading] = boxSpot(t.line);
