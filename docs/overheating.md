@@ -49,7 +49,7 @@ As driver it drives with the automatic box, which seldom overheats. When the coo
 ## Tests
 
 - `test/overheating.test.ts`: labouring only past the change-up point and most in the low gears; the power fade's shape; flat out in 1st going hot, knocking and stalling from the heat; pulling away slower hot; cooling when changed up or idled; refusing to fire until cooled to the restart point; never overheating flat out in 2nd, 3rd, top or neutral; the oil pressure falling hot but staying above the red; the TEMP lamp where the gauge turns red, in a column of four that don't touch; a heat stall in the tank packet; the crewmate halting to cool and waiting to restart.
-- `test/driver-station.test.ts`: the coolant bands still pass blue, amber, green and never red flat out in neutral.
+- `test/driver-station.test.ts`: the coolant leaves the blue and never reaches red flat out in neutral.
 - `npm run test:xr` (step 6t, part 1): Combat → Engine heat → Hot lights the TEMP lamp, puts the gauge in the red, makes the engine rough, seats a solo player as driver and shows the sign and menu line; held at 125 °C flat out in 1st it stalls from the heat with the right sign; Engine heat → Normal starts it again with the lamp out.
 
 `window.__drive.coolant(degrees)` sets the coolant on the host; `window.__driverStation.engine().lamps.temp` says whether the TEMP lamp is lit.

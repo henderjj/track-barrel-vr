@@ -14,8 +14,7 @@
 
 import { type Gear, DOWN_RPM, LEVER_ORDER, MAX_RPM, NEUTRAL, UP_RPM } from './gearbox.js';
 import { SEATS, VISION_SLIT } from './cabin.js';
-import { BATTERY_VOLTS, CHOKE_COOLANT, HOT_COOLANT, RUNNING_VOLTS, WARM_COOLANT } from './engine.js';
-import { COOLANT_FULL } from './tank-drive.js';
+import { BATTERY_VOLTS, CHOKE_COOLANT, HOT_COOLANT, RUNNING_VOLTS } from './engine.js';
 import { TILLER } from './lever.js';
 import type { ButtonSpec, LeverSpec, PullSpec, ToggleSpec } from './mechanism.js';
 
@@ -191,11 +190,10 @@ export const PANEL = (() => {
 /**
  * What a coloured band on a dial's rim means (John, 10 November 2026: the
  * gauges should say what a reading means, not only what it is): cold (blue)
- * an engine that needs the choke; warming (amber) one still warming up;
- * normal (green) where it should run; caution (amber) a reading to act on
+ * an engine that needs the choke; normal (green) where it should run; caution (amber) a reading to act on
  * soon; danger (red) one to act on now. docs/gauge-zones.md.
  */
-export type ZoneKind = 'cold' | 'warming' | 'normal' | 'caution' | 'danger';
+export type ZoneKind = 'cold' | 'normal' | 'caution' | 'danger';
 /** A band on a dial's rim, in the dial's units, `from` below `to`. */
 export interface DialZone {
   from: number;
@@ -205,7 +203,6 @@ export interface DialZone {
 /** Each kind's paint on the cream faces, picked to tell apart in the dim hull. */
 export const ZONE_COLORS: Readonly<Record<ZoneKind, string>> = {
   cold: '#2f6fd0',
-  warming: '#e0a020',
   normal: '#2f9a3c',
   caution: '#e0a020',
   danger: '#d02a22',
@@ -256,11 +253,9 @@ export const DIALS: readonly Dial[] = [
   },
   {
     id: 'coolant', label: 'WATER °C', min: 0, max: 120, marks: [0, 30, 60, 90, 120], text: String,
-    // Blue needs the choke to start; amber is still warming (a cold idle stalls); green from warm to the hottest it runs; red boils.
+    // Blue needs the choke to start; red boils. Nothing between (John, 12 November 2026: a green band ending short of the red looked odd).
     zones: [
       { from: 0, to: CHOKE_COOLANT, kind: 'cold' },
-      { from: CHOKE_COOLANT, to: WARM_COOLANT, kind: 'warming' },
-      { from: WARM_COOLANT, to: COOLANT_FULL, kind: 'normal' },
       { from: OVERHEAT_COOLANT, to: 120, kind: 'danger' },
     ],
   },
