@@ -43,6 +43,11 @@ const PLAY_EACH_GRIND = 1;
 let active: TankAudioSystem | null = null;
 
 /** Practice → Tank sounds → Play each: every short sound in turn, so a headset check can hear them without driving or loading. */
+/** Play one of the tank's short sounds now (F3.2: an enemy shell striking the hull rings it as a bump does). */
+export function playTankSound(id: SoundId): void {
+  active?.playNow(id);
+}
+
 export function playEachSound(): void {
   active?.playEach();
 }
@@ -324,6 +329,10 @@ export class TankAudioSystem extends createSystem({}) {
   }
 
   /** Play a short sound `delay` s from now (counted even while the context is suspended, for the tests). */
+  playNow(id: SoundId): void {
+    this.sound(id);
+  }
+
   private sound(id: SoundId, delay = 0, seconds = 0): void {
     this.heard[id]++;
     const ctx = this.ctx;

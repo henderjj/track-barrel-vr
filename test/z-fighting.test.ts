@@ -480,6 +480,12 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     expectNone([smoke.createSmokeCloud(0)], WORLD_GAP);
   });
 
+  it('on an enemy anti-tank gun, whole and knocked out (F3.2)', async () => {
+    const { createEnemyGun } = await import('../src/scene-assets/enemy-gun.scene-asset.js');
+    expectNone([createEnemyGun(0)], WORLD_GAP);
+    expectNone([createEnemyGun(0, true)], WORLD_GAP);
+  });
+
   it('on the lever test rig, with its tillers upright and at both limits', async () => {
     const { Group } = await import('@iwsdk/core');
     const { LEVER_RIG, TILLER } = await import('../src/sim/lever.js');

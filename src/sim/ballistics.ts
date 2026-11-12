@@ -17,6 +17,7 @@
 
 import { AMMO, type AmmoKind } from './ammo.js';
 import { COURSE_BOARD, COURSE_TARGETS, courseBoardMiddle } from './course.js';
+import { ENEMY_GUNS, enemyGunFaces } from './enemy-guns.js';
 import { RANGE_TARGETS, targetFace } from './range.js';
 import type { TankDrive } from './tank-drive.js';
 import { groundHeight, wrapTile } from './terrain.js';
@@ -65,6 +66,8 @@ export interface HitFace {
   halfWidth: number;
   halfHeight: number;
   yaw: number;
+  /** Not there to hit (F3.2: an enemy gun while the battery is off): shells pass it by. */
+  off?: boolean;
 }
 
 /** What a shot hit: a target face (its index), the ground, or nothing within MAX_FLIGHT. */
@@ -109,6 +112,7 @@ export function flyShell(
     let best = Infinity;
     let hit = -1;
     for (let i = 0; i < faces.length; i++) {
+      if (faces[i].off) continue;
       const f = segmentThroughFace(a, b, faces[i]);
       if (f < best) {
         best = f;
@@ -238,6 +242,7 @@ export function missFrom(
   let nearest = 0;
   let nearestAngle = Infinity;
   for (let i = 0; i < faces.length; i++) {
+    if (faces[i].off) continue;
     const dx = faces[i].x - wrapTile(origin[0]);
     const dz = faces[i].z - wrapTile(origin[2]);
     const along = dx * ux + dz * uz;
@@ -313,7 +318,7 @@ export function decideShot(
   if (spec.blast <= 0 || result.kind !== 'ground') return out;
   let best = spec.blast;
   for (let i = 0; i < faces.length; i++) {
-    if (!soft[i]) continue;
+    if (!soft[i] || faces[i].off) continue;
     const d = distanceToFace(result.point, faces[i]);
     if (d <= best) {
       best = d;
@@ -381,24 +386,32 @@ export function courseFaces(): HitFace[] {
 
 /**
  * Everything a shell can hit: the range's three targets (indices 0 to 2,
- * as RANGE_TARGETS: the range run counts these) and then the course's six
- * boards (3 to 8, as COURSE_TARGETS). FiringSystem decides hits against
- * these; its target numbers index this list.
+ * as RANGE_TARGETS: the range run counts these), then the course's six
+ * boards (3 to 8, as COURSE_TARGETS), then the three enemy guns' shields
+ * (9 to 11, as ENEMY_GUNS, F3.2), `off` until the battery is started.
+ * FiringSystem decides hits against these; its target numbers index this
+ * list.
  */
 export function targetFaces(): HitFace[] {
-  return [...rangeFaces(), ...courseFaces()];
+  return [...rangeFaces(), ...courseFaces(), ...enemyGunFaces().map((f) => ({ ...f, off: true }))];
 }
 
-/** Which of targetFaces() are soft, an anti-tank gun's board: an HE burst within its blast counts on it (F3.1). */
+/** Which of targetFaces() are soft, an anti-tank gun's board or an enemy gun: an HE burst within its blast counts on it (F3.1). */
 export function softTargets(): boolean[] {
-  return [...RANGE_TARGETS.map((t) => t.kind === 'gun'), ...COURSE_TARGETS.map(() => false)];
+  return [...RANGE_TARGETS.map((t) => t.kind === 'gun'), ...COURSE_TARGETS.map(() => false), ...ENEMY_GUNS.map(() => true)];
 }
 
 /** Where the course's boards start in targetFaces(). */
 export const COURSE_TARGET_FIRST = RANGE_TARGETS.length;
+/** Where the enemy guns start in targetFaces() (F3.2). */
+export const ENEMY_TARGET_FIRST = COURSE_TARGET_FIRST + COURSE_TARGETS.length;
 
 /** Every target by name, in targetFaces()'s order. */
-export const TARGET_NAMES: readonly string[] = [...RANGE_TARGET_NAMES, ...COURSE_TARGETS.map((t) => t.name)];
+export const TARGET_NAMES: readonly string[] = [
+  ...RANGE_TARGET_NAMES,
+  ...COURSE_TARGETS.map((t) => t.name),
+  ...ENEMY_GUNS.map((g) => g.name.replace('Gun', 'gun')),
+];
 
 /** A world-space direction in hull space (the inverse of hullDirToWorld), into `out` (which may be `d`). */
 export function worldDirToHull(tank: Readonly<Pick<TankDrive, 'heading' | 'pitch' | 'roll'>>, d: Readonly<Vec3>, out: Vec3): Vec3 {

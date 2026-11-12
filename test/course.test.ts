@@ -194,7 +194,8 @@ describe('biathlon course (F5.3a)', () => {
 
   it('lets the gun, laid from each box, hit each of its line\'s boards; a miss names the nearest board', () => {
     const faces = targetFaces();
-    expect(faces.length).toBe(RANGE_TARGETS.length + COURSE_TARGETS.length);
+    // Then the enemy guns (F3.2), off until their battery starts.
+    expect(faces.length).toBe(RANGE_TARGETS.length + COURSE_TARGETS.length + 3);
     expect(TARGET_NAMES.length).toBe(faces.length);
     COURSE_TARGETS.forEach((t, j) => {
       const [x, z, heading] = boxSpot(t.line);

@@ -41,7 +41,8 @@ describe('biathlon race rules (F5.3b)', () => {
   it('numbers the boards after the range targets, as the shells do', () => {
     expect(BOARD_FIRST).toBe(COURSE_TARGET_FIRST);
     expect(BOARD_COUNT).toBe(6);
-    expect(targetFaces()).toHaveLength(BOARD_FIRST + BOARD_COUNT);
+    // The enemy guns (F3.2) come after the boards.
+    expect(targetFaces()).toHaveLength(BOARD_FIRST + BOARD_COUNT + 3);
     expect(lineFor(0)).toBe(0);
     expect(lineFor(1)).toBe(1);
     expect(lineFor(2)).toBe(-1);

@@ -2772,6 +2772,9 @@ async function partOne() {
 
   // 6t. Overheating (F3.7).
   await theEngineHeat();
+
+  // 6u. Enemy anti-tank guns (F3.2).
+  await theEnemyGuns();
 }
 
 /**
@@ -2815,6 +2818,79 @@ async function theEngineHeat() {
   const normal = await waitFor('the engine back to normal', () => { const s = tank(); return s.running && s.coolant < 100 && !box().lamps.temp && s; }, 8000).catch(() => tank());
   check('Engine heat → Normal starts it again, warm, with the TEMP lamp out',
     normal.running && normal.coolant < 100 && !box().lamps.temp, `running ${normal.running}, ${Math.round(normal.coolant)} °C, lamp ${box().lamps.temp}`);
+  await menuButtonPress();
+  evalInApp('(window.__drive.reset("keep"), true)');
+}
+
+/**
+ * 6u. Enemy anti-tank guns (F3.2): Combat → Enemy guns → Meet A parks the
+ *     tank on the lane where gun A first sees it, with the guns drawn and
+ *     their shields there to hit; gun A sees the tank there. A shot from
+ *     gun A strikes (fired at once through the hook: the emulator's slow
+ *     frames stretch its 6 s lay); a hit puts a "Hit!" note on the sign.
+ *     AP laid on gun A's shield knocks it out: its wreck is drawn, its
+ *     shield no longer hit, and the sign says so. Smoke laid between the
+ *     tank and gun B hides the tank from it. Stop takes the guns away.
+ */
+async function theEnemyGuns() {
+  const enemy = () => evalInApp('window.__enemy.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  await menuButtonPress();
+  await menuClick('menu-enemy-meet-0');
+  const met = await waitFor('the guns drawn and the tank where gun A sees it', () => {
+    const e = enemy();
+    const t = evalInApp('window.__drive.state()');
+    return e.on && e.guns.every((g) => g.drawn) && e.faceOff.every((off) => !off) && Math.abs(t.z + 80) < 1 && e;
+  }, 10000).catch(() => enemy());
+  const sees = evalInApp('window.__enemy.canSee(0)');
+  check('Combat → Enemy guns → Meet A: the three guns are drawn, their shields there to hit, and gun A sees the tank',
+    met.on && met.guns.every((g) => g.drawn) && met.faceOff.every((off) => !off) && sees,
+    `on ${met.on}, drawn ${met.guns.map((g) => g.drawn).join('/')}, gun A sees ${sees}, "${evalInApp("window.__gameMenu.text('menu-enemy-status')")}"`);
+
+  // Gun A fires until it hits (each shot corrects the last).
+  let hit = null;
+  let fired = 0;
+  for (let n = 0; n < 6 && !hit; n++) {
+    const before = evalInApp('window.__enemy.shots().length');
+    evalInApp('(window.__enemy.fireNow(0), true)');
+    fired++;
+    const shot = await waitFor("gun A's shot to strike", () => {
+      const s = evalInApp('window.__enemy.shots()');
+      return s.length > before && s[s.length - 1];
+    }, 5000).catch(() => null);
+    if (shot?.hit) hit = shot;
+    await sleep(800);
+  }
+  const hitSign = hit ? await waitFor('the hit on the sign', () => /^Hit! Gun A/.test(evalInApp('window.__enemy.sign')) && evalInApp('window.__enemy.sign'), 5000).catch(() => evalInApp('window.__enemy.sign')) : '';
+  check("Gun A's shells strike the tank, and a hit is counted and called on the sign",
+    hit !== null && enemy().hits >= 1 && /^Hit! Gun A, \d+ o'clock, \d+ m$/.test(hitSign),
+    `${fired} shots, hits ${enemy().hits}, sign "${hitSign}"`);
+
+  // The gunner's AP on gun A's shield.
+  const records = evalInApp('window.__firing.records().length');
+  evalInApp("(window.__loading.loadNow('ap'), window.__firing.aimAt(9, 'ap'), true)");
+  await sleep(300);
+  evalInApp("(window.__firing.fire('ap'), true)");
+  const out = await waitFor('gun A knocked out', () => { const e = enemy(); return !e.alive[0] && e; }, 10000).catch(() => enemy());
+  const shot = evalInApp('window.__firing.records()')[records];
+  const outSign = await waitFor('the knock-out on the sign', () => /^Gun A knocked out/.test(evalInApp('window.__enemy.sign')) && evalInApp('window.__enemy.sign'), 5000).catch(() => evalInApp('window.__enemy.sign'));
+  check('AP on gun A\'s shield knocks it out: its wreck is drawn, shells pass where it stood, and the sign says so',
+    !out.alive[0] && out.alive[1] && out.alive[2] && out.guns[0].drawn && out.faceOff[0] && shot?.counted === 9 && /^Gun A knocked out/.test(outSign),
+    `${shot ? `"${shot.line}"` : 'no shot'}, alive ${out.alive.join('/')}, sign "${outSign}"`);
+
+  // Smoke between the tank and gun B hides it from the gun.
+  evalInApp('window.__drive.place(0, -160, 0)');
+  await sleep(500);
+  const bSees = evalInApp('window.__enemy.canSee(1)');
+  evalInApp('(window.__smoke.lay(-45, 0, -265), true)');
+  const hidden = await waitFor('the smoke to hide the tank from gun B', () => !evalInApp('window.__enemy.canSee(1)'), 20000).catch(() => false);
+  check('Smoke laid between the tank and gun B hides the tank from it', bSees && hidden, `sees before ${bSees}, hidden ${hidden}`);
+
+  await menuButtonPress();
+  await menuClick('menu-enemy-stop');
+  const stopped = await waitFor('the guns gone', () => { const e = enemy(); return !e.on && e.guns.every((g) => !g.drawn) && e; }, 5000).catch(() => enemy());
+  check('Enemy guns → Stop takes the guns away and their shields with them', !stopped.on && stopped.faceOff.every(Boolean),
+    `"${evalInApp("window.__gameMenu.text('menu-enemy-status')")}"`);
   await menuButtonPress();
   evalInApp('(window.__drive.reset("keep"), true)');
 }
