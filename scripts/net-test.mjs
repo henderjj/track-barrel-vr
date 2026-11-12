@@ -655,6 +655,9 @@ async function firingChecks(host, guest, label) {
   }, 8000);
   // The right hand's path, hull space: take shell 0 near its base, put its nose
   // to the breech mouth, ram it, then pull the lever back a quarter turn.
+  // The nose waits a second at the mouth: the breech takes the shell only while
+  // its nose is within a few centimetres of the mouth, and a runner's slow frame
+  // (300 ms and more) could pass that by on the way in ("Fumbles 1").
   // The hand closes on the lever and holds still for half a second before pulling, pulls a little past
   // closed and keeps hold a second: a slow frame as the hand closed took hold part-way along the pull,
   // so the lever stopped short by the angle missed (1.46 and 1.48 rad on PR #81's runs).
@@ -668,8 +671,8 @@ async function firingChecks(host, guest, label) {
     const rest = [L.eye[0] + 0.15, L.eye[1] - 0.45, L.eye[2] - 0.15];
     const keys = [
       [0, grip, false], [0.5, grip, true], [1, grip, true],
-      [2, noseAt(0.25, 0.05, 0.05), true], [2.8, noseAt(0, 0, 0.03), true], [4, noseAt(0, 0, -0.63), true], [4.5, noseAt(0, 0, -0.63), false],
-      [5.2, handleAt(0), false], [5.7, handleAt(0), true], [6.2, handleAt(0), true], [7.7, handleAt(2), true], [8.7, handleAt(2), true], [9.2, handleAt(2), false], [9.9, rest, false],
+      [2, noseAt(0.25, 0.05, 0.05), true], [2.8, noseAt(0, 0, 0.03), true], [3.8, noseAt(0, 0, 0.03), true], [5, noseAt(0, 0, -0.63), true], [5.5, noseAt(0, 0, -0.63), false],
+      [6.2, handleAt(0), false], [6.7, handleAt(0), true], [7.2, handleAt(0), true], [8.7, handleAt(2), true], [9.7, handleAt(2), true], [10.2, handleAt(2), false], [10.9, rest, false],
     ];
     let start = -1;
     window.__loading.setTestHand('right', (now) => {
@@ -778,6 +781,73 @@ async function ammoChecks(host, guest, label) {
       && he.h.hits === he.before[0].hits + 1 && he.g.hits === he.h.hits && /^HE burst \d m from the 250 m gun: hit$/.test(he.gr.line),
     he ? `host "${he.hr.line}", gunner "${he.gr.line}", hits ${he.h.hits}/${he.g.hits}` : JSON.stringify(await Promise.all([host, guest].map(state))));
   await guest.page.evaluate(() => window.__turret.forward());
+  await enemyChecks(host, guest, label);
+}
+
+/**
+ * Enemy anti-tank guns (F3.2) with the guest in the gunner's seat: the host
+ * starts the battery with the tank where gun A first sees it, and both
+ * pages draw the guns; a shot the host's gun A fires reaches the guest's
+ * page with the same outcome; the guest's AP on gun A's shield knocks it
+ * out on both pages; Stop takes the guns away on both.
+ */
+async function enemyChecks(host, guest, label) {
+  const enemy = (p) => p.page.evaluate(() => window.__enemy.state());
+  const was = await host.page.evaluate(() => window.__drive.state());
+  await host.page.evaluate(() => {
+    window.__drive.place(0, -80, 0);
+    window.__enemy.start(1);
+  });
+  const started = await waitFor('both pages to draw the guns', async () => {
+    const [h, g] = await Promise.all([enemy(host), enemy(guest)]);
+    return h.on && g.on && g.guns.every((x) => x.drawn) && g.faceOff.every((off) => !off) ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`The host's enemy guns appear on both pages, their shields there to hit (${label})`, started !== null,
+    started ? '' : JSON.stringify(await Promise.all([host, guest].map(enemy))));
+
+  const shotsBefore = (await guest.page.evaluate(() => window.__enemy.shots())).length;
+  await host.page.evaluate(() => window.__enemy.fireNow(0));
+  const shot = await waitFor("gun A's shot on both pages", async () => {
+    const [h, g] = await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__enemy.shots())));
+    return g.length > shotsBefore && h.length > 0 ? { h: h[h.length - 1], g: g[g.length - 1] } : null;
+  }, 8000).catch(() => null);
+  check(`A shot from the host's gun A reaches the guest with the same outcome (${label})`,
+    shot !== null && shot.g.gun === 0 && shot.g.hit === shot.h.hit && Math.abs(shot.g.to[0] - shot.h.to[0]) < 1e-6,
+    shot ? `${shot.h.hit ? 'hit' : 'miss'} from ${Math.round(shot.h.range)} m at ${shot.h.clock} o'clock` : 'no shot');
+
+  const records = (p) => p.page.evaluate(() => window.__firing.records());
+  const before = (await records(host)).length;
+  // The guest lays from where its page has the tank: wait for the place to reach it (at 150 ms RTT it can still be at the start).
+  await waitFor("the guest to have the tank parked at gun A's spot", async () => {
+    const t = await guest.page.evaluate(() => window.__drive.state());
+    return Math.hypot(t.x, t.z + 80) < 0.5 && Math.abs(t.speed) < 0.05;
+  }, 8000).catch(() => null);
+  await guest.page.evaluate(() => {
+    window.__loading.loadNow('ap');
+    window.__firing.aimAt(9, 'ap');
+  });
+  await waitFor('the host to draw the gun laid on gun A', async () => {
+    const [h, g] = await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__turret.state())));
+    return Math.abs(h.yaw - g.yaw) < 1e-4 && Math.abs(h.elevation - g.elevation) < 1e-4;
+  }, 8000).catch(() => null);
+  await guest.page.evaluate(() => window.__turret.pullTrigger());
+  const out = await waitFor('gun A knocked out on both pages', async () => {
+    const [h, g] = await Promise.all([enemy(host), enemy(guest)]);
+    return !h.alive[0] && !g.alive[0] && g.faceOff[0] ? { h, g } : null;
+  }, 15000).catch(() => null);
+  const record = (await records(host))[before];
+  check(`The guest gunner's AP on gun A's shield knocks it out on both pages (${label})`,
+    out !== null && record?.counted === 9 && out.g.alive[1] && out.g.alive[2],
+    `${record ? `host "${record.line}"` : 'no shot'}, alive ${JSON.stringify(out?.g.alive ?? (await enemy(guest)).alive)}`);
+
+  await host.page.evaluate(() => window.__enemy.stop());
+  const stopped = await waitFor('the guns gone on both pages', async () => {
+    const g = await enemy(guest);
+    return !g.on && g.guns.every((x) => !x.drawn) && g.faceOff.every(Boolean) ? g : null;
+  }, 8000).catch(() => null);
+  check(`Stop takes the enemy guns away on both pages (${label})`, stopped !== null);
+  await guest.page.evaluate(() => window.__turret.forward());
+  await host.page.evaluate(([x, z, h]) => window.__drive.place(x, z, h), [was.x, was.z, was.heading]);
 }
 
 /**

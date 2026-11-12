@@ -88,6 +88,15 @@ export const decidedListeners = new Set<(target: number, flight: number) => void
 
 let active: FiringSystem | null = null;
 
+/**
+ * Whether target `i` (of targetFaces) is there to be hit (F3.2: an enemy
+ * gun is only while its battery is on and the gun not yet knocked out).
+ */
+export function setFaceOff(i: number, off: boolean): void {
+  const f = active?.faces[i];
+  if (f) f.off = off;
+}
+
 /** The gunner's page fires the gun: the shell, round `ammo`, leaves the muzzle as this page draws the tank and turret. LoadingSystem calls it once the breech has fired. */
 export function fireShell(ammo: AmmoKind = 'ap'): void {
   active?.fire(ammo);
@@ -145,7 +154,7 @@ interface FiringDebug {
 export class FiringSystem extends createSystem({}) {
   readonly records: ShotRecord[] = [];
   readonly hits: number[] = targetFaces().map(() => 0);
-  private faces = targetFaces();
+  readonly faces = targetFaces();
   private soft = softTargets();
   private decision: ShotDecision = { target: -1, blast: Number.NaN };
   private shots: Shot[] = [];

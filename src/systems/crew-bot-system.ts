@@ -2,7 +2,7 @@ import { createSystem, Euler, Matrix4, Quaternion, Vector3, VisibilityState } fr
 import type { PoseSample } from '../net/pose-codec.js';
 import { settings } from '../settings.js';
 import { AMMO, type AmmoKind } from '../sim/ammo.js';
-import { aimAt, COURSE_TARGET_FIRST, targetFaces } from '../sim/ballistics.js';
+import { aimAt, COURSE_TARGET_FIRST, ENEMY_TARGET_FIRST, TARGET_NAMES, targetFaces } from '../sim/ballistics.js';
 import { boardDown, BOARD_FIRST, lineClosed, lineFor } from '../sim/biathlon.js';
 import { boxAt, LINE_ACROSS } from '../sim/course.js';
 import { RANGE_TARGETS } from '../sim/range.js';
@@ -52,6 +52,7 @@ import { firingLampLit } from './firing-lamp-system.js';
 import { handUse } from './grip-system.js';
 import { loadedRound, loadingShown, scriptLoadingHand } from './loading-system.js';
 import { raceLineNow, shownRun } from './range-run-system.js';
+import { enemyRevealed, enemyShared } from './enemy-system.js';
 import { findControl, type ScriptedHand, scriptedHands } from './mechanism-system.js';
 import { FLAG_LEFT_TRACKED, FLAG_RIGHT_TRACKED, netLink } from './net-system.js';
 import { ride } from './ride-system.js';
@@ -216,6 +217,9 @@ export class CrewBotSystem extends createSystem({}) {
   private hit: boolean[] = this.faces.map(() => false);
   /** The targets it won't lay on now: hit already, or not this place's (the range's three, or the firing box's own line). */
   private skip: boolean[] = this.faces.map(() => false);
+  /** The enemy gun it engages (F3.2), a target index, or -1; and which faces it passes over choosing one. */
+  private foe = -1;
+  private foeSkip: boolean[] = this.faces.map(() => true);
   private target = -1;
   /** The round it loads (F3.1): AP until the driver calls for another. */
   private round: AmmoKind = 'ap';
@@ -468,7 +472,8 @@ export class CrewBotSystem extends createSystem({}) {
   }
 
   private gunnerLine(): string {
-    const name = this.target >= 0 ? `the ${Math.round(this.facesRange(this.target))} m target` : 'no target in sight';
+    const name = this.target >= ENEMY_TARGET_FIRST ? TARGET_NAMES[this.target]
+      : this.target >= 0 ? `the ${Math.round(this.facesRange(this.target))} m target` : 'no target in sight';
     const fire = this.fireAtWill ? '' : ', holding fire';
     switch (this.phase) {
       case 'load': return `loading${this.round === 'ap' ? '' : ` ${AMMO[this.round].short}`}${fire}`;
@@ -597,6 +602,8 @@ export class CrewBotSystem extends createSystem({}) {
       this.phase = 'load';
     }
     if (!loading.loaded) this.phase = 'load';
+    // Enemy guns (F3.2): one alive that has shown itself by firing, in sight, comes before any board, with HE.
+    this.foe = this.enemyTarget(tank.x, tank.z);
     if (this.phase === 'load') {
       // The left hand holds the elevation wheel where it is; the right loads.
       this.holdElevation(turret.elevation);
@@ -621,6 +628,11 @@ export class CrewBotSystem extends createSystem({}) {
         this.rest('right');
         return;
       }
+      this.layAndFire(dt);
+      return;
+    }
+    if (this.foe >= 0) {
+      this.target = this.foe;
       this.layAndFire(dt);
       return;
     }
@@ -680,6 +692,17 @@ export class CrewBotSystem extends createSystem({}) {
     }
   }
 
+  /** The enemy gun to engage (F3.2): the nearest alive that has fired, within the fog, as a target index; or -1. */
+  private enemyTarget(x: number, z: number): number {
+    const enemy = enemyShared();
+    if (!enemy.on) return -1;
+    for (let i = 0; i < this.faces.length; i++) {
+      const j = i - ENEMY_TARGET_FIRST;
+      this.foeSkip[i] = j < 0 || j >= enemy.alive.length || !enemy.alive[j] || !enemyRevealed(j);
+    }
+    return chooseTarget(x, z, this.faces, this.foeSkip, sightLimit());
+  }
+
   /** The right hand's loading: plan a move from how the breech stands, go to its start, play it; true once loaded. */
   private load(dt: number): boolean {
     const hand = this.hands.right;
@@ -693,7 +716,8 @@ export class CrewBotSystem extends createSystem({}) {
     }
     if (this.pathCount === 0) {
       // The round it was asked for if the rack has one (F3.1), else the first there.
-      let shell = s.shells.findIndex((x, i) => x.place === 'rack' && s.kinds[i] === this.round);
+      const round = this.foe >= 0 ? 'he' : this.round;
+      let shell = s.shells.findIndex((x, i) => x.place === 'rack' && s.kinds[i] === round);
       if (shell < 0) shell = s.shells.findIndex((x) => x.place === 'rack');
       restingHandInSeat(SEATS.gunner, 'right', this.p);
       this.pathCount = loadPlan(s, shell >= 0 ? s.shells[shell].centre : null, turretState().elevation, this.p, this.path);

@@ -34,7 +34,8 @@
     either of its lines (F5.3b). Combat (Phase 3): fill the ammunition
     rack with the mixed load or one round, and be ready to fire AP, HE or
     smoke on the 250 m gun (F3.1); set the engine hot or back to normal
-    (F3.7). Sights: go to the gunsight, lay the
+    (F3.7); start or stop the enemy anti-tank guns, or park where one
+    first sees the tank (F3.2). Sights: go to the gunsight, lay the
     gun on a target's range mark, the sight's render choices; go to the
     driver's or the gunner's periscope, turn both ahead, their power. Test rigs: ride the tank (spike
     S2), the lever test and the mechanism kit.
@@ -649,6 +650,17 @@
             </div>
           </div>
           <div id="menu-heat-status" class="hint">Engine heat</div>
+          <div class="setting">
+            <div class="label">Enemy guns</div>
+            <div class="choices">
+              <Button id="menu-enemy-start" class="choice" size="sm" variant="secondary">Start</Button>
+              <Button id="menu-enemy-stop" class="choice" size="sm" variant="secondary">Stop</Button>
+              <Button id="menu-enemy-meet-0" class="choice" size="sm" variant="secondary">Meet A</Button>
+              <Button id="menu-enemy-meet-1" class="choice" size="sm" variant="secondary">Meet B</Button>
+              <Button id="menu-enemy-meet-2" class="choice" size="sm" variant="secondary">Meet C</Button>
+            </div>
+          </div>
+          <div id="menu-enemy-status" class="hint">Enemy guns off</div>
         </div>
       </div>
       <div id="page-sights" class="page" style="display: none">
