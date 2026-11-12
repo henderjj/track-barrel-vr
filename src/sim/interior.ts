@@ -12,6 +12,7 @@
  */
 
 import { DRIVER_HATCH, frontAt, HULL, SEATS, TURRET, VISION_SLIT } from './cabin.js';
+import { TURRET_INSIDE_ROUNDING } from './exterior.js';
 
 export interface InteriorLight {
   /** What it is, for the tests and the design note. */
@@ -136,8 +137,30 @@ export function lightScale(light: InteriorLight, look: Readonly<CabinLook>): num
 
 /** Margins round the inner faces for the inside tests, m: inside the walls' 8 cm thickness, so the outer faces are outside. */
 const MARGIN = 0.03;
-/** The turret's inside: inner faces of its walls, its roof's underside and the hull roof it stands on, turret space, m. */
-export const TURRET_INSIDE = { halfWidth: TURRET.halfWidth - HULL.wall, floor: HULL.roof - 0.01, roof: TURRET.roof } as const;
+/**
+ * The turret's inside: inner faces of its walls, its roof's underside and the hull roof it stands on, turret space, m;
+ * its upright corners and its roof's edges rounded with `rounding` (the cast turret, docs/exterior.md).
+ */
+export const TURRET_INSIDE = {
+  halfWidth: TURRET.halfWidth - HULL.wall,
+  floor: HULL.roof - 0.01,
+  roof: TURRET.roof,
+  rounding: TURRET_INSIDE_ROUNDING,
+} as const;
+
+/**
+ * How far a turret-space point (x, y, z) is from the turret's inside's
+ * rounded box (0 or less inside it), m. Its floor is left open: the caller
+ * checks `floor`.
+ */
+export function turretInsideDistance(x: number, y: number, z: number): number {
+  const i = TURRET_INSIDE;
+  const core = i.halfWidth - i.rounding;
+  const dx = Math.max(Math.abs(x) - core, 0);
+  const dz = Math.max(Math.abs(z) - core, 0);
+  const dy = Math.max(y - (i.roof - i.rounding), 0);
+  return Math.hypot(dx, dy, dz) - i.rounding;
+}
 
 /** A hull-space point in turret space for turret `yaw`, into `out` (as src/sim/cabin.ts's hullToSeat). */
 export function hullToTurret(p: readonly number[], yaw: number, out: [number, number, number]): [number, number, number] {
@@ -169,7 +192,7 @@ export function insideCabin(p: readonly number[], yaw: number): boolean {
   if (inHull) return true;
   const t = hullToTurret(p, yaw, tmp);
   const i = TURRET_INSIDE;
-  return Math.abs(t[0]) < i.halfWidth + MARGIN && Math.abs(t[2]) < i.halfWidth + MARGIN && t[1] > i.floor && t[1] < i.roof + MARGIN;
+  return t[1] > i.floor && turretInsideDistance(t[0], t[1], t[2]) < MARGIN;
 }
 const tmp: [number, number, number] = [0, 0, 0];
 const lightAt: [number, number, number] = [0, 0, 0];

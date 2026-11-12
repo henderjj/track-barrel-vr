@@ -46,16 +46,18 @@ import {
   stepEngine,
 } from './engine.js';
 import { groundHeight, type Obstacle, obstacleDistance, OBSTACLES, wrapTile } from './terrain.js';
+import { OUTLINE_EXTENT } from './exterior.js';
 
 /** Height of the hull floor above the ground under the tracks, m. */
 export const CLEARANCE = -GROUND_Y;
 
 /**
- * The tank's outline seen from above, hull space, m: the tracks' outer
- * faces and ends (src/scene-assets/cabin.scene-asset.ts draws them there).
- * It is what meets obstacles; the gun overhangs it (F1.8 decides about that).
+ * The tank's outline seen from above, hull space, m: the sponsons' and
+ * tracks' outer faces, the nose and the rear plate (src/sim/exterior.ts;
+ * the outside drawn as an M4A4's, docs/exterior.md). It is what meets
+ * obstacles; the gun overhangs it (F1.8 decides about that).
  */
-export const FOOTPRINT = { halfWidth: 1.8, front: -3.0, rear: 2.6 } as const;
+export const FOOTPRINT = { halfWidth: OUTLINE_EXTENT.halfWidth, front: OUTLINE_EXTENT.front, rear: OUTLINE_EXTENT.rear + 0.15 } as const;
 /** Distance between the tracks' middles, m: it turns their speed difference into a turn rate. */
 export const TRACK_GAUGE = 3.0;
 /**
