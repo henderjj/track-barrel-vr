@@ -29,12 +29,16 @@ import {
 } from '../sim/enemy-guns.js';
 import { ENEMY_TANK, ENEMY_TANKS, type RoutePose, routePose, wrapRoute } from '../sim/enemy-tanks.js';
 import { groundHeight, wrapTile } from '../sim/terrain.js';
+import { type DamageHit, resolveDamage, type TankPose } from '../sim/damage.js';
+import { rng } from '../sim/random.js';
+import { damageState, repairTank, takeHit } from './damage-system.js';
 import { placeTank, resetTank, tankState } from './drive-system.js';
 import { decidedListeners, setFaceOff, setFacePose } from './firing-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { netLink } from './net-system.js';
 import { smokeClouds, smokeNow } from './smoke-system.js';
 import { playTankSound } from './tank-audio-system.js';
+import { turretState } from './turret-system.js';
 
 /** Incoming shells followed at once: five enemies firing every 7 or 8 s never have more than five in the air. */
 const SHELLS = 6;
@@ -77,7 +81,11 @@ export function enemyStatus(group: EnemyGroup = 'guns'): string {
 
 /** Combat → Enemy guns (or tanks) → Start (the tank back at its start, warm) or Stop. The host does it; a guest asks. */
 export function startEnemies(on: boolean, group: EnemyGroup = 'guns'): void {
-  if (on) resetTank('warm');
+  if (on) {
+    // A fresh fight: the tank mended (F3.4) and back at the start.
+    repairTank();
+    resetTank('warm');
+  }
   if (!netLink.isHost) {
     const event = { t: 'enemy-ask', on, group };
     netLink.sendEvent(event);
@@ -207,6 +215,9 @@ export class EnemySystem extends createSystem({}) {
   private target: TankTarget = { x: 0, ground: 0, z: 0, heading: 0, speed: 0 };
   private at: [number, number] = [0, 0];
   private pose: RoutePose = { x: 0, z: 0, heading: 0 };
+  /** The crew's tank as a shell finds it, and the host's dice for what a hit does (F3.4). */
+  private tankPose: TankPose = { x: 0, z: 0, ground: 0, heading: 0, turretYaw: 0 };
+  private damageRandom = rng(4242);
   private face: HitFace = { x: 0, y: 0, z: 0, halfWidth: 0, halfHeight: 0, yaw: 0 };
   private eye = new Vector3();
   private seenAt = new Vector3();
@@ -370,6 +381,7 @@ export class EnemySystem extends createSystem({}) {
   meet(j: number): void {
     if (!netLink.isHost || !ENEMY_TANKS[j]) return;
     if (!this.battery.groupOn('tanks')) {
+      repairTank();
       resetTank('warm');
       this.setOn(true, 'tanks');
     }
@@ -447,13 +459,25 @@ export class EnemySystem extends createSystem({}) {
     return this.target;
   }
 
-  /** Host: an enemy fired; show it here and tell the guest. */
+  /** Host: an enemy fired; what a hit will do (F3.4), shown here and told to the guest. */
   private send(shot: EnemyShot): void {
+    if (shot.hit) shot.damage = this.hitDamage(shot);
     this.show(shot);
     if (netLink.connected) {
       const event = { t: 'enemy-shot', ...shot, from: [...shot.from], to: [...shot.to] };
       netLink.sendEvent(event);
     }
+  }
+
+  /** Where a hit strikes the tank, through its armour or not, and what it does inside (src/sim/damage.ts). */
+  private hitDamage(shot: EnemyShot): DamageHit {
+    const t = tankState();
+    this.tankPose.x = t.x;
+    this.tankPose.z = t.z;
+    this.tankPose.ground = groundHeight(t.x, t.z);
+    this.tankPose.heading = t.heading;
+    this.tankPose.turretYaw = turretState().yaw;
+    return resolveDamage(shot.from, shot.to, shot.range, this.tankPose, this.damageRandom);
   }
 
   /** An enemy fired: its flash and dust now, its shell on the way. */
@@ -488,7 +512,8 @@ export class EnemySystem extends createSystem({}) {
 
   /** The host's part: step the battery, knock out enemies hit, and keep the guest told. */
   private host(dt: number, paused: boolean): void {
-    if (!paused && this.battery.on) {
+    // Knocked out (F3.4), the tank is out of the fight: the enemies hold their fire.
+    if (!paused && this.battery.on && !damageState().out) {
       this.battery.step(dt, this.tankTarget(), this.clear, this.fired);
       for (const shot of this.fired) this.send(shot);
     }
@@ -652,6 +677,8 @@ export class EnemySystem extends createSystem({}) {
       slot.struck = true;
       if (shot.hit) {
         playTankSound('bump');
+        // The host takes the hit's damage as the shell gets there (F3.4).
+        if (netLink.isHost && shot.damage) takeHit(shot.damage);
         this.note(`Hit! ${enemyName(shot.gun)}, ${shot.clock} o'clock, ${Math.round(shot.range / 10) * 10} m`);
       }
     }

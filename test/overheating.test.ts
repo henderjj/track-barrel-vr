@@ -176,7 +176,7 @@ describe('overheating (F3.7)', () => {
   });
 
   it('sends a stall from the heat to the crewmate', () => {
-    expect(STALL_CAUSES[STALL_CAUSES.length - 1]).toBe('heat');
+    expect(STALL_CAUSES).toContain('heat');
     const s = warm();
     s.coolant = 117;
     s.stallCause = 'heat';

@@ -57,7 +57,7 @@ export interface EngineControls {
  * slowly cold, the choke in too soon, flooded, the clutch let out against
  * the parking brake (F1.18), or overheated (F3.7).
  */
-export const STALL_CAUSES = ['none', 'bog', 'cold', 'choke', 'flood', 'brake', 'heat'] as const;
+export const STALL_CAUSES = ['none', 'bog', 'cold', 'choke', 'flood', 'brake', 'heat', 'hit'] as const;
 export type StallCause = (typeof STALL_CAUSES)[number];
 
 /** The engine's part of the tank's state (all of it in TankDrive). */
@@ -90,6 +90,8 @@ export interface EngineState {
   coughs: number;
   /** Why it last stalled. */
   stallCause: StallCause;
+  /** Battle damage (F3.4, src/sim/damage.ts): 0 sound, 1 damaged (DAMAGED_PULL of its pull), 2 knocked out (it stops and won't start). */
+  damage: number;
   /** The ignition and battery were both on last step (or didn't need to be): turning one off stops the engine. */
   switchedOn: boolean;
   /** The Engine start setting last step: changed to Running, the engine starts by itself. */
@@ -203,13 +205,17 @@ export function volts(s: Pick<EngineState, 'power' | 'running' | 'cranking'>): n
 }
 
 /** How much of its pull the engine has: none stopped, COLD_PULL cold in the Full procedure, less when overheating (heatPull). */
-export function enginePullShare(s: Pick<EngineState, 'running' | 'coolant'>, c: Pick<EngineControls, 'start'>): number {
+export function enginePullShare(s: Pick<EngineState, 'running' | 'coolant' | 'damage'>, c: Pick<EngineControls, 'start'>): number {
   if (!s.running) return 0;
-  return (c.start === 'full' && s.coolant < WARM_COOLANT ? COLD_PULL : 1) * heatPull(s.coolant);
+  return (c.start === 'full' && s.coolant < WARM_COOLANT ? COLD_PULL : 1) * heatPull(s.coolant) * (s.damage === 1 ? DAMAGED_PULL : 1);
 }
 
-/** Start the engine at once (Practice shortcuts, the Running setting). */
+/** A damaged engine's share of its pull (F3.4). */
+export const DAMAGED_PULL = 0.6;
+
+/** Start the engine at once (Practice shortcuts, the Running setting); not one knocked out (F3.4). */
 export function startEngine(s: EngineState): void {
+  if (s.damage >= 2) return;
   s.running = true;
   s.cranking = false;
   s.crankTime = 0;
@@ -257,7 +263,8 @@ export function stepEngine(s: EngineState, c: GearboxControls & EngineControls, 
   s.starterRest = Math.max(0, s.starterRest - dt);
 
   if (s.running) {
-    if (s.switchedOn && !keyed) stopEngine(s);
+    if (s.damage >= 2) stopEngine(s, 'hit');
+    else if (s.switchedOn && !keyed) stopEngine(s);
     else run(s, c, dt, full);
   }
   s.switchedOn = keyed;
@@ -273,8 +280,8 @@ export function stepEngine(s: EngineState, c: GearboxControls & EngineControls, 
     s.starterRest = STARTER_REST;
     s.crankTime = 0;
     s.cranking = false;
-  } else if (keyed && s.crankTime >= catchSeconds(s, c) && s.coolant <= RESTART_COOLANT) {
-    // Hotter than RESTART_COOLANT it turns over but won't fire (F3.7).
+  } else if (keyed && s.crankTime >= catchSeconds(s, c) && s.coolant <= RESTART_COOLANT && s.damage < 2) {
+    // Hotter than RESTART_COOLANT it turns over but won't fire (F3.7); knocked out (F3.4), never.
     const cold = full && s.coolant < CHOKE_COOLANT;
     startEngine(s);
     s.coldStart = cold;

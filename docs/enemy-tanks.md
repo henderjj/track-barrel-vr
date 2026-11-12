@@ -11,7 +11,7 @@ As the plan said, fixed routes after the static guns:
 - **Halting to fire**: once it sees the tank it halts, turns its turret on it, and fires 5 s later, then every 7 s while it still sees it. Out of sight 4 s, it loses the tank and drives on.
 - **Aim**: as the guns' (the same 0.4 mil dispersion, the same laying errors corrected shot by shot, the same lead), from its turret's muzzle 1.95 m up.
 - **Armour**: only AP knocks a tank out. HE bursts on its armour to no effect ("HE on tank A: no effect on its armour"), and an HE burst beside it does nothing.
-- **No damage yet**: hits on the crew's tank are counted and called as the guns' are; what they do is F3.4.
+- **Damage**: hits on the crew's tank are counted and called as the guns' are, and do what F3.4's damage model says ([damage.md](damage.md)).
 
 ## What players experience
 

@@ -34,6 +34,7 @@ import {
 import { GUN_STOP, HEAD_OUT_GUN_STOP } from '../sim/convoy-seat.js';
 import { slewTurret } from '../sim/turret-dial.js';
 import { convoyUp } from './convoy-seat-system.js';
+import { damageState } from './damage-system.js';
 import { engineRpm, startEngine } from './drive-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { HoldKind } from './hand-lock.js';
@@ -419,12 +420,14 @@ export class TurretSystem extends createSystem({}) {
       // Spike S2's ride has its own turret.
       input.traverse = 0;
     }
-    const rpm = engineRpm();
+    // The power traverse's motor knocked out by a hit (F3.4) turns nothing, as with the engine stopped.
+    const knocked = damageState().traverse;
+    const rpm = knocked ? 0 : engineRpm();
     // With the engine stopped (F1.17) the power grip does nothing: say so once, until it runs again.
     if (rpm >= POWER_TRAVERSE_MIN_RPM) this.toldNoPower = false;
     else if (Math.abs(input.traverse) > 0.3 && !this.toldNoPower && !ride.active) {
       this.toldNoPower = true;
-      this.say('No power traverse', ['The engine is stopped: the driver starts it', 'The hand crank still turns the turret']);
+      this.say('No power traverse', [knocked ? 'Its motor is knocked out by a hit' : 'The engine is stopped: the driver starts it', 'The hand crank still turns the turret']);
     }
     // The Practice shortcut's turn (F2.3) gives way to the gunner's hands and to a test's traverse.
     if (this.slewTarget !== null && (this.grip.anyHeld || this.crankWheel.anyHeld || o?.traverse !== undefined || ride.active)) this.slewTarget = null;

@@ -36,7 +36,9 @@
     smoke on the 250 m gun (F3.1); set the engine hot or back to normal
     (F3.7); start or stop the enemy anti-tank guns, or park where one
     first sees the tank (F3.2); start or stop the enemy tanks, or park
-    where one will see the tank (F3.3). Sights: go to the gunsight, lay the
+    where one will see the tank (F3.3); repair the tank, or take a practice
+    hit on the engine, a track, the turret or your own crewman (F3.4).
+    Sights: go to the gunsight, lay the
     gun on a target's range mark, the sight's render choices; go to the
     driver's or the gunner's periscope, turn both ahead, their power. Test rigs: ride the tank (spike
     S2), the lever test and the mechanism kit.
@@ -672,6 +674,17 @@
             </div>
           </div>
           <div id="menu-tanks-status" class="hint">Enemy tanks off</div>
+          <div class="setting">
+            <div class="label">Damage</div>
+            <div class="choices">
+              <Button id="menu-damage-repair" class="choice" size="sm" variant="secondary">Repair</Button>
+              <Button id="menu-damage-engine" class="choice" size="sm" variant="secondary">Hit engine</Button>
+              <Button id="menu-damage-track" class="choice" size="sm" variant="secondary">Track</Button>
+              <Button id="menu-damage-turret" class="choice" size="sm" variant="secondary">Turret</Button>
+              <Button id="menu-damage-crew" class="choice" size="sm" variant="secondary">Me</Button>
+            </div>
+          </div>
+          <div id="menu-damage-status" class="hint">No damage</div>
         </div>
       </div>
       <div id="page-sights" class="page" style="display: none">

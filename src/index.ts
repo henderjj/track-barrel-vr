@@ -33,6 +33,7 @@ import { SeatSystem } from './systems/seat-system.js';
 import { SightSystem } from './systems/sight-system.js';
 import { SmokeSystem } from './systems/smoke-system.js';
 import { EnemySystem } from './systems/enemy-system.js';
+import { DamageSystem } from './systems/damage-system.js';
 import { TankAudioSystem } from './systems/tank-audio-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
 import { TurretDialSystem } from './systems/turret-dial-system.js';
@@ -88,6 +89,8 @@ World.create(
   world.registerSystem(SmokeSystem);
   // Enemy anti-tank guns (F3.2): after SmokeSystem, whose clouds hide the tank from them, and FiringSystem, whose decided shots knock them out.
   world.registerSystem(EnemySystem);
+  // The tank's damage (F3.4): after EnemySystem, whose shells strike it; it sets the drive's damage for the next frame.
+  world.registerSystem(DamageSystem);
   // The range run (F1.11): after FiringSystem, whose decided shots it counts on the host.
   world.registerSystem(RangeRunSystem);
   // The callout card in each seat (F2.6): hangs on the hull and turret, drawn once; nothing per frame.

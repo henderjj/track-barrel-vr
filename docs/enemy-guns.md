@@ -10,7 +10,7 @@ The roadmap asked for the enemy AI's scope to be decided first, and the plan (§
 - **Eyes**: a gun sees the tank when it is within 600 m (inside the fog), the ground between doesn't hide it and no smoke bank stands in the way. It looks four times a second. Houses, walls and rocks don't hide the tank from it yet.
 - **Laying and firing**: from first sight it takes 6 s to lay and fire, then fires every 8 s while it still sees the tank. Out of sight for 3 s, it loses the tank and must lay afresh (6 s) when it sees it again.
 - **Aim**: its layer corrects by the fall of each shot, so its first shot is the least accurate and its third the best. It leads a moving tank, but not perfectly. No memory, no moving to new positions, no talking to the other guns.
-- **No damage yet**: a hit is counted and called, and the hull rings. What a hit does to the tank and crew is F3.4's damage model.
+- **Damage**: a hit is counted and called, and the hull rings; since F3.4 it also strikes the tank somewhere, meets its armour and may break something inside ([damage.md](damage.md)).
 
 Say if any of this should change before F3.3 builds tanks on the same pattern.
 

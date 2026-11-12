@@ -2778,6 +2778,113 @@ async function partOne() {
 
   // 6v. Enemy tanks on fixed routes (F3.3).
   await theEnemyTanks();
+
+  // 6w. The tank damage model (F3.4).
+  await theDamage();
+}
+
+/**
+ * 6w. The tank damage model (F3.4): Combat → Damage → Me wounds this
+ *     player's crewman: the view flashes red and dims, and the sign says
+ *     so. Hit engine once: it runs on, weaker; twice: it stops and won't
+ *     start. Repair starts it again. Track: the tank won't move under full
+ *     throttle until repaired. Turret: the power traverse does nothing, the
+ *     hand crank still turns the turret. A shot from an enemy gun that hits
+ *     says what it did. Three hits through the armour knock the tank out
+ *     and the guns hold their fire; Repair puts it all right.
+ */
+async function theDamage() {
+  const damage = () => evalInApp('window.__damage.state()');
+  const tank = () => evalInApp('window.__drive.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp('(window.__drive.reset("warm"), true)');
+  await sleep(500);
+
+  await menuButtonPress();
+  await menuClick('menu-damage-crew');
+  const seat = evalInApp('window.__seats.mine');
+  const hurt = await waitFor('the wound', () => { const d = damage(); return d[seat] === 1 && d.dark > 0 && d; }, 5000).catch(() => damage());
+  const hurtSign = evalInApp('window.__damage.sign');
+  check('Combat → Damage → Me: this player\'s crewman is wounded, the view flashes red and dims, and the sign says so',
+    hurt[seat] === 1 && hurt.dark > 0 && new RegExp(`${seat} hit`).test(hurtSign),
+    `seat ${seat}, wounds ${hurt[seat]}, dark ${hurt.dark?.toFixed?.(2)}, sign "${hurtSign}"`);
+  await waitFor('the view to clear', () => damage().dark === 0, 10000).catch(() => null);
+  await menuClick('menu-damage-repair');
+  await waitFor('the wound mended', () => damage().hits === 0, 5000).catch(() => null);
+
+  await menuClick('menu-damage-engine');
+  const weak = await waitFor('the engine damaged', () => damage().engine === 1, 5000).then(() => tank()).catch(() => tank());
+  await menuClick('menu-damage-engine');
+  const dead = await waitFor('the engine knocked out', () => { const t = tank(); return !t.running && t.stallCause === 'hit' && t; }, 5000).catch(() => tank());
+  check('Hit engine: once it runs on damaged; twice it stops, knocked out',
+    weak.running && dead.running === false && dead.stallCause === 'hit' && /engine knocked out/i.test(evalInApp("window.__gameMenu.text('menu-damage-status')") ?? ''),
+    `once running ${weak.running}, twice running ${dead.running} (${dead.stallCause}), "${evalInApp("window.__gameMenu.text('menu-damage-status')")}"`);
+  evalInApp('(window.__drive.set({ start: "starter", starter: true }), true)');
+  await sleep(4000);
+  const still = tank().running;
+  evalInApp('(window.__drive.set(null), true)');
+  await menuClick('menu-damage-repair');
+  const fixed = await waitFor('the engine running again', () => { const t = tank(); return t.running && damage().hits === 0 && t; }, 5000).catch(() => tank());
+  check('A knocked-out engine won\'t start; Repair mends it and starts it again', !still && fixed.running && damage().engine === 0,
+    `started on the starter ${still}, after Repair running ${fixed.running}, "${evalInApp('window.__damage.sign')}"`);
+
+  await menuClick('menu-damage-track');
+  await waitFor('the track broken', () => damage().immobile !== '', 5000).catch(() => null);
+  await menuButtonPress();
+  const at = tank();
+  evalInApp('(window.__drive.set({ mode: "auto", left: 1, right: 1 }), true)');
+  await sleep(3000);
+  const held = tank();
+  evalInApp('(window.__drive.set(null), true)');
+  check('Track: the tank won\'t move under full throttle', Math.hypot(held.x - at.x, held.z - at.z) < 0.3,
+    `moved ${Math.hypot(held.x - at.x, held.z - at.z).toFixed(2)} m, "${evalInApp("window.__gameMenu.text('menu-damage-status')")}"`);
+
+  await menuButtonPress();
+  await menuClick('menu-damage-turret');
+  await waitFor('the traverse out', () => damage().traverse, 5000).catch(() => null);
+  await menuButtonPress();
+  const owner = evalInApp('window.__turret.owner()');
+  const yaw0 = evalInApp('window.__turret.state().yaw');
+  evalInApp('(window.__turret.set({ traverse: 1 }), true)');
+  await sleep(1500);
+  const yaw1 = evalInApp('window.__turret.state().yaw');
+  evalInApp('(window.__turret.set(null), window.__turret.crank(1), true)');
+  await sleep(500);
+  const yaw2 = evalInApp('window.__turret.state().yaw');
+  check('Turret: the power traverse does nothing, the hand crank still turns it',
+    owner && Math.abs(yaw1 - yaw0) < 1e-3 && Math.abs(yaw2 - yaw1) > 0.01, `power ${(yaw1 - yaw0).toFixed(4)} rad, crank ${(yaw2 - yaw1).toFixed(3)} rad`);
+  evalInApp('(window.__turret.forward(), window.__damage.repair(), true)');
+  await sleep(500);
+
+  // A hit from gun A says what it did.
+  evalInApp('(window.__enemy.start(3), window.__drive.place(0, -80, 0), true)');
+  await sleep(500);
+  let struck = null;
+  for (let n = 0; n < 8 && !struck; n++) {
+    const before = damage().hits;
+    evalInApp('(window.__enemy.fireNow(0), true)');
+    struck = await waitFor("gun A's hit taken", () => { const d = damage(); return d.hits > before && d; }, 2500).catch(() => null);
+  }
+  const line = evalInApp('window.__damage.sign');
+  check("An enemy gun's hit is taken when the shell gets there, and the sign says where and what it did",
+    struck !== null && struck.last !== null && /^(Bounced off|Through|Struck)/.test(line), `"${line}", ${evalInApp("window.__gameMenu.text('menu-damage-status')")}`);
+
+  // Knocked out: the guns hold their fire.
+  evalInApp('(window.__damage.repair(), [0, 1, 2].forEach(() => window.__damage.take({ zone: "hull-side", through: true, armour: 38, pen: 110, effects: [], right: true })), true)');
+  const out = await waitFor('knocked out', () => { const d = damage(); return d.out && d; }, 3000).catch(() => damage());
+  const outSign = await waitFor('the knock-out sign', () => /^Knocked out/.test(evalInApp('window.__damage.sign')) && evalInApp('window.__damage.sign'), 3000).catch(() => evalInApp('window.__damage.sign'));
+  const shots = evalInApp('window.__enemy.state().shots');
+  await sleep(6000);
+  const later = evalInApp('window.__enemy.state().shots');
+  check('Three hits through the armour knock the tank out: its engine stops, the guns hold their fire, and the sign says so',
+    out.out && !tank().running && later === shots && /^Knocked out/.test(outSign), `shots ${shots} → ${later}, sign "${outSign}"`);
+  await menuButtonPress();
+  await menuClick('menu-damage-repair');
+  const mended = await waitFor('repaired', () => { const d = damage(); return !d.out && d.hits === 0 && tank().running && d; }, 5000).catch(() => damage());
+  check('Damage → Repair puts it all right', !mended.out && mended.hits === 0, `"${evalInApp("window.__gameMenu.text('menu-damage-status')")}"`);
+  evalInApp('(window.__enemy.stop(), true)');
+  await menuButtonPress();
+  evalInApp('(window.__drive.reset("keep"), true)');
 }
 
 /**

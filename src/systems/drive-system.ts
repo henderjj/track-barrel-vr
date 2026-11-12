@@ -180,6 +180,15 @@ const HEAT_SIGN_REARM = 95;
  * coolant set hot or to a warm idle's; a solo player goes to the driver's
  * seat to see the gauges. The host does it; a guest asks.
  */
+/**
+ * Host only: the tank's battle damage as the drive feels it (F3.4,
+ * DamageSystem sets it every frame, so a reset or a Meet keeps it): the
+ * engine's damage (0 to 2) and whether the tracks are held.
+ */
+export function setDriveDamage(engine: number, immobile: boolean): void {
+  active?.setDamage(engine, immobile);
+}
+
 export function setEngineHeat(heat: EngineHeat): void {
   if (!netLink.connected) seating.ask('driver');
   if (!netLink.isHost) {
@@ -570,6 +579,13 @@ export class DriveSystem extends createSystem({}) {
     // The stall count carries on (the stats count its changes).
     this.sim.stalls = was.stalls;
     this.sim.coughs = was.coughs;
+    // Battle damage stays until repaired (F3.4): a knocked-out engine stays stopped.
+    this.sim.damage = was.damage;
+    this.sim.immobile = was.immobile;
+    if (was.damage >= 2) {
+      this.sim.running = false;
+      this.sim.stallCause = was.stallCause;
+    }
     copyTankDrive(this.sim, this.shown);
     console.info(`[Drive] back at the start, engine ${engine === 'keep' ? 'as it was' : this.sim.running ? 'running' : 'off'}`);
   }
@@ -580,6 +596,15 @@ export class DriveSystem extends createSystem({}) {
   }
 
   /** Host only: Combat → Engine heat (F3.7). */
+  /** Host only: see setDriveDamage. A repaired engine knocked out by a hit starts again, warm. */
+  setDamage(engine: number, immobile: boolean): void {
+    if (!netLink.isHost) return;
+    const was = this.sim.damage;
+    this.sim.damage = engine;
+    this.sim.immobile = immobile;
+    if (was >= 2 && engine < 2 && !this.sim.running && this.sim.stallCause === 'hit') this.warmStart();
+  }
+
   setHeat(heat: EngineHeat): void {
     if (!netLink.isHost) return;
     this.warmStart();
@@ -917,6 +942,7 @@ export class DriveSystem extends createSystem({}) {
         flood: 'Flooded: push the choke half in once it runs',
         brake: 'Parking brake on: hold the trigger and push its lever down',
         heat: 'Overheated: let it cool below 110 °C, then start',
+        hit: 'Knocked out by a hit: it will not start until repaired',
       };
       this.say('Engine stalled', why[s.stallCause]);
     }

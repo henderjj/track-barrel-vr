@@ -10,6 +10,7 @@
  */
 
 import type { HitFace, Vec3 } from './ballistics.js';
+import { type DamageHit, parseHit } from './damage.js';
 import { ENEMY_TANK, ENEMY_TANKS, type RoutePose, routePose, wrapRoute } from './enemy-tanks.js';
 import { rng } from './random.js';
 import { groundHeight, wrapTile } from './terrain.js';
@@ -282,6 +283,8 @@ export interface EnemyShot {
   /** Where the gun is from the tank, as a clock direction, and how far, m. */
   clock: number;
   range: number;
+  /** A hit: where it struck and what it did (F3.4), decided by the host as it fires. */
+  damage?: DamageHit;
 }
 
 /** What a gun's eyes check besides range and the ground: the smoke (the battery is engine-free, so the caller says). */
@@ -622,6 +625,7 @@ export function parseShot(raw: unknown): EnemyShot | null {
     flight: Math.max(0, Math.min(5, e.flight)),
     clock: typeof e.clock === 'number' ? e.clock : 12,
     range: typeof e.range === 'number' ? e.range : 0,
+    damage: e.hit ? (parseHit(e.damage) ?? undefined) : undefined,
   };
 }
 
