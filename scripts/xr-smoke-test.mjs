@@ -2769,6 +2769,54 @@ async function partOne() {
 
   // 6s. Ammunition types (F3.1).
   await theAmmunition();
+
+  // 6t. Overheating (F3.7).
+  await theEngineHeat();
+}
+
+/**
+ * 6t. Overheating (F3.7): Combat → Engine heat → Hot seats a solo player
+ *     as driver with the engine running past knocking: the TEMP lamp lit,
+ *     the coolant gauge in the red, the engine rough, the driver's sign
+ *     and the menu's line saying so. Held hotter than the stall point and
+ *     flat out in 1st with the Stick shift, it stalls from the heat and
+ *     the sign says why; Engine heat → Normal starts it again warm with
+ *     the lamp out.
+ */
+async function theEngineHeat() {
+  const tank = () => evalInApp('window.__drive.state()');
+  const box = () => evalInApp('window.__driverStation.engine()');
+  iwsdk(['xr', 'set-device-state'], {});
+  await menuButtonPress();
+  await menuClick('menu-heat-hot');
+  const hot = await waitFor('the engine hot', () => { const s = tank(); return s.running && s.coolant >= 112 && box().lamps.temp && s; }, 8000).catch(() => tank());
+  await sleep(1500);
+  const zone = evalInApp('window.__driverStation.zones().at.coolant');
+  const status = evalInApp("window.__gameMenu.text('menu-heat-status')");
+  const sign = evalInApp('window.__drive.sign');
+  check('Combat → Engine heat → Hot: the driver sees the TEMP lamp lit, the coolant gauge in the red, the engine knocking and a sign to idle it',
+    hot.running && hot.coolant >= 112 && box().lamps.temp && zone === 'danger' && tank().rough && evalInApp('window.__seats.mine') === 'driver' &&
+      /^Engine overheating/.test(sign) && /knocking/.test(status ?? ''),
+    `seat ${evalInApp('window.__seats.mine')}, ${Math.round(hot.coolant)} °C, lamp ${box().lamps.temp}, gauge ${zone}, rough ${tank().rough}, sign "${sign}", menu "${status}"`);
+  await menuButtonPress();
+
+  // Hotter than the stall point and labouring flat out in 1st: it dies within HEAT_STALL_SECONDS (8 s).
+  const stalls = tank().stalls;
+  evalInApp('(window.__drive.coolant(125), window.__drive.set({ mode: "stick", gear: 1, accel: 1 }), true)');
+  const stalled = await waitFor('the engine to stall from the heat', () => { const s = tank(); return !s.running && s.stalls > stalls && s; }, 15000).catch(() => tank());
+  await sleep(500);
+  const why = evalInApp('window.__drive.sign');
+  check('Held too hot, the engine stalls from the heat and the driver is told to let it cool',
+    !stalled.running && stalled.stallCause === 'heat' && /^Engine stalled\. Overheated/.test(why),
+    `running ${stalled.running}, cause ${stalled.stallCause}, sign "${why}"`);
+  evalInApp('(window.__drive.set(null), true)');
+  await menuButtonPress();
+  await menuClick('menu-heat-normal');
+  const normal = await waitFor('the engine back to normal', () => { const s = tank(); return s.running && s.coolant < 100 && !box().lamps.temp && s; }, 8000).catch(() => tank());
+  check('Engine heat → Normal starts it again, warm, with the TEMP lamp out',
+    normal.running && normal.coolant < 100 && !box().lamps.temp, `running ${normal.running}, ${Math.round(normal.coolant)} °C, lamp ${box().lamps.temp}`);
+  await menuButtonPress();
+  evalInApp('(window.__drive.reset("keep"), true)');
 }
 
 /**

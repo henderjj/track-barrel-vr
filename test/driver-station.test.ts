@@ -395,7 +395,7 @@ describe('the gauges\' coloured bands (docs/gauge-zones.md)', () => {
     expect(zoneOf(rpm, MAX_RPM - 1)).toBe('caution');
   });
 
-  it('marks the coolant from the engine\'s own numbers: blue needs the choke, amber warming, green warm, red never reached', () => {
+  it('marks the coolant from the engine\'s own numbers: blue needs the choke, amber warming, green warm, red only labouring in a low gear (F3.7)', () => {
     const coolant = dial('coolant');
     expect(zoneOf(coolant, COOLANT_START)).toBe('cold');
     expect(zoneOf(coolant, CHOKE_COOLANT - 0.1)).toBe('cold');
@@ -405,7 +405,7 @@ describe('the gauges\' coloured bands (docs/gauge-zones.md)', () => {
     expect(zoneOf(coolant, COOLANT_IDLE)).toBe('normal');
     expect(zoneOf(coolant, COOLANT_FULL)).toBe('normal');
     expect(zoneOf(coolant, OVERHEAT_COOLANT + 1)).toBe('danger');
-    // Warmed from cold at a fast idle, then run flat out for hours: blue, amber, green, never red.
+    // Warmed from cold at a fast idle, then run flat out in neutral for hours: blue, amber, green, never red.
     const s = createTankDrive();
     const seen: string[] = [];
     s.rpm = 1300;

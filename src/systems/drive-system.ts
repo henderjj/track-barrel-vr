@@ -27,7 +27,18 @@ import { onSettingChange } from '../live-settings.js';
 import { settings } from '../settings.js';
 import { type Bumps, crewBumps, groundFeel, parseBumps, vignetteLevel } from '../sim/comfort.js';
 import { pedalHandUse } from '../sim/driver-station.js';
-import { chokeLevel, ENGINE_START_NAMES, type EngineStart, startable, startEngine as startSim, type StallCause, stopEngine } from '../sim/engine.js';
+import {
+  chokeLevel,
+  ENGINE_START_NAMES,
+  type EngineStart,
+  HOT_COOLANT,
+  KNOCK_COOLANT,
+  RESTART_COOLANT,
+  startable,
+  startEngine as startSim,
+  type StallCause,
+  stopEngine,
+} from '../sim/engine.js';
 import { GEARBOX_NAMES, type GearboxMode, nextGear, realControls } from '../sim/gearbox.js';
 import {
   angleDelta,
@@ -157,6 +168,39 @@ export function startEngine(): void {
   active?.warmStart();
 }
 
+/** Combat → Engine heat (F3.7): the coolant set hot (overheating, knocking) or back to a warm idle's. */
+export type EngineHeat = 'hot' | 'normal';
+/** Where Engine heat → Hot puts the coolant, °C: past knocking, short of stalling. */
+export const PRACTICE_HOT_COOLANT = 114;
+/** Below this the driver's heat signs are said again when it next runs hot, °C. */
+const HEAT_SIGN_REARM = 95;
+
+/**
+ * Combat → Engine heat (F3.7): the engine started if it isn't and its
+ * coolant set hot or to a warm idle's; a solo player goes to the driver's
+ * seat to see the gauges. The host does it; a guest asks.
+ */
+export function setEngineHeat(heat: EngineHeat): void {
+  if (!netLink.connected) seating.ask('driver');
+  if (!netLink.isHost) {
+    const event = { t: 'engine-heat', heat };
+    netLink.sendEvent(event);
+    return;
+  }
+  active?.setHeat(heat);
+}
+
+/** The engine's heat for the menu's line: the coolant and what it means. */
+export function heatStatus(): string {
+  const s = active?.shownState();
+  if (!s) return 'Engine heat';
+  const c = Math.round(s.coolant);
+  if (!s.running) return `Coolant ${c} °C, engine off${s.coolant > RESTART_COOLANT ? ': too hot to start, let it cool' : ''}`;
+  if (s.coolant >= KNOCK_COOLANT) return `Coolant ${c} °C: overheating, knocking. Idle it to cool`;
+  if (s.coolant >= HOT_COOLANT) return `Coolant ${c} °C: hot. Change up or ease off`;
+  return `Coolant ${c} °C: normal`;
+}
+
 /** Where a guest asks the host to park the tank (Practice shortcuts, F1.7). */
 interface PlaceEvent {
   t: 'drive-place';
@@ -260,6 +304,8 @@ interface DriveDebug {
   reset(engine?: EngineReset): void;
   /** Host only: start the engine warm (as the Practice shortcuts do) or stop it, cold (tests). */
   engine(action: 'start' | 'stop'): void;
+  /** Host only: set the coolant, °C, the engine as it is (F3.7 tests). */
+  coolant(degrees: number): void;
   /** Set the parking brake on this page, as its lever (or key P) would (F1.18). */
   parkingBrake(on: boolean): void;
   /** Host only: put the tank at rest at (x, z) facing `heading` (tests and Practice). */
@@ -347,6 +393,8 @@ export class DriveSystem extends createSystem({}) {
   private stallsSeen = -1;
   private starterHeld = 0;
   private crankHeld = 0;
+  /** The heat signs said since it last ran cool: 0 none, 1 hot, 2 overheating (F3.7). */
+  private heatSaid = 0;
   /** This page's driver's Engine start setting (engineStart). */
   start: EngineStart = settings.engine;
   /** This page's driver's gearbox mode (gearboxMode). */
@@ -382,6 +430,10 @@ export class DriveSystem extends createSystem({}) {
     });
     netLink.events.set('engine-start', () => {
       if (netLink.isHost) this.warmStart();
+    });
+    netLink.events.set('engine-heat', (data) => {
+      const heat = (data as { heat?: unknown }).heat;
+      if (netLink.isHost && (heat === 'hot' || heat === 'normal')) this.setHeat(heat);
     });
     netLink.events.set('comfort', (data) => {
       this.theirBumps = parseBumps((data as { bumps?: unknown }).bumps);
@@ -425,6 +477,7 @@ export class DriveSystem extends createSystem({}) {
       () => netLink.handlers.delete(PacketType.DriverControls),
       () => netLink.events.delete('drive-reset'),
       () => netLink.events.delete('engine-start'),
+      () => netLink.events.delete('engine-heat'),
       () => netLink.events.delete('drive-place'),
       () => netLink.events.delete('comfort'),
       onSettingChange((key) => {
@@ -454,6 +507,11 @@ export class DriveSystem extends createSystem({}) {
           self.sim.rpm = 0;
           copyTankDrive(self.sim, self.shown);
         }
+      },
+      coolant: (degrees) => {
+        if (!netLink.isHost || !Number.isFinite(degrees)) return;
+        self.sim.coolant = degrees;
+        copyTankDrive(self.sim, self.shown);
       },
       parkingBrake: (on) => {
         drive.parkingBrake = on;
@@ -514,6 +572,21 @@ export class DriveSystem extends createSystem({}) {
     this.sim.coughs = was.coughs;
     copyTankDrive(this.sim, this.shown);
     console.info(`[Drive] back at the start, engine ${engine === 'keep' ? 'as it was' : this.sim.running ? 'running' : 'off'}`);
+  }
+
+  /** The tank as this page draws it. */
+  shownState(): Readonly<TankDrive> {
+    return this.shown;
+  }
+
+  /** Host only: Combat → Engine heat (F3.7). */
+  setHeat(heat: EngineHeat): void {
+    if (!netLink.isHost) return;
+    this.warmStart();
+    this.sim.coolant = heat === 'hot' ? PRACTICE_HOT_COOLANT : COOLANT_IDLE;
+    this.sim.heatTime = 0;
+    copyTankDrive(this.sim, this.shown);
+    console.info(`[Drive] engine heat set ${heat}: ${this.sim.coolant} °C`);
   }
 
   /** Host only: the engine running and warm, at once (a Practice shortcut that needs the power traverse). */
@@ -843,10 +916,19 @@ export class DriveSystem extends createSystem({}) {
         choke: 'Choke in too soon: ease it in, half out first',
         flood: 'Flooded: push the choke half in once it runs',
         brake: 'Parking brake on: hold the trigger and push its lever down',
+        heat: 'Overheated: let it cool below 110 °C, then start',
       };
       this.say('Engine stalled', why[s.stallCause]);
     }
     this.stallsSeen = stalls;
+    // Running hot (F3.7): said once as it passes the red, again as it starts knocking.
+    const heat = s.running ? (s.coolant >= KNOCK_COOLANT ? 2 : s.coolant >= HOT_COOLANT ? 1 : 0) : 0;
+    if (mine && heat > this.heatSaid) {
+      if (heat === 2) this.say('Engine overheating', 'Stop and let it idle, or it will stall');
+      else this.say('Engine hot', 'Change up or ease off the revs');
+    }
+    if (heat > this.heatSaid) this.heatSaid = heat;
+    else if (s.coolant < HEAT_SIGN_REARM) this.heatSaid = 0;
     const c = this.controls;
     const holding = mine && c.starter && !s.running;
     this.starterHeld = holding && !s.cranking ? this.starterHeld + delta : 0;
@@ -858,7 +940,9 @@ export class DriveSystem extends createSystem({}) {
       else if (!startable(s, c)) this.say('In gear', this.mode === 'clutch' ? 'Clutch in, or neutral, to start' : 'Neutral to start');
     }
     if (this.crankHeld > 4 && this.crankHeld - delta <= 4) {
-      this.say('It won\'t fire', c.start === 'full' && !c.ignition ? 'Ignition on' : 'Choke out and the hand throttle a little open');
+      this.say('It won\'t fire', c.start === 'full' && !c.ignition ? 'Ignition on'
+        : s.coolant > RESTART_COOLANT ? 'Too hot: let it cool below 110 °C'
+          : 'Choke out and the hand throttle a little open');
     }
   }
 

@@ -14,7 +14,7 @@
 
 import { type Gear, DOWN_RPM, LEVER_ORDER, MAX_RPM, NEUTRAL, UP_RPM } from './gearbox.js';
 import { SEATS, VISION_SLIT } from './cabin.js';
-import { BATTERY_VOLTS, CHOKE_COOLANT, RUNNING_VOLTS, WARM_COOLANT } from './engine.js';
+import { BATTERY_VOLTS, CHOKE_COOLANT, HOT_COOLANT, RUNNING_VOLTS, WARM_COOLANT } from './engine.js';
 import { COOLANT_FULL } from './tank-drive.js';
 import { TILLER } from './lever.js';
 import type { ButtonSpec, LeverSpec, PullSpec, ToggleSpec } from './mechanism.js';
@@ -212,11 +212,12 @@ export const ZONE_COLORS: Readonly<Record<ZoneKind, string>> = {
 };
 
 /**
- * The coolant's red, °C: boiling under the radiator's cap. Hotter than the
- * engine runs at full revs (COOLANT_FULL, 92 °C), so in Phase 1, where
- * nothing fails (plan decision 7), the needle never reaches it.
+ * The coolant's red, °C: boiling under the radiator's cap, where the TEMP
+ * lamp lights. Hotter than the engine runs at full revs (COOLANT_FULL,
+ * 92 °C); only an engine labouring in a low gear gets there (F3.7,
+ * docs/overheating.md).
  */
-export const OVERHEAT_COOLANT = 100;
+export const OVERHEAT_COOLANT = HOT_COOLANT;
 /** Oil pressure under this is too low for a running engine, bar: only a stopping or stopped engine's needle drops there (a hot idle reads about 1.1). */
 export const LOW_OIL = 0.6;
 /** The oil pressure's green: from just under a hot idle's to a cold engine's at full revs, bar. */
@@ -414,18 +415,23 @@ export const VOLT_DIAL: Dial = {
   ],
 };
 
-export type LampId = 'oil' | 'generator' | 'brake';
+export type LampId = 'temp' | 'oil' | 'generator' | 'brake';
 /**
  * The warning lamps, in a column between the voltmeter and the switches
  * (F1.17): oil pressure and generator, lit with the battery on and the
- * engine stopped; the parking brake's comes with F1.18. Panel x, each
- * one's height from the strip's middle, its label and lit colour.
+ * engine stopped; the parking brake's comes with F1.18, and the coolant's
+ * TEMP, lit from HOT_COOLANT, at the top with F3.7 (amber, to tell it from
+ * the red ones). Panel x, each one's height from the strip's middle, its
+ * label and lit colour.
  */
 export const LAMPS: readonly { id: LampId; x: number; y: number; label: string; color: number }[] = [
-  { id: 'oil', x: -0.086, y: 0.021, label: 'OIL', color: 0xff3b2a },
-  { id: 'generator', x: -0.086, y: 0, label: 'GEN', color: 0xff3b2a },
-  { id: 'brake', x: -0.086, y: -0.021, label: 'BRAKE', color: 0xff3b2a },
+  { id: 'temp', x: -0.086, y: 0.024, label: 'TEMP', color: 0xffa020 },
+  { id: 'oil', x: -0.086, y: 0.008, label: 'OIL', color: 0xff3b2a },
+  { id: 'generator', x: -0.086, y: -0.008, label: 'GEN', color: 0xff3b2a },
+  { id: 'brake', x: -0.086, y: -0.024, label: 'BRAKE', color: 0xff3b2a },
 ];
+/** The TEMP lamp is lit with the battery on and the coolant at least this hot, °C (F3.7). */
+export const TEMP_LAMP_COOLANT = HOT_COOLANT;
 /** A lamp's lens: its radius and how far it stands proud of the strip's face, m. */
 export const LAMP = { radius: 0.006, proud: 0.005 } as const;
 
