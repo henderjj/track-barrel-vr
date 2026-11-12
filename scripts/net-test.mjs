@@ -814,6 +814,11 @@ async function enemyChecks(host, guest, label) {
 
   const records = (p) => p.page.evaluate(() => window.__firing.records());
   const before = (await records(host)).length;
+  // The guest lays from where its page has the tank: wait for the place to reach it (at 150 ms RTT it can still be at the start).
+  await waitFor("the guest to have the tank parked at gun A's spot", async () => {
+    const t = await guest.page.evaluate(() => window.__drive.state());
+    return Math.hypot(t.x, t.z + 80) < 0.5 && Math.abs(t.speed) < 0.05;
+  }, 8000).catch(() => null);
   await guest.page.evaluate(() => {
     window.__loading.loadNow('ap');
     window.__firing.aimAt(9, 'ap');
