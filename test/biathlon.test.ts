@@ -16,7 +16,7 @@ import {
 } from '../src/sim/biathlon.js';
 import { COURSE_TARGET_FIRST, targetFaces } from '../src/sim/ballistics.js';
 import { BotDriver, createDriveWish, RACE_LOOP_FIRST, RACE_ROUTE } from '../src/sim/crew-bot.js';
-import { COURSE, COURSE_START, COURSE_TARGETS, CourseProgress, distanceToTrack } from '../src/sim/course.js';
+import { COURSE, COURSE_START, COURSE_TARGETS, CourseProgress, distanceToTrack, LINE_RANGE_SPAN, LINE_RANGES } from '../src/sim/course.js';
 import { clockLines, type CourseFeed, createRunSnapshot, formatRunTime, RangeRun, readRunEvent, RUN_COUNTDOWN, runEvent, runLine, runSign } from '../src/sim/range-run.js';
 import { createControls, createTankDrive, stepDrive } from '../src/sim/tank-drive.js';
 import { OBSTACLES } from '../src/sim/terrain.js';
@@ -217,6 +217,30 @@ describe('biathlon race rules (F5.3b)', () => {
     expect(readRunEvent(old, read)).not.toBeNull();
     expect(read.mode).toBe('range');
     expect(read.boardAt.every((t) => t === -1)).toBe(true);
+  });
+
+  it("carries the race's board ranges: picked at its start, in the run event, kept by a page from before them", () => {
+    const r = new RangeRun();
+    expect(r.s.ranges).toEqual(LINE_RANGES);
+    r.start('biathlon', [380, 510]);
+    expect(r.s.ranges).toEqual([380, 510]);
+    // Out of a line's span, made good.
+    r.start('biathlon', [100, 990]);
+    expect(r.s.ranges).toEqual([LINE_RANGE_SPAN[0][0], LINE_RANGE_SPAN[1][1]]);
+    // A range run leaves them where they were.
+    r.start('range', [400, 470]);
+    expect(r.s.ranges).toEqual([LINE_RANGE_SPAN[0][0], LINE_RANGE_SPAN[1][1]]);
+    r.start('biathlon', [420, 460]);
+    const event = JSON.parse(JSON.stringify(runEvent(r.s, 5)));
+    const copy = createRunSnapshot();
+    readRunEvent(event, copy);
+    expect(copy.ranges).toEqual([420, 460]);
+    const old = { ...event };
+    delete old.ranges;
+    const kept = createRunSnapshot();
+    kept.ranges[0] = 370;
+    readRunEvent(old, kept);
+    expect(kept.ranges).toEqual([370, LINE_RANGES[1]]);
   });
 
   it('gives gold, silver and bronze by time', () => {

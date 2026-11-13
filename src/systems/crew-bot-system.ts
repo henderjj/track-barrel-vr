@@ -2,7 +2,7 @@ import { createSystem, Euler, Matrix4, Quaternion, Vector3, VisibilityState } fr
 import type { PoseSample } from '../net/pose-codec.js';
 import { settings } from '../settings.js';
 import { AMMO, type AmmoKind } from '../sim/ammo.js';
-import { aimAt, COURSE_TARGET_FIRST, ENEMY_TARGET_FIRST, TARGET_NAMES, targetFaces } from '../sim/ballistics.js';
+import { aimAt, COURSE_TARGET_FIRST, ENEMY_TARGET_FIRST, syncCourseFaces, TARGET_NAMES, targetFaces } from '../sim/ballistics.js';
 import { boardDown, BOARD_FIRST, lineClosed, lineFor } from '../sim/biathlon.js';
 import { boxAt, LINE_ACROSS } from '../sim/course.js';
 import { FIRST_TANK } from '../sim/enemy-guns.js';
@@ -215,6 +215,8 @@ export class CrewBotSystem extends createSystem({}) {
   private phase: 'load' | 'lay' | 'result' = 'load';
   private fireAtWill = true;
   private faces = targetFaces();
+  /** The boards' version the faces were last brought to (a race moves them). */
+  private boardsSeen = -1;
   private hit: boolean[] = this.faces.map(() => false);
   /** The targets it won't lay on now: hit already, or not this place's (the range's three, or the firing box's own line). */
   private skip: boolean[] = this.faces.map(() => false);
@@ -326,6 +328,7 @@ export class CrewBotSystem extends createSystem({}) {
     if (!settings.bot) {
       return;
     }
+    this.boardsSeen = syncCourseFaces(this.faces, this.boardsSeen);
     if (!netLink.connected) {
       if (this.started) {
         this.started = false;

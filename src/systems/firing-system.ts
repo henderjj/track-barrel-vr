@@ -8,6 +8,9 @@ import {
   decideShot,
   describeRound,
   flyShell,
+  SCATTER,
+  scatterDir,
+  syncCourseFaces,
   type HitFace,
   hullDirToWorld,
   hullToWorld,
@@ -21,6 +24,7 @@ import {
   type Vec3,
 } from '../sim/ballistics.js';
 import { wrapTile } from '../sim/terrain.js';
+import { settings } from '../settings.js';
 import { barrelDirection, muzzlePoint } from '../sim/turret.js';
 import { tankState } from './drive-system.js';
 import { netLink } from './net-system.js';
@@ -152,6 +156,8 @@ interface FiringDebug {
   predict(ammo?: AmmoKind): ShotRecord;
   /** Lay the gun on target `i` (the range's three, then the course's six) from where the tank stands (tests; the page that owns the turret), for round `ammo` (AP unless said); `aboveBy` m higher or `rightBy` m right of its middle. */
   aimAt(i: number, ammo?: AmmoKind, rightBy?: number, aboveBy?: number): { yaw: number; elevation: number };
+  /** Turn the gun's scatter on or off on this page (the tests load with `scatter=0`); returns whether it is on. */
+  scatter(on?: boolean): boolean;
   readonly sent: number;
   readonly received: number;
 }
@@ -174,6 +180,8 @@ export class FiringSystem extends createSystem({}) {
   readonly records: ShotRecord[] = [];
   readonly hits: number[] = targetFaces().map(() => 0);
   readonly faces = targetFaces();
+  /** The boards' version (src/sim/course.ts boardsVersion) the faces were last brought to: a race moves them. */
+  private boardsSeen = -1;
   private soft = softTargets();
   private armoured = armouredTargets();
   private decision: ShotDecision = { target: -1, blast: Number.NaN };
@@ -253,6 +261,10 @@ export class FiringSystem extends createSystem({}) {
         aimTurret(aim.yaw, aim.elevation);
         return aim;
       },
+      scatter: (on) => {
+        if (on !== undefined) settings.scatter = on;
+        return settings.scatter;
+      },
       get sent() { return self.sent; },
       get received() { return self.received; },
     };
@@ -264,6 +276,8 @@ export class FiringSystem extends createSystem({}) {
     const shot = this.start(id, this.time, ammo);
     if (shot == null) return;
     this.aimNow(shot.origin, shot.dir);
+    // The gun's scatter: this page turns the shell off the bore's line, and sends the line it flew (`scatter=0`: none).
+    if (settings.scatter) scatterDir(shot.dir, 1 - Math.random(), Math.random(), SCATTER, shot.dir);
     this.fly(shot);
     if (netLink.connected) {
       const event = { t: 'shot', id, k: ammoIndex(ammo), o: [...shot.origin], d: [...shot.dir] };
@@ -391,11 +405,13 @@ export class FiringSystem extends createSystem({}) {
   }
 
   private fly(shot: Shot): void {
+    this.boardsSeen = syncCourseFaces(this.faces, this.boardsSeen);
     flyShell(shot.origin, shot.dir, this.faces, shot.flight, undefined, AMMO[shot.ammo].speed);
   }
 
   update(delta: number): void {
     this.time += Math.min(delta, 0.25);
+    this.boardsSeen = syncCourseFaces(this.faces, this.boardsSeen);
     const tank = tankState();
     // The ground is drawn at the tank's position less whole tiles: world points are drawn that much nearer.
     const offX = tank.x - wrapTile(tank.x);

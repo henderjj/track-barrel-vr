@@ -1,7 +1,7 @@
 /**
  * The biathlon course (F5.3a, docs/biathlon-course.md): a loop of about
  * 800 m on the flat field east of the test range, two firing boxes on its
- * east side with three boards each across the infield, a penalty loop of
+ * east side with three boards each down a lane behind them, a penalty loop of
  * about 150 m beside them, and the gates a lap must pass. The race on it
  * (laps, rounds, penalties owed, medals) is F5.3b's.
  *
@@ -17,7 +17,7 @@
  * `course` event; allocates nothing per frame.
  */
 
-import { COURSE_FIELD, wrapTile } from './terrain.js';
+import { COURSE_FIELD, FIRING_LANES, laneDirection, wrapTile } from './terrain.js';
 
 export type Vec2 = [number, number];
 
@@ -237,24 +237,43 @@ export const PENALTY_GATE: Gate = (() => {
  * across it. The tank counts as in a box with its middle inside it.
  */
 export const FIRING_BOX = { length: 12, width: 8 } as const;
-export const BOX_Z: readonly number[] = [-152, -170];
+export const BOX_Z: readonly number[] = FIRING_LANES.map((l) => l.z);
 
-/** The firing lines' boards: how far each line's stand from its box, and how far across the line of fire the three stand (+ right, as the gunner sees them), m. */
-export const LINE_RANGES: readonly number[] = [150, 220];
 /**
- * Each line of fire swings this far from square across the infield, rad
- * (positive: towards the south): line 1's straight across, line 2's a
- * little north, so the two fan apart and a shell over one line's boards
- * never reaches the other's; line 1's passes between the range's 100 m and
- * 250 m targets far beyond.
+ * How far each line's boards stand from its box, m. Since the harder
+ * shooting (docs/biathlon-race.md, "Judging the range"), a race picks each
+ * line's range afresh within LINE_RANGE_SPAN (`pickLineRanges`), so the
+ * gunner judges it from the board's size in the sight; outside a race, and
+ * with `boardranges=0`, the boards stand at LINE_RANGES. `setLineRanges`
+ * moves COURSE_TARGETS in place.
  */
-export const LINE_SWING: readonly number[] = [0, (-6 * Math.PI) / 180];
+export const LINE_RANGES: readonly number[] = [400, 500];
+/** Each line's span of ranges for a race (line 1 the nearer), m, and the step they are picked in. */
+export const LINE_RANGE_SPAN: readonly (readonly [number, number])[] = [
+  [350, 450],
+  [450, 550],
+];
+export const LINE_RANGE_STEP = 10;
+/**
+ * Each line of fire runs south from its box, behind the tank as it stands
+ * there (the gunner traverses to 6 o'clock), down the ground's firing lane
+ * (FIRING_LANES in src/sim/terrain.ts: flat, with nothing standing in it),
+ * line 1's swung this far east of due south and line 2's as far west, rad,
+ * so the two fan apart and a shell over one line's boards never reaches
+ * the other's. The open ground south of the course is clear of the range,
+ * its roads' targets and the enemies.
+ */
+export const LINE_SWING: readonly number[] = FIRING_LANES.map((l) => l.swing);
 export const LINE_ACROSS: readonly number[] = [-6, 0, 6];
 /** The words for each board's place in its line, as the gunner sees them. */
 const ACROSS_WORDS = ['left', 'middle', 'right'] as const;
 
-/** A biathlon board: a white face with a black disc, its middle `lift + height / 2` m up. The disc is what counts: its square is the hit box. */
-export const COURSE_BOARD = { width: 2.2, height: 2.2, lift: 0.4, disc: 0.8, hitHalf: 0.75 } as const;
+/**
+ * A biathlon board: a white face with a black disc, its middle `lift +
+ * height / 2` m up. Only the black disc counts (`hitRadius`, the disc's
+ * own): a shell through the white misses.
+ */
+export const COURSE_BOARD = { width: 2.2, height: 2.2, lift: 0.4, disc: 0.8, hitRadius: 0.4 } as const;
 
 /** Where the tank's middle stands in box `k`, and which way it faces (up the east side, north). */
 export function boxSpot(k: number): [x: number, z: number, heading: number] {
@@ -281,27 +300,89 @@ export interface CourseTarget {
   name: string;
 }
 
-/** The six boards, line 1's three then line 2's, each line left to right as its gunner sees them. */
+/** The six boards, line 1's three then line 2's, each line left to right as its gunner sees them, at LINE_RANGES until a race moves them. */
 export const COURSE_TARGETS: readonly CourseTarget[] = (() => {
   const list: CourseTarget[] = [];
-  const f: Vec2 = [0, 0];
   BOX_Z.forEach((_, line) => {
-    const [bx, bz, heading] = boxSpot(line);
-    // The line of fire is to the box's left (west, across the infield), swung a little; its right is a quarter turn clockwise from it.
-    leftOf(heading + LINE_SWING[line], f);
-    const fx = f[0];
-    const fz = f[1];
-    const rx = -fz;
-    const rz = fx;
-    LINE_ACROSS.forEach((across, place) => {
-      const range = LINE_RANGES[line];
-      const x = bx + fx * range + rx * across;
-      const z = bz + fz * range + rz * across;
-      list.push({ line, place, x, z, yaw: Math.atan2(bx - x, bz - z), range, name: `the line ${line + 1} ${ACROSS_WORDS[place]} board` });
+    LINE_ACROSS.forEach((_, place) => {
+      list.push({ line, place, x: 0, z: 0, yaw: 0, range: 0, name: `the line ${line + 1} ${ACROSS_WORDS[place]} board` });
     });
   });
+  placeBoards(list, LINE_RANGES);
   return list;
 })();
+
+/** Stand `list`'s boards at `ranges` (one a line) from their boxes, along their lines of fire. */
+function placeBoards(list: CourseTarget[], ranges: readonly number[]): void {
+  const f: Vec2 = [0, 0];
+  for (const t of list) {
+    const [bx, bz] = boxSpot(t.line);
+    // The line of fire runs down the line's lane; its right, as the gunner sees it, is a quarter turn clockwise from it.
+    laneDirection(FIRING_LANES[t.line], f);
+    const rx = -f[1];
+    const rz = f[0];
+    const range = ranges[t.line];
+    const across = LINE_ACROSS[t.place];
+    t.x = bx + f[0] * range + rx * across;
+    t.z = bz + f[1] * range + rz * across;
+    t.yaw = Math.atan2(bx - t.x, bz - t.z);
+    t.range = range;
+  }
+}
+
+let boardRanges: number[] = [...LINE_RANGES];
+let boardsMoved = 0;
+
+/** The range each line's boards stand at now, m. */
+export function lineRanges(): readonly number[] {
+  return boardRanges;
+}
+
+/** A count that changes whenever the boards move: systems keeping faces or meshes of them follow it. */
+export function boardsVersion(): number {
+  return boardsMoved;
+}
+
+/**
+ * The middle of line `line`'s firing lane (x, z), tile-local, into `out`.
+ * A lane is longer than half a tile, so a board drawn at the copy of it
+ * nearest the tank could be the next tile's, behind the box: the boards
+ * and their covers are drawn at the copy of their lane's middle nearest
+ * the tank instead, which keeps each board down its lane from its box.
+ */
+export function laneMiddle(line: number, out: Vec2): Vec2 {
+  const lane = FIRING_LANES[line];
+  laneDirection(lane, out);
+  out[0] = lane.x + (out[0] * lane.length) / 2;
+  out[1] = lane.z + (out[1] * lane.length) / 2;
+  return out;
+}
+
+/** A line's range made whole tens of metres within its span (LINE_RANGES's for anything not a number). */
+export function clampLineRange(line: number, range: unknown): number {
+  const r = Number(range);
+  if (!Number.isFinite(r) || r <= 0) return LINE_RANGES[line];
+  const [lo, hi] = LINE_RANGE_SPAN[line];
+  return Math.min(hi, Math.max(lo, Math.round(r / LINE_RANGE_STEP) * LINE_RANGE_STEP));
+}
+
+/** Move the boards to `ranges` (one a line, each within its span). Returns whether they moved. */
+export function setLineRanges(ranges: readonly number[]): boolean {
+  const next = BOX_Z.map((_, line) => clampLineRange(line, ranges[line]));
+  if (next.every((r, line) => r === boardRanges[line])) return false;
+  boardRanges = next;
+  placeBoards(COURSE_TARGETS as CourseTarget[], next);
+  boardsMoved++;
+  return true;
+}
+
+/** A race's ranges, picked with `random` (0 to 1) within each line's span, in whole steps. */
+export function pickLineRanges(random: () => number): number[] {
+  return LINE_RANGE_SPAN.map(([lo, hi]) => {
+    const steps = Math.round((hi - lo) / LINE_RANGE_STEP);
+    return lo + Math.min(steps, Math.floor(random() * (steps + 1))) * LINE_RANGE_STEP;
+  });
+}
 
 /** How high the middle of a course board's face is above the ground, m. */
 export function courseBoardMiddle(): number {
@@ -557,7 +638,7 @@ export class CourseProgress {
     const arrived = halted && !s.halted;
     s.box = box;
     s.halted = halted;
-    if (arrived) this.say(`Halted in firing box ${box + 1}`);
+    if (arrived) this.say(`Halted in firing box ${box + 1}: boards at 6 o'clock`);
     this.version++;
   }
 

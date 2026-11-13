@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { ENEMY_COUNT } from '../src/sim/enemy-guns.js';
+import { ENEMY_COUNT, ENEMY_GUNS } from '../src/sim/enemy-guns.js';
+import { ENEMY_TANKS } from '../src/sim/enemy-tanks.js';
 import {
   aimAt,
   COURSE_TARGET_FIRST,
   createShotResult,
   describeShot,
   flyShell,
+  type HitFace,
   hullDirToWorld,
+  SCATTER,
+  scatterDir,
+  syncCourseFaces,
   hullToWorld,
   TARGET_NAMES,
   targetFaces,
@@ -31,8 +36,16 @@ import {
   firstMissing,
   GATES,
   JOIN,
+  boardsVersion,
+  clampLineRange,
+  courseBoardMiddle,
+  LINE_RANGE_SPAN,
+  LINE_RANGE_STEP,
   LINE_RANGES,
+  lineRanges,
   onCourse,
+  pickLineRanges,
+  setLineRanges,
   PENALTY,
   PENALTY_GATE,
   PENALTY_OWN,
@@ -46,7 +59,7 @@ import { RANGE_TARGETS, sightLimit, targetFoot } from '../src/sim/range.js';
 import { SIGHT_STAND, TRUE_HALF_FIELD } from '../src/sim/sight.js';
 import { MAX_YAW_RATE } from '../src/sim/comfort.js';
 import { createTankDrive, FOOTPRINT } from '../src/sim/tank-drive.js';
-import { COURSE_FIELD, groundHeight, LANE_HALF, obstacleDistance, OBSTACLES, outsideCourseField, roughness } from '../src/sim/terrain.js';
+import { COURSE_FIELD, groundHeight, LANE_HALF, obstacleDistance, OBSTACLES, outsideCourseField, outsideFiringLanes, roughness, TILE, wrapTile } from '../src/sim/terrain.js';
 import { barrelDirection, muzzlePoint } from '../src/sim/turret.js';
 
 const DEG = Math.PI / 180;
@@ -146,79 +159,188 @@ describe('biathlon course (F5.3a)', () => {
     expect(Math.abs(BOX_Z[0] - BOX_Z[1])).toBeGreaterThanOrEqual(FIRING_BOX.length + 4);
   });
 
-  it('stands three boards per firing line across the infield, square to their box, all three in the sight at once', () => {
+  /** Every pair of ranges a race can pick: each line's span in its steps. */
+  const RANGE_PAIRS: number[][] = [];
+  for (let a = LINE_RANGE_SPAN[0][0]; a <= LINE_RANGE_SPAN[0][1]; a += 50) {
+    for (let b = LINE_RANGE_SPAN[1][0]; b <= LINE_RANGE_SPAN[1][1]; b += 50) RANGE_PAIRS.push([a, b]);
+  }
+
+  it('stands three boards per firing line down its lane south of the box, square to it, all three in the sight at once, at every range a race picks', () => {
     expect(COURSE_TARGETS.length).toBe(6);
-    COURSE_TARGETS.forEach((t) => {
-      const [bx, bz] = boxSpot(t.line);
-      expect(Math.hypot(t.x - bx, t.z - bz)).toBeGreaterThanOrEqual(LINE_RANGES[t.line] - 0.01);
-      expect(Math.hypot(t.x - bx, t.z - bz)).toBeLessThan(LINE_RANGES[t.line] + 1);
-      // Inside the loop, on the flat, and clear of obstacles and of the track.
-      expect(t.x).toBeGreaterThan(COURSE.west + COURSE.halfWidth + 10);
-      expect(t.x).toBeLessThan(COURSE.east - COURSE.halfWidth - 10);
-      expect(t.z).toBeGreaterThan(COURSE.north + COURSE.halfWidth + 10);
-      expect(t.z).toBeLessThan(COURSE.south - COURSE.halfWidth - 10);
-      expect(groundHeight(t.x, t.z)).toBe(0);
-      const n: [number, number] = [0, 0];
-      for (const o of OBSTACLES) expect(obstacleDistance(o, t.x, t.z, n)).toBeGreaterThan(5);
-      // Facing its box: the face's normal points back at it.
-      expect(Math.sin(t.yaw) * (bx - t.x) + Math.cos(t.yaw) * (bz - t.z)).toBeCloseTo(Math.hypot(bx - t.x, bz - t.z), 6);
-      // Seen from its box, within the sight's field round the middle board.
-      const middle = COURSE_TARGETS[t.line * 3 + 1];
-      const off = Math.atan2(t.x - bx, t.z - bz) - Math.atan2(middle.x - bx, middle.z - bz);
-      expect(Math.abs(off)).toBeLessThan(TRUE_HALF_FIELD * 0.9);
-      // Well within the fog.
-      expect(t.range).toBeLessThan(sightLimit() / 2);
-    });
+    expect(lineRanges()).toEqual(LINE_RANGES);
+    for (const ranges of [...RANGE_PAIRS, LINE_RANGES]) {
+      setLineRanges(ranges);
+      COURSE_TARGETS.forEach((t) => {
+        const [bx, bz] = boxSpot(t.line);
+        expect(t.range).toBe(ranges[t.line]);
+        expect(Math.hypot(t.x - bx, t.z - bz)).toBeGreaterThanOrEqual(t.range - 0.01);
+        expect(Math.hypot(t.x - bx, t.z - bz)).toBeLessThan(t.range + 1);
+        // South of the course, on the flat lane, inside the tile, clear of obstacles.
+        expect(t.z).toBeGreaterThan(COURSE_FIELD.south + 100);
+        expect(t.z).toBeLessThan(TILE / 2 - 10);
+        expect(outsideFiringLanes(t.x, t.z)).toBe(0);
+        expect(Math.abs(groundHeight(t.x, t.z))).toBeLessThan(0.02);
+        const n: [number, number] = [0, 0];
+        for (const o of OBSTACLES) expect(obstacleDistance(o, t.x, t.z, n)).toBeGreaterThan(5);
+        // Facing its box: the face's normal points back at it.
+        expect(Math.sin(t.yaw) * (bx - t.x) + Math.cos(t.yaw) * (bz - t.z)).toBeCloseTo(Math.hypot(bx - t.x, bz - t.z), 6);
+        // Seen from its box, within the sight's field round the middle board.
+        const middle = COURSE_TARGETS[t.line * 3 + 1];
+        const off = Math.atan2(t.x - bx, t.z - bz) - Math.atan2(middle.x - bx, middle.z - bz);
+        expect(Math.abs(off)).toBeLessThan(TRUE_HALF_FIELD * 0.9);
+        // Short of the fog's far edge, and nothing on the ground hides its disc from the turret.
+        expect(t.range).toBeLessThan(sightLimit());
+        const eye = 2.4;
+        const disc = courseBoardMiddle() - COURSE_BOARD.disc / 2;
+        for (let d = 5; d < t.range; d += 4) {
+          const x = bx + ((t.x - bx) * d) / t.range;
+          const z = bz + ((t.z - bz) * d) / t.range;
+          expect(eye + ((disc - eye) * d) / t.range - groundHeight(x, z)).toBeGreaterThan(0.3);
+        }
+      });
+    }
+    setLineRanges(LINE_RANGES);
     expect(COURSE_TARGETS.map((t) => t.name)).toContain('the line 2 right board');
     // The disc is what counts, and it fits on the board.
-    expect(COURSE_BOARD.hitHalf).toBeLessThan(COURSE_BOARD.disc);
+    expect(COURSE_BOARD.hitRadius).toBe(COURSE_BOARD.disc / 2);
     expect(COURSE_BOARD.disc).toBeLessThan(COURSE_BOARD.width / 2);
   });
 
-  it('keeps each line\'s shots clear of the other line\'s boards and of the range\'s targets', () => {
-    COURSE_TARGETS.forEach((t) => {
-      const [bx, bz] = boxSpot(t.line);
-      const ux = (t.x - bx) / t.range;
-      const uz = (t.z - bz) / t.range;
-      // How far a point stands from this shot's line, out to 800 m.
-      const offLine = (x: number, z: number) => {
-        const a = (x - bx) * ux + (z - bz) * uz;
-        return a < 0 ? Infinity : Math.abs((x - bx) * uz - (z - bz) * ux);
-      };
-      for (const other of COURSE_TARGETS) if (other.line !== t.line) expect(offLine(other.x, other.z)).toBeGreaterThan(8);
-      RANGE_TARGETS.forEach((_, i) => {
-        const [x, z] = targetFoot(i);
-        expect(offLine(x, z)).toBeGreaterThan(20);
+  it('picks each race\'s ranges within its line\'s span in whole tens, and moves the boards only when they change', () => {
+    setLineRanges(LINE_RANGES);
+    expect(pickLineRanges(() => 0)).toEqual([LINE_RANGE_SPAN[0][0], LINE_RANGE_SPAN[1][0]]);
+    expect(pickLineRanges(() => 0.999999)).toEqual([LINE_RANGE_SPAN[0][1], LINE_RANGE_SPAN[1][1]]);
+    let seed = 7;
+    const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const seen = new Set<number>();
+    for (let i = 0; i < 200; i++) {
+      const r = pickLineRanges(random);
+      r.forEach((v, k) => {
+        expect(v).toBeGreaterThanOrEqual(LINE_RANGE_SPAN[k][0]);
+        expect(v).toBeLessThanOrEqual(LINE_RANGE_SPAN[k][1]);
+        expect(v % LINE_RANGE_STEP).toBe(0);
       });
-    });
+      seen.add(r[0]);
+    }
+    expect(seen.size).toBe((LINE_RANGE_SPAN[0][1] - LINE_RANGE_SPAN[0][0]) / LINE_RANGE_STEP + 1);
+    expect(clampLineRange(0, 1000)).toBe(LINE_RANGE_SPAN[0][1]);
+    expect(clampLineRange(1, 'x')).toBe(LINE_RANGES[1]);
+    expect(clampLineRange(0, 377)).toBe(380);
+    const v = boardsVersion();
+    expect(setLineRanges(LINE_RANGES)).toBe(false);
+    expect(boardsVersion()).toBe(v);
+    expect(setLineRanges([360, 530])).toBe(true);
+    expect(boardsVersion()).toBe(v + 1);
+    expect(lineRanges()).toEqual([360, 530]);
+    // The shells' faces follow.
+    const faces = targetFaces();
+    setLineRanges(LINE_RANGES);
+    expect(syncCourseFaces(faces, v + 1)).toBe(v + 2);
+    expect(faces[COURSE_TARGET_FIRST].x).toBeCloseTo(COURSE_TARGETS[0].x, 9);
+    expect(faces[COURSE_TARGET_FIRST].z).toBeCloseTo(COURSE_TARGETS[0].z, 9);
   });
 
-  it('lets the gun, laid from each box, hit each of its line\'s boards; a miss names the nearest board', () => {
-    const faces = targetFaces();
-    // Then the enemy guns (F3.2), off until their battery starts.
-    expect(faces.length).toBe(RANGE_TARGETS.length + COURSE_TARGETS.length + ENEMY_COUNT);
-    expect(TARGET_NAMES.length).toBe(faces.length);
-    COURSE_TARGETS.forEach((t, j) => {
-      const [x, z, heading] = boxSpot(t.line);
-      const tank = createTankDrive(x, z, heading);
-      const i = COURSE_TARGET_FIRST + j;
-      const { yaw, elevation } = aimAt(tank, faces[i], muzzlePoint);
-      // The infield is on the box's left: the turret turns about a quarter to the left.
-      expect(yaw).toBeGreaterThan(80 * DEG);
-      expect(yaw).toBeLessThan(100 * DEG);
-      const origin = hullToWorld(tank, muzzlePoint(yaw, elevation, [0, 0, 0]), [0, 0, 0]);
-      const d = hullDirToWorld(tank, barrelDirection(yaw, elevation, [0, 0, 0]), [0, 0, 0]);
-      const result = flyShell(origin, d, faces, createShotResult());
-      expect(result.kind, t.name).toBe('target');
-      expect(result.target).toBe(i);
-      expect(describeShot(result, origin, d, faces, TARGET_NAMES)).toBe(`Hit: ${t.name}`);
-      // Laid a little high, it goes over the board and the miss names it.
-      const highOrigin = hullToWorld(tank, muzzlePoint(yaw, elevation + 0.5 * DEG, [0, 0, 0]), [0, 0, 0]);
-      const high = hullDirToWorld(tank, barrelDirection(yaw, elevation + 0.5 * DEG, [0, 0, 0]), [0, 0, 0]);
-      const miss = flyShell(highOrigin, high, faces, createShotResult());
-      expect(miss.kind).not.toBe('target');
-      expect(describeShot(miss, highOrigin, high, faces, TARGET_NAMES)).toMatch(new RegExp(`^Miss ${t.name}: \\d+ m over`));
-    });
+  it('keeps each line\'s shots clear of the other line\'s boards, the range\'s targets and the enemies, at every range a race picks', () => {
+    const guns = ENEMY_GUNS.map((g) => [g.x, g.z]);
+    const routes = ENEMY_TANKS.flatMap((t) => t.points);
+    for (const ranges of RANGE_PAIRS) {
+      setLineRanges(ranges);
+      COURSE_TARGETS.forEach((t) => {
+        const [bx, bz] = boxSpot(t.line);
+        const ux = (t.x - bx) / t.range;
+        const uz = (t.z - bz) / t.range;
+        // How far a point (its nearest copy) stands from this shot's line, out to 700 m.
+        const offLine = (px: number, pz: number) => {
+          const x = bx + wrapTile(px - bx);
+          const z = bz + wrapTile(pz - bz);
+          const a = (x - bx) * ux + (z - bz) * uz;
+          return a < 0 || a > 700 ? Infinity : Math.abs((x - bx) * uz - (z - bz) * ux);
+        };
+        for (const other of COURSE_TARGETS) if (other.line !== t.line) expect(offLine(other.x, other.z)).toBeGreaterThan(8);
+        RANGE_TARGETS.forEach((_, i) => {
+          const [x, z] = targetFoot(i);
+          expect(offLine(x, z)).toBeGreaterThan(20);
+        });
+        for (const [x, z] of guns) expect(offLine(x, z)).toBeGreaterThan(20);
+        // The enemy tanks' routes, sampled every 10 m.
+        for (let k = 0; k + 1 < routes.length; k += 2) {
+          const [ax, az] = routes[k];
+          const [cx, cz] = routes[k + 1];
+          for (let f = 0; f <= 1; f += 10 / Math.hypot(cx - ax, cz - az)) expect(offLine(ax + (cx - ax) * f, az + (cz - az) * f)).toBeGreaterThan(20);
+        }
+      });
+    }
+    setLineRanges(LINE_RANGES);
+  });
+
+  it('lets the gun, laid from each box, hit each of its line\'s boards on its black disc; a shell through the white misses', () => {
+    for (const ranges of [LINE_RANGES, [LINE_RANGE_SPAN[0][1], LINE_RANGE_SPAN[1][1]]]) {
+      setLineRanges(ranges);
+      const faces = targetFaces();
+      // Then the enemy guns (F3.2), off until their battery starts.
+      expect(faces.length).toBe(RANGE_TARGETS.length + COURSE_TARGETS.length + ENEMY_COUNT);
+      expect(TARGET_NAMES.length).toBe(faces.length);
+      COURSE_TARGETS.forEach((t, j) => {
+        const [x, z, heading] = boxSpot(t.line);
+        const tank = createTankDrive(x, z, heading);
+        const i = COURSE_TARGET_FIRST + j;
+        expect(faces[i].round).toBe(true);
+        const fire = (face: HitFace, up = 0) => {
+          const { yaw, elevation } = aimAt(tank, face, muzzlePoint);
+          const origin = hullToWorld(tank, muzzlePoint(yaw, elevation + up, [0, 0, 0]), [0, 0, 0]);
+          const d = hullDirToWorld(tank, barrelDirection(yaw, elevation + up, [0, 0, 0]), [0, 0, 0]);
+          return { yaw, origin, d, result: flyShell(origin, d, faces, createShotResult()) };
+        };
+        const { yaw, origin, d, result } = fire(faces[i]);
+        // The lane is behind the box: the turret turns to 6 o'clock.
+        expect(Math.abs(yaw)).toBeGreaterThan(170 * DEG);
+        expect(result.kind, t.name).toBe('target');
+        expect(result.target).toBe(i);
+        expect(describeShot(result, origin, d, faces, TARGET_NAMES)).toBe(`Hit: ${t.name}`);
+        // Laid on the white, at the disc's corner square (inside the old square hit box, outside the disc): a miss.
+        const corner = 0.36;
+        const white = fire({ ...faces[i], x: faces[i].x + Math.cos(faces[i].yaw) * corner, y: faces[i].y + corner, z: faces[i].z - Math.sin(faces[i].yaw) * corner });
+        expect(white.result.kind).not.toBe('target');
+        // Laid a little high, it goes over the board and the miss names it.
+        const high = fire(faces[i], 0.3 * DEG);
+        expect(high.result.kind).not.toBe('target');
+        expect(describeShot(high.result, high.origin, high.d, faces, TARGET_NAMES)).toMatch(new RegExp(`^Miss ${t.name}: \\d+ m over`));
+      });
+    }
+    setLineRanges(LINE_RANGES);
+  });
+
+  it('scatters the gun\'s shots about the bore, 0.3 mil each way, and none the same', () => {
+    const dir: [number, number, number] = [0.3, 0.05, -0.95];
+    const l = Math.hypot(...dir);
+    for (let k = 0; k < 3; k++) dir[k] /= l;
+    let seed = 11;
+    const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const n = 4000;
+    let across = 0;
+    let up = 0;
+    let across2 = 0;
+    let up2 = 0;
+    const out: [number, number, number] = [0, 0, 0];
+    const h = Math.hypot(dir[0], dir[2]);
+    for (let i = 0; i < n; i++) {
+      scatterDir(dir, 1 - random(), random(), SCATTER, out);
+      expect(Math.hypot(...out)).toBeCloseTo(1, 12);
+      // Off the bore: across (horizontal) and up.
+      const a = (out[0] * -dir[2] + out[2] * dir[0]) / h;
+      const u = out[1] * h - (out[0] * dir[0] + out[2] * dir[2]) * (dir[1] / h);
+      across += a;
+      up += u;
+      across2 += a * a;
+      up2 += u * u;
+    }
+    expect(Math.abs(across / n)).toBeLessThan(SCATTER / 10);
+    expect(Math.abs(up / n)).toBeLessThan(SCATTER / 10);
+    expect(Math.sqrt(across2 / n)).toBeCloseTo(SCATTER, 4);
+    expect(Math.sqrt(up2 / n)).toBeCloseTo(SCATTER, 4);
+    // No scatter: the bore's line.
+    scatterDir(dir, 0.5, 0.25, 0, out);
+    for (let k = 0; k < 3; k++) expect(out[k]).toBeCloseTo(dir[k], 12);
   });
 
   it('counts a lap from the start line round every gate and back, with its time', () => {
@@ -270,7 +392,7 @@ describe('biathlon course (F5.3a)', () => {
     expect(progress.s.halted).toBe(false);
     progress.step(0.1, box.x, box.z, 0);
     expect(progress.s.halted).toBe(true);
-    expect(progress.s.note).toBe('Halted in firing box 2');
+    expect(progress.s.note).toBe("Halted in firing box 2: boards at 6 o'clock");
     expect(courseLine(progress.s)).toContain('In firing box 2, halted.');
     // Up to the penalty loop, twice round it, and on to the finish.
     driveAlong(progress, along(eastSideAt(BOX_Z[1]), eastSideAt(JOIN.leave)));

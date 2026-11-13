@@ -32,7 +32,7 @@ import {
   raceStartSign,
   skippedNote,
 } from './biathlon.js';
-import { COURSE_TARGETS } from './course.js';
+import { clampLineRange, COURSE_TARGETS, LINE_RANGES } from './course.js';
 import { RANGE_TARGETS, targetBoard, targetFoot } from './range.js';
 
 /** The countdown before the clock starts, s. */
@@ -96,12 +96,15 @@ export interface RunSnapshot {
   /** The last thing worth a sign (a line shot, a loop driven, the finish), and a count that changes with each. */
   note: string;
   noteId: number;
+  /** The range each firing line's boards stand at in this race, m (src/sim/course.ts: picked at its start; LINE_RANGES before any race). */
+  ranges: number[];
 }
 
 export function createRunSnapshot(): RunSnapshot {
   return {
     id: 0, phase: 'idle', clock: 0, paused: false, shots: 0, hitAt: RANGE_TARGETS.map(() => -1), time: -1, best: -1, assisted: false,
     mode: 'range', laps: 0, rounds: 0, boardAt: COURSE_TARGETS.map(() => -1), owed: 0, loops: 0, skipped: 0, closed: 0, note: '', noteId: 0,
+    ranges: [...LINE_RANGES],
   };
 }
 
@@ -124,9 +127,14 @@ export class RangeRun {
   private box = -1;
   private halted = false;
 
-  /** Start (or restart) a run of `mode`: the countdown begins, every target counts again. */
-  start(mode: RunMode = 'range'): void {
+  /**
+   * Start (or restart) a run of `mode`: the countdown begins, every target
+   * counts again. A race stands its lines' boards at `ranges` (one a line,
+   * within LINE_RANGE_SPAN; the boards stay where they are without).
+   */
+  start(mode: RunMode = 'range', ranges?: readonly number[]): void {
     const s = this.s;
+    if (mode === 'biathlon' && ranges) for (let k = 0; k < s.ranges.length; k++) s.ranges[k] = clampLineRange(k, ranges[k]);
     s.id++;
     s.phase = 'running';
     s.mode = mode;
@@ -365,6 +373,7 @@ export function copyRunSnapshot(from: RunSnapshot, to: RunSnapshot): RunSnapshot
   to.closed = from.closed;
   to.note = from.note;
   to.noteId = from.noteId;
+  for (let k = 0; k < to.ranges.length; k++) to.ranges[k] = from.ranges[k] ?? LINE_RANGES[k];
   return to;
 }
 
@@ -403,6 +412,7 @@ export function runEvent(s: RunSnapshot, atMs: number): { t: 'run' } & Record<st
     closed: s.closed,
     note: s.note,
     noteId: s.noteId,
+    ranges: [...s.ranges],
     at: atMs,
   };
 }
@@ -442,6 +452,9 @@ export function readRunEvent(e: Record<string, unknown>, out: RunSnapshot): { at
   out.closed = count(e.closed);
   out.note = typeof e.note === 'string' ? e.note.slice(0, 80) : '';
   out.noteId = count(e.noteId);
+  // The lines' ranges (since the harder shooting); a page from before them keeps its boards where they stood.
+  const ranges = Array.isArray(e.ranges) ? e.ranges : null;
+  if (ranges) for (let k = 0; k < out.ranges.length; k++) out.ranges[k] = clampLineRange(k, ranges[k]);
   return { at };
 }
 

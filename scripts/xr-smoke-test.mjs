@@ -2495,7 +2495,10 @@ async function main() {
   // Full procedure, a seat) stay in the managed browser's profile, and the
   // rerun after a stalled browser (or a local run after one stopped part
   // way) would start with them.
-  evalInApp('(localStorage.clear(), true)');
+  // The gun's scatter and the biathlon's ranges picked afresh each race are
+  // random: the test turns both off (as `scatter=0&boardranges=0` in the
+  // URL would), and its own checks of them set them on purpose.
+  evalInApp('(localStorage.clear(), localStorage.setItem("track-barrel.settings", "scatter=0&boardranges=0"), true)');
 
   try {
     iwsdk(['browser', 'reload'], {});
@@ -2954,9 +2957,10 @@ async function theEnemyTanks() {
     // Tank B may fire too: take tank A's shot.
     const shot = await waitFor("tank A's shot to strike", () => evalInApp('window.__enemy.shots()').slice(before).find((x) => x.gun === 3), 5000).catch(() => null);
     if (shot?.hit) hit = shot;
-    await sleep(800);
+    else await sleep(800);
   }
-  const hitSign = hit ? await waitFor('the hit on the sign', () => /^Hit! Tank A/.test(evalInApp('window.__enemy.sign')) && evalInApp('window.__enemy.sign'), 5000).catch(() => evalInApp('window.__enemy.sign')) : '';
+  // Read the sign as soon as the hit lands: tank B's own firing puts its sign up over it a moment later.
+  const hitSign = hit ? await waitFor('the hit on the sign', () => /^Hit! Tank A/.test(evalInApp('window.__enemy.sign')) && evalInApp('window.__enemy.sign'), 5000, 100).catch(() => evalInApp('window.__enemy.sign')) : '';
   check("Tank A's shells strike the tank, and a hit is called on the sign",
     hit !== null && /^Hit! Tank A, \d+ o'clock, \d+ m$/.test(hitSign), `${fired} shots, sign "${hitSign}"`);
 
@@ -3220,6 +3224,8 @@ async function theBiathlonRace() {
   const tank = () => evalInApp('window.__drive.state()');
   const places = () => evalInApp('window.__loading.state().shells.map((s) => s.place)');
   iwsdk(['xr', 'set-device-state'], {});
+  // This race picks its lines' ranges, as a player's does (the test loads with them fixed).
+  evalInApp('(window.__rangeRun.pickRanges(true), true)');
   await menuButtonPress();
   await menuClick('menu-race-start');
   const started = await waitFor('the race counting down at the course start', () => {
@@ -3235,6 +3241,14 @@ async function theBiathlonRace() {
     started.mode === 'biathlon' && started.phase === 'running' && started.rounds === 3 && started.laps === 0 &&
       evalInApp('window.__rangeRun.rounds()') === 3 && rack.filter((x) => x === 'rack').length === 3,
     `${started.mode} ${started.phase}, clock ${started.clock?.toFixed(1)}, rounds ${started.rounds}, rack ${rack.join('/')}, "${started.line}"`);
+  const ranges = started.ranges ?? [];
+  const drawn = evalInApp('window.__rangeRun.boardAt(4)');
+  const layout = evalInApp('window.__course.layout().boards[4]');
+  check("The race stands each line's boards at a range of its own picking: line 1 350 to 450 m, line 2 450 to 550 m, drawn there",
+    ranges.length === 2 && ranges[0] >= 350 && ranges[0] <= 450 && ranges[1] >= 450 && ranges[1] <= 550 && ranges.every((r) => r % 10 === 0) &&
+      JSON.stringify(evalInApp('window.__rangeRun.ranges()')) === JSON.stringify(ranges) && drawn !== null &&
+      Math.hypot(drawn[0] - 320, drawn[2] + 170) > ranges[1] - 1 && Math.abs(Math.hypot(layout.x - 320, layout.z + 170) - ranges[1]) < 1,
+    `ranges ${ranges.join(' and ')} m, board 5 drawn at (${drawn?.map((v) => v.toFixed(0)).join(', ')})`);
   // Go! (the run's clock steps at most 0.25 s a frame, so a slow runner takes a while over the countdown).
   await waitFor('Go', () => run().clock >= 0.2, 60000).catch(() => null);
 
@@ -3278,6 +3292,9 @@ async function theBiathlonRace() {
     sign === 'Line 1: clean!' && empty.shells.every((x) => x.place === 'spent') && /No rounds left$/.test(empty.board[2]),
     `sign "${sign}", rack ${empty.shells.map((x) => x.place).join('/')}, board "${empty.board[2]}"`);
 
+  // The boards are at 6 o'clock, and the seated gunner turns with the turret: face forward again for the menu's ray.
+  evalInApp('(window.__turret.forward(), true)');
+  await sleep(500);
   await menuButtonPress();
   await menuClick('menu-race-stop');
   const stopped = await waitFor('the race stopped, the rack full', () => {
@@ -3289,7 +3306,7 @@ async function theBiathlonRace() {
     stopped.phase === 'idle' && !after.some(Boolean) && places().every((x) => x === 'rack'),
     `${stopped.phase}, covers ${after.join('/')}, rack ${places().join('/')}`);
   await menuButtonPress();
-  evalInApp("(window.__drive.reset(), window.__turret.forward(), window.__seats.ask('driver'), true)");
+  evalInApp("(window.__rangeRun.pickRanges(false), window.__drive.reset(), window.__turret.forward(), window.__seats.ask('driver'), true)");
   iwsdk(['xr', 'set-device-state'], {});
 }
 
@@ -3571,9 +3588,32 @@ async function theBiathlonCourse() {
     const r = evalInApp('window.__firing.records()');
     return r.length === shots + 1 && evalInApp('window.__firing.flying()') === 0 && r.at(-1);
   }, 5000).catch(() => evalInApp('window.__firing.records()').at(-1));
-  check("A shell laid on a line 1 board from firing box 1 hits it, the infield's boards being among the gun's targets",
+  check("A shell laid on a line 1 board from firing box 1 (its lane at 6 o'clock) hits it, the course's boards being among the gun's targets",
     predicted.target === 3 && shot?.kind === 'target' && shot.target === 3 && shot.line === 'Hit: the line 1 left board' && evalInApp('window.__firing.hits()')[3] >= 1,
     `would: ${predicted.line}; shot: ${shot?.line}`);
+  // Only the black disc counts: laid on the white at the corner of the old square hit box, a miss.
+  const fireOnce = async (what) => {
+    const n = evalInApp('window.__firing.records().length');
+    evalInApp('(window.__firing.fire(), true)');
+    return waitFor(what, () => {
+      const r = evalInApp('window.__firing.records()');
+      return r.length === n + 1 && evalInApp('window.__firing.flying()') === 0 && r.at(-1);
+    }, 5000).catch(() => evalInApp('window.__firing.records()').at(-1));
+  };
+  evalInApp("(window.__firing.aimAt(3, 'ap', 0.55, 0.55), true)");
+  await sleep(300);
+  const white = await fireOnce('the shot at the white to land');
+  check('A shell through the board\'s white, outside its black disc, misses it',
+    white?.kind !== 'target' && /^Miss the line 1 left board/.test(white?.line ?? ''), `shot: ${white?.line}`);
+  // The gun's scatter (on for this check): two rounds on one lay land apart, both close to it.
+  evalInApp('(window.__firing.scatter(true), window.__firing.aimAt(3), true)');
+  await sleep(300);
+  const first = await fireOnce('the first scattered shot');
+  const second = await fireOnce('the second scattered shot');
+  evalInApp('(window.__firing.scatter(false), true)');
+  const apart = first && second ? Math.hypot(first.point[0] - second.point[0], first.point[1] - second.point[1], first.point[2] - second.point[2]) : NaN;
+  check("With the gun's scatter on, two rounds laid alike on a board 400 m off land apart, within a metre or so of each other",
+    apart > 0.002 && apart < 1.5, `${apart.toFixed(3)} m apart: ${first?.line}; ${second?.line}`);
   await menuButtonPress();
   evalInApp("(window.__drive.reset(), window.__turret.forward(), window.__seats.ask('driver'), true)");
   iwsdk(['xr', 'set-device-state'], {});
