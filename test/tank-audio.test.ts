@@ -5,8 +5,10 @@ import {
   CABIN_SECONDS,
   CASING_BOUNCES,
   ENGINE_LOOP_CYCLES,
+  GATE_HZ,
   LINK_GATE,
   renderCabinImpulse,
+  renderEngineBreath,
   renderEngineLoop,
   renderGate,
   renderNoiseLoop,
@@ -132,18 +134,40 @@ describe('the engine', () => {
     expect(join).toBeLessThanOrEqual(biggest);
   });
 
-  it('is five sixes together, not one hum: the banks\' beat and its harmonics, and a roughness between them', () => {
+  it("is thirty uneven cylinders, not a note: a stack of tones one cycle apart, as a real Sherman's is", () => {
     const c = renderEngineLoop(RATE);
-    // The banks' beat (40 Hz) and its harmonics all stand out...
-    const bank = [1, 2, 3, 4, 5].map((k) => tone(c, k * ENGINE_IDLE_HZ));
-    // ...over what lies between them: the half-orders that uneven cylinders make.
-    const between = [1.5, 2.5, 3.5, 4.5].map((k) => tone(c, k * ENGINE_IDLE_HZ));
-    expect(Math.min(...bank)).toBeGreaterThan(Math.max(...between) * 1.5);
-    // No one of them drowns the rest (thirty perfectly even cylinders would leave only the fifth, 200 Hz).
-    expect(Math.max(...bank)).toBeLessThan(Math.min(...bank) * 12);
-    // Uneven cylinders: the cycle's own beat (every other turn, 6.7 Hz) is in there too.
-    const half = [5, 7, 11, 13].map((k) => tone(c, (k * IDLE_REV_HZ) / 2));
-    expect(Math.max(...half)).toBeGreaterThan(Math.max(...bank) * 0.02);
+    // One four-stroke cycle is two turns: 6.7 Hz at idle. The banks' beat is its 6th tone, all thirty cylinders' its 30th.
+    const cycleHz = IDLE_REV_HZ / 2;
+    const lines = Array.from({ length: 60 }, (_, i) => tone(c, (i + 1) * cycleHz));
+    const energy = lines.map((v) => v * v);
+    const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
+    // From 80 Hz up (the 12th tone on), where the engine's body is heard...
+    const body = energy.slice(11);
+    // ...no one tone holds much of it (thirty even cylinders would put it all on the 30th),
+    expect(Math.max(...body) / sum(body)).toBeLessThan(0.2);
+    // and the banks' own tones (every 6th, all there would be of five even sixes) hold well under half.
+    let banks = 0;
+    for (let k = 12; k <= 60; k += 6) banks += energy[k - 1];
+    expect(banks / sum(body)).toBeLessThan(0.45);
+    // At idle the banks' beat (40 Hz) still stands over its neighbours: that is the burble.
+    expect(lines[5]).toBeGreaterThan(Math.max(lines[4], lines[6]) * 2);
+    // The uneven pattern is the engine's own, the same every cycle: its tones stand far out of what lies between them.
+    const between = Array.from({ length: 35 }, (_, i) => tone(c, (i + 6.5) * cycleHz));
+    expect(sum(lines.slice(5, 40))).toBeGreaterThan(sum(between) * 10);
+  });
+
+  it("breathes with the firings: the roar's gate, in step with the loop, opening widest for the strong cylinders", () => {
+    const b = renderEngineBreath(RATE);
+    expect(b.length).toBe(renderEngineLoop(RATE).length);
+    expect(b).toEqual(renderEngineBreath(RATE));
+    expect(b.every((v) => v >= 0 && v <= 1)).toBe(true);
+    expect(peak(b)).toBeCloseTo(1, 5);
+    const mean = b.reduce((a, v) => a + v, 0) / b.length;
+    // It never quite shuts (thirty cylinders overlap), and it comes and goes with the cycle: the flutter of a real engine's roar.
+    expect(b.reduce((m, v) => Math.min(m, v), 1)).toBeGreaterThan(0);
+    const flutter = tone(b, IDLE_REV_HZ / 2) / mean;
+    expect(flutter).toBeGreaterThan(0.15);
+    expect(flutter).toBeLessThan(0.6);
   });
 });
 
@@ -478,18 +502,32 @@ describe('the loops', () => {
       expect(g).toEqual(renderGate(shape, RATE));
       expect(g.length).toBe(Math.round((shape.count / shape.hz) * RATE));
       expect(g.every((v) => v >= 0 && v <= 1)).toBe(true);
-      // A pulse in every gap, shut again before the next.
+      // A pulse in every gap.
       const gap = RATE / shape.hz;
       const tops: number[] = [];
       for (let k = 0; k < shape.count; k++) {
         let top = 0;
         for (let i = Math.round(k * gap); i < Math.round((k + 1) * gap); i++) top = Math.max(top, g[i]);
         tops.push(top);
-        expect(top).toBeGreaterThanOrEqual(shape.weakest * 0.99);
-        expect(g[Math.round(k * gap)]).toBeLessThan(0.05);
+        expect(top).toBeGreaterThanOrEqual(shape.weakest * 0.8);
+        // A gear's tooth is gone before the next comes; a track is never quite quiet (below).
+        if (!shape.lesser) expect(g[Math.round(k * gap)]).toBeLessThan(0.05);
       }
       expect(Math.max(...tops) - Math.min(...tops)).toBeGreaterThan(0.1);
     }
+  });
+
+  it("of a track's links are a clatter with the links' beat in it, not a row of clicks (as a real Sherman's tracks are)", () => {
+    const g = renderGate(LINK_GATE, RATE);
+    const mean = g.reduce((a, v) => a + v, 0) / g.length;
+    // The lesser strikes (the wheels, the idler) fill the gaps between the links meeting the sprocket...
+    const clicks = renderGate({ ...LINK_GATE, lesser: 0 }, RATE);
+    expect(mean).toBeGreaterThan((clicks.reduce((a, v) => a + v, 0) / clicks.length) * 2);
+    // ...so the links' beat is a part of the level's rise and fall, not all of it.
+    const beat = tone(g, GATE_HZ) / mean;
+    expect(beat).toBeGreaterThan(0.25);
+    expect(beat).toBeLessThan(0.6);
+    expect(tone(clicks, GATE_HZ) / (clicks.reduce((a, v) => a + v, 0) / clicks.length)).toBeGreaterThan(1.2);
   });
 
   it("of the pins' squeal are mostly shut, with a few swells", () => {

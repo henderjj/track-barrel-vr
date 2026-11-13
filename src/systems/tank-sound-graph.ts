@@ -4,6 +4,7 @@ import {
   GATE_HZ,
   LINK_GATE,
   renderCabinImpulse,
+  renderEngineBreath,
   renderEngineLoop,
   renderGate,
   renderNoiseLoop,
@@ -66,7 +67,7 @@ export function createTankVoices(): TankVoices {
   };
 }
 
-/** Somewhere sounds come from: steady ones (which dip at the gun's blast) and knocks go in, and come out partly from its place and partly from all round. */
+/** Somewhere sounds come from: steady ones (which dip at the gun's blast) and knocks go in, and come out partly from its place and partly, through the cabin's echo, from all round. */
 interface Place {
   steady: GainNode;
   knock: GainNode;
@@ -77,18 +78,31 @@ interface Place {
 const LINK_RING = [
   [330, 5, 1],
   [590, 7, 0.8],
-  [1040, 9, 0.55],
-  [1730, 10, 0.35],
-  [2600, 8, 0.16],
+  [1040, 9, 0.6],
+  [1730, 10, 0.45],
+  [2600, 8, 0.32],
+  [4300, 5, 0.22],
 ] as const;
 
 /** The exhaust's second low-pass sits this many times above its first: 12 dB an octave off above the cutoff, 24 above this. */
 const EXHAUST_TOP = 2.5;
+/** What the engine's roar rings in (pipes, plates, the engine bay): peaks at Hz, with their sharpness and height in dB. */
+const ROAR_RING = [
+  [650, 1.5, 5],
+  [1050, 3, 4],
+  [2000, 3, 5],
+  [2500, 4, 3],
+] as const;
+/** Nothing of the roar above this, Hz: the hull between the engine and the crew. */
+const ROAR_TOP = 3400;
+/** How much of the roar is steady (fan, intakes), and how much comes and goes with each cylinder's breath (renderEngineBreath, which averages about a sixth). */
+const ROAR_STEADY = 0.06;
+const ROAR_BREATH = 2;
 /** The roar's noise comes out of its filters far quieter than it went in: bring it back up. */
 const ROAR_MAKEUP = 8;
 /** How loud a link's ring is, and its thud through the floor beside it. */
 const LINK_RING_LEVEL = 2.5;
-const LINK_THUD = 0.8;
+const LINK_THUD = 0.6;
 
 /** A gear's whine: a fundamental with a few weaker harmonics, far duller than a sawtooth. */
 const WHINE_HARMONICS = [0, 1, 0.5, 0.28, 0.12, 0.05];
@@ -103,16 +117,16 @@ const MOTOR_HARMONICS = [0, 1, 0.35, 0.3, 0.08, 0.14, 0.04, 0.06];
  *
  * - The engine is its exhaust loop played as fast as it turns, through the
  *   exhaust's and hull's filters, which stay put; the fan, intake and
- *   combustion roar is noise that pulses with the firing; the gearbox and
- *   final drives whine.
+ *   combustion roar is noise that comes and goes with each cylinder's
+ *   breath; the gearbox and final drives whine.
  * - The tracks are a rumble through the floor, each side's links striking
- *   a set of resonances once a link (left and right on their own sides),
- *   and dry pins squealing in turns.
+ *   a set of resonances (left and right on their own sides), and dry pins
+ *   squealing in turns.
  * - The traverse is a motor's whine, a gear train's growl and the ring's
  *   rumble; the handwheels' gears tick.
- * - Every sound goes partly through the cabin's echo, and comes partly
- *   from its place in the tank (head-related panning against the
- *   listener, the player's head) and partly from all round.
+ * - A placed sound comes partly from its place in the tank (head-related
+ *   panning against the listener, the player's head) and partly from all
+ *   round, through the cabin's echo, which every sound goes through.
  * - For a moment after the gun fires, the steady sounds dip.
  *
  * Everything passes the duck (the intercom), the player's level, and a
@@ -130,6 +144,7 @@ export class TankSoundGraph {
   private whiteAt = 0;
 
   private readonly engineLoop: AudioBufferSourceNode;
+  private readonly engineBreath: AudioBufferSourceNode;
   private readonly exhaust: BiquadFilterNode[];
   private readonly engineAmp: GainNode;
   private readonly roarAmp: GainNode;
@@ -179,10 +194,10 @@ export class TankSoundGraph {
     impulse.copyToChannel(renderCabinImpulse(rate, 1), 1);
     this.cabin = new ConvolverNode(ctx, { buffer: impulse, disableNormalization: true });
     this.cabin.connect(this.duck);
-    this.shotSend = new GainNode(ctx, { gain: CABIN_SEND.shot - CABIN_SEND.knocks });
+    this.shotSend = new GainNode(ctx, { gain: CABIN_SEND.shot - CABIN_SEND.blows });
     this.shotSend.connect(this.cabin);
 
-    this.places.all = this.place(null, CABIN_SEND.tracks);
+    this.places.all = this.place(null, CABIN_SEND.hull);
     this.places.engine = this.place('engine', CABIN_SEND.engine);
     this.places.gearbox = this.place('gearbox', CABIN_SEND.engine);
     this.places.leftTrack = this.place('leftTrack', CABIN_SEND.tracks);
@@ -202,20 +217,27 @@ export class TankSoundGraph {
       new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 300, Q: 0.7 }),
       new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 300 * EXHAUST_TOP, Q: 0.7 }),
     ];
-    const pipe1 = new BiquadFilterNode(ctx, { type: 'peaking', frequency: 92, Q: 2, gain: 5 });
-    const pipe2 = new BiquadFilterNode(ctx, { type: 'peaking', frequency: 185, Q: 2.5, gain: 4 });
+    const pipe1 = new BiquadFilterNode(ctx, { type: 'peaking', frequency: 115, Q: 1.5, gain: 4 });
+    const pipe2 = new BiquadFilterNode(ctx, { type: 'peaking', frequency: 240, Q: 1.5, gain: 5 });
     const floor = new BiquadFilterNode(ctx, { type: 'highpass', frequency: 28, Q: 0.7 });
     this.engineAmp = new GainNode(ctx, { gain: 0 });
     this.engineLoop.connect(this.exhaust[0]).connect(this.exhaust[1]).connect(pipe1).connect(pipe2).connect(floor).connect(this.engineAmp);
     this.engineAmp.connect(this.places.engine.steady);
 
-    // Its roar: noise in the fan's and intakes' band, pulsing with the firing.
-    const roarBand = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 520, Q: 0.6 });
-    const roarTop = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 2200, Q: 0.7 });
-    const roarPulse = new GainNode(ctx, { gain: 0.5 * ROAR_MAKEUP });
-    this.engineLoop.connect(new GainNode(ctx, { gain: 0.7 * ROAR_MAKEUP })).connect(roarPulse.gain);
+    // Its roar: noise in the fan's and intakes' band, fluttering as the cylinders blow, through resonances that stay where
+    // they are whatever the revs (ROAR_RING: the same bands stand out all through the recording of a real Sherman).
+    const roarBand = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 560, Q: 0.5 });
+    const roarTop = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: ROAR_TOP, Q: 0.7 });
+    const roarPulse = new GainNode(ctx, { gain: ROAR_STEADY * ROAR_MAKEUP });
+    this.engineBreath = this.loop(this.buffer(renderEngineBreath(rate)));
+    // In step with the exhaust, so it hunts the same way.
+    this.waver(this.engineBreath, 0.31, 10);
+    this.waver(this.engineBreath, 1.13, 6);
+    this.engineBreath.connect(new GainNode(ctx, { gain: ROAR_BREATH * ROAR_MAKEUP })).connect(roarPulse.gain);
     this.roarAmp = new GainNode(ctx, { gain: 0 });
-    this.noise().connect(roarBand).connect(roarTop).connect(roarPulse).connect(this.roarAmp).connect(this.places.engine.steady);
+    let roar: AudioNode = this.noise().connect(roarBand);
+    for (const [f, q, gain] of ROAR_RING) roar = roar.connect(new BiquadFilterNode(ctx, { type: 'peaking', frequency: f, Q: q, gain }));
+    roar.connect(roarTop).connect(roarPulse).connect(this.roarAmp).connect(this.places.engine.steady);
 
     // The gears: the gearbox's whine through its case, and the final drives', each wavering a little as real gears do.
     const whine = ctx.createPeriodicWave(new Float32Array(WHINE_HARMONICS.length), new Float32Array(WHINE_HARMONICS));
@@ -241,7 +263,7 @@ export class TankSoundGraph {
     this.loop(this.brown).connect(this.rumbleFilter).connect(rumbleFloor).connect(floor1).connect(floor2).connect(floor3).connect(this.rumbleAmp);
     this.rumbleAmp.connect(this.places.all.steady);
 
-    // Each track's links: a gate opens once a link (played faster as the track runs faster) and lets a click of
+    // Each track's links: a gate opens for each strike of a link (played faster as the track runs faster) and lets
     // noise into resonances that stay where they are, so the links come quicker without turning into a higher note.
     this.linkGate = { left: this.gate(renderGate(LINK_GATE, rate), 0), right: this.gate(renderGate(LINK_GATE, rate), 1.37) };
     this.linkAmp = { left: new GainNode(ctx, { gain: 0 }), right: new GainNode(ctx, { gain: 0 }) };
@@ -325,6 +347,7 @@ export class TankSoundGraph {
   apply(v: TankVoices, t: number): void {
     const e = v.engine;
     this.engineLoop.playbackRate.setTargetAtTime(e.rate, t, GLIDE);
+    this.engineBreath.playbackRate.setTargetAtTime(e.rate, t, GLIDE);
     this.exhaust[0].frequency.setTargetAtTime(e.cutoff, t, GLIDE);
     this.exhaust[1].frequency.setTargetAtTime(e.cutoff * EXHAUST_TOP, t, GLIDE);
     this.engineAmp.gain.setTargetAtTime(MIX.engine * e.gain, t, GLIDE);
@@ -423,8 +446,12 @@ export class TankSoundGraph {
   /**
    * Somewhere sounds come from. PLACED_SHARE of what goes in is heard from
    * `name`'s spot in the tank (no quieter for being further: the cabin is
-   * small) and the rest from all round; `send` of the steady sounds and
-   * CABIN_SEND.knocks of the knocks also go through the cabin's echo.
+   * small); `send` of the steady sounds and CABIN_SEND.knocks of the knocks
+   * (CABIN_SEND.blows of those from nowhere in particular) go through the cabin's echo, which is how the rest reaches the crew,
+   * from all round. Nothing placed is also played straight: the browser's
+   * head-related panning comes out about 6 ms late, and the two together
+   * would cancel every 160 Hz up the scale (a hollow, pipe-like sound that
+   * sweeps as the head turns).
    */
   private place(name: SoundPlace | null, send: number): Place {
     const ctx = this.ctx;
@@ -434,7 +461,7 @@ export class TankSoundGraph {
     steady.connect(sum);
     knock.connect(sum);
     if (send > 0) steady.connect(new GainNode(ctx, { gain: send })).connect(this.cabin);
-    knock.connect(new GainNode(ctx, { gain: CABIN_SEND.knocks })).connect(this.cabin);
+    knock.connect(new GainNode(ctx, { gain: name == null ? CABIN_SEND.blows : CABIN_SEND.knocks })).connect(this.cabin);
     if (name == null) {
       sum.connect(this.duck);
       return { steady, knock, panner: null };
@@ -449,7 +476,6 @@ export class TankSoundGraph {
       positionZ: z,
     });
     sum.connect(panner).connect(new GainNode(ctx, { gain: PLACED_SHARE })).connect(this.duck);
-    sum.connect(new GainNode(ctx, { gain: 1 - PLACED_SHARE })).connect(this.duck);
     return { steady, knock, panner };
   }
 

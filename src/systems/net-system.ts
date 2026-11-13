@@ -2,7 +2,7 @@ import { type BufferGeometry, createSystem, Euler, InputComponent, Mesh, Object3
 import { crewControls } from '../net/crew-controls.js';
 import { LobbyUi } from '../net/lobby-ui.js';
 import { normaliseRoomCode } from '../net/lobby-protocol.js';
-import { NetSession } from '../net/net-session.js';
+import { NetSession, type SessionState } from '../net/net-session.js';
 import { createAvatarPose, decodePose, encodePose, type AvatarPose, type PoseHeader, type PoseSample, POSE_PACKET_BYTES, seqNewer } from '../net/pose-codec.js';
 import { copyAvatar, copyPose, PoseBuffer } from '../net/pose-buffer.js';
 import { Voice } from '../net/voice.js';
@@ -319,6 +319,8 @@ export class NetSystem extends createSystem({}) {
           this.lastSeq = -1;
           this.lastArrival = this.lastTransit = this.transit = Number.NaN;
         }
+        // At once, not at the next frame: a drop that mends between two frames still goes on the record.
+        this.updatePresence(state, performance.now());
       },
       onPacket: (view) => this.onPacket(view),
       onEvent: (event) => {
@@ -641,13 +643,7 @@ export class NetSystem extends createSystem({}) {
     netLink.isHost = session.isHost || !netLink.connected;
     netLink.haveRemote = false;
     netLink.clockSynced = netLink.connected && session.clock.stats.samples > 0;
-    const now = performance.now();
-    crewPresence.update(
-      session.state,
-      session.reconnecting,
-      this.crewAway,
-      Number.isNaN(this.lastArrival) ? now - this.connectedAt : now - this.lastArrival,
-    );
+    this.updatePresence(session.state, performance.now());
     if (session.state !== 'connected') {
       if (this.head.visible) {
         this.setRemoteVisible(false, 0);
@@ -712,6 +708,17 @@ export class NetSystem extends createSystem({}) {
       this.applyRemote(delta);
       this.placeVoice();
     }
+  }
+
+  /** Whether the crewmate is here, from the session's state and how long ago anything arrived from them. */
+  private updatePresence(state: SessionState, now: number): void {
+    crewPresence.update(
+      state,
+      // The session reports its first state while it is still being made.
+      this.session ? this.session.reconnecting : false,
+      this.crewAway,
+      Number.isNaN(this.lastArrival) ? now - this.connectedAt : now - this.lastArrival,
+    );
   }
 
   /** Hear the crewmate's voice from their mouth, relative to this player's head. */

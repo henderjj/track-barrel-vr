@@ -139,8 +139,12 @@ async function measureMotion(sender, receiver, seconds) {
       flags: 3,
     };
     const t0 = performance.now();
+    // When each packet went out, by the sender's clock (the last few hundred).
+    const sends = (window.__testSends = []);
     // Evaluated at send time, so each packet's timestamp matches its pose.
     window.__net.setTestPose((now) => {
+      sends.push(now);
+      if (sends.length > 400) sends.shift();
       const t = (now - t0) / 1000;
       pose.head.px = 0.5 * Math.cos(t);
       pose.head.pz = 0.5 * Math.sin(t);
@@ -165,8 +169,10 @@ async function measureMotion(sender, receiver, seconds) {
         frame();
       }),
   );
-  // At least `seconds`, and on a slow runner (six or seven frames a second) on until there are enough frames to
-  // judge, up to three times as long: the checks need about 20 of them.
+  const before = await netStats(receiver.page);
+  const sentFrom = await sender.page.evaluate(() => performance.now());
+  // At least `seconds`, and on a slow runner (from six frames a second down to two) on until there are enough
+  // frames to judge, up to ten times as long: the checks need 20 of them.
   const samples = await receiver.page.evaluate(
     (ms) =>
       new Promise((resolve) => {
@@ -176,7 +182,7 @@ async function measureMotion(sender, receiver, seconds) {
           const p = window.__net.remotePose();
           if (p) out.push([p.head.px, p.head.pz, performance.now(), window.__net.remoteAtMs]);
           const took = performance.now() - start;
-          if (took < ms || (out.length < 25 && took < ms * 3)) requestAnimationFrame(frame);
+          if (took < ms || (out.length < 25 && took < ms * 10)) requestAnimationFrame(frame);
           else resolve(out);
         };
         frame();
@@ -215,7 +221,33 @@ async function measureMotion(sender, receiver, seconds) {
   const radiusError = Math.max(...samples.map(([x, z]) => Math.abs(Math.hypot(x, z) - 0.5)));
   rates.sort((a, b) => a - b);
   const median = rates[Math.floor(rates.length / 2)] ?? 0;
-  return { frames: samples.length, backwards, backSteps, maxRate, median, maxGapMs, radiusError };
+  // How far off the circle a drawn pose may be. The receiver draws straight lines between the poses it was sent,
+  // and a straight line between two points of a circle cuts inside it: by 0.03 mm for packets 22 ms apart (45 Hz,
+  // a headset), by 9 mm for packets 375 ms apart (a page sends one with each frame, and a slow runner draws a
+  // frame that seldom), by 35 mm when one of those is lost. That much is geometry, not judder, so the 20 mm
+  // allowance grows with the widest gap between the packets the receiver had to draw from: the sender's own
+  // record of when it sent them, a lost packet joining the gaps on either side of it.
+  const after = await netStats(receiver.page);
+  const sends = await sender.page.evaluate(() => window.__testSends);
+  const lost = Math.max(0, after.lost - before.lost);
+  // The receiver draws the past, so the first frames were drawn from packets sent before the sampling began.
+  const from = sentFrom - Math.max(before.renderDelayMs, after.renderDelayMs) - 100;
+  let first = sends.findIndex((t) => t > from);
+  first = Math.max(0, (first < 0 ? sends.length : first) - 1);
+  let packetGapMs = 0;
+  for (let i = first; i + 1 + lost < sends.length; i++) {
+    packetGapMs = Math.max(packetGapMs, sends[i + 1 + lost] - sends[i]);
+  }
+  const chord = 0.5 * (1 - Math.cos(packetGapMs / 2000)); // 0.5 m circle at 1 rad/s
+  const radiusAllowed = Math.max(0.02, chord + 0.01);
+  return { frames: samples.length, backwards, backSteps, maxRate, median, maxGapMs, radiusError, radiusAllowed, packetGapMs, lost };
+}
+
+/** What a motion check found, for its line in the log. */
+function motionDetail(m) {
+  return `${m.frames} frames, ${m.backwards} backward steps ${m.backSteps.join(' ')}, fastest ${m.maxRate.toFixed(2)} rad/s vs median ${m.median.toFixed(2)}, ` +
+    `longest frame ${m.maxGapMs.toFixed(0)} ms, off circle by ${(m.radiusError * 1000).toFixed(1)} mm ` +
+    `(${(m.radiusAllowed * 1000).toFixed(0)} mm allowed: packets up to ${m.packetGapMs.toFixed(0)} ms apart, ${m.lost} lost)`;
 }
 
 /** Loudest level of the crewmate's voice over `ms`. */
@@ -557,16 +589,32 @@ async function turretChecks(host, guest, label) {
     const [h, g] = await Promise.all([turret(host), turret(guest)]);
     return Math.abs(h.yaw) < 1e-3 && Math.abs(g.yaw) < 1e-3;
   }, 8000).catch(() => null);
+  // When the gunner's page last began a frame, to know how old a reading of its turret is.
+  await guest.page.evaluate(() => {
+    if (window.__frameAt !== undefined) return;
+    const tick = () => {
+      window.__frameAt = performance.now();
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
   await guest.page.evaluate(() => window.__turret.set({ traverse: 1 }));
   const turning = await waitFor('the host to see the turret turn', async () => {
-    const [h, g] = await Promise.all([turret(host), turret(guest)]);
+    const [h, g] = await Promise.all([
+      turret(host),
+      guest.page.evaluate(() => ({ ...window.__turret.state(), frameAgeMs: performance.now() - window.__frameAt })),
+    ]);
     return h.yawDeg > 3 ? { h, g } : null;
   }, 15000).catch(() => null);
   // The two pages are read at nearly the same moment, not the same one: on a clean link the host can be a few
   // milliseconds further on (3.57° to the gunner's 3.52° at 6°/s), so it may lead by up to 0.1 s of turning.
+  // That is against where the gunner's turret is now, and its page only knows where it was at its last frame: the
+  // host carries the turret on at its rate between the gunner's packets. On a slow runner the gunner's frames are
+  // 400 ms apart, so the host may also lead by the turning since the frame the gunner's reading comes from.
+  const lead = turning ? turning.h.yawDeg - turning.g.yawDeg : 0;
   check(`The gunner's power traverse turns the turret on the gunner's page at once, and the host sees it close behind (${label})`,
-    turning !== null && turning.g.yawDeg >= turning.h.yawDeg - turning.g.rateDeg * 0.1 && turning.g.yawDeg - turning.h.yawDeg < turning.g.rateDeg * 0.6 + 0.5,
-    turning ? `gunner ${turning.g.yawDeg.toFixed(2)}° at ${turning.g.rateDeg.toFixed(1)}°/s; host draws ${turning.h.yawDeg.toFixed(2)}°` : JSON.stringify(await Promise.all([turret(host), turret(guest)])));
+    turning !== null && lead <= turning.g.rateDeg * (0.1 + turning.g.frameAgeMs / 1000) && -lead < turning.g.rateDeg * 0.6 + 0.5,
+    turning ? `gunner ${turning.g.yawDeg.toFixed(2)}° at ${turning.g.rateDeg.toFixed(1)}°/s, its frame ${turning.g.frameAgeMs.toFixed(0)} ms old; host draws ${turning.h.yawDeg.toFixed(2)}°` : JSON.stringify(await Promise.all([turret(host), turret(guest)])));
   // How smoothly the host draws it: frame by frame it never goes back or jumps.
   const steps = await host.page.evaluate(() => new Promise((resolve) => {
     const out = [];
@@ -977,7 +1025,9 @@ async function runChecks(host, guest, label) {
   check(`The guest's Start begins a run on the host, the tank back at the start (${label})`,
     started !== null && Math.hypot(tank.x, tank.z) < 0.5,
     started ? `run ${started.h.id}, clocks ${started.h.clock.toFixed(2)} / ${started.g.clock.toFixed(2)} s` : JSON.stringify(await Promise.all([run(host), run(guest)])));
-  await waitFor('the clock to run', async () => (await run(host)).clock > 0.5, 8000).catch(() => null);
+  // The clock counts in from about -3 s and a page moves it on by no more than a frame's worth at a time: at three
+  // frames a second it takes 8 s to pass 0.5 s, so give it time. What is judged is that the two pages agree.
+  await waitFor('the clock to run', async () => (await run(host)).clock > 0.5, 30000).catch(() => null);
   const [h1, g1] = await Promise.all([run(host), run(guest)]);
   check(`Both pages' run clocks agree (${label})`, h1.clock > 0 && Math.abs(h1.clock - g1.clock) < 0.4,
     `host ${h1.clock.toFixed(2)} s, guest ${g1.clock.toFixed(2)} s`);
@@ -1324,7 +1374,8 @@ async function lifecycleChecks(host, guest) {
     silent ? `"${silent.message}"` : 'never reported silent');
 
   // The guest's connection fails: both get back into the room on their own.
-  // Reconnecting can take under a second, so look at each side's status history.
+  // Reconnecting can take under a second (under a frame, on a slow runner), so look at each side's status
+  // history, which presence keeps at every change of the session's state, seen by a frame or not.
   // It keeps only the last 16, so count from the total ever seen, not its length.
   const started = Date.now();
   const mark = (page) => page.evaluate(() => window.__crew.changes);
@@ -1654,20 +1705,31 @@ async function main() {
       rightFingers: { index: 0.12, grip: 1, thumb: 1 },
     };
     await a.page.evaluate((pose) => window.__net.setTestPose(pose), sent);
-    await new Promise((r) => setTimeout(r, 800));
-    const got = await b.page.evaluate(() => window.__net.remotePose());
-    let posErr = Infinity;
-    let rotDot = 0;
-    if (got) {
-      posErr = 0;
-      rotDot = 1;
-      for (const k of ['head', 'left', 'right']) {
-        posErr = Math.max(posErr, Math.hypot(got[k].px - sent[k].px, got[k].py - sent[k].py, got[k].pz - sent[k].pz));
-        const dot = Math.abs(got[k].qx * sent[k].qx + got[k].qy * sent[k].qy + got[k].qz * sent[k].qz + got[k].qw * sent[k].qw);
-        rotDot = Math.min(rotDot, dot);
+    // How far what Bo's page draws is from what Ann's sent.
+    const poseError = (got) => {
+      let posErr = Infinity;
+      let rotDot = 0;
+      if (got) {
+        posErr = 0;
+        rotDot = 1;
+        for (const k of ['head', 'left', 'right']) {
+          posErr = Math.max(posErr, Math.hypot(got[k].px - sent[k].px, got[k].py - sent[k].py, got[k].pz - sent[k].pz));
+          const dot = Math.abs(got[k].qx * sent[k].qx + got[k].qy * sent[k].qy + got[k].qz * sent[k].qz + got[k].qw * sent[k].qw);
+          rotDot = Math.min(rotDot, dot);
+        }
       }
-    }
-    check('Head and hand poses arrive intact', posErr < 0.002 && rotDot > 0.9999 && got?.flags === 3,
+      return { posErr, rotDot, intact: posErr < 0.002 && rotDot > 0.9999 && got?.flags === 3 };
+    };
+    // Wait for it rather than a fixed time: Ann's page sends the pose with its next frame and Bo's draws it a
+    // buffer's delay later, on a frame of its own. With a frame every 400 ms (a slow runner) that is over a
+    // second, and Bo's page would be read while still drawing its way over from the last pose.
+    const remotePose = () => b.page.evaluate(() => window.__net.remotePose());
+    const got = await waitFor('the still pose to be drawn', async () => {
+      const pose = await remotePose();
+      return poseError(pose).intact ? pose : null;
+    }, 10000).catch(remotePose);
+    const { posErr, rotDot, intact } = poseError(got);
+    check('Head and hand poses arrive intact', intact,
       `position error ${(posErr * 1000).toFixed(2)} mm, rotation error ${((Math.acos(Math.min(1, rotDot)) * 2 * 180) / Math.PI).toFixed(3)}°`);
     const fingers = await b.page.evaluate(() => {
       const pose = window.__net.remotePose();
@@ -1753,8 +1815,8 @@ async function main() {
     const motion = await measureMotion(a, b, 3);
     report.local = { ...(await netStats(b.page)), motion };
     check('Crewmate moves smoothly (local network)',
-      motion.frames >= 20 && motion.backwards === 0 && motion.maxRate < Math.max(3, motion.median * 4) && motion.radiusError < 0.02,
-      `${motion.frames} frames, ${motion.backwards} backward steps ${motion.backSteps.join(' ')}, fastest ${motion.maxRate.toFixed(2)} rad/s vs median ${motion.median.toFixed(2)}, longest frame ${motion.maxGapMs.toFixed(0)} ms, off circle by ${(motion.radiusError * 1000).toFixed(1)} mm`);
+      motion.frames >= 20 && motion.backwards === 0 && motion.maxRate < Math.max(3, motion.median * 4) && motion.radiusError < motion.radiusAllowed,
+      motionDetail(motion));
     const s = report.local;
     check('Round trip measured', Number.isFinite(s.srtt) && s.srtt < 50, `RTT ${s.srtt?.toFixed(1)} ms, route ${s.route}, connected in ${s.connectMs.toFixed(0)} ms`);
     check('Pose packets arrive at about 45 Hz with no loss', s.lost === 0 && s.received > 100, `${s.received} received, ${s.lost} lost`);
@@ -1792,8 +1854,8 @@ async function main() {
     const l = report.lagged;
     check('RTT reflects simulated lag', l.srtt > 115 && l.srtt < 200, `RTT ${l.srtt.toFixed(1)} ms, arrival jitter ${l.arrivalJitterMs.toFixed(1)} ms, packet interval ${l.packetIntervalMs.toFixed(1)} ms, render delay ${l.renderDelayMs.toFixed(0)} ms`);
     check('Crewmate moves smoothly (simulated lag and jitter)',
-      lagMotion.frames >= 20 && lagMotion.backwards === 0 && lagMotion.maxRate < Math.max(3, lagMotion.median * 4) && lagMotion.radiusError < 0.02,
-      `${lagMotion.frames} frames, ${lagMotion.backwards} backward steps ${lagMotion.backSteps.join(' ')}, fastest ${lagMotion.maxRate.toFixed(2)} rad/s vs median ${lagMotion.median.toFixed(2)}, longest frame ${lagMotion.maxGapMs.toFixed(0)} ms`);
+      lagMotion.frames >= 20 && lagMotion.backwards === 0 && lagMotion.maxRate < Math.max(3, lagMotion.median * 4) && lagMotion.radiusError < lagMotion.radiusAllowed,
+      motionDetail(lagMotion));
 
     const loopVoice = await peakVoiceLevel(e.page, 2500);
     const loopActive = await e.page.evaluate(() => window.__net.voice.loopbackActive);

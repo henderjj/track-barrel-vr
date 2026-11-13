@@ -36,11 +36,11 @@ export type SoundId = (typeof SOUND_IDS)[number];
  */
 export const MIX = {
   engine: 0.4,
-  roar: 0.11,
-  gearbox: 0.016,
-  finalDrive: 0.05,
-  rumble: 0.3,
-  clatter: 0.5,
+  roar: 0.095,
+  gearbox: 0.011,
+  finalDrive: 0.035,
+  rumble: 0.21,
+  clatter: 0.4,
   squeal: 0.14,
   whine: 0.03,
   traverseGear: 0.3,
@@ -128,8 +128,16 @@ export const BLAST_ATTACK = 0.012;
 export const BLAST_HOLD = 0.12;
 export const BLAST_RECOVER = 0.5;
 
-/** How much of each kind of sound also goes through the cabin's echo (src/sim/sound-render.ts's renderCabinImpulse). */
-export const CABIN_SEND = { engine: 0.1, tracks: 0.08, turret: 0.22, knocks: 0.4, shot: 0.55 } as const;
+/**
+ * How much of each kind of sound goes through the cabin's echo
+ * (src/sim/sound-render.ts's renderCabinImpulse). For the placed sounds
+ * (the engine, each track's links, the turret's gear and the knocks from a
+ * place) the echo is also how they reach the crew from all round, as most
+ * of a sound does in a steel box; the sounds from nowhere in particular
+ * (the rumble through the floor, a bump, the gun) are played straight as
+ * well, and need less of it.
+ */
+export const CABIN_SEND = { engine: 0.34, tracks: 0.34, turret: 0.38, knocks: 0.45, hull: 0.08, blows: 0.4, shot: 0.55 } as const;
 
 /** The lever counts as closed (or opened) crossing this angle, rad: a little short of latched, so the crewmate's smoothed copy crosses it too. */
 export const BREECH_CLOSED_AT = LEVER_CLOSED - 0.05;
@@ -169,10 +177,10 @@ export type SoundPlace = keyof typeof SOUND_PLACES;
 /** The places that turn with the turret. */
 export const TURRET_PLACES: readonly SoundPlace[] = ['breech', 'bin', 'traverse'];
 /**
- * How much of a placed sound comes from its place; the rest is heard from
- * everywhere, as most of it is in a steel box (the hull carries it).
+ * How much of a placed sound comes from its place; the rest reaches the
+ * crew through the cabin's echo (CABIN_SEND), from all round.
  */
-export const PLACED_SHARE = 0.6;
+export const PLACED_SHARE = 0.7;
 /** Which place each short sound is heard from (the gun's blast and a bump come through the whole hull, so from nowhere). */
 export const SOUND_FROM: Record<SoundId, SoundPlace | null> = {
   clunk: 'gearbox',

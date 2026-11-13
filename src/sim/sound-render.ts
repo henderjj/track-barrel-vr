@@ -445,46 +445,106 @@ const BANK_LEVEL = [1, 0.8, 0.62, 0.9, 0.55] as const;
 const FIRING_PLACE = [0, 4, 2, 5, 1, 3] as const;
 
 /**
+ * How far a cylinder's pulse comes early or late at the crew's ears, as a
+ * share of the cycle either way: its own length of manifold and pipe.
+ */
+const CYLINDER_LAG = 0.045;
+
+/**
  * The engine's exhaust at idle as one loop, peaking at 1: every cylinder's
  * pulse over ENGINE_LOOP_CYCLES four-stroke cycles. Each bank is an evenly
  * firing six, but the five aren't timed against each other, no bank is as
- * loud at the crew's ears as the next, no two cylinders are quite as
- * strong, and none fires quite the same twice: so instead of one hum at
- * the rate all thirty fire, it is five sixes burbling together, with a
- * roughness between their notes. Played faster as the engine revs, through
- * filters that stay put (the exhaust and the hull), so the note rises
- * without the whole sound turning thin. Deterministic.
+ * loud at the crew's ears as the next, and no two cylinders are alike: each
+ * has its own strength, its own sharpness and its own length of pipe, which
+ * brings its pulse early or late. A recording of a real Sherman shows what
+ * that does (docs/audio.md, "Measured against a real Sherman"): the sound
+ * is not a note at the rate the cylinders fire but a dense stack of tones
+ * one cycle apart, the same uneven pattern coming round every two turns.
+ * So the pattern here is fixed and what changes from one cycle to the next
+ * is small. Played faster as the engine revs, through filters that stay
+ * put (the exhaust and the hull), so the burble quickens without the whole
+ * sound turning thin. Deterministic.
  */
 export function renderEngineLoop(rate: number): Samples {
   const cycle = 2 / IDLE_REV_HZ;
   const n = Math.round(ENGINE_LOOP_CYCLES * cycle * rate);
   const work = new Float32Array(n + Math.round(0.05 * rate));
-  const random = rng(201);
-  // Each cylinder's own strength and each bank's place in the cycle stay the same every cycle.
-  const strength: number[] = [];
-  for (let j = 0; j < ENGINE_BANKS * BANK_CYLINDERS; j++) strength.push(0.7 + 0.6 * random());
-  const phase: number[] = [];
-  for (let b = 0; b < ENGINE_BANKS; b++) phase.push(random());
   // A pulse of exhaust: a sharp rise as the valve opens, a slower suck back after it (no net push).
-  const rise = 0.0009;
   const back = 0.004;
   const len = Math.round(0.03 * rate);
-  for (let c = 0; c < ENGINE_LOOP_CYCLES; c++) {
-    for (let b = 0; b < ENGINE_BANKS; b++) {
-      for (let k = 0; k < BANK_CYLINDERS; k++) {
-        const place = (FIRING_PLACE[k] + phase[b]) / BANK_CYLINDERS;
-        const at = (c + place + (random() - 0.5) * 0.008) * cycle + 0.001;
-        // No firing is quite like the last, and now and then one is weak.
-        const a = BANK_LEVEL[b] * strength[b * BANK_CYLINDERS + k] * (random() < 0.06 ? 0.4 : 0.75 + 0.5 * random());
-        const s = Math.floor(at * rate);
-        for (let i = 0; i < len; i++) {
-          const t = i / rate;
-          work[s + i] += a * ((t / rise) * Math.exp(1 - t / rise) - (rise / back) * (t / back) * Math.exp(1 - t / back));
-        }
-      }
+  for (const f of firings()) {
+    const rise = 0.0005 * f.sharp;
+    const s = Math.floor((f.at * cycle + 0.001) * rate);
+    for (let i = 0; i < len; i++) {
+      const t = i / rate;
+      work[s + i] += f.a * ((t / rise) * Math.exp(1 - t / rise) - (rise / back) * (t / back) * Math.exp(1 - t / back));
     }
   }
   return normalise(centre(fold(work, n)), 1);
+}
+
+/**
+ * How hard the engine is blowing at each moment of the same loop, between
+ * 0 and 1 (for opening and shutting its roar, not for listening to): a
+ * short breath for every firing, the strong cylinders' far bigger than the
+ * weak ones'. In the recording of a real Sherman the engine's hiss and
+ * rattle, well above its tones, rise and fall once and twice a cycle; this
+ * is what gives the roar that flutter. Deterministic, and in step with
+ * renderEngineLoop.
+ */
+export function renderEngineBreath(rate: number): Samples {
+  const cycle = 2 / IDLE_REV_HZ;
+  const n = Math.round(ENGINE_LOOP_CYCLES * cycle * rate);
+  const out = new Float32Array(n);
+  const attack = Math.round(0.0006 * rate);
+  const tau = 0.008;
+  const len = Math.round(tau * 7 * rate);
+  for (const f of firings()) {
+    const s = Math.floor((f.at * cycle + 0.001) * rate);
+    const a = f.a ** 3;
+    for (let i = 0; i < len; i++) out[(s + i) % n] += a * (i < attack ? i / attack : Math.exp(-(i - attack) / rate / tau));
+  }
+  return normalise(out, 1);
+}
+
+interface Firing {
+  /** When, in cycles from the loop's start. */
+  at: number;
+  /** How strong. */
+  a: number;
+  /** How sharp its rise is (1 is usual, less is sharper). */
+  sharp: number;
+}
+
+/** Every firing in the engine's loop, in the order they are worked out (not in order of time). The same every call. */
+function firings(): Firing[] {
+  const random = rng(201);
+  // Each cylinder's strength, lag and sharpness, and each bank's place in the cycle, stay the same every cycle.
+  const cylinders = ENGINE_BANKS * BANK_CYLINDERS;
+  const strength: number[] = [];
+  const lag: number[] = [];
+  const sharp: number[] = [];
+  for (let j = 0; j < cylinders; j++) {
+    strength.push(0.4 + 1.2 * random());
+    lag.push((random() * 2 - 1) * CYLINDER_LAG);
+    sharp.push(0.7 + 0.9 * random());
+  }
+  const phase: number[] = [];
+  for (let b = 0; b < ENGINE_BANKS; b++) phase.push(random());
+  const out: Firing[] = [];
+  for (let c = 0; c < ENGINE_LOOP_CYCLES; c++) {
+    for (let b = 0; b < ENGINE_BANKS; b++) {
+      for (let k = 0; k < BANK_CYLINDERS; k++) {
+        const j = b * BANK_CYLINDERS + k;
+        const place = (FIRING_PLACE[k] + phase[b]) / BANK_CYLINDERS + lag[j] + CYLINDER_LAG;
+        // No firing is quite like the last, and once in a long while one is weak.
+        const at = c + place + (random() - 0.5) * 0.002;
+        const a = BANK_LEVEL[b] * strength[j] * (random() < 0.02 ? 0.5 : 0.9 + 0.2 * random());
+        out.push({ at, a, sharp: sharp[j] });
+      }
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -531,30 +591,43 @@ export interface GateShape {
   jitter: number;
   /** The weakest pulse (the strongest is 1). */
   weakest: number;
+  /**
+   * Lesser strikes in each gap, each at its own place in the gap every
+   * time round (none if left out, and then the gate shuts between pulses).
+   */
+  lesser?: number;
 }
 
-/** A track link meeting the sprocket, once a link: GATE_HZ a second at normal speed. */
+/**
+ * A track link meeting the sprocket, once a link: GATE_HZ a second at
+ * normal speed. In that time the link before it has also met the idler,
+ * the return rollers and each of the six road wheels, each at its own
+ * moment, so a track is less a row of clicks than a clatter with the
+ * links' beat in it: a recording of a real Sherman (docs/audio.md) has the
+ * tracks' hiss rising and falling by a sixth or so at the links' rate,
+ * not opening and shutting.
+ */
 export const GATE_HZ = 8;
-export const LINK_GATE: GateShape = { seed: 301, hz: GATE_HZ, count: 32, tau: 0.009, jitter: 0.16, weakest: 0.5 };
+export const LINK_GATE: GateShape = { seed: 301, hz: GATE_HZ, count: 32, tau: 0.009, jitter: 0.16, weakest: 0.5, lesser: 8 };
 /** A tooth of a hand-turned gear train passing: lighter and more even. */
 export const TICK_GATE: GateShape = { seed: 302, hz: GATE_HZ, count: 32, tau: 0.004, jitter: 0.06, weakest: 0.7 };
 
 /**
  * A loop of pulses between 0 and 1 for opening and shutting a sound's
  * level (not for listening to): one pulse per link or tooth, no two quite
- * as strong or as evenly spaced. Played faster or slower, it sets how
- * often the thing it gates is struck without changing what it rings like.
- * Deterministic.
+ * as strong or as evenly spaced, and for a track the lesser strikes
+ * between them. Played faster or slower, it sets how often the thing it
+ * gates is struck without changing what it rings like. Deterministic.
  */
 export function renderGate(shape: GateShape, rate: number): Samples {
   const n = Math.round((shape.count / shape.hz) * rate);
-  const work = new Float32Array(n + Math.round(shape.tau * 8 * rate));
+  const len = Math.round(shape.tau * 8 * rate);
+  const work = new Float32Array(n + len);
   const random = rng(shape.seed);
   const attack = Math.max(1, Math.round(0.0004 * rate));
   for (let k = 0; k < shape.count; k++) {
     const s = Math.floor(((k + 0.5 + (random() - 0.5) * shape.jitter) / shape.hz) * rate);
     const a = shape.weakest + (1 - shape.weakest) * random();
-    const len = Math.round(shape.tau * 8 * rate);
     for (let i = 0; i < len; i++) {
       const env = i < attack ? i / attack : Math.exp(-(i - attack) / rate / shape.tau);
       work[s + i] = Math.max(work[s + i], a * env);
@@ -562,6 +635,31 @@ export function renderGate(shape: GateShape, rate: number): Samples {
   }
   const out = new Float32Array(n);
   for (let i = 0; i < work.length; i++) out[i % n] = Math.max(out[i % n], work[i]);
+  const lesser = shape.lesser ?? 0;
+  if (lesser === 0) return out;
+  // The lesser strikes add to the main ones, spread through the gap: just where each falls and how hard is the track's own, the same every link.
+  const places: number[] = [];
+  const hard: number[] = [];
+  for (let e = 0; e < lesser; e++) {
+    places.push((e + 0.35 + 0.3 * random()) / lesser);
+    hard.push(0.3 * (0.7 + 0.6 * random()));
+  }
+  const more = new Float32Array(n);
+  for (let k = 0; k < shape.count; k++) {
+    for (let e = 0; e < lesser; e++) {
+      const s = Math.floor(((k + places[e] + (random() - 0.5) * shape.jitter * 0.5) / shape.hz) * rate);
+      const a = hard[e] * (0.6 + 0.8 * random());
+      for (let i = 0; i < len; i++) {
+        more[(s + i + n) % n] += a * (i < attack ? i / attack : Math.exp(-(i - attack) / rate / shape.tau));
+      }
+    }
+  }
+  let top = 0;
+  for (let i = 0; i < n; i++) {
+    out[i] += more[i];
+    top = Math.max(top, out[i]);
+  }
+  for (let i = 0; i < n; i++) out[i] /= top;
   return out;
 }
 
@@ -623,7 +721,7 @@ export function renderCabinImpulse(rate: number, channel: 0 | 1): Samples {
     out[i] += 0.5 * y * Math.exp(-(t - 0.012) / 0.065) * Math.min(1, (i - from) / (0.006 * rate));
   }
   // The box's own ring.
-  for (const m of HULL.slice(0, 8)) ring(out, rate, 0.004, m.f * (channel === 0 ? 1 : 1.013), 0.012 * m.a, m.tau * 0.5);
+  for (const m of HULL.slice(0, 8)) ring(out, rate, 0.004, m.f * (channel === 0 ? 1 : 1.013), 0.007 * m.a, m.tau * 0.5);
   fadeOut(out, rate, 0.05);
   let energy = 0;
   for (let i = 0; i < n; i++) energy += out[i] * out[i];
