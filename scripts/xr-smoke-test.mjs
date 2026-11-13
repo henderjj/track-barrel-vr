@@ -2957,9 +2957,10 @@ async function theEnemyTanks() {
     // Tank B may fire too: take tank A's shot.
     const shot = await waitFor("tank A's shot to strike", () => evalInApp('window.__enemy.shots()').slice(before).find((x) => x.gun === 3), 5000).catch(() => null);
     if (shot?.hit) hit = shot;
-    await sleep(800);
+    else await sleep(800);
   }
-  const hitSign = hit ? await waitFor('the hit on the sign', () => /^Hit! Tank A/.test(evalInApp('window.__enemy.sign')) && evalInApp('window.__enemy.sign'), 5000).catch(() => evalInApp('window.__enemy.sign')) : '';
+  // Read the sign as soon as the hit lands: tank B's own firing puts its sign up over it a moment later.
+  const hitSign = hit ? await waitFor('the hit on the sign', () => /^Hit! Tank A/.test(evalInApp('window.__enemy.sign')) && evalInApp('window.__enemy.sign'), 5000, 100).catch(() => evalInApp('window.__enemy.sign')) : '';
   check("Tank A's shells strike the tank, and a hit is called on the sign",
     hit !== null && /^Hit! Tank A, \d+ o'clock, \d+ m$/.test(hitSign), `${fired} shots, sign "${hitSign}"`);
 
