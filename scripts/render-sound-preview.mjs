@@ -9,8 +9,9 @@
  *
  * Scenes (all of them by default):
  *   tour      Practice → Tank sounds → Run through, from the driver's seat:
- *             idle, a rev, pulling away through the gears, a turn, a halt,
- *             the power traverse, the handwheels.
+ *             idle, a rev, pulling away through the gears, over grass,
+ *             gravel and back to the road, a turn, a halt, the power
+ *             traverse, the handwheels.
  *   gunnery   From the gunner's seat with the engine idling: a shell rammed,
  *             the breech closed, the gun fired (the casing in the bin), then
  *             the breech opened by hand, and the turret laid on.
@@ -21,6 +22,12 @@
  *             revs climbing from 1800 to 2250 as the tank gathers way from
  *             10 to 14 km/h: what the recording of a real Sherman that
  *             the sounds were measured against does (docs/audio.md).
+ *   ground    From the driver's seat at a steady 14 km/h, five seconds on
+ *             each: grass, the dirt road, the course's gravel, then with
+ *             the left track on the road and the right on the grass verge,
+ *             and last at a crawl (4 km/h) on gravel, then on grass.
+ *   ground-tracks  The same with the engine and the gears left out: only
+ *             what the ground changes.
  *
  * Needs Playwright's Chromium (docs/testing.md, "In a cloud container").
  */
@@ -33,7 +40,7 @@ import { chromium } from 'playwright';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const outDir = resolve(args[0] ?? join(root, 'artifacts', 'sound-preview'));
-const SCENES = ['tour', 'gunnery', 'starting', 'cruise'];
+const SCENES = ['tour', 'gunnery', 'starting', 'cruise', 'ground', 'ground-tracks'];
 const scenes = args.length > 1 ? args.slice(1) : SCENES;
 const RATE = 48000;
 
@@ -41,6 +48,7 @@ const RATE = 48000;
 const entry = `
   export { TankSoundGraph, createTankVoices } from './src/systems/tank-sound-graph.ts';
   export * from './src/sim/tank-audio.ts';
+  export { createFooting, footingBetween } from './src/sim/ground-surface.ts';
   export { SEATS } from './src/sim/cabin.ts';
   export { CASING_FLIGHT, RECOIL } from './src/sim/loading.ts';
   export { IDLE_RPM, CRANK_RPM } from './src/sim/gearbox.ts';
@@ -65,7 +73,44 @@ async function renderScene(name, rate) {
     const u = Math.min(1, Math.max(0, (t - a) / (b - a)));
     return u * u * (3 - 2 * u);
   };
+  /** The `ground` scenes: what each track is on from each time, s, and at what speed, m/s; a track takes half a second to cross over. */
+  const GROUND = [
+    [0, 'grass', 'grass', 3.9],
+    [5, 'dirt', 'dirt', 3.9],
+    [10, 'gravel', 'gravel', 3.9],
+    [15, 'dirt', 'grass', 3.9],
+    [20, 'gravel', 'gravel', 1.1],
+    [25, 'grass', 'grass', 1.1],
+  ];
+  const leftGround = T.createFooting('grass');
+  const rightGround = T.createFooting('grass');
+  const ground = (engine) => ({
+    seconds: 30,
+    seat: 'driver',
+    sounds: [],
+    at(t, v) {
+      let i = 0;
+      while (i + 1 < GROUND.length && t >= GROUND[i + 1][0]) i++;
+      const now = GROUND[i];
+      const was = GROUND[Math.max(0, i - 1)];
+      const over = (t - now[0]) / 0.5;
+      T.footingBetween(was[1], now[1], over, leftGround);
+      T.footingBetween(was[2], now[2], over, rightGround);
+      const speed = was[3] + (now[3] - was[3]) * ease(t, now[0], now[0] + 1.5);
+      // In third at 14 km/h, in first at a crawl.
+      const rpm = speed > 2 ? 2250 : 1200 + (2250 - 1200) * ((speed - 1.1) / 2.8);
+      T.engineVoice(rpm, 0.6, v.engine);
+      T.driveVoice(rpm, speed, true, 0.6, v.drive);
+      if (!engine) {
+        v.engine.gain = v.engine.roar = 0;
+        v.drive.gearbox = v.drive.final = 0;
+      }
+      T.trackVoice(speed, speed, v.tracks, leftGround, rightGround);
+    },
+  });
   const scenesByName = {
+    ground: ground(true),
+    'ground-tracks': ground(false),
     tour: {
       seconds: T.TOUR_SECONDS + 1,
       seat: 'driver',
@@ -74,7 +119,7 @@ async function renderScene(name, rate) {
         const s = T.soundTour(t, tour);
         T.engineVoice(s.rpm, s.load, v.engine);
         T.driveVoice(s.rpm, (s.left + s.right) / 2, s.inGear, s.load, v.drive);
-        T.trackVoice(s.left, s.right, v.tracks);
+        T.trackVoice(s.left, s.right, v.tracks, s.leftGround, s.rightGround);
         T.traverseVoice(s.traverse, v.traverse);
         T.handGearVoice(s.crank, s.wheel, v.handGear);
       },

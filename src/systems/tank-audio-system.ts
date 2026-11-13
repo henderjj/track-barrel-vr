@@ -2,6 +2,7 @@ import { createSystem, Quaternion, Vector3, VisibilityState } from '@iwsdk/core'
 import { onSettingChange } from '../live-settings.js';
 import { settings } from '../settings.js';
 import { demandOf, NEUTRAL } from '../sim/gearbox.js';
+import { groundLine, TankFooting, type Footing, type Surface } from '../sim/ground-surface.js';
 import { CASING_FLIGHT, RECOIL } from '../sim/loading.js';
 import {
   createCues,
@@ -81,6 +82,13 @@ interface AudioDebug {
     leftHz: number;
     rightHz: number;
     squeal: number;
+    /** What each track is on (src/sim/ground-surface.ts): the surface most of it is on, the share of its length on each (in SURFACES' order), and what that makes of its clink, the ground's own noise and the rumble. */
+    ground: Record<'left' | 'right', Surface>;
+    groundShares: Record<'left' | 'right', number[]>;
+    top: Record<'left' | 'right', number>;
+    grit: Record<'left' | 'right', number>;
+    gritHz: Record<'left' | 'right', number>;
+    rumbleCutoff: number;
     /** The power traverse's whine, and the handwheels' ticks a second. */
     whine: number;
     handHz: number;
@@ -150,6 +158,10 @@ export class TankAudioSystem extends createSystem({}) {
   private readonly cueState: CueState = { gear: 0, grinding: false, bumps: 0, lever: 0, rammed: false, running: true, stalls: 0, coughs: 0 };
   private readonly heard = Object.fromEntries(SOUND_IDS.map((id) => [id, 0])) as Record<SoundId, number>;
   private paramClock = 0;
+  /** What each track is on: the tank's own footing, or the sound tour's while it runs. */
+  private readonly footing = new TankFooting();
+  private leftGround: Footing = this.footing.left;
+  private rightGround: Footing = this.footing.right;
   private time = 0;
   private shotAt = Number.NEGATIVE_INFINITY;
   private hidden = false;
@@ -182,6 +194,12 @@ export class TankAudioSystem extends createSystem({}) {
           leftHz: v.tracks.left.hz,
           rightHz: v.tracks.right.hz,
           squeal: v.tracks.squeal,
+          ground: { left: self.leftGround.surface, right: self.rightGround.surface },
+          groundShares: { left: [...self.leftGround.shares], right: [...self.rightGround.shares] },
+          top: { left: v.tracks.left.top, right: v.tracks.right.top },
+          grit: { left: v.tracks.left.grit, right: v.tracks.right.grit },
+          gritHz: { left: v.tracks.left.gritHz, right: v.tracks.right.gritHz },
+          rumbleCutoff: v.tracks.rumbleCutoff,
           whine: v.traverse.gain,
           handHz: v.handGear.hz,
           grinding: v.grinding,
@@ -261,7 +279,9 @@ export class TankAudioSystem extends createSystem({}) {
       this.load = tour.load;
       engineVoice(tour.rpm, tour.load, v.engine);
       driveVoice(tour.rpm, (tour.left + tour.right) / 2, tour.inGear, tour.load, v.drive);
-      trackVoice(tour.left, tour.right, v.tracks);
+      this.leftGround = tour.leftGround;
+      this.rightGround = tour.rightGround;
+      trackVoice(tour.left, tour.right, v.tracks, tour.leftGround, tour.rightGround);
       traverseVoice(tour.traverse, v.traverse);
       handGearVoice(tour.crank, tour.wheel, v.handGear);
       v.grinding = v.cranking = false;
@@ -271,7 +291,11 @@ export class TankAudioSystem extends createSystem({}) {
         this.load += (asked - this.load) * (1 - Math.exp(-dt / LOAD_SECONDS));
         engineVoice(s.rpm, this.load, v.engine);
         driveVoice(s.rpm, (s.leftTrack + s.rightTrack) / 2, s.gear !== NEUTRAL, this.load, v.drive);
-        trackVoice(s.leftTrack, s.rightTrack, v.tracks);
+        // What each track is on, from where the tank is drawn: the same on both pages, with nothing sent.
+        this.footing.update(s.x, s.z, s.heading);
+        this.leftGround = this.footing.left;
+        this.rightGround = this.footing.right;
+        trackVoice(s.leftTrack, s.rightTrack, v.tracks, this.leftGround, this.rightGround);
         v.grinding = s.grinding;
         v.cranking = s.cranking;
       }
@@ -387,7 +411,7 @@ export class TankAudioSystem extends createSystem({}) {
     if (ctx.state !== 'running') return 'Sound starts with a click or Enter VR.';
     const duck = this.ducker.speaking ? `ducked ${this.ducker.db.toFixed(0)} dB for the intercom` : 'nobody speaking';
     const tour = this.touring() ? `run through ${Math.ceil(TOUR_SECONDS - this.tourTime())} s to go, ` : '';
-    return `Sound on: ${tour}engine ${this.voices.engine.freq.toFixed(0)} Hz, ${duck}.`;
+    return `Sound on: ${tour}engine ${this.voices.engine.freq.toFixed(0)} Hz, tracks on ${groundLine(this.leftGround.surface, this.rightGround.surface)}, ${duck}.`;
   }
 
   private resume(): void {

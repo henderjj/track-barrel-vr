@@ -343,7 +343,31 @@ function outsideCourse(x: number, z: number): boolean {
   return Math.abs(wrapTile(x - midX)) > (f.east - f.west) / 2 || Math.abs(wrapTile(z - midZ)) > (f.south - f.north) / 2;
 }
 
-const TRACK_SAMPLES: readonly PathPoint[] = [...samplePath(COURSE_PATH, 0, COURSE_PATH.length, 2), ...samplePath(PENALTY_PATH, 0, PENALTY_OWN, 2)];
+const COURSE_SAMPLES: readonly PathPoint[] = samplePath(COURSE_PATH, 0, COURSE_PATH.length, 2);
+const PENALTY_SAMPLES: readonly PathPoint[] = samplePath(PENALTY_PATH, 0, PENALTY_OWN, 2);
+const TRACK_SAMPLES: readonly PathPoint[] = [...COURSE_SAMPLES, ...PENALTY_SAMPLES];
+
+/** Whether any of a path's samples is within `reach` m of (x, z). */
+function within(samples: readonly PathPoint[], x: number, z: number, reach: number): boolean {
+  const most = reach * reach;
+  for (const p of samples) {
+    const dx = wrapTile(x - p.x);
+    const dz = wrapTile(z - p.z);
+    if (dx * dx + dz * dz <= most) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether (x, z) is on the gravel itself, as drawn: the course's track or
+ * the penalty loop's, each to its own width (to within the 10 cm the
+ * samples' spacing leaves). What a track there runs on
+ * (src/sim/ground-surface.ts).
+ */
+export function onGravel(x: number, z: number): boolean {
+  if (outsideCourse(x, z)) return false;
+  return within(COURSE_SAMPLES, x, z, COURSE.halfWidth) || within(PENALTY_SAMPLES, x, z, PENALTY.halfWidth);
+}
 
 // ---------------------------------------------------------------- Laps and gates
 
