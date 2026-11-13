@@ -14,6 +14,7 @@
  */
 import { GUN } from './cabin.js';
 import { MAX_SPEED, MAX_TRAVERSE } from './comfort.js';
+import { createFooting, footingBetween, SURFACE_SOUND, type Footing, type Surface, type SurfaceSound } from './ground-surface.js';
 import { CASING_BIN, LEVER_CLOSED } from './loading.js';
 import { IDLE_RPM, MAX_RPM } from './tank-drive.js';
 
@@ -41,6 +42,7 @@ export const MIX = {
   finalDrive: 0.035,
   rumble: 0.21,
   clatter: 0.4,
+  grit: 0.3,
   squeal: 0.14,
   whine: 0.03,
   traverseGear: 0.3,
@@ -287,10 +289,25 @@ export function sirenVoice(on: boolean, out: { freq: number; gain: number; glide
   return out;
 }
 
-/** One track's links: how many meet the sprocket a second, and how loud, 0 to 1, before MIX.clatter. */
+/**
+ * One track's links: how many meet the sprocket a second, and how loud, 0
+ * to 1, before MIX.clatter. What the track is on (src/sim/ground-surface.ts)
+ * sets how much of the links' lower and upper ring and of their thud is
+ * heard (1 on a dirt road), and the ground's own noise under them: its
+ * level, 0 to 1, before MIX.grit, and where it lies, Hz.
+ */
 export interface LinkVoice {
   hz: number;
   gain: number;
+  ring: number;
+  top: number;
+  thud: number;
+  grit: number;
+  gritHz: number;
+}
+
+function createLinkVoice(): LinkVoice {
+  return { hz: 0, gain: 0, ring: 1, top: 1, thud: 1, grit: 0, gritHz: SURFACE_SOUND.dirt.gritHz };
 }
 
 /** The tracks' sound at their speeds: a low rumble through the floor, each track's links clattering round its sprocket, and dry pins squealing. */
@@ -310,35 +327,50 @@ export interface TrackVoice {
 }
 
 export function createTrackVoice(): TrackVoice {
-  return { rumble: 0, rumbleCutoff: 0, left: { hz: 0, gain: 0 }, right: { hz: 0, gain: 0 }, clatter: 0, clatterHz: 0, squeal: 0, squealRate: 1 };
+  return { rumble: 0, rumbleCutoff: 0, left: createLinkVoice(), right: createLinkVoice(), clatter: 0, clatterHz: 0, squeal: 0, squealRate: 1 };
 }
 
 /** The squeal's swells come at their rendered pace at this track speed, m/s. */
 export const SQUEAL_SPEED = 2.5;
 
-function linkVoice(track: number, out: LinkVoice): void {
+function linkVoice(track: number, ground: SurfaceSound, out: LinkVoice): void {
   const v = Math.abs(track);
   const f = clamp01(v / MAX_SPEED);
   out.hz = v / LINK_PITCH;
   out.gain = clamp01(f * 4) * (0.6 + 0.4 * f);
+  out.ring = ground.ring;
+  out.top = ground.top;
+  out.thud = ground.thud;
+  // The ground is crushed as often as the links land on it, and as hard.
+  out.grit = ground.grit * out.gain;
+  out.gritHz = ground.gritHz;
 }
 
 /**
  * From each track's speed, m/s (a pivot turn, tracks running opposite
- * ways, rumbles too). Steering drags one track against the ground and
- * loads its pins, so the squeal is strongest in a turn.
+ * ways, rumbles too), and what each is on (a dirt road if not said: what
+ * the tracks were tuned on). Steering drags one track against the ground
+ * and loads its pins, so the squeal is strongest in a turn. The rumble and
+ * the squeal come from both tracks together, so they take the two
+ * grounds' mean.
  */
-export function trackVoice(leftTrack: number, rightTrack: number, out: TrackVoice): TrackVoice {
+export function trackVoice(
+  leftTrack: number,
+  rightTrack: number,
+  out: TrackVoice,
+  leftGround: SurfaceSound = SURFACE_SOUND.dirt,
+  rightGround: SurfaceSound = SURFACE_SOUND.dirt,
+): TrackVoice {
   const v = (Math.abs(leftTrack) + Math.abs(rightTrack)) / 2;
   const f = clamp01(v / MAX_SPEED);
-  out.rumble = f ** 0.7;
-  out.rumbleCutoff = 140 + 500 * f;
-  linkVoice(leftTrack, out.left);
-  linkVoice(rightTrack, out.right);
+  out.rumble = f ** 0.7 * ((leftGround.rumble + rightGround.rumble) / 2);
+  out.rumbleCutoff = (140 + 500 * f) * ((leftGround.rumbleOpen + rightGround.rumbleOpen) / 2);
+  linkVoice(leftTrack, leftGround, out.left);
+  linkVoice(rightTrack, rightGround, out.right);
   out.clatter = (out.left.gain + out.right.gain) / 2;
   out.clatterHz = (out.left.hz + out.right.hz) / 2;
   const steer = clamp01(Math.abs(leftTrack - rightTrack) / 3);
-  out.squeal = clamp01(f * 5) * (0.3 + 0.7 * steer);
+  out.squeal = clamp01(f * 5) * (0.3 + 0.7 * steer) * ((leftGround.squeal + rightGround.squeal) / 2);
   out.squealRate = Math.min(3, Math.max(0.15, v / SQUEAL_SPEED));
   return out;
 }
@@ -397,14 +429,45 @@ export interface TourState {
   /** The traverse crank and the elevation wheel, turns a second. */
   crank: number;
   wheel: number;
+  /** What each track is on. */
+  leftGround: Footing;
+  rightGround: Footing;
 }
 
 export function createTourState(): TourState {
-  return { rpm: IDLE_RPM, load: 0, left: 0, right: 0, inGear: false, traverse: 0, crank: 0, wheel: 0 };
+  return { rpm: IDLE_RPM, load: 0, left: 0, right: 0, inGear: false, traverse: 0, crank: 0, wheel: 0, leftGround: createFooting(), rightGround: createFooting() };
 }
 
 /** How long the sound tour lasts, s. */
-export const TOUR_SECONDS = 30;
+export const TOUR_SECONDS = 37;
+
+/**
+ * The ground the tour's tank crosses once it is up to speed, each with the
+ * time, s, its left track starts onto it: from the dirt road it pulled
+ * away on, over the verge onto grass, onto the course's gravel and back
+ * to the road. A track takes TOUR_CROSSING s to cross over, and the right
+ * track follows the left TOUR_BEHIND s later, so for that long the two
+ * are on different ground.
+ */
+export const TOUR_GROUND: readonly (readonly [number, Surface])[] = [
+  [17, 'grass'],
+  [20.5, 'gravel'],
+  [24, 'dirt'],
+];
+export const TOUR_CROSSING = 0.5;
+export const TOUR_BEHIND = 1.2;
+
+/** What a track of the tour's tank is on, `t` s in. */
+function tourGround(t: number, out: Footing): Footing {
+  let from: Surface = 'dirt';
+  for (let i = 0; i < TOUR_GROUND.length; i++) {
+    const [at, to] = TOUR_GROUND[i];
+    const next = i + 1 < TOUR_GROUND.length ? TOUR_GROUND[i + 1][0] : Infinity;
+    if (t < next) return footingBetween(from, to, (t - at) / TOUR_CROSSING, out);
+    from = to;
+  }
+  return footingBetween(from, from, 0, out);
+}
 
 /** 0 before `a`, 1 after `b`, easing between. */
 function ease(t: number, a: number, b: number): number {
@@ -415,11 +478,12 @@ function ease(t: number, a: number, b: number): number {
 /**
  * Practice → Tank sounds → Run through: the continuous sounds without
  * driving or laying the gun, `t` s in. The engine idles, is revved out of
- * gear and let fall; the tank pulls away up through the gears to top
- * speed, turns left, and slows to a halt; the turret traverses under
- * power one way and slowly back; then the traverse crank and the
- * elevation wheel are turned by hand. The preview clips are rendered from
- * it too.
+ * gear and let fall; the tank pulls away up a dirt road through the gears
+ * to top speed, runs off onto grass, onto gravel and back to the road
+ * (TOUR_GROUND; the left track first each time), turns left, and slows to
+ * a halt; the turret traverses under power one way and slowly back; then
+ * the traverse crank and the elevation wheel are turned by hand. The
+ * preview clips are rendered from it too.
  */
 export function soundTour(t: number, out: TourState): TourState {
   out.rpm = IDLE_RPM;
@@ -427,33 +491,35 @@ export function soundTour(t: number, out: TourState): TourState {
   out.left = out.right = 0;
   out.inGear = false;
   out.traverse = out.crank = out.wheel = 0;
+  tourGround(t, out.leftGround);
+  tourGround(t - TOUR_BEHIND, out.rightGround);
   if (t < 9) {
     // Idle, then a rev out of gear.
     const up = ease(t, 3, 5.5) - ease(t, 6, 8.5);
     out.rpm = IDLE_RPM + (2400 - IDLE_RPM) * up;
     out.load = t >= 3 && t < 6 ? 0.9 : 0;
-  } else if (t < 22) {
-    // Pulling away: four changes up on the way to top speed, each letting the revs fall back.
-    const speed = MAX_SPEED * 0.9 * (ease(t, 9, 16.5) - ease(t, 19.5, 22));
+  } else if (t < 29) {
+    // Pulling away: four changes up on the way to top speed, each letting the revs fall back; then over the grass and the gravel at a steady speed.
+    const speed = MAX_SPEED * 0.9 * (ease(t, 9, 16.5) - ease(t, 26.5, 29));
     const climbing = t < 16.5;
     const gear = Math.min(4.999, ((t - 9) / 7.5) * 5);
     const inThis = gear - Math.floor(gear);
-    out.rpm = climbing ? 1300 + 1200 * inThis : t < 19.5 ? 2300 : IDLE_RPM + 1500 * (1 - ease(t, 19.5, 22));
-    out.load = climbing ? (inThis < 0.08 ? 0.1 : 0.9) : t < 19.5 ? 0.55 : 0;
+    out.rpm = climbing ? 1300 + 1200 * inThis : t < 26.5 ? 2300 : IDLE_RPM + 1500 * (1 - ease(t, 26.5, 29));
+    out.load = climbing ? (inThis < 0.08 ? 0.1 : 0.9) : t < 26.5 ? 0.55 : 0;
     out.inGear = true;
-    // A turn to the left: the left track held back.
-    const turn = ease(t, 17, 17.6) - ease(t, 18.8, 19.4);
+    // A turn to the left, back on the road: the left track held back.
+    const turn = ease(t, 24.6, 25.2) - ease(t, 25.9, 26.5);
     out.left = speed * (1 - 0.55 * turn);
     out.right = speed * (1 + 0.1 * turn);
-  } else if (t < 27) {
+  } else if (t < 34) {
     // The power traverse: up to full speed, a stop, and slowly back.
     out.rpm = 1400;
     out.load = 0.2;
-    out.traverse = MAX_TRAVERSE * (ease(t, 22.3, 23.3) - ease(t, 24.3, 24.9)) - 0.3 * MAX_TRAVERSE * (ease(t, 25.2, 25.6) - ease(t, 26.4, 26.8));
+    out.traverse = MAX_TRAVERSE * (ease(t, 29.3, 30.3) - ease(t, 31.3, 31.9)) - 0.3 * MAX_TRAVERSE * (ease(t, 32.2, 32.6) - ease(t, 33.4, 33.8));
   } else {
     // By hand: the traverse crank, then the elevation wheel.
-    out.crank = 1.5 * (ease(t, 27, 27.3) - ease(t, 28.2, 28.5));
-    out.wheel = 2 * (ease(t, 28.5, 28.8) - ease(t, 29.6, 29.9));
+    out.crank = 1.5 * (ease(t, 34, 34.3) - ease(t, 35.2, 35.5));
+    out.wheel = 2 * (ease(t, 35.5, 35.8) - ease(t, 36.6, 36.9));
   }
   return out;
 }

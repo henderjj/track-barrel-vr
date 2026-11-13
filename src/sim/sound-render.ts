@@ -687,6 +687,38 @@ export function renderSquealGate(rate: number): Samples {
   return out;
 }
 
+/** The grit loop's length at normal speed (GATE_HZ links a second), s, and how many grains are in it: about four to a link. */
+export const GRIT_SECONDS = 4;
+export const GRIT_GRAINS = 128;
+
+/**
+ * A loop between 0 and 1 for the ground's noise under a track: a grain for
+ * every stone crushed or flung, or every tuft torn, at no fixed moment and
+ * most of them slight, a few hard. Played as fast as the links come, so at
+ * a crawl each crunch is heard and at speed they run into a roar; what it
+ * lets through is noise in a band set by the ground. Deterministic.
+ */
+export function renderGritGate(rate: number): Samples {
+  const n = Math.round(GRIT_SECONDS * rate);
+  const out = new Float32Array(n);
+  const random = rng(304);
+  const attack = Math.max(1, Math.round(0.0005 * rate));
+  for (let k = 0; k < GRIT_GRAINS; k++) {
+    const s = Math.floor(random() * n);
+    // Most grains are slight, a few hard.
+    const a = 0.3 + 0.7 * random() ** 2;
+    const tau = 0.0015 + 0.0055 * random();
+    const len = Math.round(tau * 6 * rate);
+    for (let i = 0; i < len; i++) {
+      out[(s + i) % n] += a * (i < attack ? i / attack : Math.exp(-(i - attack) / rate / tau));
+    }
+  }
+  let top = 0;
+  for (let i = 0; i < n; i++) top = Math.max(top, out[i]);
+  for (let i = 0; i < n; i++) out[i] /= top;
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // The cabin.
 

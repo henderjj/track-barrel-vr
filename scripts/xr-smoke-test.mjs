@@ -2208,7 +2208,8 @@ async function layingTheGun() {
  *     before this one made their short sounds on the way (a gear going in,
  *     a shell rammed, the breech slammed, the shot and its casing). Driving
  *     raises the engine's note and roar, the gears whine and the tracks
- *     rumble (F6.1); the traverse crank ticks; Practice → Tank sounds →
+ *     rumble (F6.1), each track sounding of what it is on (dirt road,
+ *     grass, gravel); the traverse crank ticks; Practice → Tank sounds →
  *     Play each plays every short sound and Run through revs the engine;
  *     the menu's Tank sounds row turns them off and on. The emulator can't listen, so this checks what
  *     the page sends to Web Audio.
@@ -2239,6 +2240,31 @@ async function tankSounds() {
       && driving.finalDrive > 0 && driving.rumble > 0.2 && driving.leftHz > 3 && driving.rightHz > 3,
     `engine ${idle.engineHz.toFixed(0)} Hz at idle, ${driving.engineHz.toFixed(0)} Hz driving (throttle ${driving.load.toFixed(2)}, roar ${idle.roar.toFixed(2)} to ${driving.roar.toFixed(2)}); `
       + `final drives ${driving.finalDrive.toFixed(2)}, rumble ${driving.rumble.toFixed(2)}, links ${driving.leftHz.toFixed(1)} and ${driving.rightHz.toFixed(1)} a second`);
+
+  // What each track is on (docs/audio.md, "What the tracks run on"): the tank put on the road up the range, astride
+  // its east edge, on the grass beside it and on the course's gravel, facing north each time.
+  const groundAt = async (x, z, want) => {
+    evalInApp(`(window.__drive.place(${x}, ${z}, 0), true)`);
+    return waitFor(`the tracks on ${want}`, () => { const a = audio(); return `${a.ground.left}/${a.ground.right}` === want && a; }, 5000).catch(() => audio());
+  };
+  const onRoad = await groundAt(0, -100, 'dirt/dirt');
+  const astride = await groundAt(4, -100, 'dirt/grass');
+  const onGrass = await groundAt(30, -100, 'grass/grass');
+  const onGravel = await groundAt(320, -150, 'gravel/gravel');
+  const grounds = [onRoad, astride, onGrass, onGravel].map((a) => `${a.ground.left}/${a.ground.right}`);
+  check('Each track sounds of what it is on: the dirt road, one track on the road and one on the verge, grass, and the gravel of the course',
+    grounds.join(' ') === 'dirt/dirt dirt/grass grass/grass gravel/gravel'
+      && astride.top.left === onRoad.top.left && astride.top.right === onGrass.top.right && astride.gritHz.left > astride.gritHz.right * 1.5
+      && onGrass.top.left < onRoad.top.left * 0.7 && onGravel.top.left > onRoad.top.left && onGravel.gritHz.left > onRoad.gritHz.left * 1.5,
+    `${grounds.join(', ')}; clink ${onGrass.top.left.toFixed(2)} on grass, ${onRoad.top.left.toFixed(2)} on dirt, ${onGravel.top.left.toFixed(2)} on gravel; `
+      + `the ground's noise about ${onGrass.gritHz.left.toFixed(0)}, ${onRoad.gritHz.left.toFixed(0)} and ${onGravel.gritHz.left.toFixed(0)} Hz`);
+  // Driving up the course's east side: the gravel crunches under both tracks.
+  evalInApp('(window.__drive.set({ left: 1, right: 1, gear: 1, throttle: 0 }), true)');
+  const crunching = await waitFor('the gravel to crunch', () => { const a = audio(); return a.grit.left > 0.1 && a.grit.right > 0.1 && a; }, 8000).catch(() => audio());
+  evalInApp('(window.__drive.set(null), window.__drive.reset(), true)');
+  check("Driving on the gravel, the ground's own noise comes in under both tracks",
+    crunching.ground.left === 'gravel' && crunching.ground.right === 'gravel' && crunching.grit.left > 0.1 && crunching.grit.right > 0.1 && onGravel.grit.left === 0,
+    `standing ${onGravel.grit.left.toFixed(2)}, driving ${crunching.grit.left.toFixed(2)} and ${crunching.grit.right.toFixed(2)} on ${crunching.ground.left}`);
 
   // The gunner's traverse crank ticks as it turns: 0.3 of a turn a second, as a slow hand would (by the clock,
   // since a timer only gets a turn between the emulator's slow frames).

@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_SPEED, MAX_TRAVERSE } from '../src/sim/comfort.js';
+import { SURFACE_SOUND, SURFACES } from '../src/sim/ground-surface.js';
 import { LEVER_CLOSED } from '../src/sim/loading.js';
 import {
   CABIN_SECONDS,
   CASING_BOUNCES,
   ENGINE_LOOP_CYCLES,
   GATE_HZ,
+  GRIT_GRAINS,
+  GRIT_SECONDS,
   LINK_GATE,
   renderCabinImpulse,
   renderEngineBreath,
   renderEngineLoop,
   renderGate,
+  renderGritGate,
   renderNoiseLoop,
   renderSound,
   renderSquealGate,
@@ -232,6 +236,62 @@ describe('the tracks', () => {
     expect(trackVoice(MAX_SPEED, MAX_SPEED, createTrackVoice()).squealRate).toBeGreaterThan(straight.squealRate);
     expect(trackVoice(0.01, 0.01, createTrackVoice()).squealRate).toBeGreaterThan(0);
   });
+
+  it('sound as they did on a dirt road if nothing says what they are on', () => {
+    const plain = trackVoice(3, 4, createTrackVoice());
+    expect(trackVoice(3, 4, createTrackVoice(), SURFACE_SOUND.dirt, SURFACE_SOUND.dirt)).toEqual(plain);
+    expect(plain.left.ring).toBe(1);
+    expect(plain.left.top).toBe(1);
+    expect(plain.left.thud).toBe(1);
+    expect(plain.rumbleCutoff).toBeCloseTo(140 + 500 * (3.5 / MAX_SPEED));
+  });
+
+  it('are duller and softer on grass, and brighter with a crunch under them on gravel', () => {
+    const on = Object.fromEntries(SURFACES.map((s) => [s, trackVoice(4, 4, createTrackVoice(), SURFACE_SOUND[s], SURFACE_SOUND[s])]));
+    // The links come as often and as loud whatever is under them: the ground changes what they ring like.
+    for (const s of SURFACES) {
+      expect(on[s].left.hz).toBe(on.dirt.left.hz);
+      expect(on[s].left.gain).toBe(on.dirt.left.gain);
+    }
+    expect(on.grass.left.top).toBeLessThan(on.dirt.left.top * 0.7);
+    expect(on.gravel.left.top).toBeGreaterThan(on.dirt.left.top);
+    expect(on.grass.left.thud).toBeLessThan(on.dirt.left.thud);
+    expect(on.grass.rumble).toBeLessThan(on.dirt.rumble);
+    expect(on.grass.rumbleCutoff).toBeLessThan(on.dirt.rumbleCutoff);
+    expect(on.gravel.rumbleCutoff).toBeGreaterThan(on.dirt.rumbleCutoff);
+    // The ground's own noise: a low rustle on grass, a crunch an octave and more higher on gravel and twice as loud.
+    expect(on.gravel.left.grit).toBeGreaterThanOrEqual(on.grass.left.grit * 2);
+    expect(on.gravel.left.grit).toBeGreaterThanOrEqual(on.dirt.left.grit * 2);
+    expect(on.grass.left.gritHz).toBeLessThan(on.dirt.left.gritHz / 2);
+    expect(on.gravel.left.gritHz).toBeGreaterThan(on.dirt.left.gritHz * 1.5);
+    // A track slips on turf: less squeal in the same turn.
+    const turn = (s: (typeof SURFACES)[number]) => trackVoice(1.5, 4.5, createTrackVoice(), SURFACE_SOUND[s], SURFACE_SOUND[s]).squeal;
+    expect(turn('grass')).toBeLessThan(turn('dirt'));
+  });
+
+  it("are silent at rest whatever they are on, and the ground's noise comes and goes with the links", () => {
+    for (const s of SURFACES) {
+      const rest = trackVoice(0, 0, createTrackVoice(), SURFACE_SOUND[s], SURFACE_SOUND[s]);
+      expect(rest.left.grit).toBe(0);
+      expect(rest.rumble).toBe(0);
+      const slow = trackVoice(0.5, 0.5, createTrackVoice(), SURFACE_SOUND[s], SURFACE_SOUND[s]);
+      const fast = trackVoice(6, 6, createTrackVoice(), SURFACE_SOUND[s], SURFACE_SOUND[s]);
+      expect(fast.left.grit).toBeGreaterThan(slow.left.grit);
+      expect(slow.left.grit).toBeGreaterThan(0);
+    }
+  });
+
+  it('each sound of what it alone is on, and share the rumble and the squeal', () => {
+    // The left track on the road, the right on the verge.
+    const v = trackVoice(4, 4, createTrackVoice(), SURFACE_SOUND.dirt, SURFACE_SOUND.grass);
+    const dirt = trackVoice(4, 4, createTrackVoice(), SURFACE_SOUND.dirt, SURFACE_SOUND.dirt);
+    const grass = trackVoice(4, 4, createTrackVoice(), SURFACE_SOUND.grass, SURFACE_SOUND.grass);
+    expect(v.left).toEqual(dirt.left);
+    expect(v.right).toEqual(grass.right);
+    expect(v.rumble).toBeCloseTo((dirt.rumble + grass.rumble) / 2);
+    expect(v.rumbleCutoff).toBeCloseTo((dirt.rumbleCutoff + grass.rumbleCutoff) / 2);
+    expect(v.squeal).toBeCloseTo((dirt.squeal + grass.squeal) / 2);
+  });
 });
 
 describe('the traverse', () => {
@@ -283,8 +343,8 @@ describe('where the sounds come from', () => {
 });
 
 describe('the sound tour', () => {
-  it('runs the engine up, drives off through the gears, turns, halts, traverses and turns the handwheels', () => {
-    const at = (t: number) => ({ ...soundTour(t, createTourState()) });
+  it('runs the engine up, drives off through the gears, crosses grass and gravel, turns, halts, traverses and turns the handwheels', () => {
+    const at = (t: number) => soundTour(t, createTourState());
     expect(at(1).rpm).toBe(IDLE_RPM);
     expect(at(5.8).rpm).toBeGreaterThan(2200);
     expect(at(5.8).left).toBe(0);
@@ -293,12 +353,21 @@ describe('the sound tour', () => {
     expect(at(12).left).toBeGreaterThan(at(10).left);
     expect(at(17).left).toBeGreaterThan(MAX_SPEED * 0.8);
     expect(at(10.4).rpm).toBeGreaterThan(at(10.6).rpm);
-    expect(at(18.2).left).toBeLessThan(at(18.2).right * 0.6);
-    expect(Math.abs(at(21.99).left)).toBeLessThan(0.05);
-    expect(at(23.8).traverse).toBeCloseTo(MAX_TRAVERSE);
-    expect(at(26).traverse).toBeLessThan(0);
-    expect(at(27.8).crank).toBeGreaterThan(1);
-    expect(at(29.2).wheel).toBeGreaterThan(1);
+    // Up to speed on the dirt road, then onto the grass, the left track first; onto the gravel; and back to the road, at a steady speed all the way.
+    expect([at(16).leftGround.surface, at(16).rightGround.surface]).toEqual(['dirt', 'dirt']);
+    expect([at(17.8).leftGround.surface, at(17.8).rightGround.surface]).toEqual(['grass', 'dirt']);
+    expect(at(17.25).leftGround.shares[SURFACES.indexOf('grass')]).toBeCloseTo(0.5);
+    expect([at(19.5).leftGround.surface, at(19.5).rightGround.surface]).toEqual(['grass', 'grass']);
+    expect([at(21).leftGround.surface, at(21).rightGround.surface]).toEqual(['gravel', 'grass']);
+    expect([at(23).leftGround.surface, at(23).rightGround.surface]).toEqual(['gravel', 'gravel']);
+    expect([at(26).leftGround.surface, at(26).rightGround.surface]).toEqual(['dirt', 'dirt']);
+    expect(at(23).left).toBeCloseTo(at(17).left, 5);
+    expect(at(25.5).left).toBeLessThan(at(25.5).right * 0.6);
+    expect(Math.abs(at(28.99).left)).toBeLessThan(0.05);
+    expect(at(30.8).traverse).toBeCloseTo(MAX_TRAVERSE);
+    expect(at(33).traverse).toBeLessThan(0);
+    expect(at(34.8).crank).toBeGreaterThan(1);
+    expect(at(36.2).wheel).toBeGreaterThan(1);
     const end = at(TOUR_SECONDS);
     expect(end.left + end.traverse + end.crank + end.wheel).toBeCloseTo(0, 5);
     for (let t = 0; t <= TOUR_SECONDS; t += 0.05) {
@@ -540,6 +609,33 @@ describe('the loops', () => {
     expect(open / g.length).toBeLessThan(0.4);
     expect(g[0]).toBe(0);
     expect(g[g.length - 1]).toBeLessThan(0.01);
+  });
+
+  it("of the ground's noise are grains at no fixed moment, most slight and a few hard, with quiet between them at a crawl", () => {
+    const g = renderGritGate(RATE);
+    expect(g).toEqual(renderGritGate(RATE));
+    expect(g.length).toBe(GRIT_SECONDS * RATE);
+    expect(g.every((v) => v >= 0 && v <= 1)).toBe(true);
+    expect(peak(g)).toBeCloseTo(1, 5);
+    // Counting the grains by their rising edges: most of GRIT_GRAINS (some land on one another).
+    let grains = 0;
+    let shut = 0;
+    let sum = 0;
+    for (let i = 1; i < g.length; i++) {
+      if (g[i] - g[i - 1] > 0.004) {
+        if (!(g[i - 1] - g[Math.max(0, i - 2)] > 0.004)) grains++;
+      }
+      if (g[i] < 0.02) shut++;
+      sum += g[i];
+    }
+    expect(grains).toBeGreaterThan(GRIT_GRAINS * 0.7);
+    expect(grains).toBeLessThanOrEqual(GRIT_GRAINS);
+    // Shut more than half the time, and open on average far less than its hardest grain.
+    expect(shut / g.length).toBeGreaterThan(0.5);
+    expect(sum / g.length).toBeLessThan(0.15);
+    // No beat of the links in it: the ground has no pitch of its own.
+    const mean = sum / g.length;
+    expect(tone(g, GATE_HZ) / mean).toBeLessThan(0.5);
   });
 });
 

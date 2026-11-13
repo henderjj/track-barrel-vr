@@ -7,6 +7,7 @@ import {
   renderEngineBreath,
   renderEngineLoop,
   renderGate,
+  renderGritGate,
   renderNoiseLoop,
   renderSound,
   renderSquealGate,
@@ -38,6 +39,7 @@ import {
 
 /** How smoothly the continuous sounds glide to each new value, s (a time constant). */
 const GLIDE = 0.06;
+const SIDES = ['left', 'right'] as const;
 
 /** Everything the continuous sounds follow, as TankAudioSystem (or a preview render) works it out. */
 export interface TankVoices {
@@ -103,6 +105,19 @@ const ROAR_MAKEUP = 8;
 /** How loud a link's ring is, and its thud through the floor beside it. */
 const LINK_RING_LEVEL = 2.5;
 const LINK_THUD = 0.6;
+/** A link's rings above this, Hz, are its clink: what the ground under the track brightens or dulls most (src/sim/ground-surface.ts). */
+const LINK_TOP_FROM = 1200;
+/**
+ * The ground's own noise under a track: how wide its band is, and the
+ * make-up for what the band and the grains' gate let through. At a crawl
+ * each grain is heard by itself; as the links come faster the grains run
+ * together, so a steady share comes in under them (a grain at its hardest
+ * is 1), all of it by GRIT_RUN_HZ links a second.
+ */
+const GRIT_Q = 0.9;
+const GRIT_STEADY = 0.12;
+const GRIT_RUN_HZ = 30;
+const GRIT_MAKEUP = 5.5;
 
 /** A gear's whine: a fundamental with a few weaker harmonics, far duller than a sawtooth. */
 const WHINE_HARMONICS = [0, 1, 0.5, 0.28, 0.12, 0.05];
@@ -156,6 +171,13 @@ export class TankSoundGraph {
   private readonly rumbleAmp: GainNode;
   private readonly linkGate: Record<'left' | 'right', AudioBufferSourceNode>;
   private readonly linkAmp: Record<'left' | 'right', GainNode>;
+  private readonly linkRing: Record<'left' | 'right', GainNode>;
+  private readonly linkTop: Record<'left' | 'right', GainNode>;
+  private readonly linkThud: Record<'left' | 'right', GainNode>;
+  private readonly gritGate: Record<'left' | 'right', AudioBufferSourceNode>;
+  private readonly gritGrain: Record<'left' | 'right', GainNode>;
+  private readonly gritBand: Record<'left' | 'right', BiquadFilterNode>;
+  private readonly gritAmp: Record<'left' | 'right', GainNode>;
   private readonly squealGate: AudioBufferSourceNode;
   private readonly squealAmp: GainNode;
   private readonly motor: OscillatorNode;
@@ -267,6 +289,20 @@ export class TankSoundGraph {
     // noise into resonances that stay where they are, so the links come quicker without turning into a higher note.
     this.linkGate = { left: this.gate(renderGate(LINK_GATE, rate), 0), right: this.gate(renderGate(LINK_GATE, rate), 1.37) };
     this.linkAmp = { left: new GainNode(ctx, { gain: 0 }), right: new GainNode(ctx, { gain: 0 }) };
+    // What a track runs on changes how much of each part is heard (src/sim/ground-surface.ts): the links' lower ring,
+    // their clink and their thud each have a level of their own, and the ground's own noise plays beside them.
+    const sides = () => ({ left: new GainNode(ctx, { gain: 1 }), right: new GainNode(ctx, { gain: 1 }) });
+    this.linkRing = sides();
+    this.linkTop = sides();
+    this.linkThud = sides();
+    this.gritGate = { left: this.gate(renderGritGate(rate), 0), right: this.gate(renderGritGate(rate), 2.11) };
+    this.gritBand = {
+      left: new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 1600, Q: GRIT_Q }),
+      right: new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 1600, Q: GRIT_Q }),
+    };
+    this.gritAmp = { left: new GainNode(ctx, { gain: 0 }), right: new GainNode(ctx, { gain: 0 }) };
+    // A gain's own value adds to what is connected to it: the steady share under the grains.
+    this.gritGrain = { left: new GainNode(ctx, { gain: 0 }), right: new GainNode(ctx, { gain: 0 }) };
     for (const side of ['left', 'right'] as const) {
       const out = this.places[side === 'left' ? 'leftTrack' : 'rightTrack'].steady;
       const strike = new GainNode(ctx, { gain: 0 });
@@ -275,12 +311,21 @@ export class TankSoundGraph {
       for (const [f, q, share] of LINK_RING) {
         // A narrow band lets less of the noise through: make up for it.
         const ring = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: f * (side === 'left' ? 1 : 1.04), Q: q });
-        strike.connect(ring).connect(new GainNode(ctx, { gain: LINK_RING_LEVEL * share * Math.sqrt(q) })).connect(this.linkAmp[side]);
+        strike
+          .connect(ring)
+          .connect(new GainNode(ctx, { gain: LINK_RING_LEVEL * share * Math.sqrt(q) }))
+          .connect(f > LINK_TOP_FROM ? this.linkTop[side] : this.linkRing[side]);
       }
+      this.linkRing[side].connect(this.linkAmp[side]);
+      this.linkTop[side].connect(this.linkAmp[side]);
       // Each link also lands as a thud through the floor: slow, a thud a link; fast, the drone of the tracks.
       const thud = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 110, Q: 0.6 });
-      this.linkGate[side].connect(thud).connect(new GainNode(ctx, { gain: LINK_THUD })).connect(this.linkAmp[side]);
+      this.linkGate[side].connect(thud).connect(new GainNode(ctx, { gain: LINK_THUD })).connect(this.linkThud[side]).connect(this.linkAmp[side]);
       this.linkAmp[side].connect(out);
+      // The ground under the links: a grain of noise for each stone crushed or tuft torn, as fast as the links come,
+      // in a band that is the ground's own (a low rustle on turf, a bright crunch on stones).
+      this.gritGate[side].connect(this.gritGrain[side].gain);
+      this.noise().connect(this.gritGrain[side]).connect(this.gritBand[side]).connect(new GainNode(ctx, { gain: GRIT_MAKEUP })).connect(this.gritAmp[side]).connect(out);
     }
 
     // The pins' squeal: two very narrow bands of noise, wandering in pitch, let through in swells.
@@ -360,10 +405,19 @@ export class TankSoundGraph {
     const k = v.tracks;
     this.rumbleFilter.frequency.setTargetAtTime(k.rumbleCutoff, t, GLIDE);
     this.rumbleAmp.gain.setTargetAtTime(MIX.rumble * k.rumble, t, GLIDE);
-    this.linkGate.left.playbackRate.setTargetAtTime(Math.max(0.01, k.left.hz / GATE_HZ), t, GLIDE);
-    this.linkAmp.left.gain.setTargetAtTime(MIX.clatter * k.left.gain, t, GLIDE);
-    this.linkGate.right.playbackRate.setTargetAtTime(Math.max(0.01, k.right.hz / GATE_HZ), t, GLIDE);
-    this.linkAmp.right.gain.setTargetAtTime(MIX.clatter * k.right.gain, t, GLIDE);
+    for (const side of SIDES) {
+      const link = k[side];
+      const rate = Math.max(0.01, link.hz / GATE_HZ);
+      this.linkGate[side].playbackRate.setTargetAtTime(rate, t, GLIDE);
+      this.linkAmp[side].gain.setTargetAtTime(MIX.clatter * link.gain, t, GLIDE);
+      this.linkRing[side].gain.setTargetAtTime(link.ring, t, GLIDE);
+      this.linkTop[side].gain.setTargetAtTime(link.top, t, GLIDE);
+      this.linkThud[side].gain.setTargetAtTime(link.thud, t, GLIDE);
+      this.gritGate[side].playbackRate.setTargetAtTime(rate, t, GLIDE);
+      this.gritGrain[side].gain.setTargetAtTime(GRIT_STEADY * Math.min(1, link.hz / GRIT_RUN_HZ), t, GLIDE);
+      this.gritBand[side].frequency.setTargetAtTime(link.gritHz, t, GLIDE);
+      this.gritAmp[side].gain.setTargetAtTime(MIX.grit * link.grit, t, GLIDE);
+    }
     this.squealGate.playbackRate.setTargetAtTime(k.squealRate, t, GLIDE);
     this.squealAmp.gain.setTargetAtTime(MIX.squeal * k.squeal, t, GLIDE);
     const w = v.traverse;
