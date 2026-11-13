@@ -709,8 +709,10 @@ export function renderGritGate(rate: number): Samples {
     const a = 0.3 + 0.7 * random() ** 2;
     const tau = 0.0015 + 0.0055 * random();
     const len = Math.round(tau * 6 * rate);
+    // Where two grains land together the harder one is heard, not their sum: no grain is harder than the hardest.
     for (let i = 0; i < len; i++) {
-      out[(s + i) % n] += a * (i < attack ? i / attack : Math.exp(-(i - attack) / rate / tau));
+      const at = (s + i) % n;
+      out[at] = Math.max(out[at], a * (i < attack ? i / attack : Math.exp(-(i - attack) / rate / tau)));
     }
   }
   let top = 0;

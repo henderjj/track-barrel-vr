@@ -117,7 +117,7 @@ const LINK_TOP_FROM = 1200;
 const GRIT_Q = 0.9;
 const GRIT_STEADY = 0.12;
 const GRIT_RUN_HZ = 30;
-const GRIT_MAKEUP = 5.5;
+const GRIT_MAKEUP = 4.3;
 
 /** A gear's whine: a fundamental with a few weaker harmonics, far duller than a sawtooth. */
 const WHINE_HARMONICS = [0, 1, 0.5, 0.28, 0.12, 0.05];
