@@ -9,11 +9,11 @@ import {
   VisibilityState,
 } from '@iwsdk/core';
 import { crewPresence } from '../net/crew-presence.js';
-import { boardCoverSpot, createBoardCover, createHitFlag, RUN_CLOCKS, type RunClockPlace } from '../scene-assets/range-run.scene-asset.js';
+import { boardCoverSpot, createBoardCover, createCourseBoard, createHitFlag, RUN_CLOCKS, type RunClockPlace } from '../scene-assets/range-run.scene-asset.js';
 import { AMMO, type AmmoKind, ammoIndex, parseAmmo } from '../sim/ammo.js';
-import { aimAt, targetFaces } from '../sim/ballistics.js';
+import { aimAt, syncCourseFaces, targetFaces } from '../sim/ballistics.js';
 import { BOARD_FIRST, boardDown, boardsDown, BOARDS_PER_LINE, lineClosed, lineFor } from '../sim/biathlon.js';
-import { BOX_Z, boxSpot, COURSE_START, COURSE_TARGETS } from '../sim/course.js';
+import { BOX_Z, boxSpot, COURSE_START, COURSE_TARGETS, laneMiddle, LINE_RANGES, lineRanges, pickLineRanges, setLineRanges } from '../sim/course.js';
 import {
   clockLines,
   copyRunSnapshot,
@@ -46,6 +46,7 @@ import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { limitRounds, loadedRound, loadForPractice, loadingRounds, resetLoading } from './loading-system.js';
 import { netLink } from './net-system.js';
 import { seating } from './seating.js';
+import { settings } from '../settings.js';
 import { aimTurret, turretForward } from './turret-system.js';
 
 /** Ready to fire waits this long for the tank to reach the start before laying the gun, s. */
@@ -174,6 +175,12 @@ interface RangeRunDebug {
   covers(): boolean[];
   /** Where board cover `j` is drawn (ground space), or null while it's hidden. */
   coverAt(j: number): number[] | null;
+  /** The range each firing line's boards stand at now, m (picked afresh by each race). */
+  ranges(): number[];
+  /** Have the host pick each race's ranges afresh (on) or keep LINE_RANGES (the tests load with `boardranges=0`); returns which. */
+  pickRanges(on?: boolean): boolean;
+  /** Where course board `j` is drawn (ground space). */
+  boardAt(j: number): number[] | null;
   /** The rounds the loading on this page allows (null: no limit, or not the loading page). */
   rounds(): number | null;
   /** The line a shot counts at now, or -1. */
@@ -212,6 +219,13 @@ export class RangeRunSystem extends createSystem({}) {
   /** The course boards' covers (F5.3b), and the ground's height under each board's middle. */
   private covers: Mesh[] = [];
   private coverSpots: [number, number, number, number][] = [];
+  /** The course's boards (drawn here since they move with each race's ranges), and where each stands: x, ground height, z, yaw. */
+  private boards: Mesh[] = [];
+  private boardSpots: [number, number, number, number][] = [];
+  /** Each firing lane's middle (x, z): the boards are drawn at its copy nearest the tank. */
+  private laneMiddles = BOX_Z.map((_, k) => laneMiddle(k, [0, 0]));
+  /** The boards' version (src/sim/course.ts boardsVersion) the faces and spots were last brought to. */
+  private boardsSeen = -1;
   /** The race's rounds last given to the loading (the run's id and rounds then). */
   private roundsId = -1;
   private roundsGiven = -1;
@@ -260,15 +274,18 @@ export class RangeRunSystem extends createSystem({}) {
       this.flagY.push(groundHeight(x, z));
       if (ground) this.world.createTransformEntity(flag, { parent: ground });
     });
-    COURSE_TARGETS.forEach((_, j) => {
+    COURSE_TARGETS.forEach((t) => {
+      const board = createCourseBoard(t.line);
+      this.boards.push(board);
+      this.boardSpots.push([0, 0, 0, 0]);
+      if (ground) this.world.createTransformEntity(board, { parent: ground });
       const cover = createBoardCover();
       cover.visible = false;
-      const spot = boardCoverSpot(j, [0, 0, 0, 0]);
-      cover.rotation.y = spot[3];
       this.covers.push(cover);
-      this.coverSpots.push(spot);
+      this.coverSpots.push([0, 0, 0, 0]);
       if (ground) this.world.createTransformEntity(cover, { parent: ground });
     });
+    this.followBoards();
     const turret = this.world.getSceneEntity('turret') ?? null;
     this.clocks.push(this.createClock(RUN_CLOCKS.driver, null, 'Run Clock Driver'));
     this.clocks.push(this.createClock(RUN_CLOCKS.gunner, turret, 'Run Clock Gunner'));
@@ -320,6 +337,12 @@ export class RangeRunSystem extends createSystem({}) {
       race: () => startRace(),
       readyLine: (k) => readyAtLine(k),
       covers: () => self.covers.map((c) => c.visible),
+      ranges: () => [...lineRanges()],
+      pickRanges: (on) => {
+        if (on !== undefined) settings.boardRanges = on;
+        return settings.boardRanges;
+      },
+      boardAt: (j) => (self.boards[j] ? self.boards[j].position.toArray() : null),
       coverAt: (j) => (self.covers[j]?.visible ? self.covers[j].position.toArray() : null),
       rounds: () => {
         const n = loadingRounds();
@@ -345,7 +368,8 @@ export class RangeRunSystem extends createSystem({}) {
   /** The host. */
   private act(what: RunAsk, mode: RunMode = 'range'): void {
     if (what === 'start') {
-      this.run.start(mode);
+      // A race picks its lines' ranges afresh (`boardranges=0`: the fixed ones), so the gunner judges them.
+      this.run.start(mode, settings.boardRanges ? pickLineRanges(Math.random) : LINE_RANGES);
       // The run starts at its start line with the engine as the crew left it (F1.17): the range's, or short of the course's.
       if (mode === 'biathlon') placeTank(COURSE_START.x, COURSE_START.z, COURSE_START.heading);
       else resetTank('keep');
@@ -459,8 +483,10 @@ export class RangeRunSystem extends createSystem({}) {
     }
     this.wasDone = done;
 
+    this.moveBoards(s.ranges);
     this.layAndLoad();
     this.drawFlags();
+    this.drawBoards();
     this.drawCovers();
     this.drawClocks();
     this.drawSign(delta);
@@ -509,7 +535,45 @@ export class RangeRunSystem extends createSystem({}) {
     }
   }
 
-  /** Each fallen course board's cover over its disc (F5.3b), at the copy of it nearest the tank. */
+  /** Stand the boards at the race's `ranges` when they differ from where they stand (the host picked new ones). */
+  private moveBoards(ranges: readonly number[]): void {
+    const now = lineRanges();
+    let same = true;
+    for (let k = 0; k < now.length; k++) if (ranges[k] !== now[k]) same = false;
+    if (!same && setLineRanges(ranges)) console.info(`[RangeRun] boards at ${lineRanges().join(' m and ')} m`);
+    this.followBoards();
+  }
+
+  /** Bring the faces aimed at and the boards' and covers' spots to where the boards stand, if they moved. */
+  private followBoards(): void {
+    const seen = syncCourseFaces(this.faces, this.boardsSeen);
+    if (seen === this.boardsSeen) return;
+    this.boardsSeen = seen;
+    COURSE_TARGETS.forEach((t, j) => {
+      const b = this.boardSpots[j];
+      b[0] = t.x;
+      b[1] = groundHeight(t.x, t.z);
+      b[2] = t.z;
+      b[3] = t.yaw;
+      this.boards[j].rotation.y = t.yaw;
+      boardCoverSpot(j, this.coverSpots[j]);
+      this.covers[j].rotation.y = this.coverSpots[j][3];
+    });
+  }
+
+  /** Each course board down its lane from the copy of its lane's middle nearest the tank (the ground repeats every tile). */
+  private drawBoards(): void {
+    const tank = tankState();
+    const tx = wrapTile(tank.x);
+    const tz = wrapTile(tank.z);
+    for (let j = 0; j < this.boards.length; j++) {
+      const [x, y, z] = this.boardSpots[j];
+      const [mx, mz] = this.laneMiddles[COURSE_TARGETS[j].line];
+      this.boards[j].position.set(tx + wrapTile(mx - tank.x) + (x - mx), y, tz + wrapTile(mz - tank.z) + (z - mz));
+    }
+  }
+
+  /** Each fallen course board's cover over its disc (F5.3b), drawn as its board is. */
   private drawCovers(): void {
     const s = this.run.s;
     const tank = tankState();
@@ -521,7 +585,8 @@ export class RangeRunSystem extends createSystem({}) {
       if (cover.visible !== down) cover.visible = down;
       if (!down) continue;
       const [x, y, z] = this.coverSpots[j];
-      cover.position.set(tx + wrapTile(x - tank.x), y, tz + wrapTile(z - tank.z));
+      const [mx, mz] = this.laneMiddles[COURSE_TARGETS[j].line];
+      cover.position.set(tx + wrapTile(mx - tank.x) + (x - mx), y, tz + wrapTile(mz - tank.z) + (z - mz));
     }
   }
 

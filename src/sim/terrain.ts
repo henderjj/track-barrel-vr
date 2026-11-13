@@ -80,6 +80,53 @@ export function outsideCourseField(x: number, z: number): number {
   return Math.hypot(dx, dz);
 }
 
+/**
+ * The biathlon's firing lanes (docs/biathlon-race.md, "Judging the
+ * range"): from each firing box on the course's east side (x, z) south,
+ * behind the tank as it stands in the box, out over the open ground south
+ * of the course, line 1's swung `swing` rad east of due south and line 2's
+ * as far west so the two fan apart, `length` m long (to short of the tile's
+ * edge and the enemy tank route beyond it). The ground along each is flat
+ * to `half` m either side of its line, rolling fully `blend` m further
+ * out, and no obstacle stands within LANE_CLEAR of its line, so no crest or
+ * wall hides a board from its box at any range a race picks
+ * (src/sim/course.ts).
+ */
+export const FIRING_LANES: readonly { x: number; z: number; swing: number; length: number; half: number; blend: number }[] = [
+  { x: 320, z: -152, swing: (5 * Math.PI) / 180, length: 580, half: 16, blend: 45 },
+  { x: 320, z: -170, swing: (-5 * Math.PI) / 180, length: 580, half: 16, blend: 45 },
+];
+
+/** Lane `l`'s direction from its box, (x, z): south, swung east by `swing`. */
+export function laneDirection(l: { swing: number }, out: [number, number]): [number, number] {
+  out[0] = Math.sin(l.swing);
+  out[1] = Math.cos(l.swing);
+  return out;
+}
+
+const laneDir: [number, number] = [0, 0];
+
+/** How far (x, z) is outside the nearest firing lane's flat strip, m (0 inside). */
+export function outsideFiringLanes(x: number, z: number): number {
+  return Math.max(0, firingLaneOffset(x, z) - FIRING_LANES[0].half);
+}
+
+/** How far (x, z) is from the nearest firing lane's middle line (between its box and its far end), m. */
+export function firingLaneOffset(x: number, z: number): number {
+  let best = Infinity;
+  for (const l of FIRING_LANES) {
+    const [fx, fz] = laneDirection(l, laneDir);
+    // From the box, taking the copy nearest the lane's middle (a lane is longer than half a tile).
+    const half = l.length / 2;
+    const dx = wrapTile(x - l.x - fx * half) + fx * half;
+    const dz = wrapTile(z - l.z - fz * half) + fz * half;
+    const along = Math.min(l.length, Math.max(0, dx * fx + dz * fz));
+    const off = Math.hypot(dx - fx * along, dz - fz * along);
+    best = Math.min(best, off);
+  }
+  return best;
+}
+
 const smooth = (t: number) => {
   const c = t < 0 ? 0 : t > 1 ? 1 : t;
   return c * c * (3 - 2 * c);
@@ -93,7 +140,8 @@ export function roughness(x: number, z: number): number {
   const lane = smooth((Math.abs(wx) - LANE_HALF) / LANE_BLEND);
   const cross = smooth((Math.abs(wz) - CROSS_HALF) / CROSS_BLEND);
   const course = smooth(outsideCourseField(x, z) / COURSE_FIELD.blend);
-  return field * lane * cross * course;
+  const lanes = smooth(outsideFiringLanes(x, z) / FIRING_LANES[0].blend);
+  return field * lane * cross * course * lanes;
 }
 
 /** The height field's sample at grid corner (ix, iz), m. Periodic over TILE. */
@@ -175,6 +223,8 @@ const HOUSES_PER_TILE = 8;
 
 /** Obstacles keep this far clear of the course's field, m, beyond their own size. */
 const COURSE_CLEAR = 4;
+/** Nothing stands within this of a firing lane's middle line, m: the outer boards stand 6 m off it, so 8 m clear of them. */
+const LANE_CLEAR = 14;
 
 /**
  * The obstacles in one tile, tile-local, the same on every page and in
@@ -204,7 +254,7 @@ export const OBSTACLES: readonly Obstacle[] = (() => {
   place(ROCKS_PER_TILE, () => rock(spot(), spot(), 0.8 + random() * 1.4));
   place(WALLS_PER_TILE, () => block('wall', spot(), spot(), 4 + random() * 8, 0.35, random() * Math.PI, 1.0 + random() * 0.6));
   place(HOUSES_PER_TILE, () => block('house', spot(), spot(), 2.5 + random() * 2, 3 + random() * 2.5, random() * Math.PI, 2.6 + random() * 1));
-  return list.filter((o) => outsideCourseField(o.x, o.z) > o.r + COURSE_CLEAR);
+  return list.filter((o) => outsideCourseField(o.x, o.z) > o.r + COURSE_CLEAR && firingLaneOffset(o.x, o.z) > o.r + LANE_CLEAR);
 })();
 
 /**

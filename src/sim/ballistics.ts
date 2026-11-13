@@ -16,7 +16,7 @@
  */
 
 import { AMMO, type AmmoKind } from './ammo.js';
-import { COURSE_BOARD, COURSE_TARGETS, courseBoardMiddle } from './course.js';
+import { boardsVersion, COURSE_BOARD, COURSE_TARGETS, courseBoardMiddle } from './course.js';
 import { ENEMY_COUNT, enemyGunFaces, enemyName, enemyTankFaces, FIRST_TANK } from './enemy-guns.js';
 import { RANGE_TARGETS, targetFace } from './range.js';
 import type { TankDrive } from './tank-drive.js';
@@ -58,6 +58,45 @@ export function dropAt(range: number, speed = MUZZLE_SPEED): number {
   return 0.5 * GRAVITY * t * t;
 }
 
+/**
+ * The gun's scatter (docs/biathlon-race.md, "Scatter"): no two rounds
+ * leave a real gun along quite the same line, from the round, the barrel's
+ * heat and its whip. Each shot's direction is turned off the bore's by a
+ * random amount, normal in each direction across it with this standard
+ * deviation, rad (0.3 mil: 15 cm at 500 m). The firing page draws it, so
+ * both pages fly the same shell; `scatter=0` turns it off for the tests.
+ */
+export const SCATTER = 0.0003;
+
+/**
+ * `dir` (a unit vector) turned off its line by scatter: `u1`, `u2` are
+ * uniform randoms in (0, 1] and [0, 1) (Box-Muller), `sigma` the spread
+ * (rad); into `out` (which may be `dir`), still unit length.
+ */
+export function scatterDir(dir: Readonly<Vec3>, u1: number, u2: number, sigma: number, out: Vec3): Vec3 {
+  const r = sigma * Math.sqrt(-2 * Math.log(Math.max(1e-12, u1)));
+  const a = r * Math.cos(2 * Math.PI * u2);
+  const b = r * Math.sin(2 * Math.PI * u2);
+  const [x, y, z] = dir;
+  // Two directions square to dir: across (horizontal) and up.
+  let ax = -z;
+  let az = x;
+  const al = Math.hypot(ax, az) || 1;
+  ax /= al;
+  az /= al;
+  const ux = -az * y;
+  const uy = az * x - ax * z;
+  const uz = ax * y;
+  const ox = x + a * ax + b * ux;
+  const oy = y + b * uy;
+  const oz = z + a * az + b * uz;
+  const l = Math.hypot(ox, oy, oz);
+  out[0] = ox / l;
+  out[1] = oy / l;
+  out[2] = oz / l;
+  return out;
+}
+
 /** A target face to hit: the middle of the face in world space (y the world height), its half sizes, and which way it faces (rad about +Y). */
 export interface HitFace {
   x: number;
@@ -68,6 +107,8 @@ export interface HitFace {
   yaw: number;
   /** Not there to hit (F3.2: an enemy gun while the battery is off): shells pass it by. */
   off?: boolean;
+  /** A disc rather than a rectangle (a biathlon board's black disc): `halfWidth` is its radius. */
+  round?: boolean;
 }
 
 /** What a shot hit: a target face (its index), the ground, or nothing within MAX_FLIGHT. */
@@ -170,6 +211,7 @@ export function segmentThroughFace(p: Readonly<Vec3>, q: Readonly<Vec3>, f: HitF
   const z = pz + (qz - pz) * s;
   // Across the face: its right is (cos yaw, 0, -sin yaw).
   const across = x * nz - z * nx;
+  if (f.round) return across * across + y * y <= f.halfWidth * f.halfWidth ? s : Infinity;
   return Math.abs(across) <= f.halfWidth && Math.abs(y) <= f.halfHeight ? s : Infinity;
 }
 
@@ -375,17 +417,38 @@ export const RANGE_TARGET_NAMES: readonly string[] = RANGE_TARGETS.map((t) => `t
 
 /**
  * The biathlon course's six boards (F5.3a, src/sim/course.ts) as faces to
- * hit: each board's disc, as a square (the white round it misses).
+ * hit, where they stand now: each board's black disc, round (a shell
+ * through the white misses).
  */
 export function courseFaces(): HitFace[] {
-  return COURSE_TARGETS.map((t) => ({
-    x: t.x,
-    y: groundHeight(t.x, t.z) + courseBoardMiddle(),
-    z: t.z,
-    halfWidth: COURSE_BOARD.hitHalf,
-    halfHeight: COURSE_BOARD.hitHalf,
-    yaw: t.yaw,
-  }));
+  const faces: HitFace[] = COURSE_TARGETS.map(() => ({ x: 0, y: 0, z: 0, halfWidth: 0, halfHeight: 0, yaw: 0, round: true }));
+  for (let j = 0; j < faces.length; j++) courseFace(j, faces[j]);
+  return faces;
+}
+
+/** Board `j`'s face as it stands now, into `out`. */
+function courseFace(j: number, out: HitFace): HitFace {
+  const t = COURSE_TARGETS[j];
+  out.x = t.x;
+  out.y = groundHeight(t.x, t.z) + courseBoardMiddle();
+  out.z = t.z;
+  out.halfWidth = COURSE_BOARD.hitRadius;
+  out.halfHeight = COURSE_BOARD.hitRadius;
+  out.yaw = t.yaw;
+  out.round = true;
+  return out;
+}
+
+/**
+ * Bring the boards' faces in `faces` (a targetFaces() list) to where the
+ * boards stand now, if they moved since `seen` (boardsVersion()); returns
+ * the version to remember. The firing lines' ranges change with each race.
+ */
+export function syncCourseFaces(faces: HitFace[], seen: number): number {
+  const now = boardsVersion();
+  if (now === seen) return seen;
+  for (let j = 0; j < COURSE_TARGETS.length; j++) courseFace(j, faces[COURSE_TARGET_FIRST + j]);
+  return now;
 }
 
 /**

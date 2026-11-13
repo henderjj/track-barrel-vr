@@ -4,6 +4,7 @@ import { COURSE_BOARD, COURSE_TARGETS, courseBoardMiddle } from '../sim/course.j
 import { groundHeight } from '../sim/terrain.js';
 import { HIT_FLAG } from '../sim/range-run.js';
 import { BOARD } from './loading.scene-asset.js';
+import { boardLocalParts } from './course.scene-asset.js';
 import { mergeParts, type Part } from './lowpoly.js';
 import { litInside } from './cabin-light.js';
 
@@ -138,6 +139,19 @@ export function boardCoverSpot(j: number, out: [number, number, number, number])
   out[2] = t.z + Math.cos(t.yaw) * ahead;
   out[3] = t.yaw;
   return out;
+}
+
+/**
+ * A course board of line `line` (course.scene-asset.ts's boardLocalParts)
+ * as a mesh of its own, its foot at the origin and its face along +Z:
+ * RangeRunSystem stands it where the board stands now, on the ground, at
+ * the copy nearest the tank, turned to face its box. One mesh a board, six
+ * draw calls.
+ */
+export function createCourseBoard(line: number): Mesh {
+  const mesh = new Mesh(mergeParts(boardLocalParts(line)), material);
+  mesh.name = `Course Board ${line + 1}`;
+  return mesh;
 }
 
 export function createBoardCover(): Mesh {

@@ -55,7 +55,8 @@ const PREVIEW_PORT = 4173;
 const BASE = `https://localhost:${PREVIEW_PORT}/`;
 // No perf HUD, and no ground: software rendering of the drive's ground
 // halves the frame rate the motion checks sample (docs/testing.md).
-const QUIET = 'hud=0&ground=0';
+// Random parts off (the gun's scatter, the biathlon's ranges picked each race): their own checks turn them on.
+const QUIET = 'hud=0&ground=0&scatter=0&boardranges=0';
 
 const results = [];
 function check(name, pass, detail) {
@@ -1096,7 +1097,8 @@ async function courseChecks(host, guest, label) {
     inBox !== null && tank.running && !inBox.g.started,
     inBox ? `tank at ${tank.x.toFixed(1)}, ${tank.z.toFixed(1)}, engine ${tank.running ? 'running' : 'off'}; guest "${inBox.g.line}"` : JSON.stringify(await Promise.all([course(host), course(guest)])));
 
-  // Back to the range start as the later checks expect.
+  // Back to the range start as the later checks expect, the ranges fixed again.
+  await host.page.evaluate(() => window.__rangeRun.pickRanges(false));
   await host.page.evaluate((running) => { if (!running) window.__drive.engine('stop'); window.__drive.reset(); }, wasRunning);
   await waitFor('the guest to see the tank back', async () => {
     const t = await guest.page.evaluate(() => window.__drive.state());
@@ -1117,6 +1119,8 @@ async function raceChecks(host, guest, label) {
   const run = (p) => p.page.evaluate(() => window.__rangeRun.state());
   const places = (p) => p.page.evaluate(() => window.__loading.state().shells.map((s) => s.place));
   const wasRunning = (await host.page.evaluate(() => window.__drive.state())).running;
+  // The host picks this race's ranges, as in play (the pages load with them fixed).
+  await host.page.evaluate(() => window.__rangeRun.pickRanges(true));
   await host.page.evaluate(() => window.__rangeRun.race());
   const started = await waitFor('both pages to show the race with three rounds in the rack', async () => {
     const [h, g, hp, gp, rounds] = await Promise.all([run(host), run(guest), places(host), places(guest), guest.page.evaluate(() => window.__rangeRun.rounds())]);
@@ -1127,6 +1131,19 @@ async function raceChecks(host, guest, label) {
   check(`The host's Start begins a race at the course's start on both pages, the guest gunner's rack holding three rounds on both (${label})`,
     started !== null && Math.abs(tank.x - 320) < 0.5 && Math.abs(tank.z + 225) < 0.5,
     started ? `guest "${started.g.line}", tank at ${tank.x.toFixed(1)}, ${tank.z.toFixed(1)}` : JSON.stringify({ h: await run(host), g: await run(guest), hp: await places(host), gp: await places(guest) }));
+
+  const placed = await waitFor("the guest's boards at the host's ranges", async () => {
+    const [h, g, hb, gb] = await Promise.all([
+      host.page.evaluate(() => window.__rangeRun.ranges()),
+      guest.page.evaluate(() => window.__rangeRun.ranges()),
+      host.page.evaluate(() => window.__course.layout().boards),
+      guest.page.evaluate(() => window.__course.layout().boards),
+    ]);
+    return JSON.stringify(h) === JSON.stringify(g) && hb.every((b, j) => Math.hypot(b.x - gb[j].x, b.z - gb[j].z) < 0.01) ? { h, g } : null;
+  }, 10000).catch(() => null);
+  check(`The host's race picks its lines' ranges (350–450 m, 450–550 m) and the guest's boards stand at them too (${label})`,
+    placed !== null && placed.h[0] >= 350 && placed.h[0] <= 450 && placed.h[1] >= 450 && placed.h[1] <= 550,
+    placed ? `${placed.h.join(' and ')} m` : JSON.stringify({ h: await host.page.evaluate(() => window.__rangeRun.ranges()), g: await guest.page.evaluate(() => window.__rangeRun.ranges()) }));
 
   await waitFor('Go', async () => (await run(host)).clock >= 0.2, 30000).catch(() => null);
   await host.page.evaluate(() => window.__rangeRun.readyLine(0));
@@ -1151,7 +1168,8 @@ async function raceChecks(host, guest, label) {
   check(`The guest's Stop ends the race on both pages, the rack full again (${label})`, stopped !== null,
     stopped ? '' : JSON.stringify({ h: await run(host), g: await run(guest), gp: await places(guest) }));
 
-  // Back to the range start as the later checks expect.
+  // Back to the range start as the later checks expect, the ranges fixed again.
+  await host.page.evaluate(() => window.__rangeRun.pickRanges(false));
   await host.page.evaluate((running) => { if (!running) window.__drive.engine('stop'); window.__drive.reset(); window.__turret.forward(); }, wasRunning);
   await waitFor('the guest to see the tank back', async () => {
     const t = await guest.page.evaluate(() => window.__drive.state());

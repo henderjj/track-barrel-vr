@@ -117,6 +117,17 @@ export interface Settings {
    * at once.
    */
   card: boolean;
+  /**
+   * The biathlon's harder shooting (docs/biathlon-race.md): each race picks
+   * its firing lines' ranges afresh (the default); `boardranges=0` keeps
+   * them at LINE_RANGES (400 and 550 m), for the tests.
+   */
+  boardRanges: boolean;
+  /**
+   * The gun's scatter (src/sim/ballistics.ts SCATTER): on by default;
+   * `scatter=0` fires every round exactly along the bore, for the tests.
+   */
+  scatter: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -151,6 +162,8 @@ export const DEFAULT_SETTINGS: Settings = {
   cabin: 0.5,
   lamps: 1,
   card: true,
+  boardRanges: true,
+  scatter: true,
 };
 
 function num(params: URLSearchParams, key: string, fallback: number, min: number, max: number): number {
@@ -209,6 +222,8 @@ export function parseSettings(search: string): Settings {
     cabin: num(params, 'cabin', d.cabin, 0.1, 8),
     lamps: num(params, 'lamps', d.lamps, 0, 4),
     card: bool(params, 'card', d.card),
+    boardRanges: bool(params, 'boardranges', d.boardRanges),
+    scatter: bool(params, 'scatter', d.scatter),
   };
 }
 

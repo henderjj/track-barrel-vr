@@ -24,8 +24,8 @@ import { beam, type Part } from './lowpoly.js';
  * The biathlon course's parts (F5.3a, docs/biathlon-course.md): the loop's
  * gravel track and the penalty loop's, the gates' flagged posts and the
  * start and finish gantry, the two firing boxes painted on the track with
- * their corner posts, and each firing line's three boards across the
- * infield. The ground's model (terrain.scene-asset.ts) merges them into its
+ * their corner posts, and each firing line's three boards (drawn on
+ * their own since they move with each race). The ground's model (terrain.scene-asset.ts) merges them into its
  * chunks, a copy per tile, as it does the range's, so they move with the
  * world as the tank drives.
  *
@@ -198,13 +198,15 @@ export function boxParts(k: number, dx = 0, dz = 0): Part[] {
 }
 
 /**
- * Course board `j` (COURSE_TARGETS): a white face on two posts with a black
- * disc standing proud of it, the biathlon target, and a blue bar on top
- * with a white block per line number, so the gunner can tell line 1's from
- * line 2's.
+ * A course board of line `line` standing at the origin on flat ground,
+ * facing +Z: a white face on two posts with a black disc standing proud of
+ * it, the biathlon target, and a blue bar on top with a white block per
+ * line number, so the gunner can tell line 1's from line 2's. Since the
+ * harder shooting the boards move with each race's ranges, so they are
+ * drawn on their own (range-run.scene-asset.ts's createCourseBoard), not in
+ * the ground's chunks.
  */
-export function boardParts(j: number, dx = 0, dz = 0): Part[] {
-  const t = COURSE_TARGETS[j];
+export function boardLocalParts(line: number): Part[] {
   const { width, height, lift, disc } = COURSE_BOARD;
   const middle = courseBoardMiddle();
   const disk = new CylinderGeometry(disc, disc, 0.06, 20, 1);
@@ -219,10 +221,16 @@ export function boardParts(j: number, dx = 0, dz = 0): Part[] {
   }
   const barY = lift + height + 0.16;
   local.push({ geometry: new BoxGeometry(width, 0.24, 0.12), color: BOX_BLUE, position: [0, barY, 0] });
-  for (let b = 0; b <= t.line; b++) {
-    local.push({ geometry: new BoxGeometry(0.2, 0.18, 0.16), color: PAINT, position: [(b - t.line / 2) * 0.4, barY, 0] });
+  for (let b = 0; b <= line; b++) {
+    local.push({ geometry: new BoxGeometry(0.2, 0.18, 0.16), color: PAINT, position: [(b - line / 2) * 0.4, barY, 0] });
   }
-  return place(local, t.x + dx, t.z + dz, t.yaw);
+  return local;
+}
+
+/** Course board `j` (COURSE_TARGETS) where it stands now, on the ground: for the tests. */
+export function boardParts(j: number, dx = 0, dz = 0): Part[] {
+  const t = COURSE_TARGETS[j];
+  return place(boardLocalParts(t.line), t.x + dx, t.z + dz, t.yaw);
 }
 
 /** Turn parts standing at the origin about +Y and move them to (x, z) on the ground. */
@@ -250,6 +258,5 @@ export function courseFixtureParts(dx = 0, dz = 0): { parts: Part[]; x: number; 
     const [x, z] = boxSpot(k);
     out.push({ parts: boxParts(k, dx, dz), x: x + dx, z: z + dz });
   });
-  COURSE_TARGETS.forEach((t, j) => out.push({ parts: boardParts(j, dx, dz), x: t.x + dx, z: t.z + dz }));
   return out;
 }

@@ -40,7 +40,7 @@ export function goToCourse(): void {
 /**
  * Practice → Biathlon → Line 1 or Line 2: the tank parked in firing box
  * `k` with its engine running for the power traverse, the line's three
- * boards across the infield on the left. Alone, the player takes the
+ * boards down its lane behind the tank, at 6 o'clock. Alone, the player takes the
  * gunner's seat; in a crew the seats stay.
  */
 export function goToFiringLine(k: number): void {
