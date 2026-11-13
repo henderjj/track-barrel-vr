@@ -25,7 +25,27 @@ import { MAX_SPEED, MAX_YAW_RATE } from './comfort.js';
 import type { EngineControlId } from './driver-station.js';
 import { CHOKE_COOLANT, CHOKE_HOLD, chokeLevel, type EngineStart, HOT_COOLANT, RESTART_COOLANT, WARM_COOLANT } from './engine.js';
 import { TRACK_GAUGE } from './tank-drive.js';
-import { BOX_Z, COURSE_PATH, COURSE_START, eastSideAt, FINISH_Z, JOIN, type Path, PENALTY_OWN, PENALTY_PATH } from './course.js';
+import {
+  BOX_Z,
+  BRIDGE_SPAN,
+  BYPASS,
+  BYPASS_PATH,
+  COURSE,
+  COURSE_PATH,
+  COURSE_START,
+  eastSideAt,
+  FINISH_Z,
+  JOIN,
+  leftOf,
+  northSideAt,
+  type Path,
+  PENALTY_OWN,
+  PENALTY_PATH,
+  SLALOM_GATES,
+  southSideAt,
+  westSideAt,
+} from './course.js';
+import { HILL, STREAM } from './terrain.js';
 import { wrapTile } from './terrain.js';
 
 const DEG = Math.PI / 180;
@@ -207,12 +227,95 @@ export const ROUTE: readonly RouteLeg[] = [
 /** Course legs are this far apart, m, and a through leg is passed this far short of being level with it (so the tank always aims a few metres ahead). */
 const COURSE_STEP = 10;
 const THROUGH_AHEAD = 4;
-/** The crewmate's speeds on the course, km/h: round the loop, coming up to a firing box, and round the penalty loop's tight curves. */
-export const COURSE_KMH = { loop: 20, box: 10, penalty: 12 } as const;
+/**
+ * The crewmate's speeds on the course, km/h: round the loop, coming up to a
+ * firing box, round the penalty loop's tight curves, and through the driving
+ * challenge (F5.3d): weaving the slalom, down the hill into the tight
+ * north-west corner and round the south-west one, lined up on the bridge,
+ * round the bypass (it never takes the mud) and through the ford, under the
+ * 8 km/h that drowns the engine.
+ */
+export const COURSE_KMH = { loop: 20, box: 10, penalty: 12, slalom: 9, descent: 16, tight: 16, bridge: 8, bypass: 18, ford: 7 } as const;
+/** Faster than its speed by this much, m/s (running on downhill), it brakes. */
+const OVERSPEED = 0.6;
+const BRAKE = -0.3;
+/** Its legs are this far apart where it must be precise (the slalom and the bridge), m. */
+const FINE_STEP = 4;
 /** How long it halts in a firing box, s: time for a gunner to shoot (F5.3b gives the race its own rules). */
 export const COURSE_HALT = 15;
 /** It slows to COURSE_KMH.box this far before a firing box, m. */
 const BOX_SLOW = 40;
+
+/**
+ * The crewmate's line round the course from `from` to `to` m along it (the
+ * course's middle line, as COURSE_PATH counts it, from the finish line),
+ * as through legs at `kmh` but where the driving challenge (F5.3d) asks for
+ * its own: weaving through the slalom's gates, slowing for the descent and
+ * the tight corners, lined up for the bridge, round the bypass instead of
+ * the mud, and slowly through the ford. Each leg is given to `push`, with
+ * the s it stands at.
+ */
+function courseLine(from: number, to: number, kmh: number, push: (leg: RouteLeg, s: number) => void): void {
+  const L = COURSE_PATH.length;
+  const bypassFrom = southSideAt(BYPASS.from);
+  const bypassTo = southSideAt(BYPASS.to);
+  let s = from;
+  while (s < to - 1e-6) {
+    const at = ((s % L) + L) % L;
+    const zone = zoneAt(at);
+    if (zone.bypass && at < bypassFrom + 0.5 && to - s >= bypassTo - at - 1e-6) {
+      // Round the bypass: its own legs, then on along the course from where it comes back.
+      const n = Math.max(1, Math.round(BYPASS_PATH.length / 5));
+      for (let i = 1; i <= n; i++) {
+        const p = BYPASS_PATH.at((BYPASS_PATH.length * i) / n);
+        push({ x: p.x, z: p.z, kmh: Math.min(kmh, COURSE_KMH.bypass), halt: 0, through: true, heading: p.heading }, s + (bypassTo - at) * (i / n));
+      }
+      s += bypassTo - at;
+      continue;
+    }
+    // Never past where the bypass leaves without a leg there.
+    const step = Math.min(zone.step, to - s, at < bypassFrom - 1e-6 ? bypassFrom - at : Infinity);
+    s += step;
+    const p = COURSE_PATH.at(s);
+    const off = slalomOffset(((s % L) + L) % L);
+    if (off !== 0) {
+      leftOf(p.heading, side);
+      p.x += side[0] * off;
+      p.z += side[1] * off;
+    }
+    push({ x: p.x, z: p.z, kmh: Math.min(kmh, zoneAt(((s % L) + L) % L).kmh), halt: 0, through: true, heading: p.heading }, s);
+  }
+}
+const side: [number, number] = [0, 0];
+
+/** What the crewmate's line asks for at `s` m along the course: its speed, its legs' spacing, and whether the bypass starts here. */
+function zoneAt(s: number): { kmh: number; step: number; bypass: boolean } {
+  const first = SLALOM_GATES[0].s;
+  const last = SLALOM_GATES[SLALOM_GATES.length - 1].s;
+  if (s >= first - 24 && s <= last + 12) return { kmh: COURSE_KMH.slalom, step: FINE_STEP, bypass: false };
+  if (s >= northSideAt(HILL.crest) - 10 && s <= westSideAt(COURSE.north + COURSE.tight)) return { kmh: COURSE_KMH.descent, step: COURSE_STEP, bypass: false };
+  if (s >= BRIDGE_SPAN[0] - 25 && s <= BRIDGE_SPAN[1] + 4) return { kmh: COURSE_KMH.bridge, step: FINE_STEP, bypass: false };
+  if (s >= westSideAt(COURSE.south - COURSE.tight) - 10 && s <= southSideAt(COURSE.west + COURSE.tight)) return { kmh: COURSE_KMH.tight, step: COURSE_STEP, bypass: false };
+  if (s >= southSideAt(BYPASS.from) - 5 && s <= southSideAt(BYPASS.to)) return { kmh: COURSE_KMH.bypass, step: COURSE_STEP, bypass: true };
+  if (s >= southSideAt(STREAM.x - STREAM.half - 15) && s <= southSideAt(STREAM.x + STREAM.half)) return { kmh: COURSE_KMH.ford, step: COURSE_STEP, bypass: false };
+  return { kmh: Infinity, step: COURSE_STEP, bypass: false };
+}
+
+/** How far left of the course's middle line the crewmate's line runs at `s` (the slalom's weave: each gate's middle, eased between them), m. */
+export function slalomOffset(s: number): number {
+  const gates = SLALOM_GATES;
+  const offOf = (k: number) => {
+    // Driven west, a gate's offset to the left is its z less the middle line's (left is +z).
+    return gates[k].z - COURSE.north;
+  };
+  if (s <= gates[0].s - 16 || s >= gates[gates.length - 1].s + 12) return 0;
+  const ease = (a: number, b: number, t: number) => a + (b - a) * (1 - Math.cos(Math.PI * Math.min(1, Math.max(0, t)))) / 2;
+  if (s < gates[0].s) return ease(0, offOf(0), (s - (gates[0].s - 16)) / 16);
+  for (let k = 0; k + 1 < gates.length; k++) {
+    if (s <= gates[k + 1].s) return ease(offOf(k), offOf(k + 1), (s - gates[k].s) / (gates[k + 1].s - gates[k].s));
+  }
+  return ease(offOf(gates.length - 1), 0, (s - gates[gates.length - 1].s) / 12);
+}
 
 /**
  * The crewmate's way round the biathlon course (F5.3a): two laps from the
@@ -224,6 +327,13 @@ const BOX_SLOW = 40;
 export const COURSE_ROUTE: readonly RouteLeg[] = (() => {
   const legs: RouteLeg[] = [];
   const add = (path: Path, from: number, to: number, kmh: number, slowFrom = Infinity) => {
+    if (path === COURSE_PATH) {
+      courseLine(from, to, kmh, (leg, s) => {
+        if (s >= slowFrom) leg.kmh = Math.min(leg.kmh, COURSE_KMH.box);
+        legs.push(leg);
+      });
+      return;
+    }
     const n = Math.max(1, Math.round((to - from) / COURSE_STEP));
     for (let i = 1; i <= n; i++) {
       const s = from + ((to - from) * i) / n;
@@ -270,6 +380,14 @@ export const RACE_ROUTE: readonly RouteLeg[] = (() => {
   const legs: RouteLeg[] = [];
   const L = COURSE_PATH.length;
   const add = (path: Path, from: number, to: number, kmh: number, lap: number, slowFrom = Infinity) => {
+    if (path === COURSE_PATH) {
+      courseLine(from, to, kmh, (leg, s) => {
+        if (s >= slowFrom) leg.kmh = Math.min(leg.kmh, COURSE_KMH.box);
+        leg.lap = lap;
+        legs.push(leg);
+      });
+      return;
+    }
     const n = Math.max(1, Math.round((to - from) / COURSE_STEP));
     for (let i = 1; i <= n; i++) {
       const s = from + ((to - from) * i) / n;
@@ -539,6 +657,8 @@ export class BotDriver {
     }
     if (leg.through) {
       this.heading = headingTo(dx, dz);
+      // Running on downhill faster than it wants (F5.3d): it brakes.
+      if (tank.speed > leg.kmh / 3.6 + OVERSPEED) return BRAKE;
       return leg.kmh / 3.6 / MAX_SPEED;
     }
     const distance = Math.hypot(dx, dz);

@@ -1,7 +1,11 @@
-import { BoxGeometry, BufferAttribute, BufferGeometry, CylinderGeometry } from '@iwsdk/core';
+import { BoxGeometry, BufferAttribute, BufferGeometry, CylinderGeometry, Mesh, MeshStandardMaterial, PlaneGeometry } from '@iwsdk/core';
 import {
   BOX_Z,
   boxSpot,
+  BRIDGE,
+  BRIDGE_SPAN,
+  BYPASS,
+  BYPASS_PATH,
   COURSE,
   COURSE_BOARD,
   COURSE_PATH,
@@ -10,15 +14,21 @@ import {
   FIRING_BOX,
   type Gate,
   GATES,
+  MUD,
+  MUD_SPAN,
   PENALTY,
   PENALTY_GATE,
   PENALTY_OWN,
   PENALTY_PATH,
   type Path,
+  type PathPoint,
   samplePath,
+  SLALOM,
+  WATER_Y,
+  DITCH_WATER_Y,
 } from '../sim/course.js';
-import { groundHeight } from '../sim/terrain.js';
-import { beam, type Part } from './lowpoly.js';
+import { CELL, DITCH, groundHeight, STREAM } from '../sim/terrain.js';
+import { beam, mergeParts, type Part } from './lowpoly.js';
 
 /**
  * The biathlon course's parts (F5.3a, docs/biathlon-course.md): the loop's
@@ -31,8 +41,13 @@ import { beam, type Part } from './lowpoly.js';
  *
  * Built in the ground's own space, like range.scene-asset.ts: x and z as
  * src/sim/course.ts gives them, y from the ground's surface at the start.
- * The course's field is flat, so everything stands at the ground's height
- * there.
+ *
+ * The driving challenge (F5.3d, docs/biathlon-driving.md) adds the mud on
+ * the south side with the gravel bypass round it, the treadway bridge over
+ * the ditch on the west side, the water in the ditch and the ford, and the
+ * slalom's posts (drawn on their own, createSlalomPost, since they get
+ * knocked down). The hill, the ditch and the stream are the ground's own
+ * shape (src/sim/terrain.ts's courseRelief), so the tracks follow it.
  */
 
 const GRAVEL = 0xb4a684;
@@ -45,6 +60,14 @@ const BLACK = 0x1e1e1e;
 const BOX_BLUE = 0x2456a8;
 const BOARD = 0xf4f2ea;
 const WOOD_DARK = 0x6e4a2b;
+const MUD_BROWN = 0x5c4630;
+const GRAVEL_BYPASS = 0xbcae8c;
+const STEEL = 0x6b6f66;
+const STEEL_DARK = 0x45483f;
+const TIMBER = 0x7a5a3a;
+const WATER = 0x3f6e84;
+const DITCH_WATER = 0x35596a;
+const MARKER = 0xe8762a;
 
 /** The tracks are drawn in pieces about this long, m, each filed in the chunk of ground its middle stands in. */
 const PIECE = 50;
@@ -53,7 +76,7 @@ const STEP = 5;
 
 /** A flat strip `half` m either side of `path`'s middle line from `from` to `to` m along it, `lift` m above the ground, facing up. */
 function ribbon(path: Path, from: number, to: number, half: number, lift: number): BufferGeometry {
-  const points = samplePath(path, from, to, STEP);
+  const points = withFolds(path, samplePath(path, from, to, STEP));
   const positions: number[] = [];
   const edge = (p: { x: number; z: number; heading: number }, side: number): number[] => {
     const x = p.x + side * half * -Math.cos(p.heading);
@@ -71,6 +94,37 @@ function ribbon(path: Path, from: number, to: number, half: number, lift: number
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
   return geometry;
+}
+
+/**
+ * The samples with a point added wherever the middle line crosses a grid
+ * line of the height field (x or z a whole number of CELLs), where the
+ * ground can fold: over the hill's crest and down into the ford a strip
+ * laid straight between samples either side of a fold would sink into the
+ * ground or stand off it. Between grid lines the ground is flat (one
+ * triangle, or two that the course's relief keeps in one plane, since it
+ * changes only along the track where it crosses the hill and the stream),
+ * so the strip lies on it at its lift.
+ */
+function withFolds(path: Path, points: PathPoint[]): PathPoint[] {
+  const out: PathPoint[] = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const cuts: number[] = [];
+    for (const [u, v] of [[a.x, b.x], [a.z, b.z]] as const) {
+      const lo = Math.min(u, v);
+      const hi = Math.max(u, v);
+      for (let g = Math.floor(lo / CELL) + 1; g * CELL < hi; g++) {
+        const t = (g * CELL - u) / (v - u);
+        if (t > 1e-4 && t < 1 - 1e-4) cuts.push(t);
+      }
+    }
+    cuts.sort((p, q) => p - q);
+    for (const t of cuts) out.push(path.at(a.s + (b.s - a.s) * t));
+    out.push(b);
+  }
+  return out;
 }
 
 /** A track cut into pieces of about PIECE m, each with the (x, z) to file it under. */
@@ -94,8 +148,17 @@ function trackPieces(path: Path, from: number, to: number, half: number, lift: n
  * two never share a plane where they meet. Each copy offset by (dx, dz).
  */
 export function trackParts(dx = 0, dz = 0): { part: Part; x: number; z: number }[] {
+  // The course's gravel stops for the bridge (its treads are the track there) and the mud.
+  const [bridgeFrom, bridgeTo] = BRIDGE_SPAN;
+  const [mudFrom, mudTo] = MUD_SPAN;
   return [
-    ...trackPieces(COURSE_PATH, 0, COURSE_PATH.length, COURSE.halfWidth, COURSE.lift, GRAVEL, dx, dz),
+    ...trackPieces(COURSE_PATH, 0, bridgeFrom, COURSE.halfWidth, COURSE.lift, GRAVEL, dx, dz),
+    ...trackPieces(COURSE_PATH, bridgeTo, mudFrom, COURSE.halfWidth, COURSE.lift, GRAVEL, dx, dz),
+    ...trackPieces(COURSE_PATH, mudTo, COURSE_PATH.length, COURSE.halfWidth, COURSE.lift, GRAVEL, dx, dz),
+    // The mud: wider than the gravel, at its height, butting onto it at each end.
+    ...trackPieces(COURSE_PATH, mudFrom, mudTo, MUD.half, COURSE.lift, MUD_BROWN, dx, dz),
+    // The bypass: a centimetre under the course's gravel where they meet, a paler gravel.
+    ...trackPieces(BYPASS_PATH, 0, BYPASS_PATH.length, BYPASS.halfWidth, BYPASS.lift, GRAVEL_BYPASS, dx, dz),
     ...trackPieces(PENALTY_PATH, 0, PENALTY_OWN, PENALTY.halfWidth, PENALTY.lift, GRAVEL_PENALTY, dx, dz),
   ];
 }
@@ -249,6 +312,126 @@ function place(local: Part[], x: number, z: number, yaw: number): Part[] {
   });
 }
 
+// ---------------------------------------------------------------- The driving challenge (F5.3d)
+
+/** How thick the bridge's treads are, m, and how high their curbs stand above them. */
+const TREAD_THICK = 0.12;
+const CURB = { width: 0.08, height: 0.1 } as const;
+
+/**
+ * The treadway bridge over the ditch (docs/biathlon-driving.md): two steel
+ * treads under the tracks' middles with a curb along each edge, a ramp at
+ * each end down to the field, steel transoms across under them resting on
+ * timber trestles down into the ditch, sills on the banks, and an orange
+ * marker post outside each tread at each end. In the ground's space at the
+ * bridge's place (its deck's heights are src/sim/course.ts's deckHeight).
+ */
+export function bridgeParts(dx = 0, dz = 0): Part[] {
+  const { x: bx, z: bz, length, ramp, height, tread, gauge } = BRIDGE;
+  const half = length / 2;
+  const flat = half - ramp;
+  const parts: Part[] = [];
+  const at = (x: number, y: number, z: number) => [bx + x + dx, y, bz + z + dz] as const;
+  const slope = Math.atan2(height, ramp);
+  const rampLength = Math.hypot(height, ramp);
+  for (const side of [-1, 1]) {
+    const x = side * gauge;
+    parts.push({ geometry: new BoxGeometry(tread, TREAD_THICK, 2 * flat), color: STEEL, position: at(x, height - TREAD_THICK / 2, 0) });
+    for (const edge of [-1, 1]) {
+      // A curb along each edge, its outer face in line with the tread's: one colour, so no flicker where they meet.
+      parts.push({
+        geometry: new BoxGeometry(CURB.width, CURB.height, 2 * flat),
+        color: STEEL,
+        position: at(x + edge * (tread / 2 - CURB.width / 2), height + CURB.height / 2, 0),
+      });
+    }
+    for (const end of [-1, 1]) {
+      // The ramp: a slab tilted from the tread's end down to the field, turned about x.
+      const geometry = new BoxGeometry(tread, TREAD_THICK, rampLength);
+      geometry.rotateX(end * slope);
+      const midZ = end * (flat + ramp / 2);
+      // Its top's middle at half the deck's height, its middle a half-thickness below that, square to the slab.
+      const y = height / 2 - (TREAD_THICK / 2) * Math.cos(slope);
+      const z = midZ - end * (TREAD_THICK / 2) * Math.sin(slope);
+      parts.push({ geometry, color: STEEL, position: at(x, y, z) });
+      // An orange marker post outside the tread's end, white bands a centimetre proud of it.
+      const mx = side * (gauge + tread / 2 + 0.6);
+      const mz = end * (half + 0.6);
+      parts.push({ geometry: new CylinderGeometry(0.07, 0.07, 1.4, 8, 1), color: MARKER, position: at(mx, groundHeight(bx + mx, bz + mz) + 0.6, mz) });
+      for (let b = 0; b < 2; b++) {
+        parts.push({ geometry: new CylinderGeometry(0.08, 0.08, 0.18, 8, 1), color: PAINT, position: at(mx, groundHeight(bx + mx, bz + mz) + 0.55 + b * 0.4, mz) });
+      }
+    }
+  }
+  // Across both treads: transoms over the trestles and sills on the banks.
+  const across = 2 * gauge + tread + 0.4;
+  const transomTop = height - TREAD_THICK;
+  for (const z of [-DITCH.half / 2, 0, DITCH.half / 2]) {
+    parts.push({ geometry: new BoxGeometry(across, 0.2, 0.3), color: STEEL_DARK, position: at(0, transomTop - 0.1, z) });
+    for (const side of [-1, 1]) {
+      // A trestle leg under each tread, from below the ditch's bottom up to the transom.
+      const x = side * gauge;
+      const ground = groundHeight(bx + x, bz + z) - 0.3;
+      const top = transomTop - 0.2;
+      parts.push({ geometry: new BoxGeometry(0.25, top - ground, 0.25), color: TIMBER, position: at(x, (top + ground) / 2, z) });
+    }
+  }
+  for (const end of [-1, 1]) {
+    const z = end * (flat - 0.2);
+    const ground = groundHeight(bx, bz + z) - 0.15;
+    parts.push({ geometry: new BoxGeometry(across, transomTop - ground, 0.4), color: TIMBER, position: at(0, (transomTop + ground) / 2, z) });
+  }
+  return parts;
+}
+
+/** A flat sheet of water facing up, `w` by `d` m, its middle at (x, y, z): the ground hides it wherever it stands above the water. */
+function waterSheet(x: number, y: number, z: number, w: number, d: number, color: number): Part {
+  const geometry = new PlaneGeometry(w, d);
+  geometry.rotateX(-Math.PI / 2);
+  return { geometry, color, position: [x, y, z] };
+}
+
+/** The water in the ford's stream and in the ditch under the bridge, each copy offset by (dx, dz). */
+export function waterParts(dx = 0, dz = 0): { part: Part; x: number; z: number }[] {
+  const ford = { x: STREAM.x + dx, z: (STREAM.from + STREAM.to) / 2 + dz };
+  const ditch = { x: (DITCH.from + DITCH.to) / 2 + dx, z: DITCH.z + dz };
+  return [
+    { part: waterSheet(ford.x, WATER_Y, ford.z, 2 * STREAM.half, STREAM.to - STREAM.from + 2 * STREAM.fade, WATER), ...ford },
+    { part: waterSheet(ditch.x, DITCH_WATER_Y, ditch.z, DITCH.to - DITCH.from + 2 * DITCH.fade, 2 * DITCH.half, DITCH_WATER), ...ditch },
+  ];
+}
+
+const SLALOM_RED = 0xd8322a;
+/** The radius of a slalom post's rubber foot, m: a knocked post lies on it. */
+export const SLALOM_FOOT = 0.22;
+
+/**
+ * A slalom post standing at the origin: a white pole SLALOM.post m in
+ * radius and SLALOM.height tall with red bands a centimetre proud of it, on
+ * a black rubber foot. The course system draws the eight of them on their
+ * own (they fall over when the tank knocks them).
+ */
+export function slalomPostParts(): Part[] {
+  const { post, height } = SLALOM;
+  const parts: Part[] = [
+    { geometry: new CylinderGeometry(0.2, SLALOM_FOOT, 0.06, 10, 1), color: BLACK, position: [0, 0.03, 0] },
+    // The pole's foot inside the rubber foot.
+    { geometry: new CylinderGeometry(post, post, height, 8, 1), color: POLE, position: [0, height / 2 + 0.02, 0] },
+  ];
+  for (let b = 0; b < 4; b++) {
+    parts.push({ geometry: new CylinderGeometry(post + 0.01, post + 0.01, 0.2, 8, 1), color: SLALOM_RED, position: [0, 0.35 + b * 0.38, 0] });
+  }
+  return parts;
+}
+
+const postMaterial = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, metalness: 0 });
+
+export function createSlalomPost(): Mesh {
+  const mesh = new Mesh(mergeParts(slalomPostParts()), postMaterial);
+  mesh.name = 'Slalom Post';
+  return mesh;
+}
+
 /** Everything on the course but its tracks, each copy offset by (dx, dz), grouped with where to file it. */
 export function courseFixtureParts(dx = 0, dz = 0): { parts: Part[]; x: number; z: number }[] {
   const out: { parts: Part[]; x: number; z: number }[] = [];
@@ -258,5 +441,7 @@ export function courseFixtureParts(dx = 0, dz = 0): { parts: Part[]; x: number; 
     const [x, z] = boxSpot(k);
     out.push({ parts: boxParts(k, dx, dz), x: x + dx, z: z + dz });
   });
+  out.push({ parts: bridgeParts(dx, dz), x: BRIDGE.x + dx, z: BRIDGE.z + dz });
+  for (const { part, x, z } of waterParts(dx, dz)) out.push({ parts: [part], x, z });
   return out;
 }

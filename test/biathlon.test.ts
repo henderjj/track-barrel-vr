@@ -25,7 +25,7 @@ const DT = 1 / 60;
 
 /** The course's progress as a race reads it, moved on by hand. */
 function feed(): CourseFeed {
-  return { laps: 0, missed: 0, penalties: 0, box: -1, halted: false };
+  return { laps: 0, missed: 0, penalties: 0, box: -1, halted: false, faults: 0 };
 }
 
 function step(r: RangeRun, c: CourseFeed, seconds: number): void {
@@ -276,6 +276,7 @@ describe('practice crewmate: the biathlon race (F5.3b)', () => {
     let waited = 0;
     let widest = 0;
     let fired = 0;
+    let thrown = false;
     for (let t = 0; t < 1200 && run.s.phase === 'running'; t += DT) {
       const s = run.s;
       const o = bot.orders;
@@ -289,8 +290,9 @@ describe('practice crewmate: the biathlon race (F5.3b)', () => {
       controls.left = wish.left;
       controls.right = wish.right;
       stepDrive(tank, controls, DT, OBSTACLES);
-      progress.step(DT, tank.x, tank.z, tank.speed);
+      progress.step(DT, tank.x, tank.z, tank.speed, tank.heading, tank.falls);
       run.course(progress.s);
+      thrown ||= tank.thrown !== 0;
       run.step(DT);
       widest = Math.max(widest, distanceToTrack(tank.x, tank.z));
       // The gunner: a round every perRound s while halted in the line's box with rounds left.
@@ -303,11 +305,11 @@ describe('practice crewmate: the biathlon race (F5.3b)', () => {
         fired++;
       }
     }
-    return { run, bot, progress, widest, fired };
+    return { run, bot, progress, widest, fired, tank, thrown };
   }
 
   it('drives a clean race: three laps, halting in box 1 then box 2 while the gunner shoots, no loops, missing no gate', () => {
-    const { run, bot, progress, widest, fired } = race([0, 1, 2, 3, 4, 5], 8);
+    const { run, bot, progress, widest, fired, tank, thrown } = race([0, 1, 2, 3, 4, 5], 8);
     expect(run.s.phase).toBe('done');
     expect(fired).toBe(6);
     expect(boardsDown(run.s)).toBe(6);
@@ -316,12 +318,18 @@ describe('practice crewmate: the biathlon race (F5.3b)', () => {
     expect(bot.loopsTaken).toBe(0);
     expect(progress.s.missed).toBe(0);
     expect(widest).toBeLessThan(COURSE.halfWidth);
-    // The plan's "about 8 to 10 minutes", and the medal times set from it: gold is a little under the crewmate's clean run.
+    // Through the driving challenge (F5.3d) cleanly: no slalom faults, no falls off the bridge, no thrown track, no drowned engine.
+    expect(progress.s.faults).toBe(0);
+    expect(run.s.faults).toBe(0);
+    expect(progress.s.falls).toBe(0);
+    expect(thrown).toBe(false);
+    expect(tank.stalls).toBe(0);
+    // The plan's "about 8 to 10 minutes", longer for the driving challenge, and the medal times set from it: gold is a little under the crewmate's clean run.
     console.info(`[biathlon] the crewmate's clean race: ${formatRunTime(run.s.time)}`);
     expect(run.s.time).toBeGreaterThan(MEDAL_TIMES.gold);
     expect(run.s.time).toBeLessThan(MEDAL_TIMES.silver);
-    expect(run.s.time).toBeGreaterThan(7 * 60);
-    expect(run.s.time).toBeLessThan(10 * 60);
+    expect(run.s.time).toBeGreaterThan(10 * 60);
+    expect(run.s.time).toBeLessThan(14 * 60);
   });
 
   it('goes round the penalty loop once for each board left standing, before the finish', () => {

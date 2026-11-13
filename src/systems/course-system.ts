@@ -1,8 +1,10 @@
-import { createSystem, VisibilityState } from '@iwsdk/core';
+import { createSystem, type Mesh, VisibilityState } from '@iwsdk/core';
 import { crewPresence } from '../net/crew-presence.js';
+import { createSlalomPost, SLALOM_FOOT } from '../scene-assets/course.scene-asset.js';
 import {
   BOX_Z,
   boxSpot,
+  BRIDGE,
   copyCourseSnapshot,
   COURSE_PATH,
   COURSE_START,
@@ -13,9 +15,14 @@ import {
   type CourseSnapshot,
   createCourseSnapshot,
   GATES,
+  type ObstacleName,
+  OBSTACLE_SPOTS,
+  OBSTACLES,
   PENALTY_PATH,
   readCourseEvent,
+  SLALOM_POSTS,
 } from '../sim/course.js';
+import { groundHeight, wrapTile } from '../sim/terrain.js';
 import { placeTank, startEngine, tankState } from './drive-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { netLink } from './net-system.js';
@@ -51,6 +58,20 @@ export function goToFiringLine(k: number): void {
   startEngine();
 }
 
+/**
+ * Practice → Obstacles (F5.3d): the tank parked short of one of the
+ * driving challenge's obstacles, facing it the way a lap drives it, its
+ * engine running. Alone, the player takes the driver's seat; in a crew the
+ * seats stay.
+ */
+export function goToObstacle(name: ObstacleName): void {
+  const spot = OBSTACLE_SPOTS[name];
+  if (spot == null) return;
+  if (!netLink.connected) seating.ask('driver');
+  placeTank(spot.x, spot.z, spot.heading);
+  startEngine();
+}
+
 /** One line for the game menu. */
 export function courseStatus(): string {
   return active ? courseLine(active.progress.s) : '';
@@ -71,7 +92,15 @@ interface CourseDebug {
     gates: { x: number; z: number; heading: number }[];
     boxes: number[][];
     boards: { x: number; z: number; name: string }[];
+    /** The driving challenge's (F5.3d): the slalom's posts, the bridge, and where Practice → Obstacles parks the tank for each. */
+    posts: number[][];
+    bridge: { x: number; z: number; length: number; gauge: number; tread: number };
+    obstacles: Record<string, { x: number; z: number; heading: number }>;
   };
+  /** Each slalom post as drawn (ground space): where, and whether it lies knocked down. */
+  posts(): { x: number; y: number; z: number; down: boolean }[];
+  /** Practice → Obstacles. */
+  obstacle(name: string): void;
   /** The course's middle line `s` m along from the finish line (tests drive along it). */
   pointAt(s: number): { x: number; z: number; heading: number };
   go(): void;
@@ -110,6 +139,9 @@ export class CourseSystem extends createSystem({}) {
   private sent = 0;
   private received = 0;
   private frames = 0;
+  /** The slalom's posts (drawn here, since they fall when knocked) and the ground's height under each. */
+  private readonly posts: Mesh[] = [];
+  private readonly postY: number[] = [];
 
   init(): void {
     active = this;
@@ -123,6 +155,15 @@ export class CourseSystem extends createSystem({}) {
       },
     );
 
+    const ground = this.world.getSceneEntity('ground') ?? null;
+    if (ground == null) console.warn('[Course] no ground in the scene');
+    for (const [x, z] of SLALOM_POSTS) {
+      const post = createSlalomPost();
+      this.posts.push(post);
+      this.postY.push(groundHeight(x, z));
+      if (ground) this.world.createTransformEntity(post, { parent: ground });
+    }
+
     const self = this;
     (window as unknown as { __course: CourseDebug }).__course = {
       state: () => ({ ...copyCourseSnapshot(self.progress.s, createCourseSnapshot()), line: courseLine(self.progress.s) }),
@@ -132,7 +173,14 @@ export class CourseSystem extends createSystem({}) {
         gates: GATES.map((g) => ({ x: g.x, z: g.z, heading: g.heading })),
         boxes: BOX_Z.map((_, k) => boxSpot(k)),
         boards: COURSE_TARGETS.map((t) => ({ x: t.x, z: t.z, name: t.name })),
+        posts: SLALOM_POSTS.map(([x, z]) => [x, z]),
+        bridge: { x: BRIDGE.x, z: BRIDGE.z, length: BRIDGE.length, gauge: BRIDGE.gauge, tread: BRIDGE.tread },
+        obstacles: { ...OBSTACLE_SPOTS },
       }),
+      posts: () => self.posts.map((p) => ({ x: p.position.x, y: p.position.y, z: p.position.z, down: p.rotation.z !== 0 })),
+      obstacle: (name) => {
+        if ((OBSTACLES as readonly string[]).includes(name)) goToObstacle(name as ObstacleName);
+      },
       pointAt: (at) => {
         const p = COURSE_PATH.at(at);
         return { x: p.x, z: p.z, heading: p.heading };
@@ -165,7 +213,7 @@ export class CourseSystem extends createSystem({}) {
     if (netLink.isHost) {
       progress.setPaused(netLink.connected && crewPresence.paused);
       const tank = tankState();
-      progress.step(dt, tank.x, tank.z, tank.speed);
+      progress.step(dt, tank.x, tank.z, tank.speed, tank.heading, tank.falls);
       const joined = netLink.connected && !this.wasConnected;
       if (netLink.connected && (joined || progress.version !== this.sentVersion)) {
         netLink.sendEvent(courseEvent(progress.s, performance.now()));
@@ -176,7 +224,23 @@ export class CourseSystem extends createSystem({}) {
       progress.follow(dt);
     }
     this.wasConnected = netLink.connected;
+    this.drawPosts();
     this.drawSign(delta);
+  }
+
+  /** Each slalom post at the copy of it nearest the tank (the ground repeats every tile), standing or lying where it fell (driven west, it falls west). */
+  private drawPosts(): void {
+    const tank = tankState();
+    const tx = wrapTile(tank.x);
+    const tz = wrapTile(tank.z);
+    const knocked = this.progress.s.knocked;
+    for (let i = 0; i < this.posts.length; i++) {
+      const [x, z] = SLALOM_POSTS[i];
+      const down = (knocked & (1 << i)) !== 0;
+      const post = this.posts[i];
+      post.position.set(tx + wrapTile(x - tank.x), this.postY[i] + (down ? SLALOM_FOOT : 0), tz + wrapTile(z - tank.z));
+      post.rotation.z = down ? Math.PI / 2 : 0;
+    }
   }
 
   /** A new note from the host goes on the sign for a few seconds. */

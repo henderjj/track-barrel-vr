@@ -35,7 +35,8 @@ function run(s: TankDrive, controls: DriverControls, seconds: number, each?: (s:
 const SLOPE = (() => {
   const g = { height: 0, pitch: 0, roll: 0 };
   let best = { x: 0, z: 0, pitch: 0 };
-  for (let x = -150; x <= 150; x += 5) {
+  // The rolling ground west of the biathlon course, whose hill and ditch (F5.3d) are steeper by design and tested on their own.
+  for (let x = -150; x <= 10; x += 5) {
     for (let z = -700; z <= 100; z += 5) {
       groundUnder(x, z, 0, g);
       if (Math.abs(g.pitch) > Math.abs(best.pitch)) best = { x, z, pitch: g.pitch };

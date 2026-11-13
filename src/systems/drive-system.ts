@@ -40,6 +40,7 @@ import {
   stopEngine,
 } from '../sim/engine.js';
 import { GEARBOX_NAMES, type GearboxMode, nextGear, realControls } from '../sim/gearbox.js';
+import { DROWN_SECONDS, REFIT_SECONDS, THROW_WARN } from '../sim/going.js';
 import {
   angleDelta,
   COOLANT_IDLE,
@@ -319,6 +320,8 @@ interface DriveDebug {
   parkingBrake(on: boolean): void;
   /** Host only: put the tank at rest at (x, z) facing `heading` (tests and Practice). */
   place(x: number, z: number, heading: number): void;
+  /** Host only: set the going's state (F5.3d tests): the sink into mud, a thrown track and its refit's seconds left. */
+  going(patch: { sink?: number; thrown?: 0 | 1 | 2; refit?: number }): void;
   /** Where a world-space point is drawn, in hull space. */
   drawnAt(x: number, y: number, z: number): number[];
   readonly vignetteAlpha: number;
@@ -404,6 +407,10 @@ export class DriveSystem extends createSystem({}) {
   private crankHeld = 0;
   /** The heat signs said since it last ran cool: 0 none, 1 hot, 2 overheating (F3.7). */
   private heatSaid = 0;
+  /** The going's signs (F5.3d): the track thrown last frame, when the tracks last strained, and how far into mud they had sunk. */
+  private thrownSeen = 0;
+  private strainSaidAt = -Infinity;
+  private sinkSaid = 0;
   /** This page's driver's Engine start setting (engineStart). */
   start: EngineStart = settings.engine;
   /** This page's driver's gearbox mode (gearboxMode). */
@@ -526,6 +533,13 @@ export class DriveSystem extends createSystem({}) {
         drive.parkingBrake = on;
       },
       place: (x, z, heading) => self.park(x, z, heading),
+      going: (patch) => {
+        if (!netLink.isHost) return;
+        if (Number.isFinite(patch.sink)) self.sim.sink = Math.min(1, Math.max(0, patch.sink as number));
+        if (patch.thrown === 0 || patch.thrown === 1 || patch.thrown === 2) self.sim.thrown = patch.thrown;
+        if (Number.isFinite(patch.refit)) self.sim.refit = Math.max(0, patch.refit as number);
+        copyTankDrive(self.sim, self.shown);
+      },
       drawnAt: (x, y, z) => (self.ground ? self.ground.localToWorld(new Vector3(x, y, z)).toArray() : []),
       get vignetteAlpha() { return self.vignette.material.uniforms.uAlpha.value as number; },
       get bumps() { return self.bumps; },
@@ -922,6 +936,7 @@ export class DriveSystem extends createSystem({}) {
     if (pushing && !this.wasPushingBrake) this.sayBrakeOn();
     this.wasPushingBrake = pushing;
     this.engineSigns(delta);
+    this.goingSigns();
     if (this.sign.visible) {
       if (this.time > this.signUntil) this.sign.setVisible(false);
       else this.sign.follow(this.world.visibilityState.peek() !== VisibilityState.NonImmersive ? this.player.head : this.camera, delta);
@@ -943,6 +958,7 @@ export class DriveSystem extends createSystem({}) {
         brake: 'Parking brake on: hold the trigger and push its lever down',
         heat: 'Overheated: let it cool below 110 °C, then start',
         hit: 'Knocked out by a hit: it will not start until repaired',
+        water: `Drowned in the ford: restart after ${DROWN_SECONDS} s, ford slower`,
       };
       this.say('Engine stalled', why[s.stallCause]);
     }
@@ -962,7 +978,7 @@ export class DriveSystem extends createSystem({}) {
     if (this.starterHeld > 0.4 && this.starterHeld - delta <= 0.4) {
       const full = c.start === 'full';
       if (full && !c.battery) this.say('Nothing turns', 'Battery switch on first');
-      else if (s.starterRest > 0) this.say('Starter too hot', 'Let it cool for a while');
+      else if (s.starterRest > 0) this.say(s.stallCause === 'water' ? 'Engine drowned' : 'Starter too hot', s.stallCause === 'water' ? 'Let the water drain a few seconds' : 'Let it cool for a while');
       else if (!startable(s, c)) this.say('In gear', this.mode === 'clutch' ? 'Clutch in, or neutral, to start' : 'Neutral to start');
     }
     if (this.crankHeld > 4 && this.crankHeld - delta <= 4) {
@@ -970,6 +986,32 @@ export class DriveSystem extends createSystem({}) {
         : s.coolant > RESTART_COOLANT ? 'Too hot: let it cool below 110 °C'
           : 'Choke out and the hand throttle a little open');
     }
+  }
+
+  /**
+   * The going's signs (F5.3d, docs/biathlon-driving.md): a track thrown and
+   * back on (both players: the whole crew waits for the refit); for the
+   * driver, the tracks straining in a hard turn, and the tracks digging into
+   * mud and bogging.
+   */
+  private goingSigns(): void {
+    const s = this.shown;
+    const mine = seating.mine === 'driver';
+    if (s.thrown !== this.thrownSeen) {
+      if (s.thrown !== 0) this.say(`${s.thrown === 1 ? 'Left' : 'Right'} track thrown`, `The crew refit it: ${REFIT_SECONDS} s. Slow down for hard turns`);
+      else this.say('Track back on', 'Drive on');
+      this.thrownSeen = s.thrown;
+    }
+    if (mine && s.thrown === 0 && s.side > THROW_WARN && this.time - this.strainSaidAt > 4) {
+      this.strainSaidAt = this.time;
+      this.say('Tracks straining', 'Slow down or ease the turn, or a track comes off');
+    }
+    const sink = s.sink >= 1 ? 2 : s.sink > 0.3 ? 1 : 0;
+    if (mine && sink > this.sinkSaid) {
+      if (sink === 2) this.say('Bogged in the mud', 'Reverse out, then take the bypass');
+      else this.say('Digging in', 'Ease off the throttle in the mud');
+    }
+    if (sink > this.sinkSaid || s.sink === 0) this.sinkSaid = sink;
   }
 
   private say(title: string, line: string): void {

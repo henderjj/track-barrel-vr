@@ -17,6 +17,7 @@
  */
 
 import { MAX_ACCEL, MAX_SPEED } from './comfort.js';
+import { GEAR_PUSH, UPSHIFT_LOAD } from './going.js';
 
 /** A gear: 0 neutral, 1 to 5 the forward speeds, 6 reverse. */
 export type Gear = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -170,6 +171,8 @@ export interface GearboxState {
   /** The engine runs, and the starter turns it (F1.17, src/sim/engine.ts): stopped, nothing reaches the tracks. */
   running: boolean;
   cranking: boolean;
+  /** The ground's load against the tank's way last step, m/s² (F5.3d, src/sim/going.ts): the automatic box won't change up into a gear that can't carry it. */
+  against?: number;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -331,7 +334,8 @@ function stepAutomatic(s: GearboxState, c: GearboxControls, dt: number): void {
   }
   const rpm = wheelRpm(s.speed, s.gear);
   const wantsMore = demandOf(c) > 0.05 && Math.abs(speedAsked(c)) > Math.abs(s.speed) + 0.05;
-  if (s.gear < TOP_GEAR && rpm > UP_RPM && wantsMore && s.speed > 0) {
+  const carries = (s.against ?? 0) < GEAR_PUSH[s.gear + 1] * UPSHIFT_LOAD;
+  if (s.gear < TOP_GEAR && rpm > UP_RPM && wantsMore && s.speed > 0 && carries) {
     beginShift(s, (s.gear + 1) as Gear);
   } else if (s.gear > PULL_AWAY && rpm < DOWN_RPM) {
     beginShift(s, (s.gear - 1) as Gear);

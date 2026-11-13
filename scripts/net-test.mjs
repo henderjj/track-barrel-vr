@@ -1065,7 +1065,8 @@ async function runChecks(host, guest, label) {
  * course and sends it as a reliable `course` event. The host drives across
  * the start line and the guest hears Lap 1 start; the guest's Line 2
  * shortcut parks the tank in firing box 2 through the host, and both pages
- * show it halted there.
+ * show it halted there. The driving challenge's going (F5.3d): a thrown
+ * track and the sink reach the guest in the tank's packet.
  */
 async function courseChecks(host, guest, label) {
   const course = (p) => p.page.evaluate(() => window.__course.state());
@@ -1096,6 +1097,19 @@ async function courseChecks(host, guest, label) {
   check(`The guest's Line 2 parks the tank in firing box 2 with the engine running, halted there on both pages (${label})`,
     inBox !== null && tank.running && !inBox.g.started,
     inBox ? `tank at ${tank.x.toFixed(1)}, ${tank.z.toFixed(1)}, engine ${tank.running ? 'running' : 'off'}; guest "${inBox.g.line}"` : JSON.stringify(await Promise.all([course(host), course(guest)])));
+
+  // The going (F5.3d): a thrown track reaches the guest in the tank's packet, with the crew's sign (out of the mud the sink goes at once).
+  await host.page.evaluate(() => window.__drive.going({ thrown: 1, refit: 40 }));
+  const going = await waitFor('the guest to see the thrown track', async () => {
+    const t = await guest.page.evaluate(() => ({ ...window.__drive.state(), sign: window.__drive.sign }));
+    return t.thrown === 1 && t.refit > 30 && /Left track thrown/.test(t.sign) ? t : null;
+  }, 8000).catch(() => null);
+  check(`A track thrown on the host's tank reaches the guest with its refit, and the guest's sign says so (${label})`,
+    going !== null, going ? `guest: thrown ${going.thrown}, refit ${going.refit} s, sign "${going.sign}"` : JSON.stringify(await guest.page.evaluate(() => {
+      const t = window.__drive.state();
+      return { thrown: t.thrown, refit: t.refit, sign: window.__drive.sign };
+    })));
+  await host.page.evaluate(() => window.__drive.going({ thrown: 0, refit: 0 }));
 
   // Back to the range start as the later checks expect, the ranges fixed again.
   await host.page.evaluate(() => window.__rangeRun.pickRanges(false));

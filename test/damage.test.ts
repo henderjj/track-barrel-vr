@@ -193,8 +193,8 @@ describe('the tank damage model (F3.4)', () => {
     expect(dead.running).toBe(false);
     run(dead, c({ starter: true }), 5);
     expect(dead.running).toBe(false);
-    // The crewmate's page hears why (the cause appended last, the packet's index unchanged for the others).
-    expect(STALL_CAUSES[STALL_CAUSES.length - 1]).toBe('hit');
+    // The crewmate's page hears why (the cause appended after F3.7's, the packet's index unchanged for the others).
+    expect(STALL_CAUSES.indexOf('hit')).toBe(STALL_CAUSES.indexOf('heat') + 1);
     const buffer = new ArrayBuffer(TANK_STATE_BYTES);
     encodeTankState(buffer, 1, 2, dead, createControls());
     const out = createTankDrive();
