@@ -33,11 +33,16 @@ const HEADER = 7;
  * and the controls' accelerator, clutch and gearbox mode. F1.17: the
  * controls' engine switches and start setting, then the engine (uint8
  * flags: ENGINE_FLAGS), its stalls and coughs (uint8 each, wrapping) and
- * why it last stalled (uint8, STALL_CAUSES' index).
+ * why it last stalled (uint8, STALL_CAUSES' index). F5.3d (the going): the
+ * tracks' sink into mud (uint8, 0-255 for 0 to 1), the sideways push on them
+ * (uint8, SIDE_SCALE per m/s²), the track thrown (uint8: 0, 1 left, 2 right)
+ * and the refit's seconds left (uint8, rounded up).
  */
-export const TANK_STATE_BYTES = HEADER + 12 + 20 + 2 + 1 + 1 + 2 + 4 + 2 + 9 + 4;
+export const TANK_STATE_BYTES = HEADER + 12 + 20 + 2 + 1 + 1 + 2 + 4 + 2 + 9 + 4 + 4;
+/** F1.17's TankState, without the going: still decoded, its tracks read as firm and on. */
+export const TANK_STATE_V4_BYTES = TANK_STATE_BYTES - 4;
 /** F1.16's TankState, without the engine: still decoded, its engine read as running. */
-export const TANK_STATE_V3_BYTES = TANK_STATE_BYTES - 6;
+export const TANK_STATE_V3_BYTES = TANK_STATE_V4_BYTES - 6;
 /** F1.5's TankState, with the controls' first four bytes only: still decoded. */
 export const TANK_STATE_V2_BYTES = TANK_STATE_V3_BYTES - 3;
 /** F1.4's TankState, without the gauges and controls: still decoded, for a page on the previous build. */
@@ -63,6 +68,8 @@ const MM = 1000;
 const FLAG_GRINDING = 1;
 const FLAG_TOUCHING = 2;
 const FLAG_BOGGING = 4;
+/** The sideways push's scale in TankState, per m/s² (up to 5.1 m/s²). */
+const SIDE_SCALE = 50;
 
 /** The engine's flags in TankState (F1.17). */
 const ENGINE_FLAGS = { running: 1, cranking: 2, power: 4, rough: 8, starterHot: 16 } as const;
@@ -137,6 +144,11 @@ export function encodeTankState(buffer: ArrayBuffer, seq: number, timeMs: number
   view.setUint8(o + 1, s.stalls & 0xff);
   view.setUint8(o + 2, s.coughs & 0xff);
   view.setUint8(o + 3, Math.max(0, STALL_CAUSES.indexOf(s.stallCause)));
+  o += 4;
+  view.setUint8(o, unit(s.sink));
+  view.setUint8(o + 1, Math.max(0, Math.min(255, Math.round(s.side * SIDE_SCALE))));
+  view.setUint8(o + 2, s.thrown);
+  view.setUint8(o + 3, Math.max(0, Math.min(255, Math.ceil(s.refit))));
   return o + 4;
 }
 
@@ -184,11 +196,11 @@ export function decodeTankState(view: DataView, header: TankHeader, out: TankDri
   if (view.byteLength >= TANK_STATE_V2_BYTES) {
     out.coolant = view.getUint8(o);
     out.fuel = view.getUint8(o + 1) / 255;
-    const form: ControlsForm = view.byteLength >= TANK_STATE_BYTES ? 3 : view.byteLength >= TANK_STATE_V3_BYTES ? 2 : 1;
+    const form: ControlsForm = view.byteLength >= TANK_STATE_V4_BYTES ? 3 : view.byteLength >= TANK_STATE_V3_BYTES ? 2 : 1;
     if (controls) readControls(view, o + 2, controls, form);
   }
   o += 11;
-  if (view.byteLength >= TANK_STATE_BYTES) {
+  if (view.byteLength >= TANK_STATE_V4_BYTES) {
     const flags = view.getUint8(o);
     out.running = (flags & ENGINE_FLAGS.running) !== 0;
     out.cranking = (flags & ENGINE_FLAGS.cranking) !== 0;
@@ -204,6 +216,19 @@ export function decodeTankState(view: DataView, header: TankHeader, out: TankDri
     out.power = true;
     out.rough = false;
     out.starterRest = 0;
+  }
+  o += 4;
+  if (view.byteLength >= TANK_STATE_BYTES) {
+    out.sink = view.getUint8(o) / 255;
+    out.side = view.getUint8(o + 1) / SIDE_SCALE;
+    const thrown = view.getUint8(o + 2);
+    out.thrown = thrown === 1 || thrown === 2 ? thrown : 0;
+    out.refit = view.getUint8(o + 3);
+  } else {
+    out.sink = 0;
+    out.side = 0;
+    out.thrown = 0;
+    out.refit = 0;
   }
   return true;
 }

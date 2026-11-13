@@ -26,6 +26,7 @@ import {
   lineFor,
   lineNote,
   loopNote,
+  penaltySeconds,
   RACE,
   raceClockLines,
   raceLine,
@@ -49,13 +50,14 @@ export const RUN_PHASES: readonly RunPhase[] = ['idle', 'running', 'done'];
 export type RunMode = 'range' | 'biathlon';
 export const RUN_MODES: readonly RunMode[] = ['range', 'biathlon'];
 
-/** What the host feeds a race of the course's progress (F5.3a's CourseSnapshot has these). */
+/** What the host feeds a race of the course's progress (F5.3a's CourseSnapshot has these; `faults` since F5.3d). */
 export interface CourseFeed {
   laps: number;
   missed: number;
   penalties: number;
   box: number;
   halted: boolean;
+  faults: number;
 }
 
 /** What the host sends and the guest copies. Times are on the run's clock, s; -1 for a target not hit yet, or no time. */
@@ -91,6 +93,8 @@ export interface RunSnapshot {
   loops: number;
   /** Penalty loops not driven before the finish line: each adds RACE.penaltySeconds to the time. */
   skipped: number;
+  /** Slalom faults in the race (F5.3d: a post knocked down, a gate missed): each adds FAULT_SECONDS to the time. */
+  faults: number;
   /** The lines shot (bit k: line k), so no more rounds there. */
   closed: number;
   /** The last thing worth a sign (a line shot, a loop driven, the finish), and a count that changes with each. */
@@ -103,7 +107,7 @@ export interface RunSnapshot {
 export function createRunSnapshot(): RunSnapshot {
   return {
     id: 0, phase: 'idle', clock: 0, paused: false, shots: 0, hitAt: RANGE_TARGETS.map(() => -1), time: -1, best: -1, assisted: false,
-    mode: 'range', laps: 0, rounds: 0, boardAt: COURSE_TARGETS.map(() => -1), owed: 0, loops: 0, skipped: 0, closed: 0, note: '', noteId: 0,
+    mode: 'range', laps: 0, rounds: 0, boardAt: COURSE_TARGETS.map(() => -1), owed: 0, loops: 0, skipped: 0, faults: 0, closed: 0, note: '', noteId: 0,
     ranges: [...LINE_RANGES],
   };
 }
@@ -123,7 +127,7 @@ export class RangeRun {
   /** Each mode's best unassisted time this session, s; -1 for none. */
   private bests: Record<RunMode, number> = { range: -1, biathlon: -1 };
   /** The course's counters as last fed (a race counts what changed since), and the tank in a firing box, halted, now. */
-  private seen = { laps: 0, missed: 0, penalties: 0, fed: false };
+  private seen = { laps: 0, missed: 0, penalties: 0, faults: 0, fed: false };
   private box = -1;
   private halted = false;
 
@@ -150,6 +154,7 @@ export class RangeRun {
     s.owed = 0;
     s.loops = 0;
     s.skipped = 0;
+    s.faults = 0;
     s.closed = 0;
     this.seen.fed = false;
     this.pendingTarget.fill(-1);
@@ -238,12 +243,18 @@ export class RangeRun {
     const seen = this.seen;
     const s = this.s;
     const counting = s.mode === 'biathlon' && s.phase === 'running' && seen.fed;
-    if (!counting || c.laps < seen.laps || c.missed < seen.missed || c.penalties < seen.penalties) {
+    if (!counting || c.laps < seen.laps || c.missed < seen.missed || c.penalties < seen.penalties || c.faults < seen.faults) {
       seen.laps = c.laps;
       seen.missed = c.missed;
       seen.penalties = c.penalties;
+      seen.faults = c.faults;
       seen.fed = true;
       return;
+    }
+    if (c.faults > seen.faults) {
+      s.faults += c.faults - seen.faults;
+      seen.faults = c.faults;
+      this.version++;
     }
     for (; seen.penalties < c.penalties; seen.penalties++) {
       if (s.owed <= 0) continue;
@@ -271,7 +282,7 @@ export class RangeRun {
     s.laps++;
     if (s.laps >= RACE.laps) {
       s.phase = 'done';
-      s.time = s.clock + s.skipped * RACE.penaltySeconds;
+      s.time = s.clock + penaltySeconds(s);
       s.clock = s.time;
       if (!s.assisted && (this.bests.biathlon < 0 || s.time < this.bests.biathlon)) this.bests.biathlon = s.time;
       s.best = this.bests.biathlon;
@@ -370,6 +381,7 @@ export function copyRunSnapshot(from: RunSnapshot, to: RunSnapshot): RunSnapshot
   to.owed = from.owed;
   to.loops = from.loops;
   to.skipped = from.skipped;
+  to.faults = from.faults;
   to.closed = from.closed;
   to.note = from.note;
   to.noteId = from.noteId;
@@ -409,6 +421,7 @@ export function runEvent(s: RunSnapshot, atMs: number): { t: 'run' } & Record<st
     owed: s.owed,
     loops: s.loops,
     skipped: s.skipped,
+    faults: s.faults,
     closed: s.closed,
     note: s.note,
     noteId: s.noteId,
@@ -449,6 +462,8 @@ export function readRunEvent(e: Record<string, unknown>, out: RunSnapshot): { at
   out.owed = count(e.owed);
   out.loops = count(e.loops);
   out.skipped = count(e.skipped);
+  // The slalom's faults (F5.3d); a page from before them sends none.
+  out.faults = count(e.faults);
   out.closed = count(e.closed);
   out.note = typeof e.note === 'string' ? e.note.slice(0, 80) : '';
   out.noteId = count(e.noteId);

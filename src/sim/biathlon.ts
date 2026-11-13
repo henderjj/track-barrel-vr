@@ -11,7 +11,7 @@
  * it. Engine-free.
  */
 
-import { COURSE_TARGETS, LINE_ACROSS } from './course.js';
+import { COURSE_TARGETS, FAULT_SECONDS, LINE_ACROSS } from './course.js';
 import { RANGE_TARGETS } from './range.js';
 import type { RunSnapshot } from './range-run.js';
 
@@ -40,8 +40,11 @@ export type Medal = 'gold' | 'silver' | 'bronze' | '';
  * penalty loops, each loop about 47 s), to be tuned from John's first
  * runs: gold needs a crew quicker than the crewmate and clean, the
  * crewmate's clean run is silver, and bronze allows about three loops.
+ * Retuned for the driving challenge (F5.3d), whose slalom, hill, bridge
+ * and ford the crewmate takes carefully: 13:00 clean, 15:20 with three
+ * loops.
  */
-export const MEDAL_TIMES = { gold: 8 * 60 + 45, silver: 10 * 60, bronze: 11 * 60 + 30 } as const;
+export const MEDAL_TIMES = { gold: 12 * 60 + 30, silver: 13 * 60 + 30, bronze: 15 * 60 + 45 } as const;
 
 /** The medal a race time earns, or '' for none. */
 export function medalFor(time: number): Medal {
@@ -87,9 +90,9 @@ export function lineClosed(s: Readonly<RunSnapshot>, k: number): boolean {
   return (s.closed & (1 << k)) !== 0;
 }
 
-/** The time penalties so far, s: each penalty loop not driven. */
+/** The time penalties so far, s: each penalty loop not driven, and each slalom fault (F5.3d). */
 export function penaltySeconds(s: Readonly<RunSnapshot>): number {
-  return s.skipped * RACE.penaltySeconds;
+  return s.skipped * RACE.penaltySeconds + s.faults * FAULT_SECONDS;
 }
 
 /** A medal's word with a capital, for the signs. */
@@ -126,12 +129,13 @@ export function raceLine(s: Readonly<RunSnapshot>, fmt: (t: number) => string): 
     case 'running': {
       if (s.clock < 0) return `Get ready: ${Math.ceil(-s.clock - 1e-9)}`;
       const paused = s.paused ? ' (paused)' : '';
-      const extra = s.skipped > 0 ? ` ${plusTime(penaltySeconds(s))} in penalties.` : '';
+      const extra = penaltySeconds(s) > 0 ? ` ${plusTime(penaltySeconds(s))} in penalties.` : '';
       return `Race ${fmt(s.clock)}${paused}: lap ${Math.min(s.laps + 1, RACE.laps)} of ${RACE.laps}, ${raceNow(s)}. Boards down ${boardsDown(s)} of ${BOARD_COUNT}.${extra}${best}`;
     }
     case 'done': {
       const medal = medalFor(s.time);
-      return `Finished in ${fmt(s.time)}${medal ? ` (${medal})` : ''}${s.assisted ? ', assisted' : ''}: ${boardsDown(s)} of ${BOARD_COUNT} boards, ${plural(s.loops, 'penalty loop')}.${best}`;
+      const faults = s.faults > 0 ? `, ${plural(s.faults, 'slalom fault')}` : '';
+      return `Finished in ${fmt(s.time)}${medal ? ` (${medal})` : ''}${s.assisted ? ', assisted' : ''}: ${boardsDown(s)} of ${BOARD_COUNT} boards, ${plural(s.loops, 'penalty loop')}${faults}.${best}`;
     }
   }
 }
@@ -151,7 +155,8 @@ export function raceClockLines(s: Readonly<RunSnapshot>, fmt: (t: number) => str
     }
     case 'done': {
       const medal = medalWord(medalFor(s.time));
-      return [s.assisted ? 'Finished (assisted)' : medal ? `${medal}!` : 'Finished', fmt(s.time), `Down ${boardsDown(s)}/${BOARD_COUNT}   Loops ${s.loops}`];
+      const faults = s.faults > 0 ? `   Faults ${s.faults}` : '';
+      return [s.assisted ? 'Finished (assisted)' : medal ? `${medal}!` : 'Finished', fmt(s.time), `Down ${boardsDown(s)}/${BOARD_COUNT}   Loops ${s.loops}${faults}`];
     }
   }
 }

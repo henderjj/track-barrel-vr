@@ -9,7 +9,7 @@ import {
   MeshStandardMaterial,
   OctahedronGeometry,
 } from '@iwsdk/core';
-import { onCourse } from '../sim/course.js';
+import { goingAt, inDitch, onCourse } from '../sim/course.js';
 import { onRoad } from '../sim/range.js';
 import { CELL, cornerHeight, groundHeight, type Obstacle, OBSTACLES, TILE, wrapTile } from '../sim/terrain.js';
 import { jitter, mergeParts, type Part, rng, shade } from './lowpoly.js';
@@ -186,8 +186,8 @@ export function createTerrain(): Group {
         const geometry = jitter(new OctahedronGeometry(size, 0), size * 0.4, random);
         const color = stone ? shade(STONE, 0.8 + random() * 0.3) : shade(LEAVES, 0.85 + random() * 0.3);
         if (Math.abs(x) > near || Math.abs(z) > near) continue;
-        // A road or the course's track is swept: nothing scattered on its surface.
-        if (onRoad(x, z) || onCourse(x, z)) continue;
+        // A road or the course's track is swept: nothing scattered on its surface, nor in the ford's water or the ditch.
+        if (onRoad(x, z) || onCourse(x, z) || goingAt(x, z) === 2 || inDitch(x, z)) continue;
         chunkAt(x, z).push({
           geometry,
           color,
