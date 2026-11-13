@@ -17,8 +17,15 @@ export const MAX_ACCEL = 1.0;
 /** Fastest the hull turns, and the most its turn rate changes per second. */
 export const MAX_YAW_RATE = 15 * DEG;
 export const MAX_YAW_ACCEL = 20 * DEG;
-/** Most the hull pitches or rolls following the ground, and how quickly it eases there and to the ground's height, s. */
-export const MAX_TILT = 4 * DEG;
+/**
+ * Most the hull pitches or rolls following the ground, and how quickly it
+ * eases there and to the ground's height, s. Spike S2 capped the tilt at 4°;
+ * the biathlon's hill (F5.3d) is steeper, and John chose to let the hull
+ * follow it (13 November 2026: the view out of a tank is narrow, so a
+ * steeper lean is comfortable), so the cap is now above anything the
+ * ground has. Reduced bumps still take 40% of it.
+ */
+export const MAX_TILT = 15 * DEG;
 export const TILT_SECONDS = 0.5;
 export const HEIGHT_SECONDS = 0.1;
 /** Fastest the turret traverses (it turns the gunner's view with it), and the most its rate changes per second (spike S2's, F1.8). */
@@ -72,7 +79,7 @@ export interface GroundFeel {
 /** Every bump the ground gives, within the caps above. */
 export const FULL_BUMPS: GroundFeel = { tilt: 1, tiltSeconds: TILT_SECONDS, heightSeconds: HEIGHT_SECONDS };
 /**
- * Reduced bumps (F1.14): the hull takes 40% of the ground's tilt (1.6° at
+ * Reduced bumps (F1.14): the hull takes 40% of the ground's tilt (6° at
  * most) and eases into it over 1.2 s, and rises and falls over 0.3 s, so a
  * mound is a slow sway instead of a pitch. Both players ride the same tank,
  * so either asking for it gives it to both.

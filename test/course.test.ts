@@ -19,6 +19,12 @@ import {
 import {
   ALL_GATES,
   BOX_Z,
+  BRIDGE,
+  BRIDGE_GATE,
+  BRIDGE_SPAN,
+  BYPASS,
+  SLALOM_GATES,
+  southSideAt,
   boxAt,
   boxSpot,
   COURSE,
@@ -59,7 +65,7 @@ import { RANGE_TARGETS, sightLimit, targetFoot } from '../src/sim/range.js';
 import { SIGHT_STAND, TRUE_HALF_FIELD } from '../src/sim/sight.js';
 import { MAX_YAW_RATE } from '../src/sim/comfort.js';
 import { createTankDrive, FOOTPRINT } from '../src/sim/tank-drive.js';
-import { COURSE_FIELD, groundHeight, LANE_HALF, obstacleDistance, OBSTACLES, outsideCourseField, outsideFiringLanes, roughness, TILE, wrapTile } from '../src/sim/terrain.js';
+import { CELL, COURSE_FIELD, courseRelief, groundHeight, HILL, LANE_HALF, obstacleDistance, OBSTACLES, outsideCourseField, outsideFiringLanes, roughness, TILE, wrapTile } from '../src/sim/terrain.js';
 import { barrelDirection, muzzlePoint } from '../src/sim/turret.js';
 
 const DEG = Math.PI / 180;
@@ -98,12 +104,17 @@ describe('biathlon course (F5.3a)', () => {
     expect(FINISH_Z).toBeLessThan(JOIN.leave);
     // A tank can take its curves at the crewmate's speeds inside the comfort cap on turning.
     expect((20 / 3.6) / COURSE.radius).toBeLessThan(MAX_YAW_RATE);
+    expect((16 / 3.6) / COURSE.tight).toBeLessThan(MAX_YAW_RATE);
     expect((12 / 3.6) / PENALTY.radius).toBeLessThan(MAX_YAW_RATE);
   });
 
   it('lies on flat, clear ground of its own east of the range, off the roads and out of the range\'s line of fire', () => {
     for (const p of [...along(0, COURSE_PATH.length), ...samplePath(PENALTY_PATH, 0, PENALTY_OWN, 2)]) {
-      expect(groundHeight(p.x, p.z)).toBe(0);
+      // Flat but for the driving challenge's hill, ditch and stream (F5.3d), where they are shaped into the ground's corners.
+      const cx = Math.floor(p.x / CELL) * CELL;
+      const cz = Math.floor(p.z / CELL) * CELL;
+      const shaped = [[0, 0], [CELL, 0], [0, CELL], [CELL, CELL]].some(([dx, dz]) => courseRelief(cx + dx, cz + dz) !== 0);
+      if (!shaped) expect(groundHeight(p.x, p.z)).toBe(0);
       expect(outsideCourseField(p.x, p.z)).toBe(0);
       // Off the range's lane and its cross road, and clear of every obstacle.
       expect(p.x).toBeGreaterThan(LANE_HALF + 30);
@@ -121,14 +132,30 @@ describe('biathlon course (F5.3a)', () => {
     expect(roughness(COURSE_FIELD.east + COURSE_FIELD.blend + 5, -200)).toBeGreaterThan(0.9);
   });
 
-  it('has a gate every 80 m round to the south side, the finish line first, and one on the penalty loop', () => {
-    expect(GATES.length).toBe(9);
+  it('has a gate about every 80 m round to the south side, the finish line first, one on the hill and one past the bridge, and one on the penalty loop', () => {
+    expect(GATES.length).toBe(7);
     expect(GATES[0].s).toBe(0);
     expect(GATES[0].z).toBe(FINISH_Z);
-    for (let i = 1; i < GATES.length; i++) expect(GATES[i].s - GATES[i - 1].s).toBe(80);
+    for (let i = 1; i < GATES.length; i++) {
+      expect(GATES[i].s - GATES[i - 1].s).toBeGreaterThan(60);
+      expect(GATES[i].s - GATES[i - 1].s).toBeLessThan(170);
+    }
     // None among the firing boxes, so a halt there never stands in a gate.
     for (const g of GATES.slice(1)) expect(g.s).toBeLessThan(eastSideAt(COURSE.south - COURSE.radius));
-    expect(ALL_GATES).toBe(0b111111110);
+    // None in the slalom, on the bridge or where the bypass leaves the course, so a lap can take the mud or the bypass.
+    for (const g of GATES) {
+      expect(g.s < SLALOM_GATES[0].s - 10 || g.s > SLALOM_GATES[SLALOM_GATES.length - 1].s + 10).toBe(true);
+      expect(g.s < BRIDGE_SPAN[0] || g.s > BRIDGE_SPAN[1]).toBe(true);
+      expect(g.s < southSideAt(BYPASS.from) || g.s > southSideAt(BYPASS.to)).toBe(true);
+    }
+    // One on the hill's crest, and one just past the bridge, as narrow as the bridge.
+    expect(GATES.some((g) => Math.abs(g.x - HILL.crest) < 1e-6 && Math.abs(g.z - COURSE.north) < 1e-6)).toBe(true);
+    const bridge = GATES[BRIDGE_GATE];
+    expect(bridge.s - BRIDGE_SPAN[1]).toBeGreaterThan(0);
+    expect(bridge.s - BRIDGE_SPAN[1]).toBeLessThan(5);
+    expect(bridge.half).toBeGreaterThan(BRIDGE.gauge + BRIDGE.tread / 2);
+    expect(bridge.half).toBeLessThan(3);
+    expect(ALL_GATES).toBe(0b1111110);
     expect(PENALTY_GATE.x).toBeCloseTo(COURSE.east + 2 * PENALTY.radius, 6);
     expect(Math.abs(Math.cos(PENALTY_GATE.heading) + 1)).toBeLessThan(1e-9);
   });
@@ -353,8 +380,8 @@ describe('biathlon course (F5.3a)', () => {
     expect(progress.s.started).toBe(true);
     expect(progress.s.note).toBe('Lap 1: go!');
     driveAlong(progress, along(5, 390));
-    expect(progress.s.passed).toBe(0b11110);
-    expect(courseLine(progress.s)).toMatch(/^Lap 1 \d:\d\d\.\d: gates 4 of 8\. Laps done 0\./);
+    expect(progress.s.passed).toBe(0b1110);
+    expect(courseLine(progress.s)).toMatch(/^Lap 1 \d:\d\d\.\d: gates 3 of 6\. Laps done 0\./);
     driveAlong(progress, along(390, COURSE_PATH.length + 5));
     expect(progress.s.laps).toBe(1);
     expect(progress.s.missed).toBe(0);

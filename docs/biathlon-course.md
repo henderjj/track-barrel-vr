@@ -2,6 +2,8 @@
 
 A tank biathlon course on the range tile, east of the range's targets: an 808 m loop of gravel track marked with flagged gates, two firing boxes on its home straight, each with three boards of its own down a firing lane behind it, and a 153 m penalty loop beside them. The host follows the tank round it and counts laps; a lap that misses a gate doesn't count. This is the course only: the timed race (3 laps, shooting at each line, a penalty loop per board left standing, medal times) is F5.3b ([phase-2-plan.md](phase-2-plan.md)), which builds on it.
 
+Since the driving challenge (F5.3d, [biathlon-driving.md](biathlon-driving.md)) the loop is 817 m with tighter 20 m corners on its west side, 7 gates (one on the hill's crest, one just past the bridge), and the field is no longer flat: a hill, a ditch under a treadway bridge, mud with a bypass, a ford and a slalom.
+
 The numbers and the lap rules live in [`src/sim/course.ts`](../src/sim/course.ts); the track, gates, boxes and boards are drawn into the ground's model by [`src/scene-assets/course.scene-asset.ts`](../src/scene-assets/course.scene-asset.ts); [`src/systems/course-system.ts`](../src/systems/course-system.ts) keeps and shares the crew's progress and shows its notes.
 
 ## What players experience

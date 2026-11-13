@@ -416,6 +416,28 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     expectNone([mesh(mergeParts(parts), 'Course')], WORLD_GAP);
   });
 
+  it('on the biathlon\'s driving challenge (F5.3d): the bridge, the water, a slalom post standing and knocked over, and all of them on the course', async () => {
+    const course = await import('../src/scene-assets/course.scene-asset.js');
+    const { SLALOM_POSTS } = await import('../src/sim/course.js');
+    const { groundHeight } = await import('../src/sim/terrain.js');
+    expectNone([mesh(mergeParts(course.bridgeParts()), 'Bridge')], WORLD_GAP);
+    expectNone([mesh(mergeParts(course.waterParts().map((p) => p.part)), 'Water')], WORLD_GAP);
+    expectNone([mesh(mergeParts(course.slalomPostParts()), 'Slalom post')], WORLD_GAP);
+    // Every post where it stands on the gravel, and one knocked flat on it, as the course system draws them.
+    const posts = SLALOM_POSTS.map(([x, z], k) => {
+      const post = course.createSlalomPost();
+      post.position.set(x, groundHeight(x, z), z);
+      if (k === 0) {
+        post.rotation.z = Math.PI / 2;
+        post.position.y += course.SLALOM_FOOT;
+      }
+      post.updateMatrixWorld(true);
+      return post;
+    });
+    const tracks = mesh(mergeParts([...course.trackParts().map((p) => p.part), ...course.courseFixtureParts().flatMap((p) => p.parts)]), 'Course');
+    expectNone([tracks, ...posts], WORLD_GAP);
+  });
+
   it('on the range run\'s hit flags (F1.11), on their own and raised beside each target on the ground', async () => {
     const run = await import('../src/scene-assets/range-run.scene-asset.js');
     const { hitFlagFoot, hitFlagYaw } = await import('../src/sim/range-run.js');

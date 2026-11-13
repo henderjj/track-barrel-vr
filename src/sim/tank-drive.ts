@@ -17,6 +17,7 @@
 import {
   FULL_BUMPS,
   type GroundFeel,
+  MAX_ACCEL,
   MAX_SPEED,
   MAX_TILT,
   MAX_YAW_ACCEL,
@@ -26,9 +27,12 @@ import { GROUND_Y } from './cabin.js';
 import {
   type Gear,
   type GearboxControls,
+  demandOf,
   engagement,
   engineSpeed,
   gearCap,
+  GEARS,
+  IDLE_PULL,
   IDLE_RPM,
   MAX_RPM,
   NEUTRAL,
@@ -45,8 +49,34 @@ import {
   enginePullShare,
   type EngineState,
   stepEngine,
+  stopEngine,
 } from './engine.js';
-import { groundHeight, type Obstacle, obstacleDistance, OBSTACLES, wrapTile } from './terrain.js';
+import { BRIDGE_START, driveHeight, fellOffBridge, goingUnder, waterDepth } from './course.js';
+import {
+  BRAKE_HOLD,
+  DROWN_SECONDS,
+  ENGINE_BRAKE,
+  FORD_DEPTH,
+  FORD_SECONDS,
+  FORD_SPEED,
+  GEAR_PUSH,
+  gearDirection,
+  groundPull,
+  type GoingInput,
+  LOAD_HEAT_SHARE,
+  loadStrain,
+  MUD_DRAG,
+  REFIT_SECONDS,
+  RUN_ON,
+  sidePush,
+  SINK_DRAG,
+  spareShare,
+  stepSink,
+  stepStrain,
+  type ThrownSide,
+  WATER_DRAG,
+} from './going.js';
+import { type Obstacle, obstacleDistance, OBSTACLES, wrapTile } from './terrain.js';
 import { OUTLINE_EXTENT } from './exterior.js';
 
 /** Height of the hull floor above the ground under the tracks, m. */
@@ -197,6 +227,25 @@ export interface TankDrive extends EngineState {
   fuel: number;
   /** A broken track or the transmission hit (F3.4): the tracks don't turn, as if the parking brake held them. */
   immobile: boolean;
+  // The going (F5.3d, src/sim/going.ts).
+  /** How far the tracks have dug into mud, 0 to 1 (1: bogged, it only backs out). */
+  sink: number;
+  /** How close a hard turn has come to throwing a track, 0 to 1 (1 throws it), and the sideways push on the tracks now, m/s². */
+  strain: number;
+  side: number;
+  /** A track thrown (1 left, 2 right; 0 none), held like the parking brake while the crew refit it for `refit` more s. */
+  thrown: ThrownSide;
+  refit: number;
+  /** How long the hull has pushed through the ford too fast, s: FORD_SECONDS drowns the engine. */
+  wet: number;
+  /** How many times it fell off the bridge (it goes back to BRIDGE_START each time). */
+  falls: number;
+  /** The ground's load against the way the gear drives, m/s², and how hard that makes the engine labour, 0 to 1 (its heat). */
+  against: number;
+  load: number;
+  /** How much of the tracks is on mud, and in water, now, 0 to 1. */
+  mud: number;
+  water: number;
 }
 
 /** A tank at rest at (x, z), facing `heading`, on the ground, in neutral, its engine running but cold. */
@@ -210,6 +259,7 @@ export function createTankDrive(x = 0, z = 0, heading = 0): TankDrive {
     running: true, cranking: false, power: true, rough: false, crankTime: 0, starterRest: 0, runTime: 0, coldStart: false,
     chokeTime: 0, bogTime: 0, coldTime: 0, coughTimer: 0, heatTime: 0, stalls: 0, coughs: 0, stallCause: 'none', switchedOn: true,
     lastStart: 'starter', damage: 0, immobile: false,
+    sink: 0, strain: 0, side: 0, thrown: 0, refit: 0, wet: 0, falls: 0, against: 0, load: 0, mud: 0, water: 0,
   };
   settle(s);
   return s;
@@ -273,13 +323,25 @@ export function stepDrive(
   feel: GroundFeel = FULL_BUMPS,
 ): TankDrive {
   if (dt <= 0) return s;
-  if (s.immobile && !c.parkingBrake) {
-    // Immobilised (F3.4): the tracks held as the parking brake holds them.
+  if (s.thrown !== 0) {
+    // A thrown track (F5.3d): the crew refit it, then it drives again.
+    s.refit = Math.max(0, s.refit - dt);
+    if (s.refit === 0) {
+      s.thrown = 0;
+      s.strain = 0;
+    }
+  }
+  if ((s.immobile || s.thrown !== 0) && !c.parkingBrake) {
+    // Immobilised (F3.4), or a track off: the tracks held as the parking brake holds them.
     Object.assign(heldControls, c);
     heldControls.parkingBrake = true;
     c = heldControls;
   }
-  const slope = groundUnder(s.x, s.z, s.heading, slopeSample).pitch;
+  const g0 = groundUnder(s.x, s.z, s.heading, slopeSample);
+  const slope = g0.pitch;
+  goingUnder(s.x, s.z, s.heading, going);
+  s.mud = going[0];
+  s.water = going[1];
   stepEngine(s, c, dt);
   stepGearbox(s, c, dt);
   const enginePull = stepRpm(s, c, dt) * enginePullShare(s, c);
@@ -313,11 +375,45 @@ export function stepDrive(
   // Slowing is the engine holding it back, the tillers braking, or the tracks' drag.
   const speeding = Math.abs(speedTarget) > Math.abs(s.speed) && speedTarget * s.speed >= 0;
   const before = s.speed;
-  const rise = speeding ? pullRate(s, c, enginePull) : 0;
-  const coasting = engagement(s, c) === 0;
+  const engaged = engagement(s, c);
+  const coasting = engaged === 0;
+  // The going (F5.3d): the slope and the mud or water the engine works against, or that run the tank on.
+  const drive = coasting ? 0 : gearDirection(s.gear);
+  const demand = demandOf(c);
+  const stuck = s.sink >= 1;
+  const drag = MUD_DRAG * s.mud + WATER_DRAG * s.water + (s.speed >= 0 ? SINK_DRAG * s.sink : 0);
+  const gravity = coasting ? 0 : -GRAVITY * Math.sin(slope);
+  const driving = drive !== 0 && speedTarget * drive > 0 && Math.abs(speedTarget) >= Math.abs(s.speed) - 0.05;
+  // With the automatic box the engine opens up as far as it takes to hold the tillers' speed; with a Sherman's controls, the driver's throttle.
+  const throttle = realControls(c.mode) ? IDLE_PULL + (1 - IDLE_PULL) * demand : 1;
+  const push = stuck && drive > 0 ? 0 : (GEAR_PUSH[s.gear] ?? 0) * throttle * engaged * enginePull;
+  const against = drive === 0 ? 0 : Math.max(0, -gravity * drive + drag);
+  s.against = against;
+  s.load = driving && demand > 0.2 ? loadStrain(against, s.gear) : 0;
+  const rise = speeding ? pullRate(s, c, enginePull) * (driving ? spareShare(against, push) : 1) : 0;
   let speed = rise > 0
     ? approach(s.speed, speedTarget, rise * dt)
     : approach(s.speed + (coasting ? rollPull(slope, s.speed) * dt : 0), speeding || coasting ? 0 : speedTarget, slowRate(s, c) * dt);
+  pullIn.gravity = gravity;
+  pullIn.drag = drag;
+  pullIn.speed = s.speed;
+  pullIn.drive = drive;
+  pullIn.push = push;
+  pullIn.driving = driving;
+  pullIn.hold = (driving || coasting ? 0 : ENGINE_BRAKE * (GEAR_PUSH[s.gear] ?? 0) * engaged) + brakeShare(s, c) * BRAKE_HOLD;
+  const pull = groundPull(pullIn);
+  if (pull !== 0) {
+    // Within the comfort cap on the speed's change (or the flat drive's own, if more).
+    const lo = Math.min(speed, before - MAX_ACCEL * dt);
+    const hi = Math.max(speed, before + MAX_ACCEL * dt);
+    speed = clamp(speed + pull * dt, lo, hi);
+  }
+  if (!coasting) {
+    // Run on downhill: the engine over-revs, up to RUN_ON times its gear's top.
+    const top = (GEARS[s.gear]?.top ?? MAX_SPEED) * RUN_ON;
+    speed = clamp(speed, -top, top);
+  }
+  if (stuck && drive > 0 && speed > 0) speed = Math.min(speed, before);
   let yawRate = approach(s.yawRate, yawTarget, MAX_YAW_ACCEL * dt);
 
   // Obstacles: no part of the outline may close on one faster than it could stop in the gap at BUMP_DECEL.
@@ -350,8 +446,59 @@ export function stepDrive(
   s.pitch = pitch;
   s.roll = roll;
   s.y += (g.height + CLEARANCE - s.y) * (1 - Math.exp(-dt / feel.heightSeconds));
+  stepGoing(s, demand, drive > 0, dt);
   stepEngineGauges(s, dt);
   return s;
+}
+
+/**
+ * The going's after-effects, `dt` s on (F5.3d, src/sim/going.ts): the
+ * tracks sinking into mud or working free, the strain of a hard turn
+ * throwing the outside track, the ford drowning an engine pushed through
+ * too fast, and a fall off the bridge putting the tank back at its start.
+ */
+function stepGoing(s: TankDrive, demand: number, forwards: boolean, dt: number): void {
+  s.sink = stepSink(s.sink, s.mud, demand, s.speed, forwards, dt);
+  s.side = sidePush(s.speed, s.yawRate, s.roll, s.mud);
+  if (s.thrown === 0) {
+    s.strain = stepStrain(s.strain, s.side, dt);
+    if (s.strain >= 1) {
+      // The outside track comes off: the right one turning left.
+      s.thrown = s.yawRate > 0 ? 2 : 1;
+      s.refit = REFIT_SECONDS;
+      s.strain = 1;
+    }
+  }
+  if (waterDepth(s.x, s.z) > FORD_DEPTH && Math.abs(s.speed) > FORD_SPEED) s.wet += dt;
+  else s.wet = Math.max(0, s.wet - dt);
+  if (s.wet >= FORD_SECONDS) {
+    s.wet = 0;
+    if (s.running) {
+      stopEngine(s, 'water');
+      s.starterRest = DROWN_SECONDS;
+    }
+  }
+  if (fellOffBridge(s.x, s.z, s.heading)) {
+    s.falls++;
+    s.x += wrapTile(BRIDGE_START.x - s.x);
+    s.z += wrapTile(BRIDGE_START.z - s.z);
+    s.heading = BRIDGE_START.heading;
+    s.sink = 0;
+    s.strain = 0;
+    settle(s);
+  }
+}
+
+/**
+ * How hard the brakes hold, 0 to 1: the parking brake, or the tillers
+ * pulled back (with the automatic box, against the motion), as slowRate
+ * reads them. The automatic box also holds a tank standing with its
+ * tillers at rest, so it doesn't roll back on a hill.
+ */
+function brakeShare(s: TankDrive, c: DriverControls): number {
+  if (c.parkingBrake) return 1;
+  if (!realControls(c.mode) && Math.abs(c.left) < 0.05 && Math.abs(c.right) < 0.05 && Math.abs(s.speed) < 0.5) return 1;
+  return clamp(s.speed >= 0 || realControls(c.mode) ? -Math.min(c.left, c.right) : Math.max(c.left, c.right), 0, 1);
 }
 
 /**
@@ -375,9 +522,9 @@ export function engineStrain(rpm: number, gear: Gear): number {
   return clamp((rpm - UP_RPM) / (MAX_RPM - UP_RPM), 0, 1) * (GEAR_STRAIN[gear] ?? 0);
 }
 
-/** Where the coolant heads while the engine runs at `rpm` in `gear`, °C. */
-export function coolantTarget(rpm: number, gear: Gear): number {
-  return COOLANT_IDLE + (COOLANT_FULL - COOLANT_IDLE) * engineLoad(rpm) + STRAIN_HEAT * engineStrain(rpm, gear);
+/** Where the coolant heads while the engine runs at `rpm` in `gear`, labouring `load` (0 to 1) against the ground (F5.3d), °C. */
+export function coolantTarget(rpm: number, gear: Gear, load = 0): number {
+  return COOLANT_IDLE + (COOLANT_FULL - COOLANT_IDLE) * engineLoad(rpm) + STRAIN_HEAT * Math.max(engineStrain(rpm, gear), LOAD_HEAT_SHARE * load);
 }
 
 /** The coolant and the fuel, `dt` seconds on at the tank's RPM. */
@@ -388,7 +535,7 @@ export function stepEngineGauges(s: TankDrive, dt: number): void {
   }
   const load = engineLoad(s.rpm);
   // A damaged engine (F3.4) runs hotter: a holed radiator.
-  const hot = coolantTarget(s.rpm, s.gear) + (s.damage === 1 ? LEAK_HEAT : 0);
+  const hot = coolantTarget(s.rpm, s.gear, s.load) + (s.damage === 1 ? LEAK_HEAT : 0);
   const seconds = hot <= s.coolant ? COOLANT_SECONDS : s.coolant >= COOLANT_FULL ? OVERHEAT_SECONDS : WARM_SECONDS;
   s.coolant += (hot - s.coolant) * (1 - Math.exp(-dt / seconds));
   const burn = (FUEL_AT_IDLE + (1 - FUEL_AT_IDLE) * load) / (FUEL_HOURS * 3600);
@@ -412,6 +559,8 @@ interface GroundSample {
 }
 const sample: GroundSample = { height: 0, pitch: 0, roll: 0 };
 const slopeSample: GroundSample = { height: 0, pitch: 0, roll: 0 };
+const going: [number, number] = [0, 0];
+const pullIn: GoingInput = { gravity: 0, drag: 0, speed: 0, drive: 0, push: 0, driving: false, hold: 0 };
 /** The controls an immobilised tank steps with: the driver's, its tracks held. */
 const heldControls: DriverControls = createControls();
 
@@ -425,10 +574,11 @@ export function groundUnder(x: number, z: number, heading: number, out: GroundSa
   // Right is forward turned a quarter clockwise seen from above.
   const rx = -fz;
   const rz = fx;
-  const front = groundHeight(x + fx * PITCH_HALF, z + fz * PITCH_HALF);
-  const back = groundHeight(x - fx * PITCH_HALF, z - fz * PITCH_HALF);
-  const right = groundHeight(x + rx * ROLL_HALF, z + rz * ROLL_HALF);
-  const left = groundHeight(x - rx * ROLL_HALF, z - rz * ROLL_HALF);
+  // The bridge's deck where it stands over the ground (F5.3d).
+  const front = driveHeight(x + fx * PITCH_HALF, z + fz * PITCH_HALF);
+  const back = driveHeight(x - fx * PITCH_HALF, z - fz * PITCH_HALF);
+  const right = driveHeight(x + rx * ROLL_HALF, z + rz * ROLL_HALF);
+  const left = driveHeight(x - rx * ROLL_HALF, z - rz * ROLL_HALF);
   out.height = (front + back + left + right) / 4;
   out.pitch = Math.atan2(front - back, 2 * PITCH_HALF);
   out.roll = Math.atan2(right - left, 2 * ROLL_HALF);
@@ -573,6 +723,11 @@ export function lerpTankDrive(a: TankDrive, b: TankDrive, t: number, out: TankDr
   out.stalls = b.stalls;
   out.coughs = b.coughs;
   out.stallCause = b.stallCause;
+  out.sink = b.sink;
+  out.strain = b.strain;
+  out.side = b.side;
+  out.thrown = b.thrown;
+  out.refit = b.refit;
   return out;
 }
 

@@ -55,9 +55,10 @@ export interface EngineControls {
 /**
  * Why the engine last stalled: nothing yet, bogged by the clutch, idling too
  * slowly cold, the choke in too soon, flooded, the clutch let out against
- * the parking brake (F1.18), or overheated (F3.7).
+ * the parking brake (F1.18), overheated (F3.7), knocked out by a hit
+ * (F3.4), or drowned driving through the ford too fast (F5.3d).
  */
-export const STALL_CAUSES = ['none', 'bog', 'cold', 'choke', 'flood', 'brake', 'heat', 'hit'] as const;
+export const STALL_CAUSES = ['none', 'bog', 'cold', 'choke', 'flood', 'brake', 'heat', 'hit', 'water'] as const;
 export type StallCause = (typeof STALL_CAUSES)[number];
 
 /** The engine's part of the tank's state (all of it in TankDrive). */

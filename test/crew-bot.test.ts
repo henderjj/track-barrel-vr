@@ -414,12 +414,12 @@ describe('practice crewmate: the biathlon course (F5.3a)', () => {
     const halts: number[] = [];
     let wasHalted = false;
     let widest = 0;
-    for (let t = 0; t < 600 && progress.s.laps < 2; t += DT) {
+    for (let t = 0; t < 800 && progress.s.laps < 2; t += DT) {
       bot.update(DT, tank, wish);
       controls.left = wish.left;
       controls.right = wish.right;
       stepDrive(tank, controls, DT, OBSTACLES);
-      progress.step(DT, tank.x, tank.z, tank.speed);
+      progress.step(DT, tank.x, tank.z, tank.speed, tank.heading, tank.falls);
       if (progress.s.halted && !wasHalted) halts.push(progress.s.box);
       wasHalted = progress.s.halted;
       widest = Math.max(widest, distanceToTrack(tank.x, tank.z));
@@ -431,9 +431,13 @@ describe('practice crewmate: the biathlon course (F5.3a)', () => {
     expect(bot.arrivals).toBe(2);
     // On the track all the way round.
     expect(widest).toBeLessThan(COURSE.halfWidth);
-    // Two laps of about 800 m, two 15 s halts and a penalty loop: a few minutes.
+    // Through the driving challenge (F5.3d) without a fault or a fall.
+    expect(progress.s.faults).toBe(0);
+    expect(progress.s.falls).toBe(0);
+    expect(tank.thrown).toBe(0);
+    // Two laps of about 800 m, two 15 s halts and a penalty loop, carefully through the slalom, over the bridge and through the ford: a few minutes.
     expect(progress.s.bestLap).toBeGreaterThan(100);
-    expect(progress.s.bestLap).toBeLessThan(240);
+    expect(progress.s.bestLap).toBeLessThan(300);
     expect(bot.describe()).toMatch(/^driving the course/);
     // A call takes it off the course.
     bot.call('halt', tank.heading);

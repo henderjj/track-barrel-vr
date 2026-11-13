@@ -17,7 +17,8 @@
  * `course` event; allocates nothing per frame.
  */
 
-import { COURSE_FIELD, FIRING_LANES, laneDirection, wrapTile } from './terrain.js';
+import { BOGIES, OUTLINE_EXTENT, TRACK } from './exterior.js';
+import { COURSE_FIELD, DITCH, FIRING_LANES, groundHeight, HILL, laneDirection, STREAM, wrapTile } from './terrain.js';
 
 export type Vec2 = [number, number];
 
@@ -110,8 +111,9 @@ const QUARTER = Math.PI / 2;
  * The loop: a rounded rectangle on the course's field, driven anticlockwise
  * seen from above (north up the range, east to the right), so its infield is
  * always on the driver's left. Its middle line runs along x = west and east,
- * z = north and south, with corners of `radius` m; the track is
- * 2 × halfWidth wide. 808 m round.
+ * z = north and south, with corners of `radius` m on the east side and
+ * `tight` m on the west (the driving challenge, F5.3d: taken fast they
+ * throw a track); the track is 2 × halfWidth wide. 817 m round.
  */
 export const COURSE = {
   west: 60,
@@ -119,6 +121,7 @@ export const COURSE = {
   north: -280,
   south: -110,
   radius: 30,
+  tight: 20,
   /** Half the track's width, m: a Sherman is 2.6 m wide, so a driver has room to pick a line. */
   halfWidth: 5,
   /** How far the track's surface stands above the flat ground, m (the roads' rule: 8 mm or more apart from anything else flat). */
@@ -141,11 +144,11 @@ export const COURSE_PATH = new Path(
   [
     { kind: 'straight', length: FINISH_Z - (COURSE.north + COURSE.radius) },
     { kind: 'turn', radius: COURSE.radius, angle: QUARTER },
-    { kind: 'straight', length: COURSE.east - COURSE.west - 2 * COURSE.radius },
-    { kind: 'turn', radius: COURSE.radius, angle: QUARTER },
-    { kind: 'straight', length: COURSE.south - COURSE.north - 2 * COURSE.radius },
-    { kind: 'turn', radius: COURSE.radius, angle: QUARTER },
-    { kind: 'straight', length: COURSE.east - COURSE.west - 2 * COURSE.radius },
+    { kind: 'straight', length: COURSE.east - COURSE.west - COURSE.radius - COURSE.tight },
+    { kind: 'turn', radius: COURSE.tight, angle: QUARTER },
+    { kind: 'straight', length: COURSE.south - COURSE.north - 2 * COURSE.tight },
+    { kind: 'turn', radius: COURSE.tight, angle: QUARTER },
+    { kind: 'straight', length: COURSE.east - COURSE.west - COURSE.radius - COURSE.tight },
     { kind: 'turn', radius: COURSE.radius, angle: QUARTER },
     { kind: 'straight', length: COURSE.south - COURSE.radius - FINISH_Z },
   ],
@@ -155,6 +158,23 @@ export const COURSE_PATH = new Path(
 /** How far along the course (from the finish line) the point on the east side at `z` is, m. */
 export function eastSideAt(z: number): number {
   return COURSE_PATH.length - (z - FINISH_Z);
+}
+
+/** Where the north, west and south sides' straights start along the course, m. */
+const NORTH_FROM = FINISH_Z - (COURSE.north + COURSE.radius) + COURSE.radius * QUARTER;
+const WEST_FROM = NORTH_FROM + (COURSE.east - COURSE.west - COURSE.radius - COURSE.tight) + COURSE.tight * QUARTER;
+const SOUTH_FROM = WEST_FROM + (COURSE.south - COURSE.north - 2 * COURSE.tight) + COURSE.tight * QUARTER;
+/** How far along the course the point on the north side (driven west) at `x` is, m. */
+export function northSideAt(x: number): number {
+  return NORTH_FROM + (COURSE.east - COURSE.radius - x);
+}
+/** How far along the course the point on the west side (driven south) at `z` is, m. */
+export function westSideAt(z: number): number {
+  return WEST_FROM + (z - (COURSE.north + COURSE.tight));
+}
+/** How far along the course the point on the south side (driven east) at `x` is, m. */
+export function southSideAt(x: number): number {
+  return SOUTH_FROM + (x - (COURSE.west + COURSE.tight));
 }
 
 /**
@@ -190,6 +210,216 @@ export const PENALTY_PATH = new Path(
 /** How much of the penalty loop is its own track (the rest is the course's): its two curves and its far straight, m. */
 export const PENALTY_OWN = PENALTY_PATH.length - (JOIN.back - JOIN.leave);
 
+// ---------------------------------------------------------------- The driving challenge (F5.3d)
+
+/**
+ * The going round the course (docs/biathlon-driving.md): what makes it a
+ * driving test as well as a shooting one. In the order a lap meets them:
+ *
+ * - The slalom on the north side: four narrow gates of two posts each,
+ *   each set `offset` m to one side of the middle line and then the
+ *   other, `spacing` m apart, `half` m from a gate's middle to each post
+ *   (a Sherman is 2.6 m wide). A post knocked down, or a gate driven past
+ *   outside its posts, is a fault: FAULT_SECONDS on a race's time.
+ * - The hill (src/sim/terrain.ts's HILL) straight after: 2nd gear up its
+ *   steep middle, and a run-on down the far side into the tight north-west
+ *   corner.
+ * - The treadway bridge on the west side over the ditch (DITCH): two steel
+ *   treads `tread` m wide under the tracks' middles (TRACK.x either side of
+ *   the course's middle line), `length` m long with `ramp` m ramps at each
+ *   end up to `height` m. A track off a tread over the ditch, or a tank
+ *   driven into the ditch, falls: the tank goes back to BRIDGE_START.
+ *   Gate BRIDGE_GATE at its far end makes the bridge part of a lap.
+ * - Mud on the south side, `from` to `to` (x), `half` m either side of the
+ *   middle line, with a firm gravel bypass round it on the infield side.
+ * - The ford over the stream (STREAM): its water at WATER_Y; faster than
+ *   8 km/h through it drowns the engine (src/sim/going.ts).
+ */
+export const SLALOM = { xs: [256, 240, 224, 208], offset: 2, half: 2.2, post: 0.06, height: 1.6 } as const;
+export const BRIDGE = { x: COURSE.west, z: DITCH.z, length: 38, ramp: 2.5, height: 0.25, tread: 1.0, gauge: TRACK.x } as const;
+export const MUD = { from: 150, to: 210, half: 7 } as const;
+/** The bypass leaves the course at `from`, swings `radius` m curves out to the infield and back in by `to` (x on the south side). */
+export const BYPASS = { from: 120, to: 240, radius: 20, halfWidth: 4, lift: 0.02 } as const;
+/** The ford's water and the ditch's, m (heights as the ground's). */
+export const WATER_Y = -0.35;
+export const DITCH_WATER_Y = -1.5;
+/** A slalom fault costs this much on a race's time, s. */
+export const FAULT_SECONDS = 10;
+/** Where a tank that fell off the bridge goes back to: lined up on the course's middle line, short of the ramp. */
+export const BRIDGE_START = { x: BRIDGE.x, z: BRIDGE.z - BRIDGE.length / 2 - 8, heading: Math.PI } as const;
+
+/**
+ * Practice → Obstacles (F5.3d): where each of the driving challenge's
+ * obstacles is tried from, lined up on the course's middle line the way a
+ * lap drives it, far enough short to get going (heading 0 faces north, a
+ * quarter turn left faces west).
+ */
+export const OBSTACLES = ['slalom', 'hill', 'bridge', 'mud', 'ford'] as const;
+export type ObstacleName = (typeof OBSTACLES)[number];
+export const OBSTACLE_SPOTS: Readonly<Record<ObstacleName, { x: number; z: number; heading: number }>> = {
+  slalom: { x: SLALOM.xs[0] + 30, z: COURSE.north, heading: QUARTER },
+  // Past the slalom's last gate, at the hill's foot.
+  hill: { x: HILL.crest + HILL.half + 6, z: COURSE.north, heading: QUARTER },
+  bridge: BRIDGE_START,
+  mud: { x: BYPASS.from - 20, z: COURSE.south, heading: -QUARTER },
+  ford: { x: STREAM.x - STREAM.half - 25, z: COURSE.south, heading: -QUARTER },
+};
+
+/** The slalom's gates (driven west), each with its posts' places. */
+export interface SlalomGate extends Gate {
+  posts: readonly (readonly [number, number])[];
+}
+export const SLALOM_GATES: readonly SlalomGate[] = SLALOM.xs.map((x, k) => {
+  const side = k % 2 === 0 ? 1 : -1;
+  // Driven west, the driver's left is south (+z).
+  const z = COURSE.north + side * SLALOM.offset;
+  return {
+    x, z, heading: QUARTER, half: SLALOM.half, s: northSideAt(x),
+    posts: [[x, z + SLALOM.half], [x, z - SLALOM.half]] as const,
+  };
+});
+/** All the slalom's posts in order, two a gate. */
+export const SLALOM_POSTS: readonly (readonly [number, number])[] = SLALOM_GATES.flatMap((g) => g.posts);
+/** A gate driven past this far either side of its middle counts as passed outside it, m. */
+const SLALOM_REACH = COURSE.halfWidth + 8;
+
+/** The bypass round the mud: out to the infield (left, driven east) and back. */
+const BYPASS_SWING = Math.PI / 4;
+const BYPASS_ACROSS = 2 * BYPASS.radius * Math.sin(BYPASS_SWING);
+export const BYPASS_PATH = new Path(
+  BYPASS.from,
+  COURSE.south,
+  -QUARTER,
+  [
+    { kind: 'turn', radius: BYPASS.radius, angle: BYPASS_SWING },
+    { kind: 'turn', radius: BYPASS.radius, angle: -BYPASS_SWING },
+    { kind: 'straight', length: BYPASS.to - BYPASS.from - 2 * BYPASS_ACROSS },
+    { kind: 'turn', radius: BYPASS.radius, angle: -BYPASS_SWING },
+    { kind: 'turn', radius: BYPASS.radius, angle: BYPASS_SWING },
+  ],
+  false,
+);
+/** How far the bypass's straight runs from the course's middle line, m. */
+export const BYPASS_OFFSET = 2 * BYPASS.radius * (1 - Math.cos(BYPASS_SWING));
+
+/** Where the bridge's deck and the mud lie along the course, m: the course's gravel isn't drawn there. */
+export const BRIDGE_SPAN: readonly [number, number] = [westSideAt(BRIDGE.z - BRIDGE.length / 2), westSideAt(BRIDGE.z + BRIDGE.length / 2)];
+export const MUD_SPAN: readonly [number, number] = [southSideAt(MUD.from), southSideAt(MUD.to)];
+
+/** Whether (x, z) (any copy) is in the mud. */
+export function onMud(x: number, z: number): boolean {
+  const wx = wrapTile(x);
+  if (wx < MUD.from || wx > MUD.to) return false;
+  return Math.abs(wrapTile(z - COURSE.south)) <= MUD.half;
+}
+
+/** Whether (x, z) is in the stream's band (where its water can be). */
+function inStreamBand(wx: number, wz: number): boolean {
+  return Math.abs(wx - STREAM.x) < STREAM.half && wz > STREAM.from - STREAM.fade && wz < STREAM.to + STREAM.fade;
+}
+
+/** How deep the ford's water is at (x, z), m (0 dry). */
+export function waterDepth(x: number, z: number): number {
+  const wx = wrapTile(x);
+  const wz = wrapTile(z);
+  if (!inStreamBand(wx, wz)) return 0;
+  return Math.max(0, WATER_Y - groundHeight(wx, wz));
+}
+
+/** What the going is at (x, z): 0 firm, 1 mud, 2 water. */
+export function goingAt(x: number, z: number): 0 | 1 | 2 {
+  if (onMud(x, z)) return 1;
+  return waterDepth(x, z) > 0.05 ? 2 : 0;
+}
+
+/** Whether (x, z) is down in the ditch (more than 30 cm below the field), where a tank off the bridge falls. */
+export function inDitch(x: number, z: number): boolean {
+  const wx = wrapTile(x);
+  const wz = wrapTile(z);
+  if (Math.abs(wz - DITCH.z) >= DITCH.half || wx < DITCH.from - DITCH.fade || wx > DITCH.to + DITCH.fade) return false;
+  return groundHeight(wx, wz) < -0.3;
+}
+
+/** Whether (x, z) is on one of the bridge's treads. */
+export function onTread(x: number, z: number): boolean {
+  const wx = wrapTile(x - BRIDGE.x);
+  const wz = wrapTile(z - BRIDGE.z);
+  return Math.abs(wz) <= BRIDGE.length / 2 && Math.abs(Math.abs(wx) - BRIDGE.gauge) <= BRIDGE.tread / 2;
+}
+
+/** The bridge deck's height at (x, z) (its whole width, between the treads too), m, or -Infinity off it. */
+export function deckHeight(x: number, z: number): number {
+  const wx = wrapTile(x - BRIDGE.x);
+  const wz = wrapTile(z - BRIDGE.z);
+  const half = BRIDGE.length / 2;
+  if (Math.abs(wz) > half || Math.abs(wx) > BRIDGE.gauge + BRIDGE.tread / 2) return -Infinity;
+  return BRIDGE.height * Math.min(1, (half - Math.abs(wz)) / BRIDGE.ramp);
+}
+
+/** The height the tracks ride on at (x, z): the ground, or the bridge's deck over it. */
+export function driveHeight(x: number, z: number): number {
+  return Math.max(groundHeight(x, z), deckHeight(x, z));
+}
+
+/** Where a track lies on the ground (hull z of its ends, forward -z), and the points along it a fall and the going are judged at. */
+const TRACK_ENDS = [BOGIES.z[0] - BOGIES.spread, BOGIES.z[BOGIES.z.length - 1] + BOGIES.spread] as const;
+export const TRACK_POINTS: readonly number[] = [0, 0.25, 0.5, 0.75, 1].map((t) => TRACK_ENDS[0] + (TRACK_ENDS[1] - TRACK_ENDS[0]) * t);
+
+/** A point on track `side` (-1 left, 1 right) of a tank at (x, z) facing `heading`, `back` m behind its middle (hull z), into `out`. */
+export function trackPoint(x: number, z: number, heading: number, side: number, back: number, out: Vec2): Vec2 {
+  const fx = -Math.sin(heading);
+  const fz = -Math.cos(heading);
+  // Right is forward turned a quarter clockwise seen from above.
+  out[0] = x - fz * side * TRACK.x - fx * back;
+  out[1] = z + fx * side * TRACK.x - fz * back;
+  return out;
+}
+const tp: Vec2 = [0, 0];
+
+/** Whether a tank at (x, z) facing `heading` has fallen off the bridge: a track's point over the ditch and not on a tread. */
+export function fellOffBridge(x: number, z: number, heading: number): boolean {
+  const near = Math.abs(wrapTile(z - DITCH.z)) < DITCH.half + 6 && Math.abs(wrapTile(x - BRIDGE.x)) < DITCH.to - DITCH.from + 2 * DITCH.fade;
+  if (!near) return false;
+  for (const side of [-1, 1]) {
+    for (const back of TRACK_POINTS) {
+      trackPoint(x, z, heading, side, back, tp);
+      if (inDitch(tp[0], tp[1]) && !onTread(tp[0], tp[1])) return true;
+    }
+  }
+  return false;
+}
+
+/** How much of the tracks of a tank at (x, z) facing `heading` is on mud and in water, 0 to 1 each, into `out` [mud, water]. */
+export function goingUnder(x: number, z: number, heading: number, out: Vec2): Vec2 {
+  out[0] = 0;
+  out[1] = 0;
+  if (outsideCourse(x, z)) return out;
+  const share = 1 / (2 * TRACK_POINTS.length);
+  for (const side of [-1, 1]) {
+    for (const back of TRACK_POINTS) {
+      trackPoint(x, z, heading, side, back, tp);
+      const g = goingAt(tp[0], tp[1]);
+      if (g === 1) out[0] += share;
+      else if (g === 2) out[1] += share;
+    }
+  }
+  return out;
+}
+
+/** The tank's outline from above, hull space (OUTLINE_EXTENT): what knocks a slalom post down. */
+const HULL_HALF = OUTLINE_EXTENT.halfWidth;
+
+/** Whether post (px, pz) stands inside the outline of a tank at (x, z) facing `heading` (its own radius counted). */
+export function postUnder(px: number, pz: number, x: number, z: number, heading: number): boolean {
+  const dx = wrapTile(px - x);
+  const dz = wrapTile(pz - z);
+  const fx = -Math.sin(heading);
+  const fz = -Math.cos(heading);
+  const across = dx * -fz + dz * fx;
+  const back = -(dx * fx + dz * fz);
+  return Math.abs(across) <= HULL_HALF + SLALOM.post && back >= OUTLINE_EXTENT.front - SLALOM.post && back <= OUTLINE_EXTENT.rear + SLALOM.post;
+}
+
 /** A gate: two posts across the track at `s` m along a path; driving through between them, forwards, passes it. */
 export interface Gate {
   x: number;
@@ -204,24 +434,29 @@ export interface Gate {
 
 /** The posts stand this far outside the track's edges, m. */
 export const GATE_MARGIN = 1.5;
-/** The course's gates are this far apart, m. */
+/** The course's gates are about this far apart, m. */
 export const GATE_SPACING = 80;
-
+/** The bridge's gate stands this far past its far end, and this far from its middle to each post, m: a lap must cross the bridge. */
+const BRIDGE_GATE_PAST = 2;
+const BRIDGE_GATE_HALF = 2.4;
 /**
- * The course's gates in the order a lap passes them: gate 0 is the
- * start and finish line, then one every GATE_SPACING m round to the south
- * side. A lap counts only when it has passed every one.
+ * Where the course's gates stand along it, m, in the order a lap passes
+ * them: gate 0 is the start and finish line, then about one every
+ * GATE_SPACING m round to the south side, placed so none stands in the
+ * slalom, on the bridge or by the mud (where it would choose between the
+ * mud and the bypass), with one on the hill's crest and gate BRIDGE_GATE
+ * just past the bridge, so a lap must go over both.
  */
-export const GATES: readonly Gate[] = (() => {
-  const list: Gate[] = [];
-  const p: PathPoint = { x: 0, z: 0, heading: 0, s: 0 };
-  for (let s = 0; s < eastSideAt(COURSE.south - COURSE.radius) - GATE_SPACING / 2; s += GATE_SPACING) {
-    COURSE_PATH.at(s, p);
-    list.push({ x: p.x, z: p.z, heading: p.heading, half: COURSE.halfWidth + GATE_MARGIN, s });
-  }
-  return list;
-})();
-
+export const GATE_AT: readonly number[] = [0, 80, northSideAt(HILL.crest), 320, westSideAt(BRIDGE.z + BRIDGE.length / 2 + BRIDGE_GATE_PAST), 470, southSideAt(BYPASS.to + 5)];
+export const BRIDGE_GATE = 4;
+/**
+ * The course's gates in GATE_AT's order. A lap counts only when it has
+ * passed every one.
+ */
+export const GATES: readonly Gate[] = GATE_AT.map((s, i) => {
+  const p = COURSE_PATH.at(s);
+  return { x: p.x, z: p.z, heading: p.heading, half: i === BRIDGE_GATE ? BRIDGE_GATE_HALF : COURSE.halfWidth + GATE_MARGIN, s };
+});
 /** The penalty loop's gate: across the far straight, passed heading south; each pass is one penalty loop. */
 export const PENALTY_GATE: Gate = (() => {
   const s = PENALTY.radius * Math.PI + (JOIN.back - JOIN.leave) / 2;
@@ -400,7 +635,7 @@ export function samplePath(path: Path, from: number, to: number, step: number): 
   return out;
 }
 
-/** How far (x, z) is from the course's middle line (or the penalty loop's own part), m: for keeping scatter off the track. */
+/** How far (x, z) is from the course's middle line (or the penalty loop's own part, or the bypass), m: for keeping scatter off the track. */
 export function distanceToTrack(x: number, z: number): number {
   let best = Infinity;
   for (const p of TRACK_SAMPLES) {
@@ -426,7 +661,8 @@ function outsideCourse(x: number, z: number): boolean {
 
 const COURSE_SAMPLES: readonly PathPoint[] = samplePath(COURSE_PATH, 0, COURSE_PATH.length, 2);
 const PENALTY_SAMPLES: readonly PathPoint[] = samplePath(PENALTY_PATH, 0, PENALTY_OWN, 2);
-const TRACK_SAMPLES: readonly PathPoint[] = [...COURSE_SAMPLES, ...PENALTY_SAMPLES];
+const BYPASS_SAMPLES: readonly PathPoint[] = samplePath(BYPASS_PATH, 0, BYPASS_PATH.length, 2);
+const TRACK_SAMPLES: readonly PathPoint[] = [...COURSE_SAMPLES, ...PENALTY_SAMPLES, ...BYPASS_SAMPLES];
 
 /** Whether any of a path's samples is within `reach` m of (x, z). */
 function within(samples: readonly PathPoint[], x: number, z: number, reach: number): boolean {
@@ -440,14 +676,14 @@ function within(samples: readonly PathPoint[], x: number, z: number, reach: numb
 }
 
 /**
- * Whether (x, z) is on the gravel itself, as drawn: the course's track or
- * the penalty loop's, each to its own width (to within the 10 cm the
- * samples' spacing leaves). What a track there runs on
- * (src/sim/ground-surface.ts).
+ * Whether (x, z) is on the gravel itself, as drawn: the course's track,
+ * the penalty loop's or the bypass, each to its own width (to within the
+ * 10 cm the samples' spacing leaves), but not in the mud. What a track there
+ * runs on (src/sim/ground-surface.ts).
  */
 export function onGravel(x: number, z: number): boolean {
-  if (outsideCourse(x, z)) return false;
-  return within(COURSE_SAMPLES, x, z, COURSE.halfWidth) || within(PENALTY_SAMPLES, x, z, PENALTY.halfWidth);
+  if (outsideCourse(x, z) || onMud(x, z)) return false;
+  return within(COURSE_SAMPLES, x, z, COURSE.halfWidth) || within(PENALTY_SAMPLES, x, z, PENALTY.halfWidth) || within(BYPASS_SAMPLES, x, z, BYPASS.halfWidth);
 }
 
 // ---------------------------------------------------------------- Laps and gates
@@ -477,10 +713,20 @@ export interface CourseSnapshot {
   noteId: number;
   /** The crewmate stepped away: the lap clock stands still. */
   paused: boolean;
+  /** The driving challenge's (F5.3d): slalom faults so far (posts knocked down, gates passed outside), each FAULT_SECONDS in a race. */
+  faults: number;
+  /** The slalom's posts down on this lap (bit i: SLALOM_POSTS[i]), and its gates passed or missed on this lap (bit k). */
+  knocked: number;
+  slalom: number;
+  /** Falls off the bridge so far. */
+  falls: number;
 }
 
 export function createCourseSnapshot(): CourseSnapshot {
-  return { laps: 0, missed: 0, penalties: 0, passed: 0, started: false, lapClock: 0, lastLap: -1, bestLap: -1, box: -1, halted: false, note: '', noteId: 0, paused: false };
+  return {
+    laps: 0, missed: 0, penalties: 0, passed: 0, started: false, lapClock: 0, lastLap: -1, bestLap: -1, box: -1, halted: false, note: '', noteId: 0, paused: false,
+    faults: 0, knocked: 0, slalom: 0, falls: 0,
+  };
 }
 
 export function copyCourseSnapshot(from: CourseSnapshot, to: CourseSnapshot): CourseSnapshot {
@@ -497,6 +743,10 @@ export function copyCourseSnapshot(from: CourseSnapshot, to: CourseSnapshot): Co
   to.note = from.note;
   to.noteId = from.noteId;
   to.paused = from.paused;
+  to.faults = from.faults;
+  to.knocked = from.knocked;
+  to.slalom = from.slalom;
+  to.falls = from.falls;
   return to;
 }
 
@@ -540,6 +790,8 @@ export class CourseProgress {
   private z = Number.NaN;
   /** The first gate missed on this lap so far (said once a lap), or -1. */
   private missedGate = -1;
+  /** The tank's count of falls off the bridge (TankDrive.falls) last step: a change is a fall, not a jump. */
+  private tankFalls = Number.NaN;
 
   /** Start again: no laps, no penalty loops, waiting for the start line. */
   reset(): void {
@@ -559,10 +811,25 @@ export class CourseProgress {
     this.version++;
   }
 
-  /** The host, once a frame: the tank is at (x, z) going `speed` m/s; `dt` s have passed. */
-  step(dt: number, x: number, z: number, speed: number): void {
+  /**
+   * The host, once a frame: the tank is at (x, z) going `speed` m/s, facing
+   * `heading` (for the slalom's posts), having fallen off the bridge `falls`
+   * times (TankDrive.falls: a fall puts it back at the bridge's start, which
+   * is no jump); `dt` s have passed.
+   */
+  step(dt: number, x: number, z: number, speed: number, heading = Number.NaN, falls = 0): void {
     const s = this.s;
     if (s.started && !s.paused) s.lapClock += dt;
+    const fell = !Number.isNaN(this.tankFalls) && falls !== this.tankFalls;
+    this.tankFalls = falls;
+    if (fell && !Number.isNaN(this.x)) {
+      s.falls++;
+      this.say('Fell off the bridge: back to its start');
+      this.x = x;
+      this.z = z;
+      this.boxes(x, z, speed);
+      return;
+    }
     if (Number.isNaN(this.x) || Math.hypot(wrapTile(x - this.x), wrapTile(z - this.z)) > JUMP) {
       if (!Number.isNaN(this.x)) this.reset();
       this.x = x;
@@ -579,9 +846,44 @@ export class CourseProgress {
       s.penalties++;
       this.say(`Penalty loop ${s.penalties}`);
     }
+    this.slalomStep(x, z, heading);
     this.x = x;
     this.z = z;
     this.boxes(x, z, speed);
+  }
+
+  /** The slalom: posts knocked down by the tank's outline, gates passed through or outside, each fault said and counted. */
+  private slalomStep(x: number, z: number, heading: number): void {
+    const s = this.s;
+    if (!Number.isNaN(heading)) {
+      for (let i = 0; i < SLALOM_POSTS.length; i++) {
+        if (s.knocked & (1 << i)) continue;
+        const [px, pz] = SLALOM_POSTS[i];
+        if (!postUnder(px, pz, x, z, heading)) continue;
+        s.knocked |= 1 << i;
+        this.fault(`Slalom: post knocked down, +${FAULT_SECONDS} s`);
+      }
+    }
+    for (let k = 0; k < SLALOM_GATES.length; k++) {
+      if (s.slalom & (1 << k)) continue;
+      const g = SLALOM_GATES[k];
+      if (throughGate(g, this.x, this.z, x, z) === 1) {
+        s.slalom |= 1 << k;
+        this.version++;
+        continue;
+      }
+      wide.x = g.x;
+      wide.z = g.z;
+      wide.heading = g.heading;
+      if (throughGate(wide, this.x, this.z, x, z) !== 1) continue;
+      s.slalom |= 1 << k;
+      this.fault(`Slalom: missed gate ${k + 1}, +${FAULT_SECONDS} s`);
+    }
+  }
+
+  private fault(note: string): void {
+    this.s.faults++;
+    this.say(note);
   }
 
   /** The guest: the lap clock runs on between the host's snapshots. */
@@ -613,6 +915,9 @@ export class CourseProgress {
     }
     s.passed = 0;
     s.lapClock = 0;
+    // The slalom's posts stand again for the new lap.
+    s.knocked = 0;
+    s.slalom = 0;
     this.missedGate = -1;
     this.version++;
   }
@@ -648,6 +953,9 @@ export class CourseProgress {
     this.version++;
   }
 }
+
+/** A slalom gate as wide as the track and more: crossing its line outside the gate itself misses it. */
+const wide: Gate = { x: 0, z: 0, heading: 0, half: SLALOM_REACH, s: 0 };
 
 /** The first gate (from 1, below `below`) not passed, or 0 if none is missing. */
 export function firstMissing(passed: number, below = GATES.length): number {
@@ -709,5 +1017,11 @@ export function readCourseEvent(e: Record<string, unknown>, out: CourseSnapshot)
   out.halted = e.halted === true;
   out.paused = e.paused === true;
   out.note = typeof e.note === 'string' ? e.note.slice(0, 80) : '';
+  // The driving challenge's (F5.3d): a page from before it sends none.
+  const extra = (v: unknown) => num(v) ?? 0;
+  out.faults = extra(e.faults);
+  out.knocked = extra(e.knocked);
+  out.slalom = extra(e.slalom);
+  out.falls = extra(e.falls);
   return { at: values.at };
 }

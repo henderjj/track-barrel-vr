@@ -3,9 +3,11 @@
  * pass, F6.1; docs/audio.md, "What the tracks run on"). Engine-free: no
  * IWSDK, DOM or renderer imports.
  *
- * The world has three surfaces, each drawn where these rules say it is:
- * grass everywhere, the range's two dirt roads (src/sim/range.ts) and the
- * biathlon course's gravel track (src/sim/course.ts). A track is nearly
+ * The world has its surfaces, each drawn where these rules say it is:
+ * grass everywhere, the range's two dirt roads (src/sim/range.ts), the
+ * biathlon course's gravel track (src/sim/course.ts), and since the
+ * course's driving challenge (F5.3d) its mud, the ford's water and the
+ * bridge's steel treads. A track is nearly
  * four metres of steel lying on the ground, so each track has a footing of
  * its own: how much of its length is on each surface, and the blend of
  * what those surfaces sound like. One track on the road and one on the
@@ -16,11 +18,11 @@
  * SURFACES, a row in SURFACE_SOUND and a rule in surfaceAt: nothing else
  * needs to know it.
  */
-import { onGravel } from './course.js';
+import { goingAt, onGravel, onTread } from './course.js';
 import { BOGIES, TRACK } from './exterior.js';
 import { onRoad } from './range.js';
 
-export const SURFACES = ['grass', 'dirt', 'gravel'] as const;
+export const SURFACES = ['grass', 'dirt', 'gravel', 'mud', 'water', 'steel'] as const;
 export type Surface = (typeof SURFACES)[number];
 
 /**
@@ -52,11 +54,21 @@ export const SURFACE_SOUND: Record<Surface, SurfaceSound> = {
   dirt: { ring: 1, top: 1, thud: 1, grit: 0.45, gritHz: 1600, rumble: 1, rumbleOpen: 1, squeal: 1 },
   // Loose stones over a hard bed: a crunch under every link, the links clinking on stone, the floor busier.
   gravel: { ring: 1.05, top: 1.2, thud: 1.1, grit: 1, gritHz: 3000, rumble: 1.08, rumbleOpen: 1.2, squeal: 0.85 },
+  // Deep mud: the links sink in and barely ring; a low wet suck under them, a dull rumble, no squeal.
+  mud: { ring: 0.55, top: 0.35, thud: 0.6, grit: 0.6, gritHz: 450, rumble: 0.85, rumbleOpen: 0.6, squeal: 0.35 },
+  // Through the ford: the water damps the links and churns under them.
+  water: { ring: 0.5, top: 0.4, thud: 0.45, grit: 0.9, gritHz: 1100, rumble: 0.8, rumbleOpen: 0.55, squeal: 0.32 },
+  // The bridge's steel treads: links clanking on steel, nothing to crunch, the floor ringing.
+  steel: { ring: 1.3, top: 1.4, thud: 1.2, grit: 0.15, gritHz: 2500, rumble: 1.1, rumbleOpen: 1.3, squeal: 1.2 },
 };
 
 /** The surface at (x, z), world space: as drawn. */
 export function surfaceAt(x: number, z: number): Surface {
   if (onRoad(x, z)) return 'dirt';
+  if (onTread(x, z)) return 'steel';
+  const going = goingAt(x, z);
+  if (going === 1) return 'mud';
+  if (going === 2) return 'water';
   if (onGravel(x, z)) return 'gravel';
   return 'grass';
 }

@@ -31,7 +31,9 @@
     parked at the start, laid and loaded, or from the driver's seat to watch
     the firing lamp; go to the biathlon course's start line or either firing
     line (F5.3a); start or stop a biathlon race, or be ready to fire at
-    either of its lines (F5.3b). Combat (Phase 3): fill the ammunition
+    either of its lines (F5.3b); park short of one of the course's driving
+    obstacles, the slalom, the hill, the bridge, the mud or the ford
+    (F5.3d). Combat (Phase 3): fill the ammunition
     rack with the mixed load or one round, and be ready to fire AP, HE or
     smoke on the 250 m gun (F3.1); set the engine hot or back to normal
     (F3.7); start or stop the enemy anti-tank guns, or park where one
@@ -614,6 +616,16 @@
               <Button id="menu-course-go" class="choice" size="sm" variant="secondary">Course</Button>
               <Button id="menu-course-line-0" class="choice" size="sm" variant="secondary">Line 1</Button>
               <Button id="menu-course-line-1" class="choice" size="sm" variant="secondary">Line 2</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Obstacles</div>
+            <div class="choices">
+              <Button id="menu-obstacle-slalom" class="choice" size="sm" variant="secondary">Slalom</Button>
+              <Button id="menu-obstacle-hill" class="choice" size="sm" variant="secondary">Hill</Button>
+              <Button id="menu-obstacle-bridge" class="choice" size="sm" variant="secondary">Bridge</Button>
+              <Button id="menu-obstacle-mud" class="choice" size="sm" variant="secondary">Mud</Button>
+              <Button id="menu-obstacle-ford" class="choice" size="sm" variant="secondary">Ford</Button>
             </div>
           </div>
           <div id="menu-course-status" class="hint">Biathlon course</div>

@@ -17,7 +17,8 @@ import { TUNE_ROWS } from '../sim/combat.js';
 import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-system.js';
 import { goUpTheRange, rangeStatus } from './range-system.js';
 import { raceStatus, readyAtLine, readyToFire, runStatus, shownRun, startRace, startRun, stopRun } from './range-run-system.js';
-import { courseStatus, goToCourse, goToFiringLine } from './course-system.js';
+import { courseStatus, goToCourse, goToFiringLine, goToObstacle } from './course-system.js';
+import { OBSTACLES } from '../sim/course.js';
 import { turretToHour } from './turret-dial-system.js';
 import { watchTheLamp } from './firing-lamp-system.js';
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
@@ -342,6 +343,14 @@ export class GameMenuSystem extends createSystem({}) {
         this.setOpen(false);
         stopRide();
         goToFiringLine(k);
+      });
+    }
+    for (const name of OBSTACLES) {
+      // The driving challenge (F5.3d): parked short of one obstacle, engine running.
+      ui.on(`menu-obstacle-${name}`, () => {
+        this.setOpen(false);
+        stopRide();
+        goToObstacle(name);
       });
     }
     ui.on('menu-race-start', () => {

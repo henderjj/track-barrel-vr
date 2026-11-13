@@ -98,8 +98,8 @@
  * .claude/skills/), with a screenshot where it helps a review.
  *
  * CI runs the steps in three parts at once, on three runners: part 1 is
- * steps 0 to 6c and 6r (the biathlon race), part 2 is 6d to 6f (the driver and the turret) and 6l
- * (the periscopes), part 3 is 6g to 6k and 6m to 6q. Each part ends with step 7. Put a new feature's steps in
+ * steps 0 to 6c and 6r (the biathlon race), part 2 is 6d to 6f (the driver and the turret), 6l
+ * (the periscopes) and 6x (the biathlon's driving challenge), part 3 is 6g to 6k and 6m to 6q. Each part ends with step 7. Put a new feature's steps in
  * partOne, partTwo or partThree, whichever is shortest on CI.
  *
  * Usage: npm run test:xr   (starts the dev runtime headless if needed)
@@ -3433,6 +3433,9 @@ async function partTwo() {
   // 6l. The periscopes for both crew (F1.6, F1.19).
   await thePeriscopes();
 
+  // 6x. The biathlon's driving challenge (F5.3d).
+  await theDrivingChallenge();
+
   // 6y. The combat scenario and the fight's tuning (F3.10).
   await theCombatScenario();
 }
@@ -3506,6 +3509,100 @@ async function theCombatScenario() {
   check('Battle → Stop takes the enemy away', !stopped.on && combat().phase === 'off', `on ${stopped.on}, phase ${combat().phase}`);
   await menuButtonPress();
   evalInApp('(window.__damage.repair(), window.__drive.place(0, 0, 0), true)');
+}
+
+/**
+ * 6x. The biathlon's driving challenge (F5.3d, docs/biathlon-driving.md):
+ *     Practice → Obstacles → Ford seats a solo player as driver short of
+ *     the ford with the engine running; both tillers full forward take the
+ *     tank in too fast and the water drowns the engine, the sign saying so.
+ *     Obstacles → Bridge parks the tank short of the treadway bridge
+ *     (screenshot from the driver's eyes); set down off line over the ditch
+ *     it falls and comes back to the bridge's start, the course's sign
+ *     saying so. Obstacles → Slalom, then the tank moved straight down the
+ *     middle line knocks a post down: drawn lying, a fault on the sign
+ *     (screenshot). A track thrown puts up a sign and holds the tank.
+ */
+async function theDrivingChallenge() {
+  const tank = () => evalInApp('window.__drive.state()');
+  const course = () => evalInApp('window.__course.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  const layout = evalInApp('window.__course.layout()');
+  check('The course has a slalom of 8 posts, a bridge and a Practice spot for each of its 5 obstacles',
+    layout.posts.length === 8 && layout.bridge.length > 30 && Object.keys(layout.obstacles).length === 5,
+    `${layout.posts.length} posts, bridge ${layout.bridge.length} m, obstacles ${Object.keys(layout.obstacles).join(', ')}`);
+
+  // The ford: in too fast.
+  await menuButtonPress();
+  await menuClick('menu-obstacle-ford');
+  const ford = layout.obstacles.ford;
+  const parked = await waitFor('the tank parked short of the ford', () => {
+    const t = tank();
+    return Math.abs(t.x - ford.x) < 0.5 && Math.abs(t.z - ford.z) < 0.5 && t.running && evalInApp('window.__seats.mine') === 'driver' && t;
+  }, 8000).catch(() => tank());
+  check('Practice → Obstacles → Ford seats a solo player as driver short of the ford, the engine running',
+    Math.abs(parked.x - ford.x) < 0.5 && Math.abs(parked.z - ford.z) < 0.5 && parked.running && evalInApp('window.__seats.mine') === 'driver',
+    `tank at ${parked.x.toFixed(1)}, ${parked.z.toFixed(1)}, engine ${parked.running ? 'running' : 'off'}, seat ${evalInApp('window.__seats.mine')}`);
+  evalInApp('(window.__drive.set({ left: 1, right: 1 }), true)');
+  const drowned = await waitFor('the engine to drown in the ford', () => { const t = tank(); return !t.running && t; }, 40000).catch(() => tank());
+  const drownSign = evalInApp('window.__drive.sign');
+  evalInApp('(window.__drive.set(null), true)');
+  check('Full ahead into the ford drowns the engine, and the sign says to ford slower',
+    !drowned.running && drowned.stallCause === 'water' && /Drowned in the ford/.test(drownSign),
+    `engine ${drowned.running ? 'running' : 'off'} (${drowned.stallCause}) at x ${drowned.x.toFixed(1)}, sign "${drownSign}"`);
+
+  // The bridge: off line, it falls back to its start.
+  await menuButtonPress();
+  await menuClick('menu-obstacle-bridge');
+  const start = layout.obstacles.bridge;
+  await waitFor('the tank parked short of the bridge', () => { const t = tank(); return Math.abs(t.z - start.z) < 0.5 && t.running; }, 8000).catch(() => null);
+  await sleep(500);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-bridge.png'], {});
+  const falls = tank().falls;
+  evalInApp(`(window.__drive.place(${layout.bridge.x + 0.9}, ${layout.bridge.z - 10}, ${start.heading}), true)`);
+  const fell = await waitFor('the tank to fall and come back', () => {
+    const t = tank();
+    return t.falls === falls + 1 && Math.abs(t.z - start.z) < 0.5 && Math.abs(t.x - start.x) < 0.5 && t;
+  }, 8000).catch(() => tank());
+  const fallNote = await waitFor("the course's sign", () => /bridge/.test(evalInApp('window.__course.sign')) && evalInApp('window.__course.sign'), 4000)
+    .catch(() => evalInApp('window.__course.sign'));
+  check("Off line over the ditch the tank falls off the bridge and comes back to its start, the course's sign saying so",
+    fell.falls === falls + 1 && Math.abs(fell.z - start.z) < 0.5 && /Fell off the bridge/.test(fallNote) && course().falls >= 1,
+    `falls ${fell.falls - falls}, tank at ${fell.x.toFixed(1)}, ${fell.z.toFixed(1)}; sign "${fallNote}"`);
+
+  // The slalom: straight down the middle line knocks a post.
+  await menuButtonPress();
+  await menuClick('menu-obstacle-slalom');
+  const slalom = layout.obstacles.slalom;
+  await waitFor('the tank parked short of the slalom', () => { const t = tank(); return Math.abs(t.x - slalom.x) < 0.5; }, 8000).catch(() => null);
+  const standing = evalInApp('window.__course.posts()');
+  // The first fault's sign, caught as it goes up (it stays 3 s, less than the hops take).
+  let slalomSign = '';
+  for (let x = slalom.x - 2; x >= layout.posts[0][0] - 12; x -= 2) {
+    const frames = evalInApp('window.__course.frames');
+    evalInApp(`(window.__drive.place(${x}, ${slalom.z}, ${slalom.heading}), true)`);
+    await waitFor('a frame after the move', () => evalInApp('window.__course.frames') >= frames + 2, 10000).catch(() => null);
+    if (slalomSign === '') slalomSign = evalInApp('window.__course.sign');
+  }
+  const knocked = course();
+  const posts = evalInApp('window.__course.posts()');
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-slalom.png'], {});
+  check('Driven straight down the slalom\'s middle line the tank knocks a post down: drawn lying, a fault counted and on the sign',
+    standing.every((p) => !p.down) && knocked.faults >= 1 && knocked.knocked !== 0 && posts.some((p) => p.down) && /^Slalom: /.test(slalomSign),
+    `faults ${knocked.faults}, posts down ${posts.filter((p) => p.down).length}, sign "${slalomSign}"`);
+
+  // A thrown track: a sign for the crew, the tank held for the refit.
+  evalInApp('(window.__drive.going({ thrown: 2, refit: 40 }), window.__drive.set({ left: 1, right: 1 }), true)');
+  const held = await waitFor('the sign for the thrown track', () => /Right track thrown/.test(evalInApp('window.__drive.sign')) && tank(), 5000).catch(() => tank());
+  await sleep(1500);
+  const after = tank();
+  evalInApp('(window.__drive.set(null), window.__drive.going({ thrown: 0, refit: 0 }), true)');
+  check('A thrown track puts up a sign and holds the tank while the crew refit it',
+    held.thrown === 2 && Math.abs(after.speed) < 0.3 && Math.hypot(after.x - held.x, after.z - held.z) < 0.5,
+    `thrown ${held.thrown}, speed ${after.speed.toFixed(2)} m/s, moved ${Math.hypot(after.x - held.x, after.z - held.z).toFixed(2)} m`);
+  evalInApp("(window.__drive.reset(), window.__seats.ask('driver'), true)");
+  iwsdk(['xr', 'set-device-state'], {});
 }
 
 /**
@@ -3602,8 +3699,8 @@ async function theBiathlonCourse() {
   const tank = () => evalInApp('window.__drive.state()');
   iwsdk(['xr', 'set-device-state'], {});
   const layout = evalInApp('window.__course.layout()');
-  check('The course is a loop of about 800 m with 9 gates, 2 firing boxes, 6 boards and a penalty loop of about 150 m',
-    layout.length > 780 && layout.length < 830 && layout.gates.length === 9 && layout.boxes.length === 2 && layout.boards.length === 6 &&
+  check('The course is a loop of about 800 m with 7 gates, 2 firing boxes, 6 boards and a penalty loop of about 150 m',
+    layout.length > 780 && layout.length < 830 && layout.gates.length === 7 && layout.boxes.length === 2 && layout.boards.length === 6 &&
       layout.penalty > 140 && layout.penalty < 170,
     `${Math.round(layout.length)} m, ${layout.gates.length} gates, ${layout.boxes.length} boxes, ${layout.boards.length} boards, penalty loop ${Math.round(layout.penalty)} m`);
 
@@ -3635,13 +3732,14 @@ async function theBiathlonCourse() {
   check('Crossing the start line starts lap 1, with a sign saying so',
     started.started && started.laps === 0 && started.note === 'Lap 1: go!' && sign === 'Lap 1: go!',
     `started ${started.started}, note "${started.note}", sign "${sign}"`);
-  for (let s = 15; s <= 170; s += 10) await hop(s);
+  // Gate 2 is on the hill's crest (F5.3d), past the slalom (whose posts the hops knock down).
+  for (let s = 15; s <= 220; s += 10) await hop(s);
   await menuButtonPress();
   const line = await waitFor("the menu's course line", () => {
     const text = evalInApp("window.__gameMenu.text('menu-course-status')");
-    return /gates 2 of 8/.test(text) && text;
+    return /gates 2 of 6/.test(text) && text;
   }, 5000).catch(() => evalInApp("window.__gameMenu.text('menu-course-status')"));
-  check('Driving on past gates 1 and 2 counts them, and the menu\'s Biathlon line says so', /^Lap 1 \d+:\d\d\.\d: gates 2 of 8/.test(line), `"${line}"`);
+  check('Driving on past gates 1 and 2 counts them, and the menu\'s Biathlon line says so', /^Lap 1 \d+:\d\d\.\d: gates 2 of 6/.test(line), `"${line}"`);
 
   // Line 1: the gunner's seat, halted in box 1, the engine running for the power traverse.
   await menuClick('menu-course-line-0');

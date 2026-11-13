@@ -153,7 +153,51 @@ export function cornerHeight(ix: number, iz: number): number {
   for (const [a, kx, kz] of WAVES) {
     h += a * Math.sin(w * (kx * x + kz * z));
   }
-  return h * roughness(x, z);
+  return h * roughness(x, z) + courseRelief(x, z);
+}
+
+/**
+ * The biathlon course's own ground (the driving challenge, F5.3d,
+ * docs/biathlon-driving.md), shaped into the flat field at the height
+ * field's corners, so the drawn ground and the drive share it exactly:
+ *
+ * - HILL: a ridge across the course's north side, `height` m at x =
+ *   `crest`, falling to nothing `half` m either side (a raised cosine, so
+ *   its middle third is steepest, about 12°: too steep for 3rd gear), full
+ *   height for z within `full` of `z` and gone `fade` m further out.
+ * - DITCH: a dry ditch across the west side that the treadway bridge spans
+ *   (src/sim/course.ts), `depth` m deep at z, its banks `half` m wide, full
+ *   depth for x within `from`..`to` and gone `fade` m beyond.
+ * - STREAM: the ford's stream across the south side, `depth` m deep at x,
+ *   the same way round, its water at WATER_Y (src/sim/course.ts).
+ *
+ * Every number is a multiple of CELL where the ground folds, so the folds
+ * lie on the grid's lines and the course's ribbons can follow them.
+ */
+export const HILL = { crest: 144, half: 48, height: 7, z: -280, full: 8, fade: 16 } as const;
+export const DITCH = { z: -192, half: 16, depth: 2.5, from: 32, to: 112, fade: 16 } as const;
+export const STREAM = { x: 272, half: 16, depth: 0.9, from: -144, to: -80, fade: 16 } as const;
+
+/** 1 within [from, to], falling straight to 0 `fade` beyond each end. */
+function plateau(v: number, from: number, to: number, fade: number): number {
+  const out = v < from ? from - v : v > to ? v - to : 0;
+  return Math.max(0, 1 - out / fade);
+}
+
+/** The course's hill, ditch and stream at (x, z) (any copy), m: added to the ground's height at its corners. */
+export function courseRelief(x: number, z: number): number {
+  const wx = wrapTile(x);
+  const wz = wrapTile(z);
+  let h = 0;
+  const hd = Math.abs(wx - HILL.crest);
+  if (hd < HILL.half) {
+    h += HILL.height * 0.5 * (1 + Math.cos((Math.PI * hd) / HILL.half)) * plateau(wz, HILL.z - HILL.full, HILL.z + HILL.full, HILL.fade);
+  }
+  const dd = Math.abs(wz - DITCH.z);
+  if (dd < DITCH.half) h -= DITCH.depth * (1 - dd / DITCH.half) * plateau(wx, DITCH.from, DITCH.to, DITCH.fade);
+  const sd = Math.abs(wx - STREAM.x);
+  if (sd < STREAM.half) h -= STREAM.depth * (1 - sd / STREAM.half) * plateau(wz, STREAM.from, STREAM.to, STREAM.fade);
+  return h;
 }
 
 /**
