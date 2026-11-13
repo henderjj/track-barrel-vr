@@ -34,6 +34,7 @@ import { SightSystem } from './systems/sight-system.js';
 import { SmokeSystem } from './systems/smoke-system.js';
 import { EnemySystem } from './systems/enemy-system.js';
 import { DamageSystem } from './systems/damage-system.js';
+import { CombatSystem } from './systems/combat-system.js';
 import { TankAudioSystem } from './systems/tank-audio-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
 import { TurretDialSystem } from './systems/turret-dial-system.js';
@@ -91,6 +92,8 @@ World.create(
   world.registerSystem(EnemySystem);
   // The tank's damage (F3.4): after EnemySystem, whose shells strike it; it sets the drive's damage for the next frame.
   world.registerSystem(DamageSystem);
+  // The combat scenario and the fight's tuning (F3.10): after DamageSystem and EnemySystem, whose state it judges and whose numbers it sets.
+  world.registerSystem(CombatSystem);
   // The range run (F1.11): after FiringSystem, whose decided shots it counts on the host.
   world.registerSystem(RangeRunSystem);
   // The callout card in each seat (F2.6): hangs on the hull and turret, drawn once; nothing per frame.

@@ -14,6 +14,8 @@ The roadmap asked for the enemy AI's scope to be decided first, and the plan (§
 
 Say if any of this should change before F3.3 builds tanks on the same pattern.
 
+Since F3.10 ([combat-scenario.md](combat-scenario.md)) a gun has to spot the tank before it lays (quicker on a moving tank or one that has just fired, slower on one hull down), houses, walls and rocks block its view, and its numbers are tuned in the game menu's Battle tab.
+
 ## What players experience
 
 - **Combat → Enemy guns → Start** puts the tank back at the range's start with the engine running and brings the guns in. None of them can see the start. Driving up the lane, gun A first sees the tank about 80 m up it, from about 240 m out on the left; gun B from 160 m up, from about 230 m; gun C from 240 m up, close, about 120 m off the lane. A sign says "Enemy guns ahead: watch for their flashes".
@@ -33,9 +35,9 @@ Say if any of this should change before F3.3 builds tanks on the same pattern.
 | Gun A, B, C | (−200, −220), (−90, −370), (−110, −280) world m; first see the lane at z −80, −160, −240 | The only spots near the lane, found by search, that can't see the start, see the lane over a long stretch, and have no rise between them and the lane, so their whole shield is in view when they first fire. The ground right of the lane is too open to hide a gun from the start |
 | Muzzle velocity | 790 m/s | A 7.5 cm PaK 40's AP |
 | Spot range | 600 m | Inside the fog's far edge (780 m) |
-| First shot | 6 s after first sight | Traversing, laying and the order to fire |
-| Reload | 8 s | A trained crew's aimed rate, slowed for play |
-| Spread | 0.4 mil dispersion plus a laying error of 8, 4 then 2 mils on a sighting's first, second and later shots; plus the tank's movement during the flight | At about 240 m on a stationary Sherman: about half the first shot, over 90% by the third. Moving at 20 km/h, much less |
+| First shot | 6 s after first sight (since F3.10: 8 s after it has spotted the tank, which takes time) | Traversing, laying and the order to fire |
+| Reload | 8 s (since F3.10: 10 s) | A trained crew's aimed rate, slowed for play |
+| Spread | 0.4 mil dispersion plus a laying error of 8, 4 then 2 mils on a sighting's first, second and later shots (since F3.10: 16, 9, 5 then 3); plus the tank's movement during the flight | At about 240 m on a stationary Sherman: about half the first shot, over 90% by the third (since F3.10: about one in seven, then nine in ten by the fourth). Moving at 20 km/h, much less |
 | Lead | 80% of the tank's movement during the flight | Good but not perfect |
 | Shield (the face shells hit) | 2.1 m × 1.24 m, its middle 0.82 m up | The model's shield |
 | Tank as a target | 2.62 m wide, 5.84 m long, 2.74 m tall | An M4A4's |

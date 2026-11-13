@@ -10,10 +10,11 @@
  */
 
 import type { HitFace, Vec3 } from './ballistics.js';
-import { type DamageHit, parseHit } from './damage.js';
+import { type CombatTuning, DEFAULT_TUNING, SPOTTING, spotRate, type TankView } from './combat.js';
+import { DAMAGE, type DamageHit, parseHit } from './damage.js';
 import { ENEMY_TANK, ENEMY_TANKS, type RoutePose, routePose, wrapRoute } from './enemy-tanks.js';
 import { rng } from './random.js';
-import { groundHeight, wrapTile } from './terrain.js';
+import { groundHeight, OBSTACLES, wrapTile } from './terrain.js';
 import { clockHour } from './turret-dial.js';
 
 /**
@@ -62,18 +63,24 @@ export const ENEMY_GUN = {
   spotRange: 600,
   /** How often it looks, s. */
   lookEvery: 0.25,
-  /** From first sight to the first shot, s: traversing, laying and the order to fire. */
-  layFirst: 6,
-  /** Between shots, s. */
-  reload: 8,
+  /** From spotting the tank to the first shot, s: traversing, laying and the order to fire (6 before F3.10's tuning). */
+  layFirst: 8,
+  /** Between shots, s: an aimed rate, slowed for play (8 before F3.10). */
+  reload: 10,
   /** Out of sight this long it loses the tank and must lay afresh when it sees it again, s. */
   loseAfter: 3,
   /** Its muzzle above the ground, m. */
   muzzleHeight: 0.95,
   /** The spread of its shots, mils (1 m at 1,000 m), whatever the laying. */
   dispersion: 0.4,
-  /** The layer's error on this sighting's first, second and later shots, mils: it corrects by the fall of each shot. */
-  layError: [8, 4, 2] as readonly number[],
+  /**
+   * The layer's error on this sighting's first, second, third and later
+   * shots, mils: it corrects by the fall of each shot. F3.10 widened it from
+   * 8, 4, 2 (a stationary Sherman side-on at 250 m hit by about one first
+   * shot in seven, half the third, nearly every one after; see
+   * docs/combat-scenario.md).
+   */
+  layError: [16, 9, 5, 3] as readonly number[],
   /** How well it leads a moving tank: aims this share of the way it will move while the shell flies. */
   lead: 0.8,
   /** And its spread grows by this share of how far the tank moves while the shell flies. */
@@ -136,8 +143,16 @@ export function specOf(i: number): EnemySpec {
 /** The gun's shield, the face a shell hits it on: half its width and height, and its middle above the ground, m. */
 export const GUN_SHIELD = { halfWidth: 1.05, halfHeight: 0.62, middle: 0.82 } as const;
 
-/** The tank as the guns aim at it: its hull and turret's width, length and height above the ground, and the height they aim at, m. */
-export const TANK_SILHOUETTE = { width: 2.62, length: 5.84, height: 2.74, aim: 1.37 } as const;
+/**
+ * The tank as the guns aim at it: its hull's width and length, its height
+ * to the turret's top above the ground, and the height they aim at, m; and
+ * (F3.10) its turret's width seen from any side, over the hull's top
+ * (DAMAGE.hullTop): a shell above the hull and wide of the turret misses.
+ */
+export const TANK_SILHOUETTE = { width: 2.62, length: 5.84, height: 2.74, aim: 1.37, turret: 2.3 } as const;
+
+/** Where an enemy looks for the hull (F3.10): this high above the ground, about its middle, m. Over cover too high to see it, only the turret shows. */
+export const HULL_SIGHT = 1.1;
 
 /** The guns' shields as faces a shell hits (ballistics' targetFaces appends them), at the copy in the tile round the start. */
 export function enemyGunFaces(): HitFace[] {
@@ -231,6 +246,69 @@ export function groundBlocks(a: Readonly<Vec3>, b: Readonly<Vec3>, step = 8): bo
   return false;
 }
 
+/**
+ * A house, wall or rock stands above the line from a to b (world space,
+ * F3.10): the line crosses its footprint (its copy nearest the line's
+ * middle) lower than its top anywhere there. Walls (1 to 1.6 m) hide a
+ * tank's hull but not its turret; houses hide all of it.
+ */
+export function obstaclesBlock(a: Readonly<Vec3>, b: Readonly<Vec3>): boolean {
+  const dx = b[0] - a[0];
+  const dz = b[2] - a[2];
+  const midX = (a[0] + b[0]) / 2;
+  const midZ = (a[2] + b[2]) / 2;
+  const half = Math.hypot(dx, dz) / 2;
+  for (const o of OBSTACLES) {
+    const ox = midX + wrapTile(o.x - midX);
+    const oz = midZ + wrapTile(o.z - midZ);
+    // Too far from the line's middle to touch it.
+    if (Math.hypot(ox - midX, oz - midZ) > half + o.r) continue;
+    // The line in the obstacle's own axes, from its middle (as obstacleDistance turns them).
+    const c = Math.cos(o.yaw);
+    const sn = Math.sin(o.yaw);
+    const ax = a[0] - ox;
+    const az = a[2] - oz;
+    let t0 = 0;
+    let t1 = 1;
+    if (o.kind === 'rock') {
+      // Where the line is inside its circle: |a + t d|² = r².
+      const qa = dx * dx + dz * dz;
+      const qb = 2 * (ax * dx + az * dz);
+      const qc = ax * ax + az * az - o.r * o.r;
+      const disc = qb * qb - 4 * qa * qc;
+      if (qa < 1e-9 || disc < 0) continue;
+      const root = Math.sqrt(disc);
+      t0 = Math.max(0, (-qb - root) / (2 * qa));
+      t1 = Math.min(1, (-qb + root) / (2 * qa));
+    } else {
+      // Clip the line to the box, one pair of faces at a time.
+      const lax = ax * c - az * sn;
+      const laz = ax * sn + az * c;
+      const ldx = dx * c - dz * sn;
+      const ldz = dx * sn + dz * c;
+      for (const [p, d, h] of [
+        [lax, ldx, o.hx],
+        [laz, ldz, o.hz],
+      ] as const) {
+        if (Math.abs(d) < 1e-9) {
+          if (Math.abs(p) > h) t1 = -1;
+          continue;
+        }
+        const u0 = (-h - p) / d;
+        const u1 = (h - p) / d;
+        t0 = Math.max(t0, Math.min(u0, u1));
+        t1 = Math.min(t1, Math.max(u0, u1));
+      }
+    }
+    if (t1 < t0) continue;
+    // The line is straight, so it is lowest over the footprint at one of the ends of that stretch.
+    const top = groundHeight(ox, oz) + o.height;
+    const low = Math.min(a[1] + (b[1] - a[1]) * t0, a[1] + (b[1] - a[1]) * t1);
+    if (low < top) return true;
+  }
+  return false;
+}
+
 /** The clock direction from a tank at heading `heading` to a point (dx, dz) from it, 12 ahead, as the crew calls it. */
 export function clockTo(heading: number, dx: number, dz: number): number {
   return clockHour(Math.atan2(-dx, -dz) - heading);
@@ -252,8 +330,12 @@ export interface EnemyGunState {
   /** Its group is started: it is there (drawn, and among the shells' targets while alive). */
   present: boolean;
   alive: boolean;
-  /** It sees the tank now (as of its last look). */
+  /** It sees the tank now (as of its last look): something of it shows, with a clear line. */
   sees: boolean;
+  /** What of the tank it sees (F3.10): all of it, only its turret over cover, or nothing. */
+  view: TankView;
+  /** How far it has got to spotting the tank (F3.10): 1 is spotted; it lays and fires only then. */
+  spot: number;
   /** It has the tank: laying on it, or laid; out of sight for loseAfter it loses it. */
   tracking: boolean;
   /** Until its next shot can go, s. */
@@ -308,18 +390,26 @@ export class EnemyBattery {
   /** Hits the tank has taken, and shots fired at it, since it was started. */
   hits = 0;
   shotsFired = 0;
+  /** The fight's tuning (F3.10, src/sim/combat.ts): spotting, aim, reactions, the tank's size. */
+  tuning: CombatTuning = { ...DEFAULT_TUNING };
+  /** Since the crew last fired, s (F3.10): its flash gives the tank away. */
+  crewFiredAgo = Infinity;
   /** Bumped on every change both pages must agree on (on, alive, hits). */
   version = 0;
   private random: () => number;
   private readonly muzzle: Vec3 = [0, 0, 0];
+  private readonly at: [number, number] = [0, 0];
   private readonly eye: Vec3 = [0, 0, 0];
+  private readonly hull: Vec3 = [0, 0, 0];
+  private readonly situation = { range: 0, view: 'none' as TankView, moving: false, fired: false, alert: false, driving: false };
 
-  constructor(seed = 7531) {
+  constructor(seed = 7531, tuning: Readonly<CombatTuning> = DEFAULT_TUNING) {
     this.random = rng(seed);
+    this.tuning = { ...tuning };
   }
 
   private static freshGun(): EnemyGunState {
-    return { present: false, alive: true, sees: false, tracking: false, ready: 0, blind: 0, shots: 0, look: 0, revealed: false, d: 0, moving: true, held: false };
+    return { present: false, alive: true, sees: false, view: 'none', spot: 0, tracking: false, ready: 0, blind: 0, shots: 0, look: 0, revealed: false, d: 0, moving: true, held: false };
   }
 
   /** Any group is started. */
@@ -342,6 +432,7 @@ export class EnemyBattery {
     if (!this.on) {
       this.hits = 0;
       this.shotsFired = 0;
+      this.crewFiredAgo = Infinity;
     }
     for (let i = 0; i < this.guns.length; i++) {
       if (groupOf(i) !== group) continue;
@@ -370,6 +461,22 @@ export class EnemyBattery {
     this.version++;
   }
 
+  /** The crew fired (F3.10): for a while its flash makes the tank quick to spot. */
+  crewFired(): void {
+    this.crewFiredAgo = 0;
+  }
+
+  /** Enemy `i` has spotted the tank already (Combat → Meet, which parks the tank where it is waiting for it). */
+  spotNow(i: number): void {
+    const g = this.guns[i];
+    if (g) g.spot = 1;
+  }
+
+  /** Whether any enemy there and alive has the tank (laying on it or laid). */
+  spotted(): boolean {
+    return this.guns.some((g) => g.present && g.alive && g.tracking);
+  }
+
   /** A shell knocked enemy `i` out. Returns whether it was there and alive. */
   kill(i: number): boolean {
     const g = this.guns[i];
@@ -387,18 +494,29 @@ export class EnemyBattery {
     return this.guns.filter((g, i) => g.present && g.alive && (!group || groupOf(i) === group)).length;
   }
 
-  /** Whether enemy `i` (alive) could see the tank now: in range, the ground and `clear` (the smoke) letting the line through. */
+  /** Whether enemy `i` (alive) could see the tank now: in range, the ground, the houses, walls and rocks (F3.10) and `clear` (the smoke) letting a line through to some of it. */
   canSee(i: number, tank: Readonly<TankTarget>, clear: SightCheck): boolean {
+    return this.viewOf(i, tank, clear) !== 'none';
+  }
+
+  /**
+   * What of the tank enemy `i` sees now (F3.10): within its spot range, a
+   * clear line to its hull (all of it), or only to its turret's top (hull
+   * down behind a crest or a wall), or neither.
+   */
+  viewOf(i: number, tank: Readonly<TankTarget>, clear: SightCheck): TankView {
     const m = muzzleNear(i, tank.x, tank.z, this.muzzle, this.guns[i].d);
-    const dx = tank.x - m[0];
-    const dz = tank.z - m[2];
-    if (Math.hypot(dx, dz) > specOf(i).spotRange) return false;
+    if (Math.hypot(tank.x - m[0], tank.z - m[2]) > specOf(i).spotRange) return 'none';
+    const open = (to: Vec3) => !groundBlocks(m, to) && !obstaclesBlock(m, to) && clear(m, to);
+    this.hull[0] = tank.x;
+    this.hull[1] = tank.ground + HULL_SIGHT;
+    this.hull[2] = tank.z;
+    if (open(this.hull)) return 'full';
     // Its eye on the tank's turret top, a little under it.
     this.eye[0] = tank.x;
     this.eye[1] = tank.ground + TANK_SILHOUETTE.height - 0.3;
     this.eye[2] = tank.z;
-    if (groundBlocks(m, this.eye)) return false;
-    return clear(m, this.eye);
+    return open(this.eye) ? 'turret' : 'none';
   }
 
   /**
@@ -410,6 +528,8 @@ export class EnemyBattery {
    */
   step(dt: number, tank: Readonly<TankTarget>, clear: SightCheck, out: EnemyShot[]): number {
     out.length = 0;
+    this.crewFiredAgo += dt;
+    const alert = this.shotsFired > 0;
     for (let i = 0; i < this.guns.length; i++) {
       const g = this.guns[i];
       if (!g.present || !g.alive) continue;
@@ -418,13 +538,28 @@ export class EnemyBattery {
       if (g.look <= 0) {
         g.look += spec.lookEvery;
         if (g.look <= 0) g.look = spec.lookEvery;
-        g.sees = this.canSee(i, tank, clear);
+        g.view = this.viewOf(i, tank, clear);
+        g.sees = g.view !== 'none';
       }
-      if (g.sees) {
+      // Spotting (F3.10): seeing it builds up to spotting it; out of sight, that fades.
+      if (g.sees && g.spot < 1) {
+        const s = this.situation;
+        gunNear(i, tank.x, tank.z, this.at, g.d);
+        s.range = Math.hypot(tank.x - this.at[0], tank.z - this.at[1]);
+        s.view = g.view;
+        s.moving = Math.abs(tank.speed) > SPOTTING.movingSpeed;
+        s.fired = this.crewFiredAgo < SPOTTING.firedFor;
+        s.alert = alert;
+        s.driving = i >= FIRST_TANK && g.moving;
+        g.spot = Math.min(1, g.spot + spotRate(s, this.tuning.spot) * dt);
+      } else if (!g.sees) {
+        g.spot = Math.max(0, g.spot - SPOTTING.forget * dt);
+      }
+      if (g.sees && g.spot >= 1) {
         g.blind = 0;
         if (!g.tracking) {
           g.tracking = true;
-          g.ready = spec.layFirst;
+          g.ready = spec.layFirst * this.tuning.react;
           g.shots = 0;
         }
       } else if (g.tracking) {
@@ -443,15 +578,19 @@ export class EnemyBattery {
       g.ready -= dt;
       if (g.ready > 0 || !g.sees) continue;
       out.push(this.fire(i, tank));
-      g.ready = spec.reload;
+      g.ready = spec.reload * this.tuning.react;
     }
     return out.length;
   }
 
-  /** Gun `i` fires at the tank now (the tests and the Practice button call it too): where the shell goes and whether it hits. */
-  fire(i: number, tank: Readonly<TankTarget>): EnemyShot {
+  /**
+   * Gun `i` fires at the tank now (the tests call it too): where the shell
+   * goes and whether it hits. It aims at what it last saw of the tank, or
+   * at `view` (the tests' fireNow: the whole tank, seeing it or not).
+   */
+  fire(i: number, tank: Readonly<TankTarget>, view: TankView = this.guns[i].view): EnemyShot {
     const g = this.guns[i];
-    const shot = resolveShot(i, tank, g.shots, this.random, g.d);
+    const shot = resolveShot(i, tank, g.shots, this.random, g.d, { aim: this.tuning.aim, box: this.tuning.box, view });
     g.shots++;
     g.revealed = true;
     this.shotsFired++;
@@ -463,12 +602,19 @@ export class EnemyBattery {
   }
 }
 
-/** The spread of an enemy's `shots`th shot on a sighting (0 first) at `range` m on a tank moving `speed` m/s, m (one standard deviation). */
-export function shotSpread(shots: number, range: number, speed: number, spec: EnemySpec = ENEMY_GUN): number {
+/** The spread of an enemy's `shots`th shot on a sighting (0 first) at `range` m on a tank moving `speed` m/s, m (one standard deviation); `aim` (F3.10) scales its laying error and dispersion. */
+export function shotSpread(shots: number, range: number, speed: number, spec: EnemySpec = ENEMY_GUN, aim = 1): number {
   const lay = spec.layError[Math.min(shots, spec.layError.length - 1)];
-  const mils = Math.hypot(spec.dispersion, lay);
+  const mils = aim * Math.hypot(spec.dispersion, lay);
   const moved = Math.abs(speed) * (range / spec.muzzleSpeed);
   return Math.hypot((range * mils) / 1000, moved * spec.leadError);
+}
+
+/** How a shot is tuned (F3.10): the aim and the tank's size (CombatTuning), and what of the tank the gun sees. */
+export interface ShotOptions {
+  aim?: number;
+  box?: number;
+  view?: TankView;
 }
 
 /**
@@ -476,11 +622,15 @@ export function shotSpread(shots: number, range: number, speed: number, spec: En
  * at the tank as it is now. The shell
  * flies range / muzzleSpeed; the tank moves on meanwhile and the gun leads
  * it by `lead` of that. Its errors across and up (shotSpread) put it on the
- * tank (inside its silhouette as the gun sees it: front, side or between)
- * or past it: low, it strikes the ground short; high or wide, it lands well
- * beyond.
+ * tank (inside its silhouette as the gun sees it: the hull front, side or
+ * between, and the turret over it) or past it: low, it strikes the ground
+ * short; high or wide, it lands well beyond. Seeing only the turret over
+ * cover (hull down, F3.10), the gun aims at the turret, and a shell low of
+ * it strikes the cover short.
  */
-export function resolveShot(i: number, tank: Readonly<TankTarget>, shots: number, random: () => number, along = 0): EnemyShot {
+export function resolveShot(i: number, tank: Readonly<TankTarget>, shots: number, random: () => number, along = 0, opts: ShotOptions = {}): EnemyShot {
+  const box = opts.box ?? 1;
+  const turretOnly = opts.view === 'turret';
   const spec = specOf(i);
   const from = muzzleNear(i, tank.x, tank.z, [0, 0, 0], along);
   const dx0 = tank.x - from[0];
@@ -502,25 +652,32 @@ export function resolveShot(i: number, tank: Readonly<TankTarget>, shots: number
   const uz = dz / d;
   const rx = -uz;
   const rz = ux;
-  const spread = shotSpread(shots, range, tank.speed, spec);
+  const spread = shotSpread(shots, range, tank.speed, spec, opts.aim ?? 1);
   const across = (aimX - ax) * rx + (aimZ - az) * rz + normal(random) * spread;
   const up = normal(random) * spread;
-  // The tank's half width as the gun sees it: its front, its side or between.
+  // The tank as the gun sees it, `box` times its size: the hull's half width (its front, its side or between), the turret's, and their tops.
   const rel = Math.atan2(-Math.sin(tank.heading), -Math.cos(tank.heading)) - Math.atan2(ux, uz);
-  const half = 0.5 * (Math.abs(Math.cos(rel)) * TANK_SILHOUETTE.width + Math.abs(Math.sin(rel)) * TANK_SILHOUETTE.length);
-  const halfUp = TANK_SILHOUETTE.height / 2;
-  const hit = Math.abs(across) <= half && Math.abs(up) <= halfUp;
+  const half = 0.5 * box * (Math.abs(Math.cos(rel)) * TANK_SILHOUETTE.width + Math.abs(Math.sin(rel)) * TANK_SILHOUETTE.length);
+  const turretHalf = 0.5 * box * TANK_SILHOUETTE.turret;
+  const hullTop = box * DAMAGE.hullTop;
+  const top = box * TANK_SILHOUETTE.height;
+  // Where it struck, up from the ground: aimed at the middle of what it sees.
+  const h = (turretOnly ? (hullTop + top) / 2 : top / 2) + up;
+  const onTurret = h > hullTop && h <= top && Math.abs(across) <= turretHalf;
+  const onHull = !turretOnly && h >= 0 && h <= hullTop && Math.abs(across) <= half;
+  const hit = onTurret || onHull;
   const ground = groundHeight(ax, az);
   const to: Vec3 = [0, 0, 0];
   if (hit) {
-    // On the near face of the tank.
+    // On the near face of the tank, at the height on the true-sized tank (the damage model's zones go by it).
     const near = Math.min(half, 1.4);
     to[0] = ax + rx * across - ux * near;
     to[2] = az + rz * across - uz * near;
-    to[1] = ground + TANK_SILHOUETTE.aim + up;
+    to[1] = ground + h / box;
   } else {
-    // Low: into the ground short, nearer the lower it went. High or wide: on past, landing well beyond.
-    const short = up < -halfUp ? Math.min(40, Math.max(4, (-up - halfUp) * 15)) : -120;
+    // Low: into the ground (or the cover) short, nearer the lower it went. High or wide: on past, landing well beyond.
+    const floor = turretOnly ? hullTop : 0;
+    const short = h < floor ? Math.min(40, Math.max(4, (floor - h) * 15)) : -120;
     to[0] = ax + rx * across - ux * short;
     to[2] = az + rz * across - uz * short;
     to[1] = groundHeight(to[0], to[2]);

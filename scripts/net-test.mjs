@@ -833,6 +833,45 @@ async function ammoChecks(host, guest, label) {
   await enemyChecks(host, guest, label);
   await enemyTankChecks(host, guest, label);
   await damageChecks(host, guest, label);
+  await combatChecks(host, guest, label);
+}
+
+/**
+ * The combat scenario and the fight's tuning (F3.10): the guest's Start
+ * asks the host, and both pages show it running with the guns in; the
+ * guest's Enemy accuracy → Low reaches the host's battery and comes back
+ * to the guest's menu; the guest's Stop ends it on both and takes the
+ * enemy away.
+ */
+async function combatChecks(host, guest, label) {
+  const combat = (p) => p.page.evaluate(() => window.__combat.state());
+  await guest.page.evaluate(() => window.__combat.start());
+  const on = await waitFor('the scenario on both pages', async () => {
+    const [h, g] = await Promise.all([combat(host), combat(guest)]);
+    const e = await guest.page.evaluate(() => window.__enemy.state());
+    return h.phase === 'on' && g.phase === 'on' && e.present.slice(0, 3).every(Boolean) ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Battle → Start runs the scenario on the host, both pages showing it with the guns in (${label})`, on !== null,
+    on ? '' : JSON.stringify(await Promise.all([host, guest].map(combat))));
+
+  await guest.page.evaluate(() => window.__combat.tune('aim', 1.4));
+  const tuned = await waitFor('the tuning on both pages', async () => {
+    const [h, g] = await Promise.all([combat(host), combat(guest)]);
+    const battery = await host.page.evaluate(() => window.__enemy.tuning());
+    return battery.aim === 1.4 && h.tune.aim === 1.4 && g.tune.aim === 1.4 ? g : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Enemy accuracy → Low tunes the host's enemy and shows on both pages (${label})`, tuned !== null);
+  await guest.page.evaluate(() => window.__combat.resetTuning());
+  await waitFor('the recommended tuning back', async () => (await combat(guest)).tune.aim === 1, 8000).catch(() => null);
+
+  await guest.page.evaluate(() => window.__combat.stop());
+  const off = await waitFor('the scenario off on both pages', async () => {
+    const [h, g] = await Promise.all([combat(host), combat(guest)]);
+    const e = await guest.page.evaluate(() => window.__enemy.state());
+    return h.phase === 'off' && g.phase === 'off' && !e.on ? g : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Stop ends the scenario on both pages and takes the enemy away (${label})`, off !== null);
+  await host.page.evaluate(() => { window.__damage.repair(); window.__drive.place(0, 0, 0); });
 }
 
 /**

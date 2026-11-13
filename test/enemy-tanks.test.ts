@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { INSTANT_SPOTTING } from '../src/sim/combat.js';
 import { AMMO } from '../src/sim/ammo.js';
 import {
   aimAt,
@@ -65,9 +66,9 @@ function along(j: number, step = 5): { x: number; z: number; heading: number; d:
   return points;
 }
 
-/** A battery with the tanks started and tank `i` at distance d, the others held out of the way. */
+/** A battery with the tanks started and tank `i` at distance d, spotting at once as F3.3 did (spotting, F3.10, is tested in test/combat.test.ts). */
 function tanksAt(i: number, d: number): EnemyBattery {
-  const b = new EnemyBattery(5);
+  const b = new EnemyBattery(5, INSTANT_SPOTTING);
   b.start(undefined, 'tanks');
   b.placeTank(i, d);
   return b;

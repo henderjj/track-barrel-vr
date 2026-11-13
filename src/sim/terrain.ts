@@ -227,6 +227,20 @@ const COURSE_CLEAR = 4;
 const LANE_CLEAR = 14;
 
 /**
+ * Cover along the lane (F3.10, docs/combat-scenario.md): stretches of dry
+ * stone wall just off the lane's flat strip, 30 m long and 1.5 m high, so a
+ * tank halted behind one shows the enemy only its turret (hull down). Five
+ * on the left, facing the guns, and two on the right, facing tank A's
+ * route, with gaps where each Meet parks the tank (an enemy's line to it
+ * crosses the walls' line there), so a Meet still shows the whole tank.
+ * Added after the random obstacles, so those stay where they stood.
+ */
+export const LANE_WALLS: readonly Obstacle[] = [
+  ...[-135, -190, -275, -350, -425].map((z) => block('wall', -21, z, 15, 0.35, Math.PI / 2, 1.5)),
+  ...[-300, -420].map((z) => block('wall', 21, z, 15, 0.35, Math.PI / 2, 1.5)),
+];
+
+/**
  * The obstacles in one tile, tile-local, the same on every page and in
  * every realm. Random ones keep off the start field and both roads'
  * corridors. Those that would stand on the biathlon course's field (F5.3a)
@@ -254,7 +268,7 @@ export const OBSTACLES: readonly Obstacle[] = (() => {
   place(ROCKS_PER_TILE, () => rock(spot(), spot(), 0.8 + random() * 1.4));
   place(WALLS_PER_TILE, () => block('wall', spot(), spot(), 4 + random() * 8, 0.35, random() * Math.PI, 1.0 + random() * 0.6));
   place(HOUSES_PER_TILE, () => block('house', spot(), spot(), 2.5 + random() * 2, 3 + random() * 2.5, random() * Math.PI, 2.6 + random() * 1));
-  return list.filter((o) => outsideCourseField(o.x, o.z) > o.r + COURSE_CLEAR && firingLaneOffset(o.x, o.z) > o.r + LANE_CLEAR);
+  return [...list.filter((o) => outsideCourseField(o.x, o.z) > o.r + COURSE_CLEAR && firingLaneOffset(o.x, o.z) > o.r + LANE_CLEAR), ...LANE_WALLS];
 })();
 
 /**

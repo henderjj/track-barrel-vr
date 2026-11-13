@@ -31,6 +31,7 @@ import {
   shotSpread,
   type TankTarget,
 } from '../src/sim/enemy-guns.js';
+import { INSTANT_SPOTTING } from '../src/sim/combat.js';
 import { rng } from '../src/sim/random.js';
 import { FOG } from '../src/sim/range.js';
 import { createTankDrive } from '../src/sim/tank-drive.js';
@@ -55,6 +56,7 @@ function run(b: EnemyBattery, tank: TankTarget, seconds: number, clear = seeAll,
   return all;
 }
 
+// The laying and firing tests spot the tank at once, as F3.2 did: spotting (F3.10) has its own tests in test/combat.test.ts.
 describe('enemy anti-tank guns (F3.2)', () => {
   it('stand on open ground off the lane, clear of the obstacles and the biathlon field', () => {
     for (const g of ENEMY_GUNS) {
@@ -91,7 +93,7 @@ describe('enemy anti-tank guns (F3.2)', () => {
   });
 
   it('lays for layFirst once it sees the tank, then fires every reload while it still does', () => {
-    const b = new EnemyBattery();
+    const b = new EnemyBattery(undefined, INSTANT_SPOTTING);
     b.start(1);
     const tank = onLane(ENEMY_GUNS[0].meetZ);
     // Only gun A here: the others are knocked out for the test.
@@ -107,7 +109,7 @@ describe('enemy anti-tank guns (F3.2)', () => {
   });
 
   it('loses the tank behind smoke and must lay afresh when it sees it again', () => {
-    const b = new EnemyBattery();
+    const b = new EnemyBattery(undefined, INSTANT_SPOTTING);
     b.start(2);
     b.kill(1);
     b.kill(2);
@@ -129,13 +131,16 @@ describe('enemy anti-tank guns (F3.2)', () => {
       for (let n = 0; n < 1000; n++) if (resolveShot(0, onLane(ENEMY_GUNS[0].meetZ, speed), shots, random).hit) hits++;
       return hits / 1000;
     };
-    const still = [odds(0, 0), odds(1, 0), odds(2, 0)];
+    const still = [odds(0, 0), odds(1, 0), odds(2, 0), odds(3, 0)];
     expect(still[0]).toBeLessThan(still[1]);
-    expect(still[1]).toBeLessThanOrEqual(still[2]);
-    expect(still[0]).toBeGreaterThan(0.3);
-    expect(still[2]).toBeGreaterThan(0.9);
+    expect(still[1]).toBeLessThan(still[2]);
+    expect(still[2]).toBeLessThanOrEqual(still[3]);
+    // F3.10's numbers (docs/combat-scenario.md): the first shot a sighter, hitting about one in seven at gun A's 240 m; by the fourth, most.
+    expect(still[0]).toBeGreaterThan(0.05);
+    expect(still[0]).toBeLessThan(0.25);
+    expect(still[3]).toBeGreaterThan(0.8);
     // At 20 km/h it hits a good deal less.
-    expect(odds(2, 5.5)).toBeLessThan(still[2] - 0.2);
+    expect(odds(3, 5.5)).toBeLessThan(still[3] - 0.2);
     expect(shotSpread(0, 500, 0)).toBeGreaterThan(shotSpread(2, 500, 0));
     expect(shotSpread(2, 500, 5)).toBeGreaterThan(shotSpread(2, 500, 0));
   });
