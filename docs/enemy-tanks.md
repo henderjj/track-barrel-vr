@@ -31,7 +31,7 @@ As the plan said, fixed routes after the static guns:
 | Tank B's route | (−310, −305) to (−190, −395), 150 m | Open ground on the far left beyond the guns, clear of the houses and walls, out of 400 m of the start |
 | Speed | 4 m/s | A medium tank across country, slow enough to hit with a lead |
 | Spot range | 400 m | Buttoned up; keeps the start out of sight |
-| First shot / reload | 5 s / 7 s | Halting, traversing and laying; a tank gun's aimed rate, slowed for play |
+| First shot / reload | 5 s / 7 s (since F3.10: 7 s / 9 s, after spotting the tank) | Halting, traversing and laying; a tank gun's aimed rate, slowed for play |
 | Lose the tank after | 4 s out of sight | Then it drives on |
 | Muzzle | 1.95 m up, 3.3 m ahead of the turret's middle; 790 m/s | A long 75 mm |
 | Size as a target | 5.9 m long, 2.9 m wide, 2.6 m tall | The model |

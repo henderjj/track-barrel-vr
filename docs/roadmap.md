@@ -105,6 +105,7 @@ The indicators the crew read most, and a game mode that needs no enemies, so the
 | F3.7 | Overheating and engine management | Headset check | F1.5 | #92 | [overheating.md](overheating.md): labouring revved past 2,250 rpm in a low gear heats the coolant into the red; TEMP lamp at 100 °C, power fade from 108, knock from 112, stall after 8 s at 118, no restart above 110; Combat → Engine heat; crewmate halts to cool |
 | F3.8 | Gun jams and misfires | Planned | F1.10 | | |
 | F3.9 | Thrown track repaired outside the tank | Cut | F3.4, F2.1 | | Dropped (John, 2026-11-07); it needed leaving the seat |
+| F3.10 | Combat scenario and tuning: advance to contact past the guns and tanks, with spotting, cover and the fight's numbers on the menu | Headset check | F3.1, F3.2, F3.3, F3.4 | #104 | [combat-scenario.md](combat-scenario.md): from John's note (2026-11-13) that the Combat practice disabled the tank very quickly; the enemy spots the tank over time (range, movement, firing, hull down), houses, walls and rocks block its view, seven walls by the lane for hull down, a hull-and-turret hit box, slower laying and correction; Battle → Advance to contact (to the 500 m board, tanks come up halfway, briefing and debrief); Battle tab rows tune enemy spotting, accuracy, reactions, our hit box, armour and hits to knock out; `combat`/`combat-ask` events. The Ideas list's "Run the gauntlet" |
 
 ## Phase 4: Training and tutorials
 

@@ -28,6 +28,7 @@ import {
   type TankTarget,
 } from '../sim/enemy-guns.js';
 import { ENEMY_TANK, ENEMY_TANKS, type RoutePose, routePose, wrapRoute } from '../sim/enemy-tanks.js';
+import { type CombatTuning, type TankView } from '../sim/combat.js';
 import { groundHeight, wrapTile } from '../sim/terrain.js';
 import { type DamageHit, resolveDamage, type TankPose } from '../sim/damage.js';
 import { rng } from '../sim/random.js';
@@ -74,6 +75,46 @@ export function enemyRevealed(i: number): boolean {
   return active?.revealed[i] ?? false;
 }
 
+/** Host: the fight's tuning (F3.10, set by CombatSystem): spotting, aim, reactions, the tank's size, and its armour's toughness. */
+export function setBatteryTuning(t: Readonly<CombatTuning>): void {
+  if (active) Object.assign(active.battery.tuning, t);
+}
+
+/** Host: some enemy has the tank spotted (F3.10). */
+export function enemySpotted(): boolean {
+  return active?.battery.spotted() ?? false;
+}
+
+/** Host: the enemy's shots at the tank since the battery started (F3.10). */
+export function enemyShotsFired(): number {
+  return active?.battery.shotsFired ?? 0;
+}
+
+/**
+ * Host: the combat scenario's battery (F3.10): every enemy stopped, then
+ * the guns started afresh with `seed` (the tanks come up later,
+ * bringTanks), or nothing.
+ */
+export function startBattle(on: boolean, seed?: number): void {
+  if (!netLink.isHost || !active) return;
+  active.battery.stop();
+  active.holdFire = false;
+  if (on) active.battery.start(seed, 'guns');
+  active.restarted();
+}
+
+/** Host: the scenario's tanks come up (F3.10), at their routes' starts. */
+export function bringTanks(): void {
+  if (!netLink.isHost || !active) return;
+  active.battery.start(undefined, 'tanks');
+  active.restarted();
+}
+
+/** Host: the enemy holds its fire (the scenario is over) or fights on. */
+export function holdEnemyFire(hold: boolean): void {
+  if (active) active.holdFire = hold;
+}
+
 /** One line for the menu, for the guns or the tanks. */
 export function enemyStatus(group: EnemyGroup = 'guns'): string {
   return batteryLine(enemyShared(), group);
@@ -99,6 +140,15 @@ export function meetGun(i: number): void {
   if (!ENEMY_GUNS[i]) return;
   if (!sharedGroupOn(enemyShared(), 'guns')) startEnemies(true, 'guns');
   placeTank(0, ENEMY_GUNS[i].meetZ, 0);
+  // The gun has the tank already (F3.10): Meet is for seeing it fire, not for waiting while it spots.
+  if (netLink.isHost) {
+    active?.battery.spotNow(i);
+    // A scenario that ended held the enemy's fire: a Meet fights on.
+    if (active) active.holdFire = false;
+  } else {
+    const event = { t: 'enemy-ask', spot: i };
+    netLink.sendEvent(event);
+  }
 }
 
 /**
@@ -138,6 +188,9 @@ interface EnemyDebug {
       alive: boolean;
       revealed: boolean;
       sees: boolean;
+      /** What of the tank it sees, and how far it has got to spotting it (F3.10). */
+      view: TankView;
+      spot: number;
       tracking: boolean;
       ready: number;
       drawn: boolean;
@@ -152,7 +205,7 @@ interface EnemyDebug {
   };
   start(seed?: number, group?: EnemyGroup): void;
   stop(group?: EnemyGroup): void;
-  /** Host: enemy `i` fires at the tank now, seeing it or not. */
+  /** Host: enemy `i` fires at the tank now, seeing it or not, at the whole tank (hull down or not). */
   fireNow(i: number): void;
   /** Host: enemy `i` is knocked out at once. */
   kill(i: number): void;
@@ -167,6 +220,8 @@ interface EnemyDebug {
   meet(i: number): void;
   meetTank(j: number): void;
   readonly sign: string;
+  /** Host: the battery's tuning (F3.10). */
+  tuning(): CombatTuning;
 }
 
 /**
@@ -206,6 +261,8 @@ export class EnemySystem extends createSystem({}) {
   private pendingKills: { gun: number; at: number }[] = [];
   private fired: EnemyShot[] = [];
   private sentVersion = -1;
+  /** Host: the enemy holds its fire (the combat scenario is over, F3.10). */
+  holdFire = false;
   private sentAt = 0;
   private wasConnected = false;
   private sign!: FloatingSign;
@@ -276,13 +333,16 @@ export class EnemySystem extends createSystem({}) {
     });
     netLink.events.set('enemy-ask', (e) => {
       if (!netLink.isHost) return;
-      const ask = e as { on?: unknown; group?: unknown; meet?: unknown };
+      const ask = e as { on?: unknown; group?: unknown; meet?: unknown; spot?: unknown };
       const group: EnemyGroup = ask.group === 'tanks' ? 'tanks' : 'guns';
       if (typeof ask.meet === 'number' && ENEMY_TANKS[ask.meet]) this.meet(ask.meet);
       else if (typeof ask.on === 'boolean') this.setOn(ask.on, group);
+      if (typeof ask.spot === 'number') this.battery.spotNow(ask.spot);
     });
     // A shell the host decided hit a live enemy knocks it out when it gets there (FiringSystem gives its flight time).
     const onDecided = (target: number, flight: number) => {
+      // Every shot the crew fires gives the tank away for a while (F3.10).
+      if (netLink.isHost) this.battery.crewFired();
       const gun = target - ENEMY_TARGET_FIRST;
       if (netLink.isHost && gun >= 0 && gun < ENEMY_COUNT && this.shared.present[gun] && this.shared.alive[gun]) {
         this.pendingKills.push({ gun, at: this.time + flight });
@@ -314,6 +374,8 @@ export class EnemySystem extends createSystem({}) {
           alive: self.shared.alive[i],
           revealed: self.revealed[i],
           sees: self.battery.guns[i].sees,
+          view: self.battery.guns[i].view,
+          spot: self.battery.guns[i].spot,
           tracking: self.battery.guns[i].tracking,
           ready: self.battery.guns[i].ready,
           drawn: self.whole[i].visible || self.wrecks[i].visible,
@@ -338,7 +400,7 @@ export class EnemySystem extends createSystem({}) {
       fireNow: (i) => {
         if (!netLink.isHost || !self.battery.guns[i]?.present || !self.battery.guns[i].alive) return;
         self.tankTarget();
-        self.send(self.battery.fire(i, self.target));
+        self.send(self.battery.fire(i, self.target, 'full'));
         self.afterChange();
       },
       kill: (i) => {
@@ -364,12 +426,20 @@ export class EnemySystem extends createSystem({}) {
       get sign() {
         return self.sign.visible ? self.signText : '';
       },
+      tuning: () => ({ ...self.battery.tuning }),
     };
+  }
+
+  /** Host: the battery was started or stopped from outside (the scenario): show it, and forget kills on the way. */
+  restarted(): void {
+    this.pendingKills.length = 0;
+    this.afterChange();
   }
 
   /** Host: start or stop a group. */
   setOn(on: boolean, group: EnemyGroup = 'guns'): void {
     if (!netLink.isHost) return;
+    this.holdFire = false;
     if (on) this.battery.start(undefined, group);
     else this.battery.stop(group);
     this.pendingKills.length = 0;
@@ -380,12 +450,15 @@ export class EnemySystem extends createSystem({}) {
   /** Host: Meet tank `j`: the tanks started if they aren't, it at its meeting place, the crew's tank parked where it will be seen. */
   meet(j: number): void {
     if (!netLink.isHost || !ENEMY_TANKS[j]) return;
+    this.holdFire = false;
     if (!this.battery.groupOn('tanks')) {
       repairTank();
       resetTank('warm');
       this.setOn(true, 'tanks');
     }
     this.battery.placeTank(FIRST_TANK + j, ENEMY_TANKS[j].meetD);
+    // It has the tank already (F3.10): Meet is for seeing it halt and fire.
+    this.battery.spotNow(FIRST_TANK + j);
     this.afterChange();
     placeTank(0, ENEMY_TANKS[j].meetZ, 0);
   }
@@ -477,7 +550,7 @@ export class EnemySystem extends createSystem({}) {
     this.tankPose.ground = groundHeight(t.x, t.z);
     this.tankPose.heading = t.heading;
     this.tankPose.turretYaw = turretState().yaw;
-    return resolveDamage(shot.from, shot.to, shot.range, this.tankPose, this.damageRandom);
+    return resolveDamage(shot.from, shot.to, shot.range, this.tankPose, this.damageRandom, this.battery.tuning.armour);
   }
 
   /** An enemy fired: its flash and dust now, its shell on the way. */
@@ -513,7 +586,7 @@ export class EnemySystem extends createSystem({}) {
   /** The host's part: step the battery, knock out enemies hit, and keep the guest told. */
   private host(dt: number, paused: boolean): void {
     // Knocked out (F3.4), the tank is out of the fight: the enemies hold their fire.
-    if (!paused && this.battery.on && !damageState().out) {
+    if (!paused && this.battery.on && !damageState().out && !this.holdFire) {
       this.battery.step(dt, this.tankTarget(), this.clear, this.fired);
       for (const shot of this.fired) this.send(shot);
     }

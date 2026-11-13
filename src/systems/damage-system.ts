@@ -27,6 +27,13 @@ export const TEST_HITS = ['engine', 'track', 'turret', 'crew'] as const;
 export type TestHit = (typeof TEST_HITS)[number];
 
 let active: DamageSystem | null = null;
+/** Hits through the armour that knock the tank out (F3.10's tuning, set by CombatSystem on the host). */
+let knockOutAfter: number = DAMAGE.knockOut;
+
+/** The tuning's knock-out (F3.10): this many hits through the armour knock the tank out from the next hit on. */
+export function setKnockOut(hits: number): void {
+  if (Number.isFinite(hits) && hits >= 1) knockOutAfter = Math.round(hits);
+}
 
 /** The tank's damage as this page has it (F3.4). */
 export function damageState(): Readonly<DamageState> {
@@ -173,7 +180,7 @@ export class DamageSystem extends createSystem({}) {
   take(hit: Readonly<DamageHit>, practice: boolean): void {
     if (!netLink.isHost) return;
     const next: DamageState = { ...this.state };
-    applyHit(next, hit);
+    applyHit(next, hit, knockOutAfter);
     this.apply(next, { ...hit, effects: [...hit.effects] });
     console.info(`[Damage] ${practice ? 'practice ' : ''}hit: ${hitLine(hit)}. ${damageLine(this.state)}`);
   }

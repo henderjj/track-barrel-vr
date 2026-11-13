@@ -166,7 +166,8 @@ export function hitZone(from: Readonly<Vec3>, to: Readonly<Vec3>, tank: Readonly
  * (world space) from `range` m does: its zone, whether it gets through the
  * armour there (its penetration at that range, spread, against the armour
  * along its path; glancing off past DAMAGE.ricochet), and what it hits
- * inside, by chance and where it got in.
+ * inside, by chance and where it got in. `armour` (F3.10's tuning)
+ * scales the shell's penetration: under 1 the armour is tougher.
  */
 export function resolveDamage(
   from: Readonly<Vec3>,
@@ -174,6 +175,7 @@ export function resolveDamage(
   range: number,
   tank: Readonly<TankPose>,
   random: () => number,
+  armour = 1,
 ): DamageHit {
   const z = hitZone(from, to, tank);
   const hit: DamageHit = { zone: z.zone, through: false, armour: 0, pen: 0, effects: [], right: z.right };
@@ -186,7 +188,7 @@ export function resolveDamage(
   const plate = ARMOUR[z.zone];
   const met = armourMet(plate.mm, plate.slope, z.across);
   hit.armour = Math.round(met.mm);
-  hit.pen = Math.round(penetration(range) * (1 + DAMAGE.penSpread * normal(random)));
+  hit.pen = Math.round(armour * penetration(range) * (1 + DAMAGE.penSpread * normal(random)));
   hit.through = met.off < DAMAGE.ricochet && hit.pen > met.mm;
   if (!hit.through) return hit;
   switch (z.zone) {
@@ -238,8 +240,8 @@ export function freshDamage(): DamageState {
   return { engine: 0, immobile: '', traverse: false, driver: 0, gunner: 0, hits: 0, through: 0, out: false, v: 0 };
 }
 
-/** Take a hit: what it did, onto `s`. Returns whether the tank was knocked out by it. */
-export function applyHit(s: DamageState, hit: Readonly<DamageHit>): boolean {
+/** Take a hit: what it did, onto `s`; `knockOut` hits through the armour (F3.10's tuning) knock the tank out. Returns whether this one did. */
+export function applyHit(s: DamageState, hit: Readonly<DamageHit>, knockOut: number = DAMAGE.knockOut): boolean {
   s.hits++;
   s.v++;
   if (!hit.through) return false;
@@ -251,7 +253,7 @@ export function applyHit(s: DamageState, hit: Readonly<DamageHit>): boolean {
     else if (e === 'driver') s.driver = Math.min(2, s.driver + 1);
     else if (e === 'gunner') s.gunner = Math.min(2, s.gunner + 1);
   }
-  if (s.out || s.through < DAMAGE.knockOut) return false;
+  if (s.out || s.through < knockOut) return false;
   s.out = true;
   s.engine = 2;
   return true;

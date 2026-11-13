@@ -12,6 +12,8 @@ import { PanelUi } from './panel-ui.js';
 import { driveStatus, heatStatus, resetTank, setEngineHeat, startDriving } from './drive-system.js';
 import { damageStatus, repairTank, TEST_HITS, testHit } from './damage-system.js';
 import { enemyStatus, meetGun, meetTank, startEnemies } from './enemy-system.js';
+import { resetCombatTuning, scenarioStatus, setCombatTune, shownScenario, startScenario, stopScenario, tuningStatus } from './combat-system.js';
+import { TUNE_ROWS } from '../sim/combat.js';
 import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-system.js';
 import { goUpTheRange, rangeStatus } from './range-system.js';
 import { raceStatus, readyAtLine, readyToFire, runStatus, shownRun, startRace, startRun, stopRun } from './range-run-system.js';
@@ -494,6 +496,29 @@ export class GameMenuSystem extends createSystem({}) {
         this.render();
       });
     }
+    // The Battle tab (F3.10): Start closes the menu, to drive; the tuning buttons leave it open, their line saying what differs.
+    // Its status lines sit below every button: the scenario's grows to two lines once it runs and would otherwise move the buttons under a ray.
+    ui.on('menu-battle-start', () => {
+      this.setOpen(false);
+      stopRide();
+      startScenario();
+    });
+    ui.on('menu-battle-stop', () => {
+      stopScenario();
+      this.render();
+    });
+    for (const row of TUNE_ROWS) {
+      row.options.forEach(([value], i) => {
+        ui.on(`menu-tune-${row.key.toLowerCase()}-${i}`, () => {
+          setCombatTune(row.key, value);
+          this.render();
+        });
+      });
+    }
+    ui.on('menu-tune-reset', () => {
+      resetCombatTuning();
+      this.render();
+    });
     ui.on('menu-loading', () => {
       this.setOpen(false);
       startLoading();
@@ -610,6 +635,9 @@ export class GameMenuSystem extends createSystem({}) {
       this.ui?.setText('menu-enemy-status', enemyStatus());
       this.ui?.setText('menu-tanks-status', enemyStatus('tanks'));
       this.ui?.setText('menu-damage-status', damageStatus());
+      this.ui?.setText('menu-battle-status', scenarioStatus());
+      this.ui?.setText('menu-tune-status', tuningStatus());
+      this.renderTuning();
       this.ui?.setText('menu-run-status', runStatus());
       this.ui?.setText('menu-course-status', courseStatus());
       this.ui?.setText('menu-race-status', raceStatus());
@@ -692,6 +720,10 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-enemy-status', enemyStatus());
     ui.setText('menu-tanks-status', enemyStatus('tanks'));
     ui.setText('menu-damage-status', damageStatus());
+    ui.setText('menu-battle-status', scenarioStatus());
+    ui.setText('menu-battle-start', shownScenario().phase === 'on' ? 'Restart' : 'Start');
+    ui.setText('menu-tune-status', tuningStatus());
+    this.renderTuning();
     ui.setText('menu-run-status', runStatus());
     const run = shownRun();
     ui.setText('menu-run-start', run.phase === 'running' && run.mode === 'range' ? 'Restart' : 'Start');
@@ -725,6 +757,14 @@ export class GameMenuSystem extends createSystem({}) {
   }
 
   /** Show choice `id` as the one in effect, or not. */
+  /** The Battle tab's tuning buttons: the host's value in each row selected (F3.10). */
+  private renderTuning(): void {
+    const tune = shownScenario().tune;
+    for (const row of TUNE_ROWS) {
+      row.options.forEach(([value], i) => this.select(`menu-tune-${row.key.toLowerCase()}-${i}`, tune[row.key] === value));
+    }
+  }
+
   private select(id: string, on: boolean): void {
     if (this.selected.get(id) === on) {
       return;

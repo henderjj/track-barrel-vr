@@ -3435,6 +3435,80 @@ async function partTwo() {
 
   // 6x. The biathlon's driving challenge (F5.3d).
   await theDrivingChallenge();
+
+  // 6y. The combat scenario and the fight's tuning (F3.10).
+  await theCombatScenario();
+}
+
+/**
+ * 6y. The combat scenario and the fight's tuning (F3.10): Battle →
+ *     Advance to contact → Start puts the tank back at the start, mended,
+ *     with the guns in (not yet the tanks) and the briefing on the sign;
+ *     Battle → Enemy accuracy → Low reaches the enemy's battery and lights
+ *     its button, and Recommended puts it back; halted behind the first
+ *     wall, gun A sees only the turret; past halfway the tanks come up;
+ *     at the 500 m board the scenario is won, the debrief on the sign, and
+ *     the enemy holds its fire; Stop takes the enemy away.
+ */
+async function theCombatScenario() {
+  const combat = () => evalInApp('window.__combat.state()');
+  const enemy = () => evalInApp('window.__enemy.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp('(window.__damage.repair(), true)');
+  await menuButtonPress();
+  await menuClick('menu-battle-start');
+  const started = await waitFor('the scenario on, the guns in', () => {
+    const c = combat();
+    const e = enemy();
+    const t = evalInApp('window.__drive.state()');
+    return c.phase === 'on' && e.present.slice(0, 3).every(Boolean) && !e.present[3] && !e.present[4] && Math.hypot(t.x, t.z) < 1 && c;
+  }, 10000).catch(() => combat());
+  const briefing = await waitFor('the briefing on the sign', () => /^Advance to contact/.test(evalInApp('window.__combat.sign')) && evalInApp('window.__combat.sign'), 5000)
+    .catch(() => evalInApp('window.__combat.sign'));
+  check('Battle → Advance to contact → Start: the tank at the start with the guns in (the tanks not yet), and the briefing on the sign',
+    started.phase === 'on' && !started.tanksIn && /^Advance to contact: reach the 500 m board/.test(briefing),
+    `phase ${started.phase}, present ${enemy().present.join('/')}, sign "${briefing}"`);
+
+  await menuButtonPress();
+  // The menu lays out its page on the next frames, which can be slow with it open.
+  await sleep(600);
+  await menuClick('menu-tune-aim-0');
+  const low = await waitFor('the enemy aiming worse', () => evalInApp('window.__enemy.tuning().aim') === 1.4 && combat().tune.aim === 1.4, 5000).catch(() => false);
+  const lit = evalInApp('window.__gameMenu.selected("menu-tune-aim-0")') && !evalInApp('window.__gameMenu.selected("menu-tune-aim-1")');
+  const line = evalInApp("window.__gameMenu.text('menu-tune-status')");
+  await menuClick('menu-tune-reset');
+  const back = await waitFor('the recommended tuning', () => evalInApp('window.__enemy.tuning().aim') === 1 && combat().tune.aim === 1, 5000).catch(() => false);
+  check('Battle → Enemy accuracy → Low reaches the enemy and lights its button; Recommended puts it back',
+    low !== false && lit && /enemy accuracy low/.test(line) && back !== false, `"${line}", lit ${lit}, back ${back !== false}`);
+  await menuButtonPress();
+
+  // Halted behind the first wall by the lane (LANE_WALLS in src/sim/terrain.ts, at z -135), gun A sees only the turret.
+  evalInApp('(window.__drive.place(0, -135, 0), true)');
+  const hullDown = await waitFor('gun A to see only the turret', () => { const g = enemy().guns[0]; return g.view === 'turret' && g; }, 5000).catch(() => enemy().guns[0]);
+  check('Behind the wall by the lane, gun A sees only the turret (hull down)', hullDown.view === 'turret', `view ${hullDown.view}, spot ${hullDown.spot.toFixed(2)}`);
+
+  // Past halfway, the tanks come up.
+  evalInApp('(window.__drive.place(0, -262, 0), true)');
+  const tanks = await waitFor('the tanks to come up', () => { const c = combat(); const e = enemy(); return c.tanksIn && e.present[3] && e.present[4] && c; }, 8000).catch(() => combat());
+  check('Past halfway up the lane the enemy tanks come up', tanks.tanksIn && enemy().present[3], `tanks in ${tanks.tanksIn}, present ${enemy().present.join('/')}`);
+
+  // At the 500 m board: won, the debrief, and the enemy holds its fire.
+  evalInApp('(window.__drive.place(0, -486, 0), true)');
+  const won = await waitFor('the scenario won', () => { const c = combat(); return c.phase === 'won' && c; }, 8000).catch(() => combat());
+  const debrief = await waitFor('the debrief on the sign', () => /^Objective reached/.test(evalInApp('window.__combat.sign')) && evalInApp('window.__combat.sign'), 5000)
+    .catch(() => evalInApp('window.__combat.sign'));
+  const shots = enemy().shots;
+  await sleep(4000);
+  check('At the 500 m board the scenario is won, the debrief is on the sign and the enemy holds its fire',
+    won.phase === 'won' && won.reached && /^Objective reached in \d+:\d\d\. \d of 5 enemies out/.test(debrief) && enemy().shots === shots,
+    `phase ${won.phase}, sign "${debrief}", shots ${shots} → ${enemy().shots}, "${evalInApp("window.__gameMenu.text('menu-battle-status')")}"`);
+
+  await menuButtonPress();
+  await menuClick('menu-battle-stop');
+  const stopped = await waitFor('the enemy gone', () => { const e = enemy(); const c = combat(); return !e.on && c.phase === 'off' && e; }, 5000).catch(() => enemy());
+  check('Battle → Stop takes the enemy away', !stopped.on && combat().phase === 'off', `on ${stopped.on}, phase ${combat().phase}`);
+  await menuButtonPress();
+  evalInApp('(window.__damage.repair(), window.__drive.place(0, 0, 0), true)');
 }
 
 /**

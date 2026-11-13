@@ -44,10 +44,10 @@ export const ENEMY_TANK = {
   muzzleSpeed: 790,
   /** It spots the tank this far away and nearer, with a clear line, m: buttoned up, less far than a dug-in gun's crew. */
   spotRange: 400,
-  /** From first sight to the first shot, s: halting, traversing the turret and laying. */
-  layFirst: 5,
-  /** Between shots, s. */
-  reload: 7,
+  /** From spotting the tank to the first shot, s: halting, traversing the turret and laying (5 before F3.10's tuning). */
+  layFirst: 7,
+  /** Between shots, s (7 before F3.10). */
+  reload: 9,
   /** Out of sight this long it loses the tank, and drives on, s. */
   loseAfter: 4,
   /** Its gun's muzzle above the ground, m. */

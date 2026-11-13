@@ -1,6 +1,6 @@
 # Tank damage model (F3.4)
 
-Until now an enemy shell that struck the crew's tank was only counted and called ([enemy-guns.md](enemy-guns.md), [enemy-tanks.md](enemy-tanks.md)). Now each one strikes somewhere on the tank, meets the armour there, and if it gets through it can hit the engine, a track or the transmission, the power traverse, or a crewman. Three hits through the armour knock the tank out. The model is [`src/sim/damage.ts`](../src/sim/damage.ts); [`src/systems/damage-system.ts`](../src/systems/damage-system.ts) keeps it, shares it and shows it.
+Until now an enemy shell that struck the crew's tank was only counted and called ([enemy-guns.md](enemy-guns.md), [enemy-tanks.md](enemy-tanks.md)). Now each one strikes somewhere on the tank, meets the armour there, and if it gets through it can hit the engine, a track or the transmission, the power traverse, or a crewman. Three hits through the armour knock the tank out (since F3.10 a Battle tab setting, 2 to 5, with the armour's toughness: [combat-scenario.md](combat-scenario.md)). The model is [`src/sim/damage.ts`](../src/sim/damage.ts); [`src/systems/damage-system.ts`](../src/systems/damage-system.ts) keeps it, shares it and shows it.
 
 ## What a hit does
 

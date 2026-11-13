@@ -40,6 +40,9 @@
     first sees the tank (F3.2); start or stop the enemy tanks, or park
     where one will see the tank (F3.3); repair the tank, or take a practice
     hit on the engine, a track, the turret or your own crewman (F3.4).
+    Battle (F3.10): start or stop the combat scenario, Advance to contact,
+    and tune the fight: the enemy's spotting, accuracy and reactions, the
+    tank's hit box and armour, and how many hits through knock it out.
     Sights: go to the gunsight, lay the
     gun on a target's range mark, the sight's render choices; go to the
     driver's or the gunner's periscope, turn both ahead, their power. Test rigs: ride the tank (spike
@@ -252,6 +255,7 @@
       <Button id="tab-tank" class="tab" size="sm" variant="secondary">Tank</Button>
       <Button id="tab-practice" class="tab" size="sm" variant="secondary">Practice</Button>
       <Button id="tab-combat" class="tab" size="sm" variant="secondary">Combat</Button>
+      <Button id="tab-battle" class="tab" size="sm" variant="secondary">Battle</Button>
       <Button id="tab-sights" class="tab" size="sm" variant="secondary">Sights</Button>
       <Button id="tab-rigs" class="tab" size="sm" variant="secondary">Test rigs</Button>
     </div>
@@ -697,6 +701,77 @@
             </div>
           </div>
           <div id="menu-damage-status" class="hint">No damage</div>
+        </div>
+      </div>
+      <div id="page-battle" class="page" style="display: none">
+        <div class="section">
+          <div class="setting">
+            <div class="label">Advance to contact</div>
+            <div class="choices">
+              <Button id="menu-battle-start" class="choice" size="sm" variant="secondary">Start</Button>
+              <Button id="menu-battle-stop" class="choice" size="sm" variant="secondary">Stop</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Enemy spotting</div>
+            <div class="choices">
+              <Button id="menu-tune-spot-0" class="choice" size="sm" variant="secondary">Slow</Button>
+              <Button id="menu-tune-spot-1" class="choice" size="sm" variant="secondary">Normal</Button>
+              <Button id="menu-tune-spot-2" class="choice" size="sm" variant="secondary">Quick</Button>
+              <Button id="menu-tune-spot-3" class="choice" size="sm" variant="secondary">Instant</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Enemy accuracy</div>
+            <div class="choices">
+              <Button id="menu-tune-aim-0" class="choice" size="sm" variant="secondary">Low</Button>
+              <Button id="menu-tune-aim-1" class="choice" size="sm" variant="secondary">Normal</Button>
+              <Button id="menu-tune-aim-2" class="choice" size="sm" variant="secondary">High</Button>
+              <Button id="menu-tune-aim-3" class="choice" size="sm" variant="secondary">Sharp</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Enemy reactions</div>
+            <div class="choices">
+              <Button id="menu-tune-react-0" class="choice" size="sm" variant="secondary">Slow</Button>
+              <Button id="menu-tune-react-1" class="choice" size="sm" variant="secondary">Normal</Button>
+              <Button id="menu-tune-react-2" class="choice" size="sm" variant="secondary">Quick</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Our hit box</div>
+            <div class="choices">
+              <Button id="menu-tune-box-0" class="choice" size="sm" variant="secondary">Small</Button>
+              <Button id="menu-tune-box-1" class="choice" size="sm" variant="secondary">True size</Button>
+              <Button id="menu-tune-box-2" class="choice" size="sm" variant="secondary">Large</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Our armour</div>
+            <div class="choices">
+              <Button id="menu-tune-armour-0" class="choice" size="sm" variant="secondary">Weaker</Button>
+              <Button id="menu-tune-armour-1" class="choice" size="sm" variant="secondary">True</Button>
+              <Button id="menu-tune-armour-2" class="choice" size="sm" variant="secondary">Tougher</Button>
+              <Button id="menu-tune-armour-3" class="choice" size="sm" variant="secondary">Toughest</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Knocked out after</div>
+            <div class="choices">
+              <Button id="menu-tune-knockout-0" class="choice" size="sm" variant="secondary">2 through</Button>
+              <Button id="menu-tune-knockout-1" class="choice" size="sm" variant="secondary">3 through</Button>
+              <Button id="menu-tune-knockout-2" class="choice" size="sm" variant="secondary">4 through</Button>
+              <Button id="menu-tune-knockout-3" class="choice" size="sm" variant="secondary">5 through</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Tuning</div>
+            <div class="choices">
+              <Button id="menu-tune-reset" class="choice" size="sm" variant="secondary">Recommended</Button>
+            </div>
+          </div>
+          <div id="menu-battle-status" class="hint">Advance to contact: off</div>
+          <div id="menu-tune-status" class="hint">Recommended tuning</div>
         </div>
       </div>
       <div id="page-sights" class="page" style="display: none">
