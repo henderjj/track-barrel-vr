@@ -589,16 +589,32 @@ async function turretChecks(host, guest, label) {
     const [h, g] = await Promise.all([turret(host), turret(guest)]);
     return Math.abs(h.yaw) < 1e-3 && Math.abs(g.yaw) < 1e-3;
   }, 8000).catch(() => null);
+  // When the gunner's page last began a frame, to know how old a reading of its turret is.
+  await guest.page.evaluate(() => {
+    if (window.__frameAt !== undefined) return;
+    const tick = () => {
+      window.__frameAt = performance.now();
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
   await guest.page.evaluate(() => window.__turret.set({ traverse: 1 }));
   const turning = await waitFor('the host to see the turret turn', async () => {
-    const [h, g] = await Promise.all([turret(host), turret(guest)]);
+    const [h, g] = await Promise.all([
+      turret(host),
+      guest.page.evaluate(() => ({ ...window.__turret.state(), frameAgeMs: performance.now() - window.__frameAt })),
+    ]);
     return h.yawDeg > 3 ? { h, g } : null;
   }, 15000).catch(() => null);
   // The two pages are read at nearly the same moment, not the same one: on a clean link the host can be a few
   // milliseconds further on (3.57° to the gunner's 3.52° at 6°/s), so it may lead by up to 0.1 s of turning.
+  // That is against where the gunner's turret is now, and its page only knows where it was at its last frame: the
+  // host carries the turret on at its rate between the gunner's packets. On a slow runner the gunner's frames are
+  // 400 ms apart, so the host may also lead by the turning since the frame the gunner's reading comes from.
+  const lead = turning ? turning.h.yawDeg - turning.g.yawDeg : 0;
   check(`The gunner's power traverse turns the turret on the gunner's page at once, and the host sees it close behind (${label})`,
-    turning !== null && turning.g.yawDeg >= turning.h.yawDeg - turning.g.rateDeg * 0.1 && turning.g.yawDeg - turning.h.yawDeg < turning.g.rateDeg * 0.6 + 0.5,
-    turning ? `gunner ${turning.g.yawDeg.toFixed(2)}° at ${turning.g.rateDeg.toFixed(1)}°/s; host draws ${turning.h.yawDeg.toFixed(2)}°` : JSON.stringify(await Promise.all([turret(host), turret(guest)])));
+    turning !== null && lead <= turning.g.rateDeg * (0.1 + turning.g.frameAgeMs / 1000) && -lead < turning.g.rateDeg * 0.6 + 0.5,
+    turning ? `gunner ${turning.g.yawDeg.toFixed(2)}° at ${turning.g.rateDeg.toFixed(1)}°/s, its frame ${turning.g.frameAgeMs.toFixed(0)} ms old; host draws ${turning.h.yawDeg.toFixed(2)}°` : JSON.stringify(await Promise.all([turret(host), turret(guest)])));
   // How smoothly the host draws it: frame by frame it never goes back or jumps.
   const steps = await host.page.evaluate(() => new Promise((resolve) => {
     const out = [];
