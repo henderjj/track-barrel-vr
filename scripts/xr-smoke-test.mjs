@@ -2824,6 +2824,10 @@ async function theDamage() {
   const tank = () => evalInApp('window.__drive.state()');
   iwsdk(['xr', 'set-device-state'], {});
   evalInApp('(window.__drive.reset("warm"), true)');
+  // The enemy tanks' shells in the step before did what damage they did (a driver hit twice can't be hit again, and
+  // a knocked-out tank says nothing of a new hit): this step starts from a mended tank, whatever came before it.
+  evalInApp('(window.__damage.repair(), true)');
+  await waitFor('a mended tank', () => { const d = damage(); return d.hits === 0 && d.driver === 0 && d.gunner === 0 && !d.out; }, 5000).catch(() => null);
   await sleep(500);
 
   await menuButtonPress();
