@@ -42,6 +42,7 @@ import { createTankDrive } from '../sim/tank-drive.js';
 import { goToFiringLine, shownCourse } from './course-system.js';
 import { placeTank, resetTank, tankState } from './drive-system.js';
 import { decidedListeners } from './firing-system.js';
+import { crewLog } from '../sim/crew-board.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { limitRounds, loadedRound, loadForPractice, loadingRounds, resetLoading } from './loading-system.js';
 import { netLink } from './net-system.js';
@@ -691,7 +692,9 @@ export class RangeRunSystem extends createSystem({}) {
         ctx.font = 'bold 44px sans-serif';
         ctx.fillText(text, width / 2, height / 2 + 15, width - 30);
         this.sign.refresh();
-        this.sign.setVisible(true);
+        // The run clocks in the cabin count down; the board logs Go!, the notes and the finish.
+        this.sign.setVisible(true, 'game');
+        if (state > 3) crewLog.post(text, state === 5 ? 'good' : 'info');
       }
     }
     if (this.sign.visible) {

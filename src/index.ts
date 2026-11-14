@@ -4,6 +4,7 @@ import { preferHighPerformanceGpu } from './gpu-preference.js';
 import { BodyHeightSystem } from './systems/body-height-system.js';
 import { CabinLightSystem } from './systems/cabin-light-system.js';
 import { CalloutCardSystem } from './systems/callout-card-system.js';
+import { CrewBoardSystem } from './systems/crew-board-system.js';
 import { CalibrationSystem } from './systems/calibration-system.js';
 import { ConvoySeatSystem } from './systems/convoy-seat-system.js';
 import { CrewBotSystem } from './systems/crew-bot-system.js';
@@ -102,6 +103,8 @@ World.create(
   world.registerSystem(FiringLampSystem);
   // The biathlon course (F5.3a): after DriveSystem has moved the tank, it follows it round the course's gates.
   world.registerSystem(CourseSystem);
+  // The crew board (F6.5): after the systems whose notes it logs and whose state it shows (damage, the fight, the run, the course); it redraws only on a change.
+  world.registerSystem(CrewBoardSystem);
   // After the kit has moved its levers: it reads them into the drive (DriveSystem drives by them next frame) and draws the gauges.
   world.registerSystem(DriverStationSystem);
   world.registerSystem(LeverSystem);

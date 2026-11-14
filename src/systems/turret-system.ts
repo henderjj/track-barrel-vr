@@ -36,6 +36,8 @@ import { slewTurret } from '../sim/turret-dial.js';
 import { convoyUp } from './convoy-seat-system.js';
 import { damageState } from './damage-system.js';
 import { engineRpm, startEngine } from './drive-system.js';
+import { crewLog } from '../sim/crew-board.js';
+import type { SignKind } from './floating-sign.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { HoldKind } from './hand-lock.js';
 import { addControl } from './mechanism-system.js';
@@ -100,7 +102,7 @@ export function pullTrigger(): void {
 
 /** Put a line on the turret's sign, in front of the player (Practice shortcuts about the gun). */
 export function sayAboutTheGun(title: string, lines: [string, string]): void {
-  active?.say(title, lines);
+  active?.say(title, lines, 'setup');
 }
 
 /**
@@ -112,7 +114,7 @@ export function sayAboutTheGun(title: string, lines: [string, string]): void {
  */
 export function traverseTo(yaw: number, sign?: [title: string, line1: string, line2: string]): void {
   active?.traverseTo(yaw);
-  if (sign) active?.say(sign[0], [sign[1], sign[2]]);
+  if (sign) active?.say(sign[0], [sign[1], sign[2]], 'setup');
 }
 
 /** Whether the turret is turning itself for the Practice shortcut on this page. */
@@ -376,7 +378,7 @@ export class TurretSystem extends createSystem({}) {
 
   sayHowToLay(): void {
     const vr = this.world.visibilityState.peek() !== VisibilityState.NonImmersive;
-    this.say('Laying the gun', vr ? ['Right grip: twist to traverse. Crank: fine aim', 'Left crank: clockwise raises. Triggers fire'] : ['In a headset: twist grip, crank, elevation wheel', 'Practice: Forward puts the turret back']);
+    this.say('Laying the gun', vr ? ['Right grip: twist to traverse. Crank: fine aim', 'Left crank: clockwise raises. Triggers fire'] : ['In a headset: twist grip, crank, elevation wheel', 'Practice: Forward puts the turret back'], 'setup');
   }
 
   update(delta: number): void {
@@ -528,7 +530,8 @@ export class TurretSystem extends createSystem({}) {
     else this.sign.follow(this.world.visibilityState.peek() !== VisibilityState.NonImmersive ? this.player.head : this.camera, delta);
   }
 
-  say(title: string, lines: [string, string]): void {
+  /** Put up the sign: a 'game' one also goes on the crew board, a 'setup' one (how the controls work) always floats. */
+  say(title: string, lines: [string, string], kind: SignKind = 'game'): void {
     const { ctx, width, height } = this.sign;
     drawSignBackground(ctx, width, height);
     ctx.fillStyle = '#f4ead8';
@@ -539,8 +542,9 @@ export class TurretSystem extends createSystem({}) {
     ctx.fillText(lines[0], width / 2, 118);
     ctx.fillText(lines[1], width / 2, 160);
     this.sign.refresh();
-    this.sign.setVisible(true);
+    this.sign.setVisible(true, kind);
     this.signText = `${title}. ${lines.join(' ')}`;
+    if (kind === 'game') crewLog.post(`${title}: ${lines[1]}`, 'bad');
     this.signUntil = this.time + SIGN_SECONDS;
     console.info(`[Turret] sign: ${this.signText}`);
   }

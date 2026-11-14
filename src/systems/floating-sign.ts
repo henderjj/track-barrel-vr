@@ -8,6 +8,16 @@ import {
   SRGBColorSpace,
   Vector3,
 } from '@iwsdk/core';
+import { settings } from '../settings.js';
+
+/**
+ * What a sign is for. A 'game' sign carries news of the fight or the drill
+ * (a hit, an enemy firing, a track thrown): since the crew board (F6.5,
+ * docs/crew-board.md) it goes on the board's calls instead, and floats in
+ * front of the player only with the Pop-ups setting on. A 'setup' sign
+ * (seating, calibration, how a station's controls work) always floats.
+ */
+export type SignKind = 'game' | 'setup';
 
 /**
  * A canvas sign that floats in front of the player and follows their heading
@@ -22,6 +32,9 @@ export class FloatingSign {
   readonly height: number;
   private texture: CanvasTexture;
   private placed = false;
+  /** Shown, as far as its owner and the tests are concerned; it is drawn only if its kind may float (`drawn`). */
+  private shown = false;
+  private kind: SignKind = 'setup';
   private headPos = new Vector3();
   private headQuat = new Quaternion();
   private scale = new Vector3();
@@ -56,14 +69,32 @@ export class FloatingSign {
     this.mesh.raycast = () => {};
   }
 
+  /** Shown: its owner put it up and hasn't taken it down (whether or not it floats in view). */
   get visible(): boolean {
+    return this.shown;
+  }
+
+  /** Floating in front of the player now. */
+  get drawn(): boolean {
     return this.mesh.visible;
   }
 
-  /** Show or hide; a sign shown again appears straight in front of the player. */
-  setVisible(visible: boolean): void {
-    if (visible !== this.mesh.visible) {
-      this.mesh.visible = visible;
+  /**
+   * Show or hide; a sign shown again appears straight in front of the
+   * player. `kind` says what this showing is for (it stays until changed):
+   * a 'game' sign floats only with the Pop-ups setting on.
+   */
+  setVisible(visible: boolean, kind?: SignKind): void {
+    if (kind) this.kind = kind;
+    this.shown = visible;
+    this.place();
+  }
+
+  /** Float it or not, as shown and as the Pop-ups setting allows. */
+  private place(): void {
+    const floats = this.shown && (this.kind === 'setup' || settings.popups);
+    if (floats !== this.mesh.visible) {
+      this.mesh.visible = floats;
       this.placed = false;
     }
   }
@@ -75,6 +106,8 @@ export class FloatingSign {
 
   /** Move towards the spot in front of `head`, over `delta` seconds. */
   follow(head: Object3D, delta: number): void {
+    // The Pop-ups setting can change while a sign is up.
+    this.place();
     head.updateWorldMatrix(true, false);
     head.matrixWorld.decompose(this.headPos, this.headQuat, this.scale);
     // Level heading only, so looking down doesn't drag the sign into the floor.

@@ -48,6 +48,7 @@ import {
 } from '../sim/turret.js';
 import { drive, engineRpm, engineStart, shownDriverState, tankState } from './drive-system.js';
 import { lastShot, liveFace } from './firing-system.js';
+import { crewLog } from '../sim/crew-board.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { firingLampLit } from './firing-lamp-system.js';
 import { handUse } from './grip-system.js';
@@ -439,7 +440,8 @@ export class CrewBotSystem extends createSystem({}) {
     ctx.font = 'bold 44px sans-serif';
     ctx.fillText(text, width / 2, height / 2, width - 30);
     this.sign.refresh();
-    this.sign.setVisible(true);
+    this.sign.setVisible(true, 'game');
+    crewLog.post(text);
     this.signText = text;
     this.signUntil = this.time + CALL_SIGN_SECONDS;
   }

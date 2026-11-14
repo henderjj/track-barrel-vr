@@ -12,6 +12,7 @@ import {
   repair,
 } from '../sim/damage.js';
 import { setDriveDamage } from './drive-system.js';
+import { crewLog } from '../sim/crew-board.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { netLink } from './net-system.js';
 import { seating } from './seating.js';
@@ -273,7 +274,8 @@ export class DamageSystem extends createSystem({}) {
       ctx.font = 'bold 36px sans-serif';
       ctx.fillText(text, width / 2, height / 2 + 12, width - 30);
       this.sign.refresh();
-      this.sign.setVisible(true);
+      this.sign.setVisible(true, 'game');
+      crewLog.post(text, text.startsWith('Repaired') ? 'good' : /^(Through|Knocked out|Struck .*broken)/.test(text) ? 'bad' : 'info');
       console.info(`[Damage] sign: ${text}`);
     }
     if (this.sign.visible && this.time > this.signUntil) this.sign.setVisible(false);

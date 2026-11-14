@@ -24,6 +24,7 @@ import {
 } from '../sim/course.js';
 import { groundHeight, wrapTile } from '../sim/terrain.js';
 import { placeTank, startEngine, tankState } from './drive-system.js';
+import { crewLog } from '../sim/crew-board.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { netLink } from './net-system.js';
 import { seating } from './seating.js';
@@ -260,7 +261,8 @@ export class CourseSystem extends createSystem({}) {
         ctx.font = 'bold 40px sans-serif';
         ctx.fillText(s.note, width / 2, height / 2 + 14, width - 30);
         this.sign.refresh();
-        this.sign.setVisible(true);
+        this.sign.setVisible(true, 'game');
+        crewLog.post(s.note);
         console.info(`[Course] ${s.note}`);
       }
     }

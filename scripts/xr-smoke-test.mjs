@@ -3474,6 +3474,62 @@ async function partTwo() {
 
   // 6y. The combat scenario and the fight's tuning (F3.10).
   await theCombatScenario();
+
+  // 6z. The crew board (F6.5).
+  await theCrewBoard();
+}
+
+/**
+ * 6z. The crew board (F6.5): a board in each seat faces it; a hit on the
+ *     tank goes on the board (the engine hatched, the call newest) and its
+ *     sign stays out of the player's view; Sound and view → Pop-ups → On
+ *     floats the sign again, and Off puts it back on the board only.
+ */
+async function theCrewBoard() {
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp("(window.__damage.repair(), window.__seats.ask('driver'), true)");
+  await waitFor("the driver's seat", () => evalInApp('window.__seats.mine') === 'driver', 5000).catch(() => null);
+  const faces = evalInApp(`(() => {
+    const b = window.__crewBoard;
+    return { driver: b.face('driver'), gunner: b.face('gunner'), driverEye: window.__seats.eye('driver'), gunnerEye: window.__seats.eye('gunner'), draws: b.draws };
+  })()`);
+  const towards = (face, eye) => {
+    const d = face.at.map((v, i) => eye[i] - v);
+    const length = Math.hypot(...d);
+    return { length, cos: d.reduce((sum, v, i) => sum + v * face.normal[i], 0) / length };
+  };
+  const driverSees = towards(faces.driver, faces.driverEye);
+  const gunnerSees = towards(faces.gunner, faces.gunnerEye);
+  check('A crew board hangs in each seat, facing it from within reading distance',
+    driverSees.length > 0.45 && driverSees.length < 1 && driverSees.cos > 0.7 && gunnerSees.length > 0.45 && gunnerSees.length < 1 && gunnerSees.cos > 0.7 && faces.draws > 0,
+    `driver's ${driverSees.length.toFixed(2)} m away (cos ${driverSees.cos.toFixed(2)}), gunner's ${gunnerSees.length.toFixed(2)} m (cos ${gunnerSees.cos.toFixed(2)}), drawn ${faces.draws} times`);
+
+  evalInApp('(window.__damage.test("engine"), true)');
+  const hit = await waitFor('the hit on the board', () => {
+    const t = evalInApp('window.__crewBoard.text()');
+    return t.zones.engine && t.calls.length > 0 && evalInApp('window.__crewBoard.key()').includes(t.calls[0].text) ? t : null;
+  }, 8000).catch(() => null);
+  const sign = () => evalInApp("(() => { const s = window.__debug.world.scene.getObjectByName('Damage Sign'); return { text: window.__damage.sign, drawn: s ? s.visible : null }; })()");
+  const quiet = sign();
+  check("A hit goes on the crew board, its engine hatched and the call newest, and its sign doesn't float in view",
+    hit !== null && quiet.text !== '' && quiet.drawn === false,
+    hit ? `call "${hit.calls[0].text}", damage ${hit.damage.map((l) => l.text).join('; ')}; sign "${quiet.text}" drawn ${quiet.drawn}` : `board ${JSON.stringify(evalInApp('window.__crewBoard.text()')).slice(0, 300)}`);
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(faces.driver.at) });
+  await sleep(800);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-crew-board.png'], {});
+
+  iwsdk(['xr', 'set-device-state'], {});
+  await menuButtonPress();
+  await menuClick('row-popups-1');
+  evalInApp('(window.__damage.test("track"), true)');
+  const floats = await waitFor('the sign to float', () => sign().drawn === true, 6000).catch(() => false);
+  await menuClick('row-popups-0');
+  const back = await waitFor('the sign to leave', () => sign().drawn === false, 6000).catch(() => false);
+  check('Sound and view → Pop-ups → On floats the sign again, Off puts it back on the board only',
+    floats === true && back === true && evalInApp('window.__settings.popups') === false,
+    `floated ${floats === true}, back on the board only ${back === true}`);
+  if (evalInApp('window.__gameMenu.open')) await menuButtonPress();
+  evalInApp('(window.__damage.repair(), true)');
 }
 
 /**

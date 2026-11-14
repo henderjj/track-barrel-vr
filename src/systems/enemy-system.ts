@@ -38,6 +38,7 @@ import { rng } from '../sim/random.js';
 import { damageState, repairTank, takeHit } from './damage-system.js';
 import { placeTank, resetTank, tankState } from './drive-system.js';
 import { decidedListeners, setFaceOff, setFacePose } from './firing-system.js';
+import { type BoardCall, crewLog } from '../sim/crew-board.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { netLink } from './net-system.js';
 import { seating } from './seating.js';
@@ -282,6 +283,8 @@ export class EnemySystem extends createSystem({}) {
   private signText = '';
   private signUntil = 0;
   private notes: Note[] = [];
+  /** The crew board's call for the notice on the sign (F6.5), kept up to date as the bearing changes. */
+  private noteCall: BoardCall | null = null;
   /** The enemy the sign's notice is about, kept live while it shows (-1 for a plain note), and whether it is a hit. */
   private noteGun = -1;
   private noteHit = false;
@@ -814,9 +817,12 @@ export class EnemySystem extends createSystem({}) {
       this.noteGun = n.gun;
       this.noteHit = n.hit;
       this.drawnBearing.clock = -1;
+      this.noteCall = null;
       if (n.gun < 0) this.paintSign(n.text, '', false);
       else this.enemyNotice();
-      this.sign.setVisible(true);
+      this.noteCall = crewLog.post(this.signText, n.gun < 0 ? (n.text.includes('knocked out') ? 'good' : 'info') : n.hit ? 'bad' : 'info');
+      if (this.noteCall) crewLog.update(this.noteCall, this.signText, this.signLine);
+      this.sign.setVisible(true, 'game');
       console.info(`[Enemy] sign: ${this.signText}${this.signLine ? ` (${this.signLine})` : ''}`);
     } else if (this.sign.visible && this.noteGun >= 0) {
       this.enemyNotice();
@@ -824,6 +830,7 @@ export class EnemySystem extends createSystem({}) {
     if (this.sign.visible && this.time > this.signUntil) {
       this.sign.setVisible(false);
       this.noteGun = -1;
+      this.noteCall = null;
     }
     if (this.sign.visible) {
       this.sign.follow(this.world.visibilityState.peek() !== VisibilityState.NonImmersive ? this.player.head : this.camera, delta);
@@ -843,6 +850,7 @@ export class EnemySystem extends createSystem({}) {
     this.drawnGunner = gunner;
     const [head, line] = enemyNoteLines(this.noteGun, this.noteHit, b, gunner);
     this.paintSign(head, line, this.noteHit);
+    if (this.noteCall) crewLog.update(this.noteCall, head, line);
   }
 
   private paintSign(head: string, line: string, bad: boolean): void {
