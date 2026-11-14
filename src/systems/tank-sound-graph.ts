@@ -10,7 +10,8 @@ import {
   renderGritGate,
   renderNoiseLoop,
   renderSound,
-  renderSquealGate,
+  renderSqueak,
+  renderStrainGate,
   TICK_GATE,
 } from '../sim/sound-render.js';
 import {
@@ -30,6 +31,7 @@ import {
   SOUND_FROM,
   SOUND_IDS,
   SOUND_PLACES,
+  SQUEAK_VARIANTS,
   type SoundId,
   type SoundPlace,
   type TrackVoice,
@@ -118,6 +120,23 @@ const GRIT_Q = 0.9;
 const GRIT_STEADY = 0.12;
 const GRIT_RUN_HZ = 30;
 const GRIT_MAKEUP = 4.3;
+/**
+ * What a strained track rings in as it judders against the road wheels,
+ * the idler and the ground: the steel of the wheels, the guide horns and
+ * the links, a groan through the suspension at the bottom (band-passes at
+ * Hz, with their sharpness and share).
+ */
+const STRAIN_RING = [
+  [140, 2.5, 1],
+  [310, 4, 0.9],
+  [540, 5, 0.75],
+  [880, 6, 0.55],
+  [1450, 7, 0.35],
+] as const;
+/** How loud the strain's ring is, and the links scrubbing sideways over the ground beside it (in a band at STRAIN_SCRUB of the ground's own). */
+const STRAIN_LEVEL = 2;
+const STRAIN_SCRUB_LEVEL = 1.2;
+const STRAIN_SCRUB = 0.6;
 
 /** A gear's whine: a fundamental with a few weaker harmonics, far duller than a sawtooth. */
 const WHINE_HARMONICS = [0, 1, 0.5, 0.28, 0.12, 0.05];
@@ -135,8 +154,9 @@ const MOTOR_HARMONICS = [0, 1, 0.35, 0.3, 0.08, 0.14, 0.04, 0.06];
  *   combustion roar is noise that comes and goes with each cylinder's
  *   breath; the gearbox and final drives whine.
  * - The tracks are a rumble through the floor, each side's links striking
- *   a set of resonances (left and right on their own sides), and dry pins
- *   squealing in turns.
+ *   a set of resonances (left and right on their own sides), the tracks
+ *   groaning and scrubbing as they strain in a hard turn, and dry pins
+ *   squeaking now and then (`squeak`).
  * - The traverse is a motor's whine, a gear train's growl and the ring's
  *   rumble; the handwheels' gears tick.
  * - A placed sound comes partly from its place in the tank (head-related
@@ -178,8 +198,10 @@ export class TankSoundGraph {
   private readonly gritGrain: Record<'left' | 'right', GainNode>;
   private readonly gritBand: Record<'left' | 'right', BiquadFilterNode>;
   private readonly gritAmp: Record<'left' | 'right', GainNode>;
-  private readonly squealGate: AudioBufferSourceNode;
-  private readonly squealAmp: GainNode;
+  private readonly strainGate: Record<'left' | 'right', AudioBufferSourceNode>;
+  private readonly strainScrub: Record<'left' | 'right', BiquadFilterNode>;
+  private readonly strainAmp: Record<'left' | 'right', GainNode>;
+  private readonly squeaks: AudioBuffer[] = [];
   private readonly motor: OscillatorNode;
   private readonly motorAmp: GainNode;
   private readonly mesh: OscillatorNode;
@@ -328,21 +350,28 @@ export class TankSoundGraph {
       this.noise().connect(this.gritGrain[side]).connect(this.gritBand[side]).connect(new GainNode(ctx, { gain: GRIT_MAKEUP })).connect(this.gritAmp[side]).connect(out);
     }
 
-    // The pins' squeal: two very narrow bands of noise, wandering in pitch, let through in swells.
-    this.squealGate = this.gate(renderSquealGate(rate), 0);
-    const squeak = new GainNode(ctx, { gain: 0 });
-    this.squealGate.connect(squeak.gain);
-    this.squealAmp = new GainNode(ctx, { gain: 0 });
-    const wander = new OscillatorNode(ctx, { type: 'sine', frequency: 0.83 });
-    const wanderBy = new GainNode(ctx, { gain: 70 });
-    wander.connect(wanderBy);
-    wander.start();
-    for (const [f, q, share] of [[2350, 35, 1], [3120, 40, 0.6]] as const) {
-      const band = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: f, Q: q });
-      wanderBy.connect(band.detune);
-      this.noise().connect(band).connect(new GainNode(ctx, { gain: share * Math.sqrt(q) })).connect(squeak);
+    // The tracks straining in a hard turn, each its own share (the outer one most): stick and slip let noise into the
+    // steel of the wheels, the guide horns and the links, with a groan through the suspension under it, and the links
+    // scrubbing sideways over the ground, in a band below the ground's own crunch.
+    this.strainGate = { left: this.gate(renderStrainGate(rate), 0), right: this.gate(renderStrainGate(rate), 1.73) };
+    this.strainScrub = {
+      left: new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 1000, Q: 0.8 }),
+      right: new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 1000, Q: 0.8 }),
+    };
+    this.strainAmp = { left: new GainNode(ctx, { gain: 0 }), right: new GainNode(ctx, { gain: 0 }) };
+    for (const side of SIDES) {
+      const slip = new GainNode(ctx, { gain: 0 });
+      this.strainGate[side].connect(slip.gain);
+      this.noise().connect(slip);
+      for (const [f, q, share] of STRAIN_RING) {
+        const ring = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: f * (side === 'left' ? 1 : 1.05), Q: q });
+        slip.connect(ring).connect(new GainNode(ctx, { gain: STRAIN_LEVEL * share * Math.sqrt(q) })).connect(this.strainAmp[side]);
+      }
+      slip.connect(this.strainScrub[side]).connect(new GainNode(ctx, { gain: STRAIN_SCRUB_LEVEL })).connect(this.strainAmp[side]);
+      this.strainAmp[side].connect(this.places[side === 'left' ? 'leftTrack' : 'rightTrack'].steady);
     }
-    squeak.connect(this.squealAmp).connect(this.places.all.steady);
+    // The pins' squeaks: each played by itself when it comes (`squeak`).
+    for (let k = 0; k < SQUEAK_VARIANTS; k++) this.squeaks.push(this.buffer(renderSqueak(rate, k)));
 
     // The power traverse: its motor, the gear train's growl beating with its teeth, and the ring rumbling round.
     const motorWave = ctx.createPeriodicWave(new Float32Array(MOTOR_HARMONICS.length), new Float32Array(MOTOR_HARMONICS));
@@ -418,8 +447,12 @@ export class TankSoundGraph {
       this.gritBand[side].frequency.setTargetAtTime(link.gritHz, t, GLIDE);
       this.gritAmp[side].gain.setTargetAtTime(MIX.grit * link.grit, t, GLIDE);
     }
-    this.squealGate.playbackRate.setTargetAtTime(k.squealRate, t, GLIDE);
-    this.squealAmp.gain.setTargetAtTime(MIX.squeal * k.squeal, t, GLIDE);
+    for (const side of SIDES) {
+      this.strainGate[side].playbackRate.setTargetAtTime(k.judder, t, GLIDE);
+      this.strainScrub[side].frequency.setTargetAtTime(k[side].gritHz * STRAIN_SCRUB, t, GLIDE);
+      // The strain comes in a little more slowly than the rest: a load building, not a switch.
+      this.strainAmp[side].gain.setTargetAtTime(MIX.strain * k[side].strain, t, GLIDE * 2);
+    }
     const w = v.traverse;
     this.motor.frequency.setTargetAtTime(w.freq, t, GLIDE);
     this.motorAmp.gain.setTargetAtTime(MIX.whine * w.gain, t, GLIDE);
@@ -456,6 +489,18 @@ export class TankSoundGraph {
     }
     source.start(at);
     if (seconds > 0) source.stop(at + seconds);
+  }
+
+  /**
+   * A pin squeaking at time `at` on the context's clock: the `variant`th of
+   * the rendered squeaks, from the left track (`side` 0) or the right, at
+   * `level` (0 to 1, before MIX.squeak). Two nodes a squeak; they come a
+   * few times a second at most.
+   */
+  squeak(side: 0 | 1, variant: number, level: number, at: number): void {
+    const source = new AudioBufferSourceNode(this.ctx, { buffer: this.squeaks[variant % this.squeaks.length] });
+    source.connect(new GainNode(this.ctx, { gain: MIX.squeak * level })).connect(this.places[side === 0 ? 'leftTrack' : 'rightTrack'].knock);
+    source.start(at);
   }
 
   /** The gun's blast at `at`: the steady sounds drop away and come back. */

@@ -6,6 +6,7 @@ import { groundLine, TankFooting, type Footing, type Surface } from '../sim/grou
 import { CASING_FLIGHT, RECOIL } from '../sim/loading.js';
 import {
   createCues,
+  createSqueak,
   createTourState,
   type CueState,
   driveVoice,
@@ -15,6 +16,7 @@ import {
   SOUND_IDS,
   SoundCues,
   type SoundId,
+  SqueakTimer,
   sirenVoice,
   soundTour,
   TOUR_SECONDS,
@@ -78,10 +80,16 @@ interface AudioDebug {
     finalDrive: number;
     rumble: number;
     clatterHz: number;
-    /** Each track's links a second, and the pins' squeal. */
+    /** Each track's links a second. */
     leftHz: number;
     rightHz: number;
-    squeal: number;
+    /** The sideways push on the tracks, m/s², how hard it strains them (0 to 1) and each track's share. */
+    side: number;
+    strain: number;
+    strainSides: Record<'left' | 'right', number>;
+    /** How many pins squeak a second on average now, and how many have squeaked on this page so far. */
+    squeakRate: number;
+    squeaks: number;
     /** What each track is on (src/sim/ground-surface.ts): the surface most of it is on, the share of its length on each (in SURFACES' order), and what that makes of its clink, the ground's own noise and the rumble. */
     ground: Record<'left' | 'right', Surface>;
     groundShares: Record<'left' | 'right', number[]>;
@@ -108,7 +116,8 @@ interface AudioDebug {
     heard: Record<SoundId, number>;
   };
   playEach(): void;
-  tour(): void;
+  /** Start the run through (or stop it), `from` s in, held there if `hold`: the tests skip to the moment they check, however slow the frames. */
+  tour(from?: number, hold?: boolean): void;
   /** RMS of what the tank sounds put out right now (after the duck and the Tank sounds setting), 0 to 1: a meter added on first use, for the tests. */
   outputLevel(): number;
 }
@@ -120,8 +129,9 @@ interface AudioDebug {
  *
  * - the engine from the RPM and the throttle (the A57 multibank's burble,
  *   its roar, the gearbox's and final drives' whine), each track's rumble,
- *   clatter and squeal from its speed, the power traverse from the
- *   turret's turn and the handwheels' ticking from the gunner's hands;
+ *   clatter from its speed, the tracks straining in a hard turn at speed
+ *   (the sideways push that also warns of a thrown track), the pins
+ *   squeaking now and then, the power traverse from the turret's turn and the handwheels' ticking from the gunner's hands;
  * - short sounds rendered once at load: gears going in and grinding, the
  *   hull bumping, a shell rammed, the breech slamming shut or opened by
  *   hand, the gun (with the breech flying open) and the casing landing in
@@ -148,6 +158,8 @@ export class TankAudioSystem extends createSystem({}) {
   private readonly voices = createTankVoices();
   private readonly tour = createTourState();
   private tourAt = Number.NEGATIVE_INFINITY;
+  /** The tests can hold the tour at one moment (`__audio.tour(from, true)`). */
+  private tourHeld: number | null = null;
   private load = 0;
   private handTurns = { crank: 0, wheel: 0 };
   private lastCrank = Number.NaN;
@@ -156,6 +168,9 @@ export class TankAudioSystem extends createSystem({}) {
   private readonly cues = new SoundCues();
   private readonly cueOut = createCues();
   private readonly cueState: CueState = { gear: 0, grinding: false, bumps: 0, lever: 0, rammed: false, running: true, stalls: 0, coughs: 0 };
+  private readonly squeakTimer = new SqueakTimer();
+  private readonly squeakOut = createSqueak();
+  private squeakCount = 0;
   private readonly heard = Object.fromEntries(SOUND_IDS.map((id) => [id, 0])) as Record<SoundId, number>;
   private paramClock = 0;
   /** What each track is on: the tank's own footing, or the sound tour's while it runs. */
@@ -193,7 +208,11 @@ export class TankAudioSystem extends createSystem({}) {
           clatterHz: v.tracks.clatterHz,
           leftHz: v.tracks.left.hz,
           rightHz: v.tracks.right.hz,
-          squeal: v.tracks.squeal,
+          side: v.tracks.side,
+          strain: v.tracks.strain,
+          strainSides: { left: v.tracks.left.strain, right: v.tracks.right.strain },
+          squeakRate: v.tracks.squeaks,
+          squeaks: self.squeakCount,
           ground: { left: self.leftGround.surface, right: self.rightGround.surface },
           groundShares: { left: [...self.leftGround.shares], right: [...self.rightGround.shares] },
           top: { left: v.tracks.left.top, right: v.tracks.right.top },
@@ -214,7 +233,7 @@ export class TankAudioSystem extends createSystem({}) {
         };
       },
       playEach: () => self.playEach(),
-      tour: () => self.startTour(),
+      tour: (from?: number, hold?: boolean) => self.startTour(from, hold),
       outputLevel: () => self.outputLevel(),
     };
     // The practice crewmate's PC page stays quiet: it would only echo the headset's tank.
@@ -295,7 +314,9 @@ export class TankAudioSystem extends createSystem({}) {
         this.footing.update(s.x, s.z, s.heading);
         this.leftGround = this.footing.left;
         this.rightGround = this.footing.right;
-        trackVoice(s.leftTrack, s.rightTrack, v.tracks, this.leftGround, this.rightGround);
+        // The sideways push as the drive works it out (a turn's, a slope's lean, more on mud): what strains the
+        // tracks and, past THROW_WARN, puts up the sign (src/sim/going.ts).
+        trackVoice(s.leftTrack, s.rightTrack, v.tracks, this.leftGround, this.rightGround, s.side);
         v.grinding = s.grinding;
         v.cranking = s.cranking;
       }
@@ -317,6 +338,9 @@ export class TankAudioSystem extends createSystem({}) {
     c.stalls = s?.stalls ?? 0;
     c.coughs = s?.coughs ?? 0;
     const cues = this.cues.step(c, this.time - this.shotAt, this.cueOut);
+    // Now and then a pin squeaks: at random, over the frame's real length (one at most a frame), so a slow frame
+    // doesn't thin them out.
+    if (this.squeakTimer.step(Math.min(delta, 1), v.tracks, this.squeakOut)) this.squeakNow();
     if (cues.clunk) this.sound('clunk');
     if (cues.bump) this.sound('bump');
     if (cues.ram) this.sound('ram');
@@ -350,6 +374,15 @@ export class TankAudioSystem extends createSystem({}) {
     this.shotAt = this.time;
     this.sound('shot');
     this.sound('casing', RECOIL.back + CASING_FLIGHT);
+  }
+
+  /** A pin squeaking now (counted even while the context is suspended, for the tests). */
+  private squeakNow(): void {
+    this.squeakCount++;
+    const ctx = this.ctx;
+    if (ctx == null || this.graph == null || ctx.state !== 'running') return;
+    const q = this.squeakOut;
+    this.graph.squeak(q.side, q.variant, q.level, ctx.currentTime);
   }
 
   /** Play a short sound `delay` s from now (counted even while the context is suspended, for the tests). */
@@ -388,14 +421,16 @@ export class TankAudioSystem extends createSystem({}) {
   }
 
   /** Practice → Tank sounds → Run through: pressed again while it runs, it stops. */
-  startTour(): void {
+  startTour(from = 0, hold = false): void {
     const stop = this.touring();
-    console.info(`[Audio] Practice: run through the continuous sounds${stop ? ' stopped' : ''}`);
-    this.tourAt = stop ? Number.NEGATIVE_INFINITY : performance.now();
+    console.info(`[Audio] Practice: run through the continuous sounds${stop ? ' stopped' : from > 0 ? ` from ${from} s${hold ? ', held' : ''}` : ''}`);
+    this.tourAt = stop ? Number.NEGATIVE_INFINITY : performance.now() - from * 1000;
+    this.tourHeld = !stop && hold ? from : null;
   }
 
   /** How far into the tour, s, by the clock on the wall: it runs at its own pace however slow the frames. */
   private tourTime(): number {
+    if (this.tourHeld != null) return this.tourHeld;
     return (performance.now() - this.tourAt) / 1000;
   }
 

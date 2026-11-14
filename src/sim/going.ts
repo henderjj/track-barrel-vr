@@ -72,9 +72,15 @@ export const DROWN_SECONDS = 12;
  * past) and at 1 the outside track comes off its sprocket; below, it
  * eases over RELAX_SECONDS. A thrown track holds the tank like the parking
  * brake while the crew refit it, REFIT_SECONDS.
+ *
+ * At speed the turn rate is held to MAX_YAW_RATE (15°/s), so the push of a
+ * full turn on firm ground is the speed × 0.26: the warning comes from
+ * about 27 km/h and a track only comes off from about 32 km/h (sooner on
+ * mud or across a slope). They were 1.5 and 1.9 until John's play test of
+ * 2026-11-14, when any turn above 21 km/h warned.
  */
-export const THROW_WARN = 1.5;
-export const THROW_LIMIT = 1.9;
+export const THROW_WARN = 2.0;
+export const THROW_LIMIT = 2.3;
 export const THROW_SECONDS = 1.2;
 export const RELAX_SECONDS = 2.5;
 export const REFIT_SECONDS = 40;

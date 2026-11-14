@@ -64,10 +64,10 @@ describe('the surface at a place', () => {
 describe("a surface's sound", () => {
   it('is the tuned one on dirt, and every surface has a sensible row', () => {
     const d = SURFACE_SOUND.dirt;
-    expect([d.ring, d.top, d.thud, d.rumble, d.rumbleOpen, d.squeal]).toEqual([1, 1, 1, 1, 1, 1]);
+    expect([d.ring, d.top, d.thud, d.rumble, d.rumbleOpen, d.squeak]).toEqual([1, 1, 1, 1, 1, 1]);
     for (const s of SURFACES) {
       const k = SURFACE_SOUND[s];
-      for (const v of [k.ring, k.top, k.thud, k.rumble, k.rumbleOpen, k.squeal]) {
+      for (const v of [k.ring, k.top, k.thud, k.rumble, k.rumbleOpen, k.squeak]) {
         expect(v).toBeGreaterThan(0.3);
         expect(v).toBeLessThan(1.5);
       }

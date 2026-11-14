@@ -14,7 +14,7 @@
  */
 import { RECOIL } from './loading.js';
 import { rng } from './random.js';
-import { CRANK_BEAT_HZ, GRIND_TEETH_HZ, IDLE_REV_HZ, LOOPED, MIX, SOUND_IDS, SOUND_SECONDS, type SoundId } from './tank-audio.js';
+import { CRANK_BEAT_HZ, GRIND_TEETH_HZ, IDLE_REV_HZ, LOOPED, MIX, SOUND_IDS, SOUND_SECONDS, SQUEAK_VARIANTS, type SoundId } from './tank-audio.js';
 
 const TAU = 2 * Math.PI;
 type Samples = Float32Array<ArrayBuffer>;
@@ -663,27 +663,109 @@ export function renderGate(shape: GateShape, rate: number): Samples {
   return out;
 }
 
-/** The squeal loop's length at normal speed, s. */
-export const SQUEAL_SECONDS = 6;
+/** The strain loop's length at normal pace, s, and how many times a second the strained tracks judder in it. */
+export const STRAIN_SECONDS = 4;
+export const STRAIN_JUDDER_HZ = 22;
 
 /**
- * A loop between 0 and 1 for the track pins' squeal: mostly shut, with a
- * few swells of different lengths where a dry pin turns under load.
- * Deterministic.
+ * A loop between 0 and 1 for the tracks straining in a hard turn: the
+ * guide horns dragged against the road wheels and the links scrubbed
+ * sideways over the ground catch and let go (stick and slip) about
+ * STRAIN_JUDDER_HZ times a second, never evenly, and the whole of it heaves
+ * as the load comes and goes over the bumps. It never quite shuts: a
+ * strained track groans all the while, juddering in it. What it lets
+ * through is noise into the steel's resonances (TankSoundGraph).
+ * Deterministic and seamless.
  */
-export function renderSquealGate(rate: number): Samples {
-  const n = Math.round(SQUEAL_SECONDS * rate);
-  const out = new Float32Array(n);
-  const random = rng(303);
-  const swells = 8;
-  for (let k = 0; k < swells; k++) {
-    const length = 0.07 + 0.2 * random();
-    const at = ((k + 0.1 + 0.5 * random()) / swells) * SQUEAL_SECONDS;
-    const a = 0.3 + 0.7 * random();
-    const s = Math.floor(at * rate);
-    const len = Math.min(n - s, Math.round(length * rate));
-    for (let i = 0; i < len; i++) out[s + i] = Math.max(out[s + i], a * Math.sin((Math.PI * i) / len) ** 2);
+export function renderStrainGate(rate: number): Samples {
+  const n = Math.round(STRAIN_SECONDS * rate);
+  const random = rng(305);
+  // The heave: slow swells that come round a whole number of times in the loop, between about 0.45 and 1.
+  const swells = [
+    [2, 0.22, random() * TAU],
+    [3, 0.14, random() * TAU],
+    [5, 0.1, random() * TAU],
+    [9, 0.06, random() * TAU],
+  ] as const;
+  const heave = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let h = 0.72;
+    for (const [k, depth, phase] of swells) h += depth * Math.sin((TAU * k * i) / n + phase);
+    heave[i] = h;
   }
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = 0.3 * heave[i];
+  const count = Math.round(STRAIN_SECONDS * STRAIN_JUDDER_HZ);
+  const attack = Math.max(1, Math.round(0.001 * rate));
+  for (let k = 0; k < count; k++) {
+    const s = Math.floor(((k + 0.5 + (random() - 0.5) * 0.7) / count) * n);
+    const tau = 0.006 + 0.012 * random();
+    const len = Math.round(tau * 6 * rate);
+    const a = 0.45 + 0.55 * random();
+    for (let i = 0; i < len; i++) {
+      const at = (s + i + n) % n;
+      const env = i < attack ? i / attack : Math.exp(-(i - attack) / rate / tau);
+      // Where two slips land together the harder one is heard, not their sum.
+      out[at] = Math.max(out[at], a * heave[at] * env);
+    }
+  }
+  let top = 0;
+  for (let i = 0; i < n; i++) top = Math.max(top, out[i]);
+  for (let i = 0; i < n; i++) out[i] /= top;
+  return out;
+}
+
+/**
+ * One squeak of a dry track pin (or an end connector, or a guide horn
+ * rubbing a wheel), the `k`th of SQUEAK_VARIANTS: steel sticking and
+ * slipping hundreds of times a second, so a pitch, between 700 and 2600
+ * Hz, with the stick-slip's harsh harmonics; never quite steady, its
+ * pitch bending as the pin turns, chattering and fluttering; a tenth to a
+ * quarter of a second long. Each is its own pin, the same every time.
+ * Peaks at 1. Deterministic.
+ */
+export function renderSqueak(rate: number, k: number): Samples {
+  const random = rng(320 + k);
+  const seconds = 0.07 + 0.19 * random();
+  const n = Math.round(seconds * rate);
+  const out = new Float32Array(n);
+  // Spread over the pins on a log scale, each nudged, so no two sing the same note.
+  const f0 = 700 * (2600 / 700) ** ((k + 0.2 + 0.6 * random()) / SQUEAK_VARIANTS);
+  // Its bend: up, down, or up and back, by 4 to 22%.
+  const bend = (0.04 + 0.18 * random()) * (random() < 0.5 ? -1 : 1);
+  const arch = random() < 0.4;
+  // The chatter: the stick-slip itself catching, 25 to 60 times a second.
+  const chatterHz = 25 + 35 * random();
+  const chatter = 0.15 + 0.25 * random();
+  const attack = 0.006 + 0.01 * random();
+  const release = 0.02 + 0.025 * random();
+  // A dip part way through: "squee-eak".
+  const dipAt = 0.3 + 0.4 * random();
+  const dip = random() < 0.5 ? 0.3 + 0.4 * random() : 0;
+  const harmonics = 6;
+  let phase = 0;
+  let wobble = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / rate;
+    const u = i / n;
+    const shape = arch ? Math.sin(Math.PI * u) : u;
+    // The pitch wanders a little from cycle to cycle: rough, not a pure tone.
+    wobble += 0.02 * (random() * 2 - 1 - wobble);
+    const f = f0 * (1 + bend * shape) * (1 + 0.6 * wobble);
+    phase += (TAU * f) / rate;
+    let y = 0;
+    for (let h = 1; h <= harmonics; h++) {
+      if (h * f > rate * 0.4) break;
+      y += Math.sin(h * phase) / h ** 1.3;
+    }
+    const rise = Math.min(1, t / attack);
+    const fall = Math.min(1, (seconds - t) / release);
+    const env = rise * rise * (3 - 2 * rise) * fall * fall * (3 - 2 * fall) * (1 - dip * Math.exp(-(((u - dipAt) / 0.08) ** 2)));
+    out[i] = y * env * (1 - chatter + chatter * Math.sin(TAU * chatterHz * t) ** 2);
+  }
+  let top = 0;
+  for (let i = 0; i < n; i++) top = Math.max(top, Math.abs(out[i]));
+  for (let i = 0; i < n; i++) out[i] /= top;
   return out;
 }
 
