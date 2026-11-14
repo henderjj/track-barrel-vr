@@ -15,6 +15,9 @@ import {
 import {
   batteryLine,
   clockTo,
+  enemyBearing,
+  type EnemyBearing,
+  enemyNoteLines,
   ENEMY_GUN,
   ENEMY_GUNS,
   EnemyBattery,
@@ -177,6 +180,33 @@ describe('enemy anti-tank guns (F3.2)', () => {
     const shot = resolveShot(0, onLane(ENEMY_GUNS[0].meetZ), 0, rng(1));
     // Gun A is out on the left, ahead.
     expect([9, 10, 11]).toContain(shot.clock);
+  });
+
+  it("keeps a notice's clock and range on the tank as it is now, and tells the gunner which way to traverse", () => {
+    // John's play test (14 November 2026): the clock didn't follow the tank. Gun A is at (-200, -220).
+    const b: EnemyBearing = { clock: 0, range: 0, traverse: 0 };
+    // Driving up the lane, Gun A is ahead on the left; past it, behind on the left.
+    expect(enemyBearing(0, 0, -120, 0, 0, 0, b)).toEqual({ clock: 10, range: 220, traverse: 65 });
+    expect(enemyBearing(0, 0, -400, 0, 0, 0, b).clock).toBe(8);
+    // The same place, the hull turned to face it (heading + is a left turn): 12, and to face away: 6.
+    const facing = Math.atan2(200, 100);
+    expect(enemyBearing(0, 0, -120, facing, 0, 0, b).clock).toBe(12);
+    expect(enemyBearing(0, 0, -120, facing + Math.PI, 0, 0, b).clock).toBe(6);
+    // Turned 90° left, Gun A is ahead and to the right.
+    expect(enemyBearing(0, 0, -120, Math.PI / 2, 0, 0, b).clock).toBe(1);
+    // The gunner: the turret turned left onto it, the turn is small; turned right, it is the other way round.
+    expect(enemyBearing(0, 0, -120, 0, facing, 0, b).traverse).toBe(0);
+    expect(enemyBearing(0, 0, -120, 0, -Math.PI / 2, 0, b).traverse).toBe(155);
+    expect(enemyBearing(0, 0, -120, 0, Math.PI, 0, b).traverse).toBe(-115);
+  });
+
+  it('words an enemy notice, with a second line only for the gunner', () => {
+    const b: EnemyBearing = { clock: 10, range: 220, traverse: 65 };
+    expect(enemyNoteLines(0, false, b, false)).toEqual(["Gun A firing, 10 o'clock, 220 m", '']);
+    expect(enemyNoteLines(0, true, b, false)).toEqual(["Hit! Gun A, 10 o'clock, 220 m", '']);
+    expect(enemyNoteLines(0, false, b, true)).toEqual(["Gun A firing, 10 o'clock, 220 m", 'Traverse left 65°']);
+    expect(enemyNoteLines(0, false, { ...b, traverse: -40 }, true)[1]).toBe('Traverse right 40°');
+    expect(enemyNoteLines(0, false, { ...b, traverse: 5 }, true)[1]).toBe('Dead ahead of your gun');
   });
 
   it('stops firing once knocked out, and counts what it did', () => {
