@@ -22,10 +22,10 @@ The numbers and words live in [`src/sim/crew-board.ts`](../src/sim/crew-board.ts
 
 | Board | Where | Why |
 | --- | --- | --- |
-| Driver's | 36 × 27 cm, standing at their front right over the final drive's housing, in front of the empty assistant driver's seat, below and right of the turret dial; turned and leaned back to face the eyes, 75 cm away | A glance down and right from the slit, as the turret dial is a glance right. The front left has the callout card, the run clock and the slit; the front right was empty. Clear of the right tiller's travel, the periscope and the slit's view (it sits at the edge of the view through the slit) |
+| Driver's | 36 × 27 cm, leaning back on the glacis at their front right, as steep as the glacis, right of the right tiller and above the gear lever, its right edge turned out from the slope towards the eyes; 67 cm away | A glance down and right from the slit, past the turret dial. The front left has the callout card, the run clock and the slit; the front right was empty. It sits 1.5 cm or more off the glacis everywhere (the first build stood upright and its top corner went through the glacis and the hood, 2026-11-14), 11 cm or more from the right tiller's grip and 15 cm from the gear lever's through their travel; the tests check each |
 | Gunner's | 44 × 33 cm, flat on the turret's front wall right of the gunsight, under the firing lamp's repeater, 92 cm away | A glance right from the sight, turning with the turret. The right wall is the ready rack and the loading board, the left of the sight has the callout card. Bigger than the driver's so its writing looks as big from further off |
 
-Both are 4:3, as the canvas (1024 × 768). The writing on them looks at least as big as the callout card's ([callout-card.md](callout-card.md)), and both face their seat's eyes within 40°.
+Both are 4:3, as the canvas (1024 × 768). The writing on them looks at least as big as the callout card's ([callout-card.md](callout-card.md)), and both face their seat's eyes within 40°. Every corner of each board, its clip and brackets, is inside the armour (`test/crew-board.test.ts`).
 
 ## Drawing
 
@@ -62,7 +62,7 @@ John chose a British voice, urgent, through the heavy intercom filter (2026-11-1
 
 ## Headset check
 
-1. Sit in the driver's seat. Glance down and right, past the turret dial: the board should be easy to read without leaning, with *None: free driving* as the objective and *None yet* under LAST CALLS.
+1. Sit in the driver's seat. Glance down and right, past the turret dial and the gear lever: the whole board should show, nothing cutting into it, and read without leaning, with *None: free driving* as the objective and *None yet* under LAST CALLS.
 2. Game menu → Combat → Damage → Hit engine. Nothing should float in front of you; the board should hatch the engine red, say *Engine hit: weak, runs hot* under DAMAGE, and show the hit as the newest call, in red.
 3. Damage → Track: the left or right track hatched, *… track broken*. Repair: all clear, *Repaired* as the newest call.
 4. Battle → Start: the board shows the 500 m board and the distance going down as you drive, the clock running, and the tasks. When a gun fires, its call goes on the board; in the gunner's seat it says which way to traverse and keeps up as you turn.
