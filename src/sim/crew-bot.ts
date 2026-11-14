@@ -235,7 +235,7 @@ const THROUGH_AHEAD = 4;
  * round the bypass (it never takes the mud) and through the ford, under the
  * 8 km/h that drowns the engine.
  */
-export const COURSE_KMH = { loop: 20, box: 10, penalty: 12, slalom: 9, descent: 16, tight: 16, bridge: 8, bypass: 18, ford: 7 } as const;
+export const COURSE_KMH = { loop: 20, box: 10, penalty: 12, slalom: 9, descent: 16, tight: 16, bridge: 8, bypass: 15, ford: 7 } as const;
 /** Faster than its speed by this much, m/s (running on downhill), it brakes. */
 const OVERSPEED = 0.6;
 const BRAKE = -0.3;

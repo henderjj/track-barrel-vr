@@ -34,20 +34,28 @@ export const BRAKE_HOLD = 3;
 export const RUN_ON = 1.15;
 
 /**
- * Mud (the course's south side): it drags at the tracks with MUD_DRAG
- * (too much for 3rd gear: about 8 km/h in 2nd), and a tank pushed hard
- * through it (more than SPIN_DEMAND of the throttle, slower than
- * SPIN_SPEED) spins its tracks and sinks, `sink` rising to 1 over
- * SINK_SECONDS at full throttle, each unit of sink adding SINK_DRAG. Sunk
- * to 1 it is bogged: the tracks can't drive it on, only back out, and
- * backing (or moving faster than FREE_SPEED) frees it over FREE_SECONDS.
- * Out of the mud the sink goes at once.
+ * Mud (the course's south side): it drags at the tracks with MUD_DRAG,
+ * which 3rd gear carries (about 14 km/h, so it doesn't need 2nd) and 4th can't. More than
+ * SPIN_DEMAND of the throttle spins the tracks at any speed, and the tank
+ * digs in: `sink` rises to 1 over SINK_SECONDS at full throttle, each unit
+ * of sink adding SINK_DRAG. Sunk to 1 it is bogged: the tracks can't drive
+ * it on, only back out. Backing, or easing off while still moving faster
+ * than FREE_SPEED, frees it over FREE_SECONDS. Out of the mud the sink goes
+ * at once. So a driver who keeps 3rd and eases to about half throttle
+ * crosses quickly; one who floors it digs in.
  */
-export const MUD_DRAG = 1.6;
+export const MUD_DRAG = 0.9;
+/**
+ * How hard the mud may slow a tank, m/s²: twice the comfort cap on
+ * acceleration (MAX_ACCEL, src/sim/comfort.ts), so a tank driven in fast
+ * is slowed to what its gear can carry within a few metres, and one dug in
+ * stops short of the far side, instead of coasting across on its
+ * momentum.
+ */
+export const MUD_DECEL = 2;
 export const SINK_DRAG = 3;
 export const SPIN_DEMAND = 0.6;
-export const SPIN_SPEED = 2.5;
-export const SINK_SECONDS = 5;
+export const SINK_SECONDS = 3;
 export const FREE_SPEED = 2.5;
 export const FREE_SECONDS = 3;
 /** Water (the ford) drags too. */
@@ -175,13 +183,13 @@ export function stepStrain(strain: number, push: number, dt: number): number {
 
 /**
  * The sink `dt` s on: in mud (`mud` of the tracks on it, 0 to 1), spun by
- * `demand` of the throttle forwards at `speed` m/s; going back or quickly
- * frees it; out of the mud it goes.
+ * `demand` of the throttle forwards at `speed` m/s; backing, or easing off
+ * while moving, frees it; out of the mud it goes.
  */
 export function stepSink(sink: number, mud: number, demand: number, speed: number, forwards: boolean, dt: number): number {
   if (mud < 0.3) return 0;
+  if (forwards && demand > SPIN_DEMAND) return Math.min(1, sink + (dt * demand) / SINK_SECONDS);
   if (speed < -0.3 || speed > FREE_SPEED) return Math.max(0, sink - dt / FREE_SECONDS);
-  if (forwards && demand > SPIN_DEMAND && speed < SPIN_SPEED) return Math.min(1, sink + (dt * demand) / SINK_SECONDS);
   return sink;
 }
 
