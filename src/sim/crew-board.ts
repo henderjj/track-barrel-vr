@@ -15,7 +15,7 @@
  */
 
 import { AMMO, AMMO_KINDS, type AmmoKind } from './ammo.js';
-import { HULL, type SeatId, SEATS, TURRET } from './cabin.js';
+import { GLACIS_SLOPE, HULL, type SeatId, SEATS, TURRET } from './cabin.js';
 import { LAMP_REPEATER } from './firing-lamp.js';
 import { debriefLines, SCENARIO, type ScenarioSnapshot } from './combat.js';
 import type { DamageState } from './damage.js';
@@ -114,28 +114,21 @@ export const PAPER_GAP = 0.004;
 /** The clip's size across and up, and how far it stands proud of the paper, m. */
 export const CLIP = { width: 0.11, height: 0.03, proud: 0.006 } as const;
 
-/** A board's turn and tilt so its face looks straight at `eye` from (x, y, z): yaw about +Y, then leaned back. */
-export function facing(x: number, y: number, z: number, eye: readonly number[]): { yaw: number; tilt: number } {
-  const dx = eye[0] - x;
-  const dz = eye[2] - z;
-  return { yaw: Math.atan2(dx, dz), tilt: Math.atan2(eye[1] - y, Math.hypot(dx, dz)) };
-}
-
-const DRIVER_BOARD = { x: 0.12, y: SEATS.driver.eye[1] - 0.24, z: SEATS.driver.eye[2] - 0.34 };
 const GUNNER_BOARD = { x: LAMP_REPEATER.x + 0.23, y: SEATS.gunner.eye[1] - 0.2, z: TURRET.front + HULL.wall + BOARD_THICK + PAPER_GAP + 0.03 };
 
 /**
  * The two boards, 4:3 as the face's canvas (docs/crew-board.md). The
- * driver's stands at their front right, over the final drive's housing in
- * front of the empty assistant driver's seat, below and right of the turret
- * dial, turned and leaned to face their eyes: a glance down and right from
- * the slit. The gunner's is on the turret's front wall right of the
+ * driver's leans back on the glacis at their front right, as steep as the
+ * glacis, right of the right tiller and above the gear lever, its right
+ * edge turned out from the slope towards their eyes: a glance down and
+ * right. It sits 1.5 cm or more off the glacis everywhere, and clear of the
+ * tiller's and the gear lever's reach (test/crew-board.test.ts). The gunner's is on the turret's front wall right of the
  * gunsight, under the firing lamp's repeater, flat on the wall (the eyes
  * look at it 25° off square): a glance right from the sight. Both well
  * clear of the slit, the periscopes' windows and every control's reach.
  */
 export const BOARDS: Readonly<Record<SeatId, BoardPlace>> = {
-  driver: { frame: 'hull', ...DRIVER_BOARD, width: 0.36, height: 0.27, ...facing(DRIVER_BOARD.x, DRIVER_BOARD.y, DRIVER_BOARD.z, SEATS.driver.eye) },
+  driver: { frame: 'hull', x: 0.04, y: SEATS.driver.eye[1] - 0.33, z: -1.83, width: 0.36, height: 0.27, yaw: -1, tilt: GLACIS_SLOPE },
   gunner: { frame: 'turret', ...GUNNER_BOARD, width: 0.44, height: 0.33, yaw: 0, tilt: 0 },
 };
 
