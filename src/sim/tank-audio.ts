@@ -13,10 +13,12 @@
  * six-inch links, and an electric power traverse.
  */
 import { GUN } from './cabin.js';
-import { MAX_SPEED, MAX_TRAVERSE } from './comfort.js';
+import { MAX_SPEED, MAX_TRAVERSE, MAX_YAW_RATE } from './comfort.js';
+import { THROW_LIMIT } from './going.js';
 import { createFooting, footingBetween, SURFACE_SOUND, type Footing, type Surface, type SurfaceSound } from './ground-surface.js';
 import { CASING_BIN, LEVER_CLOSED } from './loading.js';
-import { IDLE_RPM, MAX_RPM } from './tank-drive.js';
+import { rng } from './random.js';
+import { IDLE_RPM, MAX_RPM, TRACK_GAUGE } from './tank-drive.js';
 
 /**
  * The short sounds: a gear going in, the gears grinding (a loop), the gun,
@@ -43,7 +45,8 @@ export const MIX = {
   rumble: 0.21,
   clatter: 0.4,
   grit: 0.3,
-  squeal: 0.14,
+  strain: 0.8,
+  squeak: 0.22,
   whine: 0.03,
   traverseGear: 0.3,
   traverseRumble: 0.09,
@@ -294,7 +297,8 @@ export function sirenVoice(on: boolean, out: { freq: number; gain: number; glide
  * to 1, before MIX.clatter. What the track is on (src/sim/ground-surface.ts)
  * sets how much of the links' lower and upper ring and of their thud is
  * heard (1 on a dirt road), and the ground's own noise under them: its
- * level, 0 to 1, before MIX.grit, and where it lies, Hz.
+ * level, 0 to 1, before MIX.grit, and where it lies, Hz. In a hard turn the
+ * track strains: how hard, 0 to 1, before MIX.strain.
  */
 export interface LinkVoice {
   hz: number;
@@ -304,13 +308,18 @@ export interface LinkVoice {
   thud: number;
   grit: number;
   gritHz: number;
+  strain: number;
 }
 
 function createLinkVoice(): LinkVoice {
-  return { hz: 0, gain: 0, ring: 1, top: 1, thud: 1, grit: 0, gritHz: SURFACE_SOUND.dirt.gritHz };
+  return { hz: 0, gain: 0, ring: 1, top: 1, thud: 1, grit: 0, gritHz: SURFACE_SOUND.dirt.gritHz, strain: 0 };
 }
 
-/** The tracks' sound at their speeds: a low rumble through the floor, each track's links clattering round its sprocket, and dry pins squealing. */
+/**
+ * The tracks' sound at their speeds: a low rumble through the floor, each
+ * track's links clattering round its sprocket, the tracks straining in a
+ * hard turn at speed, and now and then a dry pin squeaking.
+ */
 export interface TrackVoice {
   /** 0 to 1, before MIX.rumble. */
   rumble: number;
@@ -321,17 +330,74 @@ export interface TrackVoice {
   /** The two tracks' mean, for the menu and the tests. */
   clatter: number;
   clatterHz: number;
-  /** The pins' squeal, 0 to 1, before MIX.squeal, and how fast its swells come (1 at SQUEAL_SPEED). */
-  squeal: number;
-  squealRate: number;
+  /** The sideways push on the tracks, m/s² (src/sim/going.ts), and how hard it strains them, 0 to 1 (each track's share is its `strain`). */
+  side: number;
+  strain: number;
+  /** How fast the strained tracks judder against the wheels and the ground: the rendered judder's playback rate. */
+  judder: number;
+  /** How many pins squeak a second, on average, and how loud, 0 to 1, before MIX.squeak. */
+  squeaks: number;
+  squeak: number;
 }
 
 export function createTrackVoice(): TrackVoice {
-  return { rumble: 0, rumbleCutoff: 0, left: createLinkVoice(), right: createLinkVoice(), clatter: 0, clatterHz: 0, squeal: 0, squealRate: 1 };
+  return {
+    rumble: 0,
+    rumbleCutoff: 0,
+    left: createLinkVoice(),
+    right: createLinkVoice(),
+    clatter: 0,
+    clatterHz: 0,
+    side: 0,
+    strain: 0,
+    judder: 1,
+    squeaks: 0,
+    squeak: 0,
+  };
 }
 
-/** The squeal's swells come at their rendered pace at this track speed, m/s. */
-export const SQUEAL_SPEED = 2.5;
+/**
+ * The tracks are heard straining from this sideways push, m/s², and at
+ * their hardest at THROW_LIMIT, where a track starts to come off
+ * (src/sim/going.ts; the sign that the tracks are straining comes at
+ * THROW_WARN, about two thirds of the way). Flat out, any real turn gets
+ * there; at 14 km/h a turn on one tiller is about a third of the way.
+ */
+export const STRAIN_FROM = 0.3;
+/** The tracks strain fully only moving at least this fast, m/s: a tank leaning on a slope at rest scrubs nothing. */
+export const STRAIN_MOVING = 1;
+/** The inner track in a turn carries this share of the outer (faster) one's strain: the hull's weight leans out onto the outer track. */
+export const STRAIN_INNER = 0.6;
+/**
+ * The tracks squeak, on average, SQUEAK_BASE times a second driving straight
+ * at a walk, a little more at speed (SQUEAK_SPEED flat out), more in a turn
+ * (SQUEAK_STEER with the tracks 3 m/s apart) and far more straining
+ * (SQUEAK_STRAIN at full strain); never below SQUEAK_MOVING m/s. Each
+ * surface's `squeak` scales it: a track slips quietly on turf and bites on
+ * a road.
+ */
+export const SQUEAK_BASE = 0.6;
+export const SQUEAK_SPEED = 0.5;
+export const SQUEAK_STEER = 0.8;
+export const SQUEAK_STRAIN = 3;
+export const SQUEAK_MOVING = 0.3;
+/**
+ * How many squeaks are rendered (src/sim/sound-render.ts's renderSqueak),
+ * each a different wheel, pin or guide horn: the first SQUEAK_CHIRPS short
+ * chirps, the rest longer screeches. A squeak is a screech SCREECH_SHARE of
+ * the time, and up to SCREECH_SHARE + SCREECH_STRAIN straining hard.
+ */
+export const SQUEAK_VARIANTS = 10;
+export const SQUEAK_CHIRPS = 7;
+export const SCREECH_SHARE = 0.1;
+export const SCREECH_STRAIN = 0.4;
+
+/** The sideways push of a turn on tracks running at these speeds, m/s²: the hull's speed times its turn rate (sidePush in src/sim/going.ts, without a slope or mud). */
+export function turnPush(leftTrack: number, rightTrack: number): number {
+  const speed = (leftTrack + rightTrack) / 2;
+  const yaw = Math.max(-MAX_YAW_RATE, Math.min(MAX_YAW_RATE, (rightTrack - leftTrack) / TRACK_GAUGE));
+  return Math.abs(speed * yaw);
+}
 
 function linkVoice(track: number, ground: SurfaceSound, out: LinkVoice): void {
   const v = Math.abs(track);
@@ -348,11 +414,14 @@ function linkVoice(track: number, ground: SurfaceSound, out: LinkVoice): void {
 
 /**
  * From each track's speed, m/s (a pivot turn, tracks running opposite
- * ways, rumbles too), and what each is on (a dirt road if not said: what
- * the tracks were tuned on). Steering drags one track against the ground
- * and loads its pins, so the squeal is strongest in a turn. The rumble and
- * the squeal come from both tracks together, so they take the two
- * grounds' mean.
+ * ways, rumbles too), what each is on (a dirt road if not said: what the
+ * tracks were tuned on), and the sideways push on them, m/s² (a turn's,
+ * from the tracks' speeds, if not said; the drive's own `side` also has a
+ * slope's lean and mud in it). A hard turn at speed drags the tracks
+ * sideways: they groan against the wheels and scrub the ground, the outer
+ * one most. Pins squeak now and then whenever the tank moves, more in a
+ * turn and far more straining. The rumble and the squeaks come from both
+ * tracks together, so they take the two grounds' mean.
  */
 export function trackVoice(
   leftTrack: number,
@@ -360,6 +429,7 @@ export function trackVoice(
   out: TrackVoice,
   leftGround: SurfaceSound = SURFACE_SOUND.dirt,
   rightGround: SurfaceSound = SURFACE_SOUND.dirt,
+  side: number = turnPush(leftTrack, rightTrack),
 ): TrackVoice {
   const v = (Math.abs(leftTrack) + Math.abs(rightTrack)) / 2;
   const f = clamp01(v / MAX_SPEED);
@@ -369,10 +439,68 @@ export function trackVoice(
   linkVoice(rightTrack, rightGround, out.right);
   out.clatter = (out.left.gain + out.right.gain) / 2;
   out.clatterHz = (out.left.hz + out.right.hz) / 2;
+  out.side = side;
+  out.strain = clamp01((side - STRAIN_FROM) / (THROW_LIMIT - STRAIN_FROM)) * clamp01(v / STRAIN_MOVING);
+  // The outer track is the faster one (the turn's way); running straight (a slope's lean, mud) both strain alike.
+  const turn = Math.abs(rightTrack) - Math.abs(leftTrack);
+  out.left.strain = out.strain * (turn > 0.01 ? STRAIN_INNER : 1);
+  out.right.strain = out.strain * (turn < -0.01 ? STRAIN_INNER : 1);
+  out.judder = 0.8 + 0.5 * out.strain + 0.4 * f;
   const steer = clamp01(Math.abs(leftTrack - rightTrack) / 3);
-  out.squeal = clamp01(f * 5) * (0.3 + 0.7 * steer) * ((leftGround.squeal + rightGround.squeal) / 2);
-  out.squealRate = Math.min(3, Math.max(0.15, v / SQUEAL_SPEED));
+  const squeaky = (leftGround.squeak + rightGround.squeak) / 2;
+  out.squeaks = v < SQUEAK_MOVING ? 0 : (SQUEAK_BASE + SQUEAK_SPEED * f + SQUEAK_STEER * steer + SQUEAK_STRAIN * out.strain) * squeaky;
+  out.squeak = v < SQUEAK_MOVING ? 0 : (0.6 + 0.4 * Math.max(steer, out.strain)) * Math.min(1, squeaky);
   return out;
+}
+
+/** One squeak: from which track (0 left, 1 right), which of the rendered squeaks, and how loud, 0 to 1, before MIX.squeak. */
+export interface Squeak {
+  side: 0 | 1;
+  variant: number;
+  level: number;
+}
+
+export function createSqueak(): Squeak {
+  return { side: 0, variant: 0, level: 0 };
+}
+
+/**
+ * When the tracks squeak: at random, `squeaks` a second on average (a
+ * Poisson process), each from one track (the faster or more strained one
+ * more often), a short chirp or now and then a screech (more often
+ * straining), a different one from the last, no two as loud. Each page
+ * hears its own (nothing is sent: squeaks are no event either crew acts
+ * on). Seeded, so the tests and the preview are the same each run.
+ * Allocation free.
+ */
+export class SqueakTimer {
+  private readonly random: () => number;
+  private last = -1;
+
+  constructor(seed = 311) {
+    this.random = rng(seed);
+  }
+
+  /** Whether a squeak comes in the `dt` s just gone at the tracks' voice `k`, and if so which, into `out`. */
+  step(dt: number, k: TrackVoice, out: Squeak): boolean {
+    if (k.squeaks <= 0 || dt <= 0) return false;
+    if (this.random() >= 1 - Math.exp(-k.squeaks * dt)) return false;
+    const left = k.left.gain + 2 * k.left.strain;
+    const right = k.right.gain + 2 * k.right.strain;
+    out.side = this.random() * (left + right) < left ? 0 : 1;
+    // A chirp or a screech, then one of that kind other than the last.
+    const screech = this.random() < SCREECH_SHARE + SCREECH_STRAIN * k.strain;
+    const from = screech ? SQUEAK_CHIRPS : 0;
+    const count = screech ? SQUEAK_VARIANTS - SQUEAK_CHIRPS : SQUEAK_CHIRPS;
+    const avoid = this.last >= from && this.last < from + count ? this.last - from : -1;
+    let pick = Math.floor(this.random() * (avoid >= 0 ? count - 1 : count));
+    if (avoid >= 0 && pick >= avoid) pick++;
+    const variant = from + pick;
+    out.variant = variant;
+    this.last = variant;
+    out.level = k.squeak * (0.45 + 0.55 * this.random());
+    return true;
+  }
 }
 
 /** The power traverse's sound from the turret's rate: its electric motor's whine, the gear train's growl and the ring rumbling round. */
@@ -507,9 +635,10 @@ export function soundTour(t: number, out: TourState): TourState {
     out.rpm = climbing ? 1300 + 1200 * inThis : t < 26.5 ? 2300 : IDLE_RPM + 1500 * (1 - ease(t, 26.5, 29));
     out.load = climbing ? (inThis < 0.08 ? 0.1 : 0.9) : t < 26.5 ? 0.55 : 0;
     out.inGear = true;
-    // A turn to the left, back on the road: the left track held back.
-    const turn = ease(t, 24.6, 25.2) - ease(t, 25.9, 26.5);
-    out.left = speed * (1 - 0.55 * turn);
+    // A hard turn to the left at speed, back on the road: the left track held back (turning at the 15°/s the drive
+    // allows), the tracks straining as hard as they can without one coming off.
+    const turn = ease(t, 24.5, 25.1) - ease(t, 26.1, 26.7);
+    out.left = speed * (1 - 0.1 * turn);
     out.right = speed * (1 + 0.1 * turn);
   } else if (t < 34) {
     // The power traverse: up to full speed, a stop, and slowly back.

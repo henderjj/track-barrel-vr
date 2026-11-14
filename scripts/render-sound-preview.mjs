@@ -28,6 +28,12 @@
  *             and last at a crawl (4 km/h) on gravel, then on grass.
  *   ground-tracks  The same with the engine and the gears left out: only
  *             what the ground changes.
+ *   cornering From the driver's seat on the dirt road: straight at 20 km/h
+ *             (only the odd squeak), a gentle turn, a full turn at 20 km/h
+ *             (the tracks straining, under the warning), then up to 33 km/h
+ *             and a full turn there (straining their hardest: the warning,
+ *             and a thrown track if held), and slowing straight.
+ *   cornering-tracks  The same with the engine and the gears left out.
  *
  * Needs Playwright's Chromium (docs/testing.md, "In a cloud container").
  */
@@ -40,7 +46,7 @@ import { chromium } from 'playwright';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const outDir = resolve(args[0] ?? join(root, 'artifacts', 'sound-preview'));
-const SCENES = ['tour', 'gunnery', 'starting', 'cruise', 'ground', 'ground-tracks'];
+const SCENES = ['tour', 'gunnery', 'starting', 'cruise', 'ground', 'ground-tracks', 'cornering', 'cornering-tracks'];
 const scenes = args.length > 1 ? args.slice(1) : SCENES;
 const RATE = 48000;
 
@@ -52,6 +58,7 @@ const entry = `
   export { SEATS } from './src/sim/cabin.ts';
   export { CASING_FLIGHT, RECOIL } from './src/sim/loading.ts';
   export { IDLE_RPM, CRANK_RPM } from './src/sim/gearbox.ts';
+  export { TRACK_GAUGE } from './src/sim/tank-drive.ts';
   export { MAX_TRAVERSE } from './src/sim/comfort.ts';
   export { turretToHull } from './src/sim/interior.ts';
 `;
@@ -108,9 +115,43 @@ async function renderScene(name, rate) {
       T.trackVoice(speed, speed, v.tracks, leftGround, rightGround);
     },
   });
+  /** The `cornering` scenes: from each time, s, the tank's speed, m/s, and its turn rate, rad/s (15°/s is the most it turns). */
+  const CORNERS = [
+    [0, 5.6, 0],
+    [4, 5.6, 0.1],
+    [8, 5.6, 0],
+    [9.5, 5.6, 0.262],
+    [13.5, 9.2, 0],
+    [16, 9.2, 0.262],
+    [20, 3.9, 0],
+  ];
+  const cornering = (engine) => ({
+    seconds: 24,
+    seat: 'driver',
+    sounds: [],
+    at(t, v) {
+      let i = 0;
+      while (i + 1 < CORNERS.length && t >= CORNERS[i + 1][0]) i++;
+      const now = CORNERS[i];
+      const was = CORNERS[Math.max(0, i - 1)];
+      const u = ease(t, now[0], now[0] + (now[1] !== was[1] ? 2 : 0.6));
+      const speed = was[1] + (now[1] - was[1]) * u;
+      const yaw = was[2] + (now[2] - was[2]) * u;
+      const rpm = 1500 + 800 * Math.min(1, speed / 9.2);
+      T.engineVoice(rpm, 0.6, v.engine);
+      T.driveVoice(rpm, speed, true, 0.6, v.drive);
+      if (!engine) {
+        v.engine.gain = v.engine.roar = 0;
+        v.drive.gearbox = v.drive.final = 0;
+      }
+      T.trackVoice(speed - (yaw * T.TRACK_GAUGE) / 2, speed + (yaw * T.TRACK_GAUGE) / 2, v.tracks);
+    },
+  });
   const scenesByName = {
     ground: ground(true),
     'ground-tracks': ground(false),
+    cornering: cornering(true),
+    'cornering-tracks': cornering(false),
     tour: {
       seconds: T.TOUR_SECONDS + 1,
       seat: 'driver',
@@ -195,9 +236,13 @@ async function renderScene(name, rate) {
   const eye = T.SEATS[scene.seat].eye;
   const at = scene.seat === 'gunner' ? T.turretToHull(eye, 0, [0, 0, 0]) : eye;
   graph.setListener(at[0], at[1], at[2], 0, 0, -1, 0, 1, 0, 0);
+  // The pins squeak at random, as the game's do (the same seed, so the same squeaks each render).
+  const squeaks = new T.SqueakTimer();
+  const squeak = T.createSqueak();
   for (let t = 0; t < scene.seconds; t += 0.05) {
     scene.at(t, voices);
     graph.apply(voices, t);
+    if (squeaks.step(0.05, voices.tracks, squeak)) graph.squeak(squeak.side, squeak.variant, squeak.level, t);
   }
   for (const [t, id, seconds] of scene.sounds) graph.play(id, t, seconds ?? 0);
   const rendered = await ctx.startRendering();

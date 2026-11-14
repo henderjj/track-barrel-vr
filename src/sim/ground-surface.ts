@@ -36,30 +36,32 @@ export interface SurfaceSound {
   top: number;
   /** Each link's thud through the floor as it lands. */
   thud: number;
-  /** The ground's own noise under the links: grit and stones crushed and thrown, or turf torn. Gravel is 1. */
+  /** The ground's own noise under the links: grit and stones crushed and thrown, or turf torn. */
   grit: number;
   /** Where that noise lies, Hz: a low rustle on turf, a bright crunch on stones. */
   gritHz: number;
   /** The rumble through the floor: its level, and how far its low-pass opens. */
   rumble: number;
   rumbleOpen: number;
-  /** The pins' squeal: a track slips on wet turf, and bites on a hard road. */
-  squeal: number;
+  /** How often and how loud the pins squeak: a track slips quietly on wet turf, and bites on a hard road. */
+  squeak: number;
 }
 
 export const SURFACE_SOUND: Record<Surface, SurfaceSound> = {
   // Turf over soft earth: the links bed in, so little rings; a low tearing rustle and a duller rumble.
-  grass: { ring: 0.85, top: 0.5, thud: 0.7, grit: 0.5, gritHz: 750, rumble: 0.9, rumbleOpen: 0.75, squeal: 0.6 },
+  grass: { ring: 0.85, top: 0.5, thud: 0.7, grit: 0.5, gritHz: 750, rumble: 0.9, rumbleOpen: 0.75, squeak: 0.6 },
   // Packed earth with grit on it: what the tracks were tuned on.
-  dirt: { ring: 1, top: 1, thud: 1, grit: 0.45, gritHz: 1600, rumble: 1, rumbleOpen: 1, squeal: 1 },
-  // Loose stones over a hard bed: a crunch under every link, the links clinking on stone, the floor busier.
-  gravel: { ring: 1.05, top: 1.2, thud: 1.1, grit: 1, gritHz: 3000, rumble: 1.08, rumbleOpen: 1.2, squeal: 0.85 },
-  // Deep mud: the links sink in and barely ring; a low wet suck under them, a dull rumble, no squeal.
-  mud: { ring: 0.55, top: 0.35, thud: 0.6, grit: 0.6, gritHz: 450, rumble: 0.85, rumbleOpen: 0.6, squeal: 0.35 },
+  dirt: { ring: 1, top: 1, thud: 1, grit: 0.45, gritHz: 1600, rumble: 1, rumbleOpen: 1, squeak: 1 },
+  // Loose stones over a hard bed: a crunch under every link, the links clinking on stone, the floor busier. Its
+  // crunch and clink were brought down after John's play test (2026-11-14: "a bit loud compared to everything else";
+  // they had been 1 and 1.2).
+  gravel: { ring: 1.05, top: 1.05, thud: 1.1, grit: 0.55, gritHz: 2700, rumble: 1.08, rumbleOpen: 1.2, squeak: 0.85 },
+  // Deep mud: the links sink in and barely ring; a low wet suck under them, a dull rumble, no squeaks.
+  mud: { ring: 0.55, top: 0.35, thud: 0.6, grit: 0.6, gritHz: 450, rumble: 0.85, rumbleOpen: 0.6, squeak: 0.35 },
   // Through the ford: the water damps the links and churns under them.
-  water: { ring: 0.5, top: 0.4, thud: 0.45, grit: 0.9, gritHz: 1100, rumble: 0.8, rumbleOpen: 0.55, squeal: 0.32 },
+  water: { ring: 0.5, top: 0.4, thud: 0.45, grit: 0.9, gritHz: 1100, rumble: 0.8, rumbleOpen: 0.55, squeak: 0.32 },
   // The bridge's steel treads: links clanking on steel, nothing to crunch, the floor ringing.
-  steel: { ring: 1.3, top: 1.4, thud: 1.2, grit: 0.15, gritHz: 2500, rumble: 1.1, rumbleOpen: 1.3, squeal: 1.2 },
+  steel: { ring: 1.3, top: 1.4, thud: 1.2, grit: 0.15, gritHz: 2500, rumble: 1.1, rumbleOpen: 1.3, squeak: 1.2 },
 };
 
 /** The surface at (x, z), world space: as drawn. */
@@ -108,7 +110,7 @@ function blend(out: Footing): Footing {
   let logHz = 0;
   let rumble = 0;
   let rumbleOpen = 0;
-  let squeal = 0;
+  let squeak = 0;
   let most = 0;
   for (let i = 0; i < SURFACES.length; i++) {
     const share = out.shares[i];
@@ -122,7 +124,7 @@ function blend(out: Footing): Footing {
     logHz += share * Math.log(s.gritHz);
     rumble += share * s.rumble;
     rumbleOpen += share * s.rumbleOpen;
-    squeal += share * s.squeal;
+    squeak += share * s.squeak;
   }
   out.surface = SURFACES[most];
   out.ring = ring;
@@ -132,7 +134,7 @@ function blend(out: Footing): Footing {
   out.gritHz = Math.exp(logHz);
   out.rumble = rumble;
   out.rumbleOpen = rumbleOpen;
-  out.squeal = squeal;
+  out.squeak = squeak;
   return out;
 }
 

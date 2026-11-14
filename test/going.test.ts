@@ -263,7 +263,9 @@ describe("the course's obstacles, driven (F5.3d)", () => {
     const c = createControls();
     t.speed = 9.5;
     t.gear = 5;
-    c.left = 0.4;
+    // Near top speed, the turn rate held to 15°/s: past THROW_LIMIT (it was 0.4, a turn that slowed to 24 km/h, before
+    // the limits were raised on 2026-11-14).
+    c.left = 0.9;
     c.right = 1;
     const took = drive(t, c, 6, (s) => s.thrown !== 0);
     expect(took).toBeLessThan(6);

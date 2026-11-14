@@ -14,7 +14,7 @@
  */
 import { RECOIL } from './loading.js';
 import { rng } from './random.js';
-import { CRANK_BEAT_HZ, GRIND_TEETH_HZ, IDLE_REV_HZ, LOOPED, MIX, SOUND_IDS, SOUND_SECONDS, type SoundId } from './tank-audio.js';
+import { CRANK_BEAT_HZ, GRIND_TEETH_HZ, IDLE_REV_HZ, LOOPED, MIX, SOUND_IDS, SOUND_SECONDS, SQUEAK_CHIRPS, SQUEAK_VARIANTS, type SoundId } from './tank-audio.js';
 
 const TAU = 2 * Math.PI;
 type Samples = Float32Array<ArrayBuffer>;
@@ -663,27 +663,111 @@ export function renderGate(shape: GateShape, rate: number): Samples {
   return out;
 }
 
-/** The squeal loop's length at normal speed, s. */
-export const SQUEAL_SECONDS = 6;
+/** The strain loop's length at normal pace, s, and how many times a second the strained tracks judder in it. */
+export const STRAIN_SECONDS = 4;
+export const STRAIN_JUDDER_HZ = 22;
 
 /**
- * A loop between 0 and 1 for the track pins' squeal: mostly shut, with a
- * few swells of different lengths where a dry pin turns under load.
- * Deterministic.
+ * A loop between 0 and 1 for the tracks straining in a hard turn: the
+ * guide horns dragged against the road wheels and the links scrubbed
+ * sideways over the ground catch and let go (stick and slip) about
+ * STRAIN_JUDDER_HZ times a second, never evenly, and the whole of it heaves
+ * as the load comes and goes over the bumps. It never quite shuts: a
+ * strained track groans all the while, juddering in it. What it lets
+ * through is noise into the steel's resonances (TankSoundGraph).
+ * Deterministic and seamless.
  */
-export function renderSquealGate(rate: number): Samples {
-  const n = Math.round(SQUEAL_SECONDS * rate);
-  const out = new Float32Array(n);
-  const random = rng(303);
-  const swells = 8;
-  for (let k = 0; k < swells; k++) {
-    const length = 0.07 + 0.2 * random();
-    const at = ((k + 0.1 + 0.5 * random()) / swells) * SQUEAL_SECONDS;
-    const a = 0.3 + 0.7 * random();
-    const s = Math.floor(at * rate);
-    const len = Math.min(n - s, Math.round(length * rate));
-    for (let i = 0; i < len; i++) out[s + i] = Math.max(out[s + i], a * Math.sin((Math.PI * i) / len) ** 2);
+export function renderStrainGate(rate: number): Samples {
+  const n = Math.round(STRAIN_SECONDS * rate);
+  const random = rng(305);
+  // The heave: slow swells that come round a whole number of times in the loop, between about 0.45 and 1.
+  const swells = [
+    [2, 0.22, random() * TAU],
+    [3, 0.14, random() * TAU],
+    [5, 0.1, random() * TAU],
+    [9, 0.06, random() * TAU],
+  ] as const;
+  const heave = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let h = 0.72;
+    for (const [k, depth, phase] of swells) h += depth * Math.sin((TAU * k * i) / n + phase);
+    heave[i] = h;
   }
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = 0.3 * heave[i];
+  const count = Math.round(STRAIN_SECONDS * STRAIN_JUDDER_HZ);
+  const attack = Math.max(1, Math.round(0.001 * rate));
+  for (let k = 0; k < count; k++) {
+    const s = Math.floor(((k + 0.5 + (random() - 0.5) * 0.7) / count) * n);
+    const tau = 0.006 + 0.012 * random();
+    const len = Math.round(tau * 6 * rate);
+    const a = 0.45 + 0.55 * random();
+    for (let i = 0; i < len; i++) {
+      const at = (s + i + n) % n;
+      const env = i < attack ? i / attack : Math.exp(-(i - attack) / rate / tau);
+      // Where two slips land together the harder one is heard, not their sum.
+      out[at] = Math.max(out[at], a * heave[at] * env);
+    }
+  }
+  let top = 0;
+  for (let i = 0; i < n; i++) top = Math.max(top, out[i]);
+  for (let i = 0; i < n; i++) out[i] /= top;
+  return out;
+}
+
+/**
+ * One squeak of the tracks, the `k`th of SQUEAK_VARIANTS: steel sticking and
+ * slipping on steel (a road wheel's or the idler's rim on the guide horns, a
+ * dry pin) so fast that it sings. Measured on a squeaking-tracks sound
+ * effect (docs/audio.md, "Straining and squeaking"): a clean, whistling
+ * note between about 1.9 and 4.5 kHz with a weaker overtone an octave up,
+ * most of them chirps of 40 to 110 ms with a sharp start, and now and then
+ * a screech held for half a second or more. The first SQUEAK_CHIRPS are
+ * chirps, the rest screeches. Each bends a little as the wheel turns and
+ * wavers slightly; nothing chatters (that read as a creaky hinge). Each is
+ * its own, the same every time. Peaks at 1. Deterministic.
+ */
+export function renderSqueak(rate: number, k: number): Samples {
+  const random = rng(340 + k);
+  const screech = k >= SQUEAK_CHIRPS;
+  const seconds = screech ? 0.35 + 0.4 * random() : 0.04 + 0.07 * random();
+  const n = Math.round(seconds * rate);
+  const out = new Float32Array(n);
+  // Chirps spread from 1.9 to 4.5 kHz on a log scale, each nudged; screeches in their own spread.
+  const kind = screech ? k - SQUEAK_CHIRPS : k;
+  const kinds = screech ? SQUEAK_VARIANTS - SQUEAK_CHIRPS : SQUEAK_CHIRPS;
+  const f0 = 1900 * (4500 / 1900) ** ((kind + 0.2 + 0.6 * random()) / kinds);
+  // Its bend: up or down by 2 to 7% over a chirp, and a screech sags and recovers.
+  const bend = (0.02 + 0.05 * random()) * (random() < 0.5 ? -1 : 1);
+  // A screech wavers: a slow vibrato of 0.6 to 1.5% at 5 to 11 Hz.
+  const vibratoHz = 5 + 6 * random();
+  const vibrato = screech ? 0.006 + 0.009 * random() : 0;
+  const attack = screech ? 0.01 + 0.015 * random() : 0.002 + 0.003 * random();
+  const release = screech ? 0.04 + 0.04 * random() : 0.008 + 0.012 * random();
+  const overtone = 0.25 + 0.2 * random();
+  const swellHz = 1 + 1.5 * random();
+  let phase = 0;
+  let wobble = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / rate;
+    const u = i / n;
+    const shape = screech ? Math.sin(Math.PI * u) : u;
+    // A little roughness from cycle to cycle, far less than a creak's.
+    wobble += 0.01 * (random() * 2 - 1 - wobble);
+    const f = f0 * (1 + bend * shape) * (1 + vibrato * Math.sin(TAU * vibratoHz * t)) * (1 + 0.15 * wobble);
+    phase += (TAU * f) / rate;
+    let y = Math.sin(phase);
+    if (2 * f < rate * 0.4) y += overtone * Math.sin(2 * phase + 0.7);
+    if (3 * f < rate * 0.4) y += 0.08 * Math.sin(3 * phase + 1.9);
+    const rise = Math.min(1, t / attack);
+    const fall = Math.min(1, (seconds - t) / release);
+    // A chirp dies away from its start; a screech swells and holds.
+    const body = screech ? 0.75 + 0.25 * Math.sin(TAU * swellHz * t) : Math.exp(-t / (seconds * 0.6));
+    out[i] = y * rise * rise * (3 - 2 * rise) * fall * fall * (3 - 2 * fall) * body;
+  }
+  let top = 0;
+  for (let i = 0; i < n; i++) top = Math.max(top, Math.abs(out[i]));
+  for (let i = 0; i < n; i++) out[i] /= top;
   return out;
 }
 

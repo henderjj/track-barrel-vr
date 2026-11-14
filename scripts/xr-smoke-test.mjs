@@ -2209,7 +2209,8 @@ async function layingTheGun() {
  *     a shell rammed, the breech slammed, the shot and its casing). Driving
  *     raises the engine's note and roar, the gears whine and the tracks
  *     rumble (F6.1), each track sounding of what it is on (dirt road,
- *     grass, gravel); the traverse crank ticks; Practice → Tank sounds →
+ *     grass, gravel); the pins squeak now and then, and in a hard turn at
+ *     speed the tracks strain and squeak more; the traverse crank ticks; Practice → Tank sounds →
  *     Play each plays every short sound and Run through revs the engine;
  *     the menu's Tank sounds row turns them off and on. The emulator can't listen, so this checks what
  *     the page sends to Web Audio.
@@ -2265,6 +2266,21 @@ async function tankSounds() {
   check("Driving on the gravel, the ground's own noise comes in under both tracks",
     crunching.ground.left === 'gravel' && crunching.ground.right === 'gravel' && crunching.grit.left > 0.1 && crunching.grit.right > 0.1 && onGravel.grit.left === 0,
     `standing ${onGravel.grit.left.toFixed(2)}, driving ${crunching.grit.left.toFixed(2)} and ${crunching.grit.right.toFixed(2)} on ${crunching.ground.left}`);
+
+  // A hard turn at speed: the tracks strain, the outer one most (the sideways push that, past THROW_WARN, puts up the
+  // driver's sign), and the pins squeak far more often than driving straight. The run through held at its left turn at
+  // speed, so slow frames can't miss it.
+  const squeaks0 = audio().squeaks;
+  evalInApp('(window.__audio.tour(25.6, true), true)');
+  const straining = await waitFor('the tracks to strain in the turn', () => { const a = audio(); return a.strain > 0.8 && a.squeaks > squeaks0 && a; }, 10000)
+    .catch(() => audio());
+  evalInApp('(window.__audio.state().tour && window.__audio.tour(), true)');
+  check('Driving straight the pins squeak now and then; in a hard turn at speed the tracks strain, the outer one most, and squeak far more',
+    driving.strain === 0 && driving.squeakRate > 0.2 && driving.squeakRate < 1
+      && straining.strain > 0.8 && straining.strainSides.right > straining.strainSides.left && straining.squeakRate > driving.squeakRate * 3 && straining.squeaks > squeaks0,
+    `straight: strain ${driving.strain.toFixed(2)}, ${driving.squeakRate.toFixed(2)} squeaks a second; turning: push ${straining.side.toFixed(2)} m/s², `
+      + `strain ${straining.strain.toFixed(2)} (left ${straining.strainSides.left.toFixed(2)}, right ${straining.strainSides.right.toFixed(2)}), `
+      + `${straining.squeakRate.toFixed(2)} squeaks a second, ${straining.squeaks - squeaks0} heard`);
 
   // The gunner's traverse crank ticks as it turns: 0.3 of a turn a second, as a slow hand would (by the clock,
   // since a timer only gets a turn between the emulator's slow frames).

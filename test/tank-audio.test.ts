@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_SPEED, MAX_TRAVERSE } from '../src/sim/comfort.js';
+import { MAX_SPEED, MAX_TRAVERSE, MAX_YAW_RATE } from '../src/sim/comfort.js';
+import { THROW_LIMIT, THROW_WARN } from '../src/sim/going.js';
 import { SURFACE_SOUND, SURFACES } from '../src/sim/ground-surface.js';
 import { LEVER_CLOSED } from '../src/sim/loading.js';
 import {
@@ -17,15 +18,18 @@ import {
   renderGritGate,
   renderNoiseLoop,
   renderSound,
-  renderSquealGate,
+  renderSqueak,
+  renderStrainGate,
   SHOT_ECHOES,
-  SQUEAL_SECONDS,
+  STRAIN_JUDDER_HZ,
+  STRAIN_SECONDS,
   TICK_GATE,
 } from '../src/sim/sound-render.js';
 import {
   AUTO_OPEN_WINDOW,
   bankHz,
   createCues,
+  createSqueak,
   createDriveVoice,
   createEngineVoice,
   createTourState,
@@ -55,6 +59,13 @@ import {
   SOUND_SECONDS,
   SoundCues,
   soundTour,
+  SQUEAK_BASE,
+  SQUEAK_CHIRPS,
+  SQUEAK_VARIANTS,
+  SqueakTimer,
+  STRAIN_FROM,
+  STRAIN_INNER,
+  turnPush,
   SPEAKING_LEVEL,
   TOUR_SECONDS,
   trackVoice,
@@ -207,7 +218,8 @@ describe('the tracks', () => {
     const rest = trackVoice(0, 0, createTrackVoice());
     expect(rest.rumble).toBe(0);
     expect(rest.clatter).toBe(0);
-    expect(rest.squeal).toBe(0);
+    expect(rest.strain).toBe(0);
+    expect(rest.squeaks).toBe(0);
     const slow = trackVoice(1, 1, createTrackVoice());
     const fast = trackVoice(MAX_SPEED, MAX_SPEED, createTrackVoice());
     expect(slow.clatterHz).toBeCloseTo(1 / LINK_PITCH);
@@ -223,18 +235,106 @@ describe('the tracks', () => {
     expect(trackVoice(-1, 1, createTrackVoice()).rumble).toBeCloseTo(trackVoice(1, 1, createTrackVoice()).rumble);
   });
 
-  it('clatter each at its own rate in a turn, and squeal most while steering', () => {
-    const straight = trackVoice(4, 4, createTrackVoice());
+  it('clatter each at its own rate in a turn', () => {
     const turning = trackVoice(1.5, 4.5, createTrackVoice());
     expect(turning.left.hz).toBeCloseTo(1.5 / LINK_PITCH);
     expect(turning.right.hz).toBeCloseTo(4.5 / LINK_PITCH);
     expect(turning.right.gain).toBeGreaterThan(turning.left.gain);
-    expect(turning.squeal).toBeGreaterThan(straight.squeal * 2);
-    expect(turning.squeal).toBeLessThanOrEqual(1);
-    expect(straight.squeal).toBeGreaterThan(0);
-    // The swells come faster with speed, within limits.
-    expect(trackVoice(MAX_SPEED, MAX_SPEED, createTrackVoice()).squealRate).toBeGreaterThan(straight.squealRate);
-    expect(trackVoice(0.01, 0.01, createTrackVoice()).squealRate).toBeGreaterThan(0);
+  });
+
+  it("strain in a hard turn at speed, as the sideways push that throws a track, the outer track most", () => {
+    // The push of a turn is the speed times the turn rate, which is held to 15°/s.
+    expect(turnPush(4, 4)).toBe(0);
+    expect(turnPush(5 - 0.15, 5 + 0.15)).toBeCloseTo(5 * 0.1);
+    expect(turnPush(9 - 3, 9 + 3)).toBeCloseTo(9 * MAX_YAW_RATE);
+    expect(turnPush(-1, 1)).toBe(0);
+    const straight = trackVoice(MAX_SPEED, MAX_SPEED, createTrackVoice());
+    expect(straight.strain).toBe(0);
+    // A gentle turn (under STRAIN_FROM) is quiet, a full turn at 20 km/h strains, the same flat out strains fully.
+    const yawed = (speed: number, yaw: number) => trackVoice(speed - 1.5 * yaw, speed + 1.5 * yaw, createTrackVoice());
+    expect(yawed(5.6, STRAIN_FROM / 5.6 - 0.01).strain).toBe(0);
+    const twenty = yawed(5.6, MAX_YAW_RATE);
+    expect(twenty.strain).toBeGreaterThan(0.4);
+    expect(twenty.strain).toBeLessThan(0.75);
+    const flatOut = yawed(9, MAX_YAW_RATE);
+    expect(flatOut.side).toBeGreaterThan(THROW_WARN);
+    expect(flatOut.strain).toBeCloseTo(1);
+    // Turning left, the right track is the outer one: it carries the most.
+    expect(flatOut.right.strain).toBeCloseTo(1);
+    expect(flatOut.left.strain).toBeCloseTo(STRAIN_INNER);
+    // Straight on (a slope's lean, mud), both alike.
+    const leaning = trackVoice(5, 5, createTrackVoice(), undefined, undefined, THROW_LIMIT);
+    expect(leaning.left.strain).toBe(leaning.right.strain);
+    // It judders faster the harder it strains.
+    expect(flatOut.judder).toBeGreaterThan(twenty.judder);
+    // The drive's own push (a slope's lean, mud) is taken as given; standing still, nothing strains.
+    expect(trackVoice(5, 5, createTrackVoice(), undefined, undefined, THROW_LIMIT).strain).toBeCloseTo(1);
+    expect(trackVoice(0, 0, createTrackVoice(), undefined, undefined, THROW_LIMIT).strain).toBe(0);
+    expect(trackVoice(0.5, 0.5, createTrackVoice(), undefined, undefined, THROW_LIMIT).strain).toBeCloseTo(0.5);
+  });
+
+  it('squeak now and then whenever they move, more in a turn and far more straining', () => {
+    const crawl = trackVoice(1, 1, createTrackVoice());
+    const straight = trackVoice(5.6, 5.6, createTrackVoice());
+    const turning = trackVoice(5.6 - 1.5 * MAX_YAW_RATE, 5.6 + 1.5 * MAX_YAW_RATE, createTrackVoice());
+    const straining = trackVoice(9 - 1.5 * MAX_YAW_RATE, 9 + 1.5 * MAX_YAW_RATE, createTrackVoice());
+    expect(trackVoice(0.1, 0.1, createTrackVoice()).squeaks).toBe(0);
+    // Driving straight, about one a second or less: occasional.
+    expect(crawl.squeaks).toBeGreaterThanOrEqual(SQUEAK_BASE);
+    expect(straight.squeaks).toBeGreaterThan(crawl.squeaks);
+    expect(straight.squeaks).toBeLessThan(1);
+    expect(turning.squeaks).toBeGreaterThan(straight.squeaks * 2);
+    expect(straining.squeaks).toBeGreaterThan(2.5);
+    expect(straining.squeak).toBeGreaterThan(straight.squeak);
+    expect(straining.squeak).toBeLessThanOrEqual(1);
+  });
+
+  it('squeak at random as often as they say, a different pin each time, from the faster track more', () => {
+    const timer = new SqueakTimer();
+    const out = createSqueak();
+    const turning = trackVoice(9 - 1.5 * MAX_YAW_RATE, 9 + 1.5 * MAX_YAW_RATE, createTrackVoice());
+    let count = 0;
+    let right = 0;
+    let last = -1;
+    let repeats = 0;
+    let screeches = 0;
+    const dt = 1 / 72;
+    const seconds = 600;
+    for (let i = 0; i < seconds / dt; i++) {
+      if (!timer.step(dt, turning, out)) continue;
+      count++;
+      if (out.side === 1) right++;
+      if (out.variant === last) repeats++;
+      if (out.variant >= SQUEAK_CHIRPS) screeches++;
+      last = out.variant;
+      expect(out.variant).toBeGreaterThanOrEqual(0);
+      expect(out.variant).toBeLessThan(SQUEAK_VARIANTS);
+      expect(out.level).toBeGreaterThan(0);
+      expect(out.level).toBeLessThanOrEqual(turning.squeak);
+    }
+    expect(count / seconds).toBeGreaterThan(turning.squeaks * 0.85);
+    expect(count / seconds).toBeLessThan(turning.squeaks * 1.15);
+    expect(repeats).toBe(0);
+    // Straining hard, about half are screeches; driving straight, about one in ten.
+    expect(screeches / count).toBeGreaterThan(0.4);
+    expect(screeches / count).toBeLessThan(0.6);
+    const straight = trackVoice(5, 5, createTrackVoice());
+    let calm = 0;
+    let calmScreeches = 0;
+    for (let i = 0; i < 3000 / dt; i++) {
+      if (!timer.step(dt, straight, out)) continue;
+      calm++;
+      if (out.variant >= SQUEAK_CHIRPS) calmScreeches++;
+    }
+    expect(calmScreeches / calm).toBeGreaterThan(0.06);
+    expect(calmScreeches / calm).toBeLessThan(0.14);
+    // Turning left, the right track is faster and strained more.
+    expect(right / count).toBeGreaterThan(0.55);
+    // At rest, never; the same seed, the same squeaks.
+    expect(new SqueakTimer().step(1, trackVoice(0, 0, createTrackVoice()), out)).toBe(false);
+    const a = new SqueakTimer();
+    const b = new SqueakTimer();
+    for (let i = 0; i < 1000; i++) expect(a.step(dt, turning, out)).toBe(b.step(dt, turning, createSqueak()));
   });
 
   it('sound as they did on a dirt road if nothing says what they are on', () => {
@@ -259,14 +359,17 @@ describe('the tracks', () => {
     expect(on.grass.rumble).toBeLessThan(on.dirt.rumble);
     expect(on.grass.rumbleCutoff).toBeLessThan(on.dirt.rumbleCutoff);
     expect(on.gravel.rumbleCutoff).toBeGreaterThan(on.dirt.rumbleCutoff);
-    // The ground's own noise: a low rustle on grass, a crunch an octave and more higher on gravel and twice as loud.
-    expect(on.gravel.left.grit).toBeGreaterThanOrEqual(on.grass.left.grit * 2);
-    expect(on.gravel.left.grit).toBeGreaterThanOrEqual(on.dirt.left.grit * 2);
+    // The ground's own noise: a low rustle on grass, a crunch an octave and more higher on gravel and a little louder
+    // (twice as loud until John's play test of 2026-11-14 found gravel too loud against everything else).
+    expect(on.gravel.left.grit).toBeGreaterThan(on.grass.left.grit);
+    expect(on.gravel.left.grit).toBeGreaterThan(on.dirt.left.grit);
+    expect(on.gravel.left.grit).toBeLessThan(on.dirt.left.grit * 1.5);
     expect(on.grass.left.gritHz).toBeLessThan(on.dirt.left.gritHz / 2);
     expect(on.gravel.left.gritHz).toBeGreaterThan(on.dirt.left.gritHz * 1.5);
-    // A track slips on turf: less squeal in the same turn.
-    const turn = (s: (typeof SURFACES)[number]) => trackVoice(1.5, 4.5, createTrackVoice(), SURFACE_SOUND[s], SURFACE_SOUND[s]).squeal;
-    expect(turn('grass')).toBeLessThan(turn('dirt'));
+    // A track slips on turf: fewer, quieter squeaks in the same turn.
+    const turn = (s: (typeof SURFACES)[number]) => trackVoice(1.5, 4.5, createTrackVoice(), SURFACE_SOUND[s], SURFACE_SOUND[s]);
+    expect(turn('grass').squeaks).toBeLessThan(turn('dirt').squeaks);
+    expect(turn('grass').squeak).toBeLessThan(turn('dirt').squeak);
   });
 
   it("are silent at rest whatever they are on, and the ground's noise comes and goes with the links", () => {
@@ -281,7 +384,7 @@ describe('the tracks', () => {
     }
   });
 
-  it('each sound of what it alone is on, and share the rumble and the squeal', () => {
+  it('each sound of what it alone is on, and share the rumble and the squeaks', () => {
     // The left track on the road, the right on the verge.
     const v = trackVoice(4, 4, createTrackVoice(), SURFACE_SOUND.dirt, SURFACE_SOUND.grass);
     const dirt = trackVoice(4, 4, createTrackVoice(), SURFACE_SOUND.dirt, SURFACE_SOUND.dirt);
@@ -290,7 +393,7 @@ describe('the tracks', () => {
     expect(v.right).toEqual(grass.right);
     expect(v.rumble).toBeCloseTo((dirt.rumble + grass.rumble) / 2);
     expect(v.rumbleCutoff).toBeCloseTo((dirt.rumbleCutoff + grass.rumbleCutoff) / 2);
-    expect(v.squeal).toBeCloseTo((dirt.squeal + grass.squeal) / 2);
+    expect(v.squeaks).toBeCloseTo((dirt.squeaks + grass.squeaks) / 2);
   });
 });
 
@@ -362,7 +465,10 @@ describe('the sound tour', () => {
     expect([at(23).leftGround.surface, at(23).rightGround.surface]).toEqual(['gravel', 'gravel']);
     expect([at(26).leftGround.surface, at(26).rightGround.surface]).toEqual(['dirt', 'dirt']);
     expect(at(23).left).toBeCloseTo(at(17).left, 5);
-    expect(at(25.5).left).toBeLessThan(at(25.5).right * 0.6);
+    // The turn at speed: the left track held back as far as the drive's 15°/s turn allows, and the tracks straining fully.
+    expect(at(25.5).left).toBeLessThan(at(25.5).right * 0.85);
+    expect(trackVoice(at(25.5).left, at(25.5).right, createTrackVoice()).strain).toBeGreaterThan(0.95);
+    expect(trackVoice(at(23).left, at(23).right, createTrackVoice()).strain).toBe(0);
     expect(Math.abs(at(28.99).left)).toBeLessThan(0.05);
     expect(at(30.8).traverse).toBeCloseTo(MAX_TRAVERSE);
     expect(at(33).traverse).toBeLessThan(0);
@@ -599,16 +705,60 @@ describe('the loops', () => {
     expect(tone(clicks, GATE_HZ) / (clicks.reduce((a, v) => a + v, 0) / clicks.length)).toBeGreaterThan(1.2);
   });
 
-  it("of the pins' squeal are mostly shut, with a few swells", () => {
-    const g = renderSquealGate(RATE);
-    expect(g.length).toBe(SQUEAL_SECONDS * RATE);
+  it('of the strain judder about STRAIN_JUDDER_HZ times a second, heaving, and never shut', () => {
+    const g = renderStrainGate(RATE);
+    expect(g).toEqual(renderStrainGate(RATE));
+    expect(g.length).toBe(STRAIN_SECONDS * RATE);
     expect(g.every((v) => v >= 0 && v <= 1)).toBe(true);
-    let open = 0;
-    for (let i = 0; i < g.length; i++) if (g[i] > 0.05) open++;
-    expect(open / g.length).toBeGreaterThan(0.05);
-    expect(open / g.length).toBeLessThan(0.4);
-    expect(g[0]).toBe(0);
-    expect(g[g.length - 1]).toBeLessThan(0.01);
+    expect(peak(g)).toBeCloseTo(1, 5);
+    const mean = g.reduce((a, v) => a + v, 0) / g.length;
+    // Never shut: a strained track groans all the while.
+    let lowest = 1;
+    for (let i = 0; i < g.length; i++) lowest = Math.min(lowest, g[i]);
+    expect(lowest).toBeGreaterThan(0.08);
+    // A judder, not a steady hiss: the level rises and falls by more than its own average.
+    let swing = 0;
+    for (let i = 0; i < g.length; i++) swing += Math.abs(g[i] - mean);
+    expect(swing / g.length / mean).toBeGreaterThan(0.2);
+    // Seamless: the end runs into the start.
+    expect(Math.abs(g[g.length - 1] - g[0])).toBeLessThan(0.2);
+    expect(STRAIN_JUDDER_HZ).toBeGreaterThan(15);
+  });
+
+  it('of the squeaks are clean, high notes: short chirps and a few longer screeches, starting and ending at rest', () => {
+    const pitches: number[][] = [[], []];
+    for (let k = 0; k < SQUEAK_VARIANTS; k++) {
+      const q = renderSqueak(RATE, k);
+      const screech = k >= SQUEAK_CHIRPS;
+      expect(q).toEqual(renderSqueak(RATE, k));
+      // Chirps of 40 to 110 ms, screeches of a third to three quarters of a second (measured on a squeaking-tracks effect).
+      expect(q.length / RATE).toBeGreaterThan(screech ? 0.3 : 0.035);
+      expect(q.length / RATE).toBeLessThan(screech ? 0.8 : 0.12);
+      expect(peak(q)).toBeCloseTo(1, 5);
+      expect(Math.abs(q[0])).toBeLessThan(0.01);
+      expect(Math.abs(q[q.length - 1])).toBeLessThan(0.05);
+      // Its note: the strongest tone between 1.5 and 5 kHz, by a coarse scan, and clean: far over what lies an
+      // eighth of an octave either side of it.
+      let best = 0;
+      let at = 0;
+      for (let f = 1500; f <= 5000; f += 10) {
+        const t = tone(q, f);
+        if (t > best) {
+          best = t;
+          at = f;
+        }
+      }
+      expect(best).toBeGreaterThan(tone(q, at * 1.09) * 3);
+      expect(best).toBeGreaterThan(tone(q, at / 1.09) * 3);
+      pitches[screech ? 1 : 0].push(at);
+    }
+    for (const kind of pitches) {
+      kind.sort((a, b) => a - b);
+      expect(kind[0]).toBeGreaterThan(1800);
+      expect(kind[kind.length - 1]).toBeLessThan(4800);
+      // No two of a kind sing the same note.
+      for (let i = 1; i < kind.length; i++) expect(kind[i]).toBeGreaterThan(kind[i - 1] * 1.03);
+    }
   });
 
   it("of the ground's noise are grains at no fixed moment, most slight and a few hard, with quiet between them at a crawl", () => {
