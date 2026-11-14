@@ -46,7 +46,7 @@ export const MIX = {
   clatter: 0.4,
   grit: 0.3,
   strain: 0.8,
-  squeak: 0.3,
+  squeak: 0.22,
   whine: 0.03,
   traverseGear: 0.3,
   traverseRumble: 0.09,
@@ -369,20 +369,28 @@ export const STRAIN_MOVING = 1;
 /** The inner track in a turn carries this share of the outer (faster) one's strain: the hull's weight leans out onto the outer track. */
 export const STRAIN_INNER = 0.6;
 /**
- * The pins squeak, on average, SQUEAK_BASE times a second driving straight
+ * The tracks squeak, on average, SQUEAK_BASE times a second driving straight
  * at a walk, a little more at speed (SQUEAK_SPEED flat out), more in a turn
  * (SQUEAK_STEER with the tracks 3 m/s apart) and far more straining
  * (SQUEAK_STRAIN at full strain); never below SQUEAK_MOVING m/s. Each
  * surface's `squeak` scales it: a track slips quietly on turf and bites on
  * a road.
  */
-export const SQUEAK_BASE = 0.35;
-export const SQUEAK_SPEED = 0.3;
+export const SQUEAK_BASE = 0.6;
+export const SQUEAK_SPEED = 0.5;
 export const SQUEAK_STEER = 0.8;
-export const SQUEAK_STRAIN = 2.4;
+export const SQUEAK_STRAIN = 3;
 export const SQUEAK_MOVING = 0.3;
-/** How many squeaks are rendered (src/sim/sound-render.ts's renderSqueak): each a different pin, none twice running. */
-export const SQUEAK_VARIANTS = 8;
+/**
+ * How many squeaks are rendered (src/sim/sound-render.ts's renderSqueak),
+ * each a different wheel, pin or guide horn: the first SQUEAK_CHIRPS short
+ * chirps, the rest longer screeches. A squeak is a screech SCREECH_SHARE of
+ * the time, and up to SCREECH_SHARE + SCREECH_STRAIN straining hard.
+ */
+export const SQUEAK_VARIANTS = 10;
+export const SQUEAK_CHIRPS = 7;
+export const SCREECH_SHARE = 0.1;
+export const SCREECH_STRAIN = 0.4;
 
 /** The sideways push of a turn on tracks running at these speeds, m/s²: the hull's speed times its turn rate (sidePush in src/sim/going.ts, without a slope or mud). */
 export function turnPush(leftTrack: number, rightTrack: number): number {
@@ -457,9 +465,10 @@ export function createSqueak(): Squeak {
 }
 
 /**
- * When the pins squeak: at random, `squeaks` a second on average (a
+ * When the tracks squeak: at random, `squeaks` a second on average (a
  * Poisson process), each from one track (the faster or more strained one
- * more often), a different pin from the last, no two as loud. Each page
+ * more often), a short chirp or now and then a screech (more often
+ * straining), a different one from the last, no two as loud. Each page
  * hears its own (nothing is sent: squeaks are no event either crew acts
  * on). Seeded, so the tests and the preview are the same each run.
  * Allocation free.
@@ -479,8 +488,14 @@ export class SqueakTimer {
     const left = k.left.gain + 2 * k.left.strain;
     const right = k.right.gain + 2 * k.right.strain;
     out.side = this.random() * (left + right) < left ? 0 : 1;
-    let variant = Math.floor(this.random() * (SQUEAK_VARIANTS - 1));
-    if (this.last >= 0 && variant >= this.last) variant++;
+    // A chirp or a screech, then one of that kind other than the last.
+    const screech = this.random() < SCREECH_SHARE + SCREECH_STRAIN * k.strain;
+    const from = screech ? SQUEAK_CHIRPS : 0;
+    const count = screech ? SQUEAK_VARIANTS - SQUEAK_CHIRPS : SQUEAK_CHIRPS;
+    const avoid = this.last >= from && this.last < from + count ? this.last - from : -1;
+    let pick = Math.floor(this.random() * (avoid >= 0 ? count - 1 : count));
+    if (avoid >= 0 && pick >= avoid) pick++;
+    const variant = from + pick;
     out.variant = variant;
     this.last = variant;
     out.level = k.squeak * (0.45 + 0.55 * this.random());

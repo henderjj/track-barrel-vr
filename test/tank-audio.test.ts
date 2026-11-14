@@ -60,6 +60,7 @@ import {
   SoundCues,
   soundTour,
   SQUEAK_BASE,
+  SQUEAK_CHIRPS,
   SQUEAK_VARIANTS,
   SqueakTimer,
   STRAIN_FROM,
@@ -278,10 +279,10 @@ describe('the tracks', () => {
     const turning = trackVoice(5.6 - 1.5 * MAX_YAW_RATE, 5.6 + 1.5 * MAX_YAW_RATE, createTrackVoice());
     const straining = trackVoice(9 - 1.5 * MAX_YAW_RATE, 9 + 1.5 * MAX_YAW_RATE, createTrackVoice());
     expect(trackVoice(0.1, 0.1, createTrackVoice()).squeaks).toBe(0);
-    // Driving straight, one every two or three seconds: occasional.
+    // Driving straight, about one a second or less: occasional.
     expect(crawl.squeaks).toBeGreaterThanOrEqual(SQUEAK_BASE);
     expect(straight.squeaks).toBeGreaterThan(crawl.squeaks);
-    expect(straight.squeaks).toBeLessThan(0.6);
+    expect(straight.squeaks).toBeLessThan(1);
     expect(turning.squeaks).toBeGreaterThan(straight.squeaks * 2);
     expect(straining.squeaks).toBeGreaterThan(2.5);
     expect(straining.squeak).toBeGreaterThan(straight.squeak);
@@ -296,6 +297,7 @@ describe('the tracks', () => {
     let right = 0;
     let last = -1;
     let repeats = 0;
+    let screeches = 0;
     const dt = 1 / 72;
     const seconds = 600;
     for (let i = 0; i < seconds / dt; i++) {
@@ -303,6 +305,7 @@ describe('the tracks', () => {
       count++;
       if (out.side === 1) right++;
       if (out.variant === last) repeats++;
+      if (out.variant >= SQUEAK_CHIRPS) screeches++;
       last = out.variant;
       expect(out.variant).toBeGreaterThanOrEqual(0);
       expect(out.variant).toBeLessThan(SQUEAK_VARIANTS);
@@ -312,6 +315,19 @@ describe('the tracks', () => {
     expect(count / seconds).toBeGreaterThan(turning.squeaks * 0.85);
     expect(count / seconds).toBeLessThan(turning.squeaks * 1.15);
     expect(repeats).toBe(0);
+    // Straining hard, about half are screeches; driving straight, about one in ten.
+    expect(screeches / count).toBeGreaterThan(0.4);
+    expect(screeches / count).toBeLessThan(0.6);
+    const straight = trackVoice(5, 5, createTrackVoice());
+    let calm = 0;
+    let calmScreeches = 0;
+    for (let i = 0; i < 3000 / dt; i++) {
+      if (!timer.step(dt, straight, out)) continue;
+      calm++;
+      if (out.variant >= SQUEAK_CHIRPS) calmScreeches++;
+    }
+    expect(calmScreeches / calm).toBeGreaterThan(0.06);
+    expect(calmScreeches / calm).toBeLessThan(0.14);
     // Turning left, the right track is faster and strained more.
     expect(right / count).toBeGreaterThan(0.55);
     // At rest, never; the same seed, the same squeaks.
@@ -709,33 +725,40 @@ describe('the loops', () => {
     expect(STRAIN_JUDDER_HZ).toBeGreaterThan(15);
   });
 
-  it('of the squeaks are each a pin of its own: a pitch, bending, short, starting and ending at rest', () => {
-    const pitches: number[] = [];
+  it('of the squeaks are clean, high notes: short chirps and a few longer screeches, starting and ending at rest', () => {
+    const pitches: number[][] = [[], []];
     for (let k = 0; k < SQUEAK_VARIANTS; k++) {
       const q = renderSqueak(RATE, k);
+      const screech = k >= SQUEAK_CHIRPS;
       expect(q).toEqual(renderSqueak(RATE, k));
-      expect(q.length / RATE).toBeGreaterThan(0.06);
-      expect(q.length / RATE).toBeLessThan(0.3);
+      // Chirps of 40 to 110 ms, screeches of a third to three quarters of a second (measured on a squeaking-tracks effect).
+      expect(q.length / RATE).toBeGreaterThan(screech ? 0.3 : 0.035);
+      expect(q.length / RATE).toBeLessThan(screech ? 0.8 : 0.12);
       expect(peak(q)).toBeCloseTo(1, 5);
       expect(Math.abs(q[0])).toBeLessThan(0.01);
       expect(Math.abs(q[q.length - 1])).toBeLessThan(0.05);
-      // Its pitch: the strongest tone between 500 Hz and 3 kHz, by a coarse scan.
+      // Its note: the strongest tone between 1.5 and 5 kHz, by a coarse scan, and clean: far over what lies an
+      // eighth of an octave either side of it.
       let best = 0;
       let at = 0;
-      for (let f = 500; f <= 3000; f += 10) {
+      for (let f = 1500; f <= 5000; f += 10) {
         const t = tone(q, f);
         if (t > best) {
           best = t;
           at = f;
         }
       }
-      pitches.push(at);
+      expect(best).toBeGreaterThan(tone(q, at * 1.09) * 3);
+      expect(best).toBeGreaterThan(tone(q, at / 1.09) * 3);
+      pitches[screech ? 1 : 0].push(at);
     }
-    pitches.sort((a, b) => a - b);
-    expect(pitches[0]).toBeGreaterThan(600);
-    expect(pitches[pitches.length - 1]).toBeLessThan(2900);
-    // No two pins sing the same note.
-    for (let i = 1; i < pitches.length; i++) expect(pitches[i]).toBeGreaterThan(pitches[i - 1] * 1.04);
+    for (const kind of pitches) {
+      kind.sort((a, b) => a - b);
+      expect(kind[0]).toBeGreaterThan(1800);
+      expect(kind[kind.length - 1]).toBeLessThan(4800);
+      // No two of a kind sing the same note.
+      for (let i = 1; i < kind.length; i++) expect(kind[i]).toBeGreaterThan(kind[i - 1] * 1.03);
+    }
   });
 
   it("of the ground's noise are grains at no fixed moment, most slight and a few hard, with quiet between them at a crawl", () => {

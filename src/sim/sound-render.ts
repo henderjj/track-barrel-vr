@@ -14,7 +14,7 @@
  */
 import { RECOIL } from './loading.js';
 import { rng } from './random.js';
-import { CRANK_BEAT_HZ, GRIND_TEETH_HZ, IDLE_REV_HZ, LOOPED, MIX, SOUND_IDS, SOUND_SECONDS, SQUEAK_VARIANTS, type SoundId } from './tank-audio.js';
+import { CRANK_BEAT_HZ, GRIND_TEETH_HZ, IDLE_REV_HZ, LOOPED, MIX, SOUND_IDS, SOUND_SECONDS, SQUEAK_CHIRPS, SQUEAK_VARIANTS, type SoundId } from './tank-audio.js';
 
 const TAU = 2 * Math.PI;
 type Samples = Float32Array<ArrayBuffer>;
@@ -716,52 +716,54 @@ export function renderStrainGate(rate: number): Samples {
 }
 
 /**
- * One squeak of a dry track pin (or an end connector, or a guide horn
- * rubbing a wheel), the `k`th of SQUEAK_VARIANTS: steel sticking and
- * slipping hundreds of times a second, so a pitch, between 700 and 2600
- * Hz, with the stick-slip's harsh harmonics; never quite steady, its
- * pitch bending as the pin turns, chattering and fluttering; a tenth to a
- * quarter of a second long. Each is its own pin, the same every time.
- * Peaks at 1. Deterministic.
+ * One squeak of the tracks, the `k`th of SQUEAK_VARIANTS: steel sticking and
+ * slipping on steel (a road wheel's or the idler's rim on the guide horns, a
+ * dry pin) so fast that it sings. Measured on a squeaking-tracks sound
+ * effect (docs/audio.md, "Straining and squeaking"): a clean, whistling
+ * note between about 1.9 and 4.5 kHz with a weaker overtone an octave up,
+ * most of them chirps of 40 to 110 ms with a sharp start, and now and then
+ * a screech held for half a second or more. The first SQUEAK_CHIRPS are
+ * chirps, the rest screeches. Each bends a little as the wheel turns and
+ * wavers slightly; nothing chatters (that read as a creaky hinge). Each is
+ * its own, the same every time. Peaks at 1. Deterministic.
  */
 export function renderSqueak(rate: number, k: number): Samples {
-  const random = rng(320 + k);
-  const seconds = 0.07 + 0.19 * random();
+  const random = rng(340 + k);
+  const screech = k >= SQUEAK_CHIRPS;
+  const seconds = screech ? 0.35 + 0.4 * random() : 0.04 + 0.07 * random();
   const n = Math.round(seconds * rate);
   const out = new Float32Array(n);
-  // Spread over the pins on a log scale, each nudged, so no two sing the same note.
-  const f0 = 700 * (2600 / 700) ** ((k + 0.2 + 0.6 * random()) / SQUEAK_VARIANTS);
-  // Its bend: up, down, or up and back, by 4 to 22%.
-  const bend = (0.04 + 0.18 * random()) * (random() < 0.5 ? -1 : 1);
-  const arch = random() < 0.4;
-  // The chatter: the stick-slip itself catching, 25 to 60 times a second.
-  const chatterHz = 25 + 35 * random();
-  const chatter = 0.15 + 0.25 * random();
-  const attack = 0.006 + 0.01 * random();
-  const release = 0.02 + 0.025 * random();
-  // A dip part way through: "squee-eak".
-  const dipAt = 0.3 + 0.4 * random();
-  const dip = random() < 0.5 ? 0.3 + 0.4 * random() : 0;
-  const harmonics = 6;
+  // Chirps spread from 1.9 to 4.5 kHz on a log scale, each nudged; screeches in their own spread.
+  const kind = screech ? k - SQUEAK_CHIRPS : k;
+  const kinds = screech ? SQUEAK_VARIANTS - SQUEAK_CHIRPS : SQUEAK_CHIRPS;
+  const f0 = 1900 * (4500 / 1900) ** ((kind + 0.2 + 0.6 * random()) / kinds);
+  // Its bend: up or down by 2 to 7% over a chirp, and a screech sags and recovers.
+  const bend = (0.02 + 0.05 * random()) * (random() < 0.5 ? -1 : 1);
+  // A screech wavers: a slow vibrato of 0.6 to 1.5% at 5 to 11 Hz.
+  const vibratoHz = 5 + 6 * random();
+  const vibrato = screech ? 0.006 + 0.009 * random() : 0;
+  const attack = screech ? 0.01 + 0.015 * random() : 0.002 + 0.003 * random();
+  const release = screech ? 0.04 + 0.04 * random() : 0.008 + 0.012 * random();
+  const overtone = 0.25 + 0.2 * random();
+  const swellHz = 1 + 1.5 * random();
   let phase = 0;
   let wobble = 0;
   for (let i = 0; i < n; i++) {
     const t = i / rate;
     const u = i / n;
-    const shape = arch ? Math.sin(Math.PI * u) : u;
-    // The pitch wanders a little from cycle to cycle: rough, not a pure tone.
-    wobble += 0.02 * (random() * 2 - 1 - wobble);
-    const f = f0 * (1 + bend * shape) * (1 + 0.6 * wobble);
+    const shape = screech ? Math.sin(Math.PI * u) : u;
+    // A little roughness from cycle to cycle, far less than a creak's.
+    wobble += 0.01 * (random() * 2 - 1 - wobble);
+    const f = f0 * (1 + bend * shape) * (1 + vibrato * Math.sin(TAU * vibratoHz * t)) * (1 + 0.15 * wobble);
     phase += (TAU * f) / rate;
-    let y = 0;
-    for (let h = 1; h <= harmonics; h++) {
-      if (h * f > rate * 0.4) break;
-      y += Math.sin(h * phase) / h ** 1.3;
-    }
+    let y = Math.sin(phase);
+    if (2 * f < rate * 0.4) y += overtone * Math.sin(2 * phase + 0.7);
+    if (3 * f < rate * 0.4) y += 0.08 * Math.sin(3 * phase + 1.9);
     const rise = Math.min(1, t / attack);
     const fall = Math.min(1, (seconds - t) / release);
-    const env = rise * rise * (3 - 2 * rise) * fall * fall * (3 - 2 * fall) * (1 - dip * Math.exp(-(((u - dipAt) / 0.08) ** 2)));
-    out[i] = y * env * (1 - chatter + chatter * Math.sin(TAU * chatterHz * t) ** 2);
+    // A chirp dies away from its start; a screech swells and holds.
+    const body = screech ? 0.75 + 0.25 * Math.sin(TAU * swellHz * t) : Math.exp(-t / (seconds * 0.6));
+    out[i] = y * rise * rise * (3 - 2 * rise) * fall * fall * (3 - 2 * fall) * body;
   }
   let top = 0;
   for (let i = 0; i < n; i++) top = Math.max(top, Math.abs(out[i]));
