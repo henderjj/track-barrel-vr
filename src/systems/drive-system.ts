@@ -63,6 +63,8 @@ import {
 } from '../sim/tank-drive.js';
 import { wrapTile } from '../sim/terrain.js';
 import { createVignette } from './comfort-vignette.js';
+import { crewLog } from '../sim/crew-board.js';
+import type { SignKind } from './floating-sign.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { gameMenu } from './game-menu-system.js';
 import { startScreen } from './start-screen-system.js';
@@ -70,6 +72,9 @@ import { handUse } from './grip-system.js';
 import { bufferDelayMs, netLink } from './net-system.js';
 import { ride } from './ride-system.js';
 import { seating } from './seating.js';
+
+/** Sign titles that are bad news, red on the crew board (F6.5). */
+const BAD_SIGNS = /thrown|straining|Bogged|stalled|overheating|drowned/;
 
 /**
  * The driver's controls as this page's driver's station reads them, and the
@@ -654,7 +659,7 @@ export class DriveSystem extends createSystem({}) {
         starter: ['Hold the starter (instrument box)', 'Hold Space: the starter'],
         full: ['Battery, ignition, choke out, starter', 'B, I, C, then hold Space'],
       };
-      this.say(`Start the engine: ${ENGINE_START_NAMES[this.start].toLowerCase()}`, how[this.start][vr ? 0 : 1]);
+      this.say(`Start the engine: ${ENGINE_START_NAMES[this.start].toLowerCase()}`, how[this.start][vr ? 0 : 1], 'setup');
       return;
     }
     const how: Record<GearboxMode, [string, string]> = {
@@ -666,12 +671,12 @@ export class DriveSystem extends createSystem({}) {
       this.sayBrakeOn();
       return;
     }
-    this.say(`Driving: ${GEARBOX_NAMES[this.mode].toLowerCase()}`, how[this.mode][vr ? 0 : 1]);
+    this.say(`Driving: ${GEARBOX_NAMES[this.mode].toLowerCase()}`, how[this.mode][vr ? 0 : 1], 'setup');
   }
 
   private sayBrakeOn(): void {
     const vr = this.world.visibilityState.peek() !== VisibilityState.NonImmersive;
-    this.say('Parking brake on', vr ? 'Lever by your left knee: hold its trigger, push it down' : 'P: parking brake off');
+    this.say('Parking brake on', vr ? 'Lever by your left knee: hold its trigger, push it down' : 'P: parking brake off', 'setup');
   }
 
   update(delta: number): void {
@@ -1014,7 +1019,8 @@ export class DriveSystem extends createSystem({}) {
     if (sink > this.sinkSaid || s.sink === 0) this.sinkSaid = sink;
   }
 
-  private say(title: string, line: string): void {
+  /** Put up the sign: a 'game' one (a warning) also goes on the crew board, a 'setup' one (how the controls work) always floats. */
+  private say(title: string, line: string, kind: SignKind = 'game'): void {
     const { ctx, width, height } = this.sign;
     drawSignBackground(ctx, width, height);
     ctx.fillStyle = '#f4ead8';
@@ -1024,8 +1030,9 @@ export class DriveSystem extends createSystem({}) {
     ctx.font = '30px sans-serif';
     ctx.fillText(line, width / 2, 120);
     this.sign.refresh();
-    this.sign.setVisible(true);
+    this.sign.setVisible(true, kind);
     this.signText = `${title}. ${line}`;
+    if (kind === 'game') crewLog.post(`${title}: ${line}`, BAD_SIGNS.test(title) ? 'bad' : 'info');
     this.signUntil = this.time + SIGN_SECONDS;
     console.info(`[Drive] sign: ${this.signText}`);
   }

@@ -123,6 +123,8 @@ export const LIVE_ITEMS: readonly LiveItem[] = [
   },
   // The callout card in each seat (F2.6): also in the Sound and view tab.
   { key: 'card', label: 'Callout card', options: [['1', 'On'], ['0', 'Off']], current: (s) => onOff(s.card) },
+  // The crew board (F6.5): news floats in front of the player too, as before the board.
+  { key: 'popups', label: 'Pop-ups', options: [['0', 'Off'], ['1', 'On']], current: (s) => onOff(s.popups) },
   { key: 'fog', label: 'Range fog', options: [['1', 'On'], ['0', 'Off']], current: (s) => onOff(s.fog) },
   {
     key: 'foveation',

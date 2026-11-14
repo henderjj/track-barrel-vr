@@ -118,6 +118,13 @@ export interface Settings {
    */
   card: boolean;
   /**
+   * Pop-ups (F6.5, docs/crew-board.md): news of the fight and the drills
+   * (hits, enemies firing, a thrown track) goes on the crew board in each
+   * seat; with this on it also floats in front of the player as it used to.
+   * Off by default. The game menu's Sound and view tab changes it at once.
+   */
+  popups: boolean;
+  /**
    * The biathlon's harder shooting (docs/biathlon-race.md): each race picks
    * its firing lines' ranges afresh (the default); `boardranges=0` keeps
    * them at LINE_RANGES (400 and 550 m), for the tests.
@@ -162,6 +169,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cabin: 0.5,
   lamps: 1,
   card: true,
+  popups: false,
   boardRanges: true,
   scatter: true,
 };
@@ -222,6 +230,7 @@ export function parseSettings(search: string): Settings {
     cabin: num(params, 'cabin', d.cabin, 0.1, 8),
     lamps: num(params, 'lamps', d.lamps, 0, 4),
     card: bool(params, 'card', d.card),
+    popups: bool(params, 'popups', d.popups),
     boardRanges: bool(params, 'boardranges', d.boardRanges),
     scatter: bool(params, 'scatter', d.scatter),
   };

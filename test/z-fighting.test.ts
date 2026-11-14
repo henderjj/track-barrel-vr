@@ -172,6 +172,21 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
+  it("on the crew boards (F6.5): the driver's at their front right, the gunner's on the turret's right wall as it turns, the gun at both ends of its elevation", async () => {
+    const board = await import('../src/scene-assets/crew-board.scene-asset.js');
+    const { BOARDS } = await import('../src/sim/crew-board.js');
+    const hull = cabin.createHull();
+    hull.add(board.createCrewBoard(BOARDS.driver));
+    hull.updateMatrixWorld(true);
+    expectNone([board.createCrewBoard(BOARDS.driver)], CABIN_GAP);
+    for (const [yaw, elevation] of [[0, MIN_ELEVATION], [Math.PI / 2, MAX_ELEVATION], [Math.PI, 0], [-Math.PI / 3, 0]]) {
+      const turret = turretWith(yaw, elevation, 0);
+      turret.add(board.createCrewBoard(BOARDS.gunner));
+      turret.updateMatrixWorld(true);
+      expectNone([hull, turret], CABIN_GAP);
+    }
+  });
+
   it('with the hatches shut: the lids in their holes, the turret facing every way it turns', () => {
     const shut = (o: Object3D, hatch: 'driver' | 'gunner') => {
       o.getObjectByName(cabin.HATCH_LID_NAMES[hatch].open)!.visible = false;
