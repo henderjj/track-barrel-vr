@@ -4,6 +4,7 @@ import { penaltySeconds } from '../src/sim/biathlon.js';
 import {
   BRIDGE,
   BRIDGE_START,
+  BYPASS,
   BYPASS_PATH,
   COURSE,
   CourseProgress,
@@ -30,6 +31,7 @@ import {
   THROW_LIMIT,
   THROW_SECONDS,
 } from '../src/sim/going.js';
+import { headingTo, steer } from '../src/sim/crew-bot.js';
 import { type CourseFeed, RangeRun } from '../src/sim/range-run.js';
 import { coolantTarget, createControls, createTankDrive, settle, stepDrive, type TankDrive } from '../src/sim/tank-drive.js';
 import { courseRelief, groundHeight, HILL, OBSTACLES, STREAM } from '../src/sim/terrain.js';
@@ -179,6 +181,60 @@ describe("the course's obstacles, driven (F5.3d)", () => {
     const took = drive(gentle.t, gentle.c, 60, (s) => s.x > MUD.to + 5);
     expect(took).toBeLessThan(60);
     expect(gentle.t.sink).toBeLessThan(1);
+  });
+
+  it('makes the mud quicker than the bypass for a driver who eases off, and slower for one who floors it', () => {
+    // John's note (2026-11-14): the mud route should be quicker, if done well.
+    const end = BYPASS.to + 10;
+    const from = BYPASS.from - 10;
+    /** Parked 50 m short of the bypass (more run-up than Practice's spot), so both routes are timed from full speed. */
+    const runUp = () => {
+      const t = createTankDrive(BYPASS.from - 50, COURSE.south, OBSTACLE_SPOTS.mud.heading);
+      return { t, c: createControls() };
+    };
+    /** Seconds from `from` to `end` along the course's south side, flat out on the gravel and `inMud` of the tillers in the mud. */
+    const throughMud = (inMud: number): number => {
+      const { t, c } = runUp();
+      let start = -1;
+      for (let n = 0; n < 120 * 45; n++) {
+        c.left = c.right = t.x > MUD.from - 3 && t.x < MUD.to ? inMud : 1;
+        stepDrive(t, c, DT, OBSTACLES);
+        if (start < 0 && t.x > from) start = n;
+        if (t.x > end) return (n - start) * DT;
+      }
+      return Infinity;
+    };
+    /** The same round the bypass, steered along its middle line, or Infinity if the tank strays off its gravel or throws a track. */
+    const roundBypass = (base: number): number => {
+      const { t, c } = runUp();
+      const line = samplePath(BYPASS_PATH, 0, BYPASS_PATH.length, 1);
+      const aims = [...line, { x: end + 20, z: COURSE.south }];
+      const tillers = { left: 0, right: 0 };
+      let k = 0;
+      let start = -1;
+      for (let n = 0; n < 120 * 45; n++) {
+        while (k < aims.length - 1 && Math.hypot(aims[k].x - t.x, aims[k].z - t.z) < 8) k++;
+        let error = headingTo(aims[k].x - t.x, aims[k].z - t.z) - t.heading;
+        error = Math.atan2(Math.sin(error), Math.cos(error));
+        // Flat out up to the bypass, then at `base` round its bends, flat out again once back on the course.
+        steer(t.x < BYPASS.from - 35 || t.x > BYPASS.to ? 1 : base, error, 8, tillers);
+        c.left = tillers.left;
+        c.right = tillers.right;
+        stepDrive(t, c, DT, OBSTACLES);
+        if (t.thrown !== 0) return Infinity;
+        if (t.x > BYPASS.from + 2 && t.x < BYPASS.to - 2 && Math.min(...line.map((p) => Math.hypot(p.x - t.x, p.z - t.z))) > BYPASS.halfWidth) return Infinity;
+        if (start < 0 && t.x > from) start = n;
+        if (t.x > end) return (n - start) * DT;
+      }
+      return Infinity;
+    };
+    const mud = throughMud(0.6);
+    const bypass = Math.min(...[0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75].map(roundBypass));
+    console.info(`[going] mud eased through: ${mud.toFixed(1)} s, bypass at its best: ${bypass.toFixed(1)} s`);
+    expect(bypass).toBeLessThan(40);
+    expect(mud).toBeLessThan(bypass - 2);
+    // Floored, it bogs: far slower than either.
+    expect(throughMud(1)).toBeGreaterThan(bypass + 30);
   });
 
   it("lays the bypass on firm ground all the way round the mud", () => {

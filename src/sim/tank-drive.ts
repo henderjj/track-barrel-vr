@@ -65,6 +65,7 @@ import {
   type GoingInput,
   LOAD_HEAT_SHARE,
   loadStrain,
+  MUD_DECEL,
   MUD_DRAG,
   REFIT_SECONDS,
   RUN_ON,
@@ -403,8 +404,8 @@ export function stepDrive(
   pullIn.hold = (driving || coasting ? 0 : ENGINE_BRAKE * (GEAR_PUSH[s.gear] ?? 0) * engaged) + brakeShare(s, c) * BRAKE_HOLD;
   const pull = groundPull(pullIn);
   if (pull !== 0) {
-    // Within the comfort cap on the speed's change (or the flat drive's own, if more).
-    const lo = Math.min(speed, before - MAX_ACCEL * dt);
+    // Within the comfort cap on the speed's change (or the flat drive's own, if more); mud may slow it harder (MUD_DECEL).
+    const lo = Math.min(speed, before - (s.mud > 0.3 ? MUD_DECEL : MAX_ACCEL) * dt);
     const hi = Math.max(speed, before + MAX_ACCEL * dt);
     speed = clamp(speed + pull * dt, lo, hi);
   }

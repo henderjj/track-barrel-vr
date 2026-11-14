@@ -237,9 +237,15 @@ export const PENALTY_OWN = PENALTY_PATH.length - (JOIN.back - JOIN.leave);
  */
 export const SLALOM = { xs: [256, 240, 224, 208], offset: 2, half: 2.2, post: 0.06, height: 1.6 } as const;
 export const BRIDGE = { x: COURSE.west, z: DITCH.z, length: 38, ramp: 2.5, height: 0.25, tread: 1.0, gauge: TRACK.x } as const;
-export const MUD = { from: 150, to: 210, half: 7 } as const;
-/** The bypass leaves the course at `from`, swings `radius` m curves out to the infield and back in by `to` (x on the south side). */
-export const BYPASS = { from: 120, to: 240, radius: 20, halfWidth: 4, lift: 0.02 } as const;
+/** The mud: 24 m of the south side (x), `half` m either side of the middle line, so going round it takes the bypass (or as long a way round outside). */
+export const MUD = { from: 168, to: 192, half: 9 } as const;
+/**
+ * The bypass leaves the course at `from`, swings out to the infield in two
+ * `radius` m curves of `swing` and back in by `to` (x on the south side):
+ * tight S-bends that throw a track taken faster than about 17 km/h, so it is
+ * safe but slower than the mud driven well.
+ */
+export const BYPASS = { from: 130, to: 230, radius: 12, swing: (70 * Math.PI) / 180, halfWidth: 4, lift: 0.02 } as const;
 /** The ford's water and the ditch's, m (heights as the ground's). */
 export const WATER_Y = -0.35;
 export const DITCH_WATER_Y = -1.5;
@@ -284,7 +290,7 @@ export const SLALOM_POSTS: readonly (readonly [number, number])[] = SLALOM_GATES
 const SLALOM_REACH = COURSE.halfWidth + 8;
 
 /** The bypass round the mud: out to the infield (left, driven east) and back. */
-const BYPASS_SWING = Math.PI / 4;
+const BYPASS_SWING = BYPASS.swing;
 const BYPASS_ACROSS = 2 * BYPASS.radius * Math.sin(BYPASS_SWING);
 export const BYPASS_PATH = new Path(
   BYPASS.from,
