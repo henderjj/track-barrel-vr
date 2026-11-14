@@ -314,6 +314,54 @@ export function clockTo(heading: number, dx: number, dz: number): number {
   return clockHour(Math.atan2(-dx, -dz) - heading);
 }
 
+/** Where an enemy is from the crew's tank as it is now (F3.10 fix): the notice's numbers. */
+export interface EnemyBearing {
+  /** The clock direction off the hull's front, 1 to 12. */
+  clock: number;
+  /** How far, m, to the nearest 10. */
+  range: number;
+  /** The turn from where the gun points to the enemy, degrees to the nearest 5: + left, − right. */
+  traverse: number;
+}
+
+/** Inside this the gun is on the enemy already, degrees: the notice says so instead of a turn. */
+export const ON_THE_GUN_DEGREES = 10;
+
+/**
+ * Enemy `i`'s place from the crew's tank at (x, z), heading `heading`, its
+ * turret turned `turretYaw` (rad, + left), into `out`: the tank as it is
+ * when the notice is drawn, not when the enemy fired (a notice stays up
+ * for seconds while the tank drives and turns). `d` is a tank's distance
+ * along its route.
+ */
+export function enemyBearing(i: number, x: number, z: number, heading: number, turretYaw: number, d: number, out: EnemyBearing): EnemyBearing {
+  gunNear(i, x, z, bearingAt, d);
+  const dx = bearingAt[0] - x;
+  const dz = bearingAt[1] - z;
+  const off = Math.atan2(-dx, -dz) - heading;
+  out.clock = clockHour(off);
+  out.range = Math.round(Math.hypot(dx, dz) / 10) * 10;
+  const turn = Math.atan2(Math.sin(off - turretYaw), Math.cos(off - turretYaw));
+  out.traverse = Math.round((turn * 180) / Math.PI / 5) * 5;
+  return out;
+}
+const bearingAt: [number, number] = [0, 0];
+
+/**
+ * An enemy notice (F3.2, F3.10): its first line (`Gun A firing, 10
+ * o'clock, 220 m`, or `Hit! Gun A, …`), and for the gunner, whose seat
+ * turns with the turret and so faces wherever the gun points, a second
+ * line saying which way to traverse (the hull's clock alone can't be read
+ * from there); '' for anyone else.
+ */
+export function enemyNoteLines(i: number, hit: boolean, b: Readonly<EnemyBearing>, gunner: boolean): [string, string] {
+  const name = enemyName(i);
+  const head = hit ? `Hit! ${name}, ${b.clock} o'clock, ${b.range} m` : `${name} firing, ${b.clock} o'clock, ${b.range} m`;
+  if (!gunner) return [head, ''];
+  if (Math.abs(b.traverse) <= ON_THE_GUN_DEGREES) return [head, 'Dead ahead of your gun'];
+  return [head, `Traverse ${b.traverse > 0 ? 'left' : 'right'} ${Math.abs(b.traverse)}°`];
+}
+
 /** The tank as a gun sees it. */
 export interface TankTarget {
   x: number;

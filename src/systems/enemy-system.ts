@@ -12,6 +12,9 @@ import {
   EnemyBattery,
   type EnemyGroup,
   enemyName,
+  enemyBearing,
+  type EnemyBearing,
+  enemyNoteLines,
   type EnemyShared,
   type EnemyShot,
   FIRST_TANK,
@@ -37,6 +40,7 @@ import { placeTank, resetTank, tankState } from './drive-system.js';
 import { decidedListeners, setFaceOff, setFacePose } from './firing-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { netLink } from './net-system.js';
+import { seating } from './seating.js';
 import { smokeClouds, smokeNow } from './smoke-system.js';
 import { playTankSound } from './tank-audio-system.js';
 import { turretState } from './turret-system.js';
@@ -62,6 +66,13 @@ const PITCH_SPAN = 2.5;
 const NOTE_SECONDS = 4;
 /** The host sends the battery's state again this often while it runs, s, in case a guest missed it. */
 const RESYNC_SECONDS = 5;
+
+/** A note for the sign: plain text, or a notice about an enemy worked out as it shows. */
+interface Note {
+  text: string;
+  gun: number;
+  hit: boolean;
+}
 
 let active: EnemySystem | null = null;
 
@@ -220,6 +231,8 @@ interface EnemyDebug {
   meet(i: number): void;
   meetTank(j: number): void;
   readonly sign: string;
+  /** The sign's second line: the gunner's traverse to the enemy in the notice, or ''. */
+  readonly signLine: string;
   /** Host: the battery's tuning (F3.10). */
   tuning(): CombatTuning;
 }
@@ -268,7 +281,15 @@ export class EnemySystem extends createSystem({}) {
   private sign!: FloatingSign;
   private signText = '';
   private signUntil = 0;
-  private notes: string[] = [];
+  private notes: Note[] = [];
+  /** The enemy the sign's notice is about, kept live while it shows (-1 for a plain note), and whether it is a hit. */
+  private noteGun = -1;
+  private noteHit = false;
+  /** The second line (the gunner's traverse), and the numbers last drawn, so the sign is redrawn only when they change. */
+  private signLine = '';
+  private bearing: EnemyBearing = { clock: 0, range: 0, traverse: 0 };
+  private drawnBearing: EnemyBearing = { clock: -1, range: -1, traverse: 0 };
+  private drawnGunner = false;
   private target: TankTarget = { x: 0, ground: 0, z: 0, heading: 0, speed: 0 };
   private at: [number, number] = [0, 0];
   private pose: RoutePose = { x: 0, z: 0, heading: 0 };
@@ -426,6 +447,9 @@ export class EnemySystem extends createSystem({}) {
       get sign() {
         return self.sign.visible ? self.signText : '';
       },
+      get signLine() {
+        return self.sign.visible ? self.signLine : '';
+      },
       tuning: () => ({ ...self.battery.tuning }),
     };
   }
@@ -565,12 +589,17 @@ export class EnemySystem extends createSystem({}) {
     slot.shot = shot;
     slot.firedAt = this.time;
     slot.struck = false;
-    if (first && !shot.hit) this.note(`${enemyName(shot.gun)} firing, ${shot.clock} o'clock, ${Math.round(shot.range / 10) * 10} m`);
+    if (first && !shot.hit) this.noteEnemy(shot.gun, false);
     console.info(`[Enemy] ${enemyName(shot.gun)} fired from ${Math.round(shot.range)} m: ${shot.hit ? 'hit' : 'miss'}`);
   }
 
   private note(text: string): void {
-    this.notes.push(text);
+    this.notes.push({ text, gun: -1, hit: false });
+  }
+
+  /** A notice about enemy `gun` (it fired, or its shell hit): its clock, range and the gunner's traverse are worked out as it shows. */
+  private noteEnemy(gun: number, hit: boolean): void {
+    this.notes.push({ text: '', gun, hit });
   }
 
   update(delta: number): void {
@@ -752,7 +781,7 @@ export class EnemySystem extends createSystem({}) {
         playTankSound('bump');
         // The host takes the hit's damage as the shell gets there (F3.4).
         if (netLink.isHost && shot.damage) takeHit(shot.damage);
-        this.note(`Hit! ${enemyName(shot.gun)}, ${shot.clock} o'clock, ${Math.round(shot.range / 10) * 10} m`);
+        this.noteEnemy(shot.gun, true);
       }
     }
     const since = t - shot.flight;
@@ -770,26 +799,66 @@ export class EnemySystem extends createSystem({}) {
     mesh.visible = true;
   }
 
-  /** The newest note on the sign in front of each player for a few seconds. */
+  /**
+   * The newest note on the sign in front of each player for a few seconds.
+   * A notice about an enemy keeps its clock, range and (for the gunner) its
+   * traverse live from the tank as it is now, not as it was when the enemy
+   * fired: John's play test (14 November 2026) found the direction didn't
+   * follow the tank.
+   */
   private drawSign(delta: number): void {
     if (this.notes.length > 0) {
-      const text = this.notes[this.notes.length - 1];
+      const n = this.notes[this.notes.length - 1];
       this.notes.length = 0;
-      this.signText = text;
       this.signUntil = this.time + NOTE_SECONDS;
-      const { ctx, width, height } = this.sign;
-      drawSignBackground(ctx, width, height);
-      ctx.fillStyle = text.startsWith('Hit!') ? '#ffb0a0' : '#f4ead8';
-      ctx.textAlign = 'center';
-      ctx.font = 'bold 40px sans-serif';
-      ctx.fillText(text, width / 2, height / 2 + 14, width - 30);
-      this.sign.refresh();
+      this.noteGun = n.gun;
+      this.noteHit = n.hit;
+      this.drawnBearing.clock = -1;
+      if (n.gun < 0) this.paintSign(n.text, '', false);
+      else this.enemyNotice();
       this.sign.setVisible(true);
-      console.info(`[Enemy] sign: ${text}`);
+      console.info(`[Enemy] sign: ${this.signText}${this.signLine ? ` (${this.signLine})` : ''}`);
+    } else if (this.sign.visible && this.noteGun >= 0) {
+      this.enemyNotice();
     }
-    if (this.sign.visible && this.time > this.signUntil) this.sign.setVisible(false);
+    if (this.sign.visible && this.time > this.signUntil) {
+      this.sign.setVisible(false);
+      this.noteGun = -1;
+    }
     if (this.sign.visible) {
       this.sign.follow(this.world.visibilityState.peek() !== VisibilityState.NonImmersive ? this.player.head : this.camera, delta);
     }
+  }
+
+  /** The enemy notice from the tank as it is now, redrawn when its numbers change. */
+  private enemyNotice(): void {
+    const t = tankState();
+    const b = enemyBearing(this.noteGun, t.x, t.z, t.heading, turretState().yaw, this.along[this.noteGun], this.bearing);
+    const gunner = seating.mine === 'gunner';
+    const was = this.drawnBearing;
+    if (was.clock === b.clock && was.range === b.range && was.traverse === b.traverse && this.drawnGunner === gunner) return;
+    was.clock = b.clock;
+    was.range = b.range;
+    was.traverse = b.traverse;
+    this.drawnGunner = gunner;
+    const [head, line] = enemyNoteLines(this.noteGun, this.noteHit, b, gunner);
+    this.paintSign(head, line, this.noteHit);
+  }
+
+  private paintSign(head: string, line: string, bad: boolean): void {
+    this.signText = head;
+    this.signLine = line;
+    const { ctx, width, height } = this.sign;
+    drawSignBackground(ctx, width, height);
+    ctx.fillStyle = bad ? '#ffb0a0' : '#f4ead8';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 40px sans-serif';
+    ctx.fillText(head, width / 2, line ? height / 2 - 6 : height / 2 + 14, width - 30);
+    if (line) {
+      ctx.fillStyle = '#f4ead8';
+      ctx.font = '30px sans-serif';
+      ctx.fillText(line, width / 2, height / 2 + 38, width - 30);
+    }
+    this.sign.refresh();
   }
 }

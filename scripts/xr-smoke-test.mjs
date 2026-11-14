@@ -3092,6 +3092,26 @@ async function theEnemyGuns() {
     hit !== null && enemy().hits >= 1 && /^Hit! Gun A, \d+ o'clock, \d+ m$/.test(hitSign),
     `${fired} shots, hits ${enemy().hits}, sign "${hitSign}"`);
 
+  // John's play test (14 November 2026): the notice follows the tank. Turned 90° left where it stands, gun A
+  // moves from 10 o'clock round to 1, on the sign that is up; the gunner is told which way to traverse.
+  let fresh = false;
+  for (let n = 0; n < 6 && hit && !fresh; n++) {
+    const hits = enemy().hits;
+    evalInApp('(window.__enemy.fireNow(0), true)');
+    fresh = await waitFor('a fresh hit on the sign', () => enemy().hits > hits && /^Hit! Gun A/.test(evalInApp('window.__enemy.sign')), 3000, 50).catch(() => false);
+  }
+  const before = evalInApp("({ sign: window.__enemy.sign, line: window.__enemy.signLine, mine: window.__seats.mine })");
+  evalInApp('(window.__drive.place(0, -80, Math.PI / 2), true)');
+  const turned = await waitFor('the notice to follow the tank', () => {
+    const s = evalInApp("({ sign: window.__enemy.sign, line: window.__enemy.signLine })");
+    return / 1 o'clock/.test(s.sign) && s;
+  }, 3000, 50).catch(() => evalInApp("({ sign: window.__enemy.sign, line: window.__enemy.signLine })"));
+  evalInApp('(window.__drive.place(0, -80, 0), window.__damage.repair(), true)');
+  const lineOk = before.mine === 'gunner' ? /^(Traverse (left|right) \d+°|Dead ahead of your gun)$/.test(turned.line) : turned.line === '';
+  check("The enemy notice's clock follows the tank as it turns, and only the gunner is told which way to traverse",
+    !hit || (fresh && / 10 o'clock/.test(before.sign) && / 1 o'clock/.test(turned.sign) && lineOk),
+    `${before.mine}: "${before.sign}" / "${before.line}" then turned "${turned.sign}" / "${turned.line}"`);
+
   // The gunner's AP on gun A's shield.
   const records = evalInApp('window.__firing.records().length');
   evalInApp("(window.__loading.loadNow('ap'), window.__firing.aimAt(9, 'ap'), true)");
