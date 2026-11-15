@@ -21,6 +21,7 @@ import { resetTank, tankState } from './drive-system.js';
 import { bringTanks, enemyShared, enemyShotsFired, enemySpotted, holdEnemyFire, setBatteryTuning, startBattle } from './enemy-system.js';
 import { FIRST_TANK } from '../sim/enemy-guns.js';
 import { crewLog } from '../sim/crew-board.js';
+import { phaseCue } from '../sim/commander-voice.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { setAmmoRack } from './loading-system.js';
 import { netLink } from './net-system.js';
@@ -304,7 +305,7 @@ export class CombatSystem extends createSystem({}) {
     this.sign.refresh();
     this.sign.setVisible(true, 'game');
     // The board already shows the objective and the counts: its call is the head.
-    crewLog.post(head, bad ? 'bad' : this.shown.phase === 'won' ? 'good' : 'info');
+    crewLog.post(head, bad ? 'bad' : this.shown.phase === 'won' ? 'good' : 'info', phaseCue(this.shown.phase, this.shown.reached));
     console.info(`[Combat] sign: ${this.signText}`);
   }
 

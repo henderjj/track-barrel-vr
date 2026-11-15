@@ -4,6 +4,7 @@ import { preferHighPerformanceGpu } from './gpu-preference.js';
 import { BodyHeightSystem } from './systems/body-height-system.js';
 import { CabinLightSystem } from './systems/cabin-light-system.js';
 import { CalloutCardSystem } from './systems/callout-card-system.js';
+import { CommanderVoiceSystem } from './systems/commander-voice-system.js';
 import { CrewBoardSystem } from './systems/crew-board-system.js';
 import { CalibrationSystem } from './systems/calibration-system.js';
 import { ConvoySeatSystem } from './systems/convoy-seat-system.js';
@@ -111,6 +112,8 @@ World.create(
   world.registerSystem(MechanismBenchSystem);
   // After the systems it drives; their scripted hands are functions of time, so a frame late costs nothing.
   world.registerSystem(CrewBotSystem);
+  // The commander's voice (docs/commander-voice.md): after every system whose notes ask for a call (the crewmate's too), before the tank's sounds, which duck under him.
+  world.registerSystem(CommanderVoiceSystem);
   // The tank's sounds (F1.12): after everything they listen to has moved this frame (the drive, the turret, the loading).
   world.registerSystem(TankAudioSystem);
   // The play-test stats (F1.14): after every system that holds a hand (a squeeze the loading took a shell with is no miss) and after the range run it watches.

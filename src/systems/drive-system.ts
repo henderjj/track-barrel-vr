@@ -64,6 +64,7 @@ import {
 import { wrapTile } from '../sim/terrain.js';
 import { createVignette } from './comfort-vignette.js';
 import { crewLog } from '../sim/crew-board.js';
+import { signCue } from '../sim/commander-voice.js';
 import type { SignKind } from './floating-sign.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { gameMenu } from './game-menu-system.js';
@@ -1032,7 +1033,7 @@ export class DriveSystem extends createSystem({}) {
     this.sign.refresh();
     this.sign.setVisible(true, kind);
     this.signText = `${title}. ${line}`;
-    if (kind === 'game') crewLog.post(`${title}: ${line}`, BAD_SIGNS.test(title) ? 'bad' : 'info');
+    if (kind === 'game') crewLog.post(`${title}: ${line}`, BAD_SIGNS.test(title) ? 'bad' : 'info', signCue(title));
     this.signUntil = this.time + SIGN_SECONDS;
     console.info(`[Drive] sign: ${this.signText}`);
   }

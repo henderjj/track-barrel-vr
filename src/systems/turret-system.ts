@@ -37,6 +37,7 @@ import { convoyUp } from './convoy-seat-system.js';
 import { damageState } from './damage-system.js';
 import { engineRpm, startEngine } from './drive-system.js';
 import { crewLog } from '../sim/crew-board.js';
+import { signCue } from '../sim/commander-voice.js';
 import type { SignKind } from './floating-sign.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { HoldKind } from './hand-lock.js';
@@ -544,7 +545,7 @@ export class TurretSystem extends createSystem({}) {
     this.sign.refresh();
     this.sign.setVisible(true, kind);
     this.signText = `${title}. ${lines.join(' ')}`;
-    if (kind === 'game') crewLog.post(`${title}: ${lines[1]}`, 'bad');
+    if (kind === 'game') crewLog.post(`${title}: ${lines[1]}`, 'bad', signCue(title));
     this.signUntil = this.time + SIGN_SECONDS;
     console.info(`[Turret] sign: ${this.signText}`);
   }

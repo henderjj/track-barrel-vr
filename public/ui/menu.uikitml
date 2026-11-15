@@ -410,6 +410,15 @@
               <Button id="row-sound-3" class="choice" size="sm" variant="secondary">Choice</Button>
             </div>
           </div>
+          <div id="row-commander" class="setting">
+            <div id="row-commander-label" class="label">Setting</div>
+            <div id="row-commander-choices" class="choices">
+              <Button id="row-commander-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-commander-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-commander-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-commander-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
           <div id="row-hatches" class="setting">
             <div id="row-hatches-label" class="label">Setting</div>
             <div id="row-hatches-choices" class="choices">

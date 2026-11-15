@@ -19,6 +19,7 @@ import { GLACIS_SLOPE, HULL, type SeatId, SEATS, TURRET } from './cabin.js';
 import { LAMP_REPEATER } from './firing-lamp.js';
 import { debriefLines, SCENARIO, type ScenarioSnapshot } from './combat.js';
 import type { DamageState } from './damage.js';
+import { commander, type VoiceCue } from './commander-voice.js';
 
 /** How a call reads on the board: news, bad news (red), or good news. */
 export type CallTone = 'info' | 'bad' | 'good';
@@ -51,8 +52,12 @@ export class CrewLog {
   /** The board's clock, s (the scenario's or run's time while one is on). The crew board system sets it. */
   now: () => number = () => 0;
 
-  /** Log `text` as a call; the same words again straight away only move the old one's time. */
-  post(text: string, tone: CallTone = 'info'): BoardCall | null {
+  /**
+   * Log `text` as a call; the same words again straight away only move the
+   * old one's time. `say` is what the commander calls for it over the
+   * intercom (docs/commander-voice.md), `sayKey` what tells a repeat of it.
+   */
+  post(text: string, tone: CallTone = 'info', say?: VoiceCue, sayKey?: string): BoardCall | null {
     if (text === '') return null;
     const at = this.now();
     const last = this.entries[this.entries.length - 1];
@@ -60,6 +65,7 @@ export class CrewLog {
       last.tone = tone;
       return last;
     }
+    if (say) commander.ask(say, sayKey);
     const call = { id: this.nextId++, at, text, detail: '', tone };
     this.entries.push(call);
     if (this.entries.length > LOG_SIZE) this.entries.shift();

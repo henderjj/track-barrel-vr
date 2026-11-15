@@ -73,6 +73,11 @@ export interface Settings {
    */
   sound: number;
   /**
+   * The commander's voice over the intercom (docs/commander-voice.md): 1
+   * on, 0.5 quiet, 0 off. The game menu's Sound and view section changes it at once.
+   */
+  commander: number;
+  /**
    * How dark the comfort vignette gets at its strongest while the tank
    * moves (F1.14, src/sim/comfort.ts): 0 off, 0.3 light, 0.5 normal (the
    * default), 0.8 strong. The game menu's Comfort section changes it at once.
@@ -161,6 +166,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ground: true,
   fog: true,
   sound: 1,
+  commander: 1,
   vignette: VIGNETTE_STRENGTHS.normal,
   bumps: 'full',
   gearbox: 'auto',
@@ -222,6 +228,7 @@ export function parseSettings(search: string): Settings {
     ground: bool(params, 'ground', d.ground),
     fog: bool(params, 'fog', d.fog),
     sound: num(params, 'sound', d.sound, 0, 1),
+    commander: num(params, 'commander', d.commander, 0, 1),
     vignette: num(params, 'vignette', d.vignette, 0, 1),
     bumps: parseBumps(params.get('bumps'), d.bumps),
     gearbox: parseGearbox(params.get('gearbox'), d.gearbox),
