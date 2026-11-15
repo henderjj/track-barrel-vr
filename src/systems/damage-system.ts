@@ -13,6 +13,7 @@ import {
 } from '../sim/damage.js';
 import { setDriveDamage } from './drive-system.js';
 import { crewLog } from '../sim/crew-board.js';
+import { hitCue, type VoiceCue } from '../sim/commander-voice.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { netLink } from './net-system.js';
 import { seating } from './seating.js';
@@ -125,7 +126,8 @@ export class DamageSystem extends createSystem({}) {
   private sign!: FloatingSign;
   private signText = '';
   private signUntil = 0;
-  private notes: string[] = [];
+  /** Notes for the sign and the board, with the commander's call for each (docs/commander-voice.md). */
+  private notes: { text: string; say?: VoiceCue }[] = [];
 
   init(): void {
     active = this;
@@ -203,12 +205,12 @@ export class DamageSystem extends createSystem({}) {
     if (hit) this.last = last;
     if (s.hits === 0 && was.hits > 0) {
       this.last = null;
-      this.note('Repaired: the tank is fit to fight');
+      this.note('Repaired: the tank is fit to fight', ['repaired']);
     } else if (hit && last && !was.out) {
       // Knocked out, a shell still in flight changes nothing worth saying.
-      this.note(hitLine(last));
+      this.note(hitLine(last), hitCue(last));
     }
-    if (s.out && !was.out) this.note('Knocked out! Combat → Damage → Repair to fight on');
+    if (s.out && !was.out) this.note('Knocked out! Combat → Damage → Repair to fight on', ['lost']);
     const mine = seating.mine === 'driver' ? s.driver : seating.mine === 'gunner' ? s.gunner : 0;
     if (mine > this.myWounds) {
       this.stunFor = DAMAGE.stunSeconds * mine;
@@ -217,8 +219,8 @@ export class DamageSystem extends createSystem({}) {
     this.myWounds = mine;
   }
 
-  private note(text: string): void {
-    this.notes.push(text);
+  private note(text: string, say?: VoiceCue): void {
+    this.notes.push({ text, say });
   }
 
   update(delta: number): void {
@@ -263,7 +265,8 @@ export class DamageSystem extends createSystem({}) {
   private drawSign(delta: number): void {
     if (this.notes.length > 0) {
       // The knock-out outranks a hit taken with it.
-      const text = this.notes.find((n) => n.startsWith('Knocked out')) ?? this.notes[this.notes.length - 1];
+      const note = this.notes.find((n) => n.text.startsWith('Knocked out')) ?? this.notes[this.notes.length - 1];
+      const text = note.text;
       this.notes.length = 0;
       this.signText = text;
       this.signUntil = this.time + NOTE_SECONDS;
@@ -275,7 +278,7 @@ export class DamageSystem extends createSystem({}) {
       ctx.fillText(text, width / 2, height / 2 + 12, width - 30);
       this.sign.refresh();
       this.sign.setVisible(true, 'game');
-      crewLog.post(text, text.startsWith('Repaired') ? 'good' : /^(Through|Knocked out|Struck .*broken)/.test(text) ? 'bad' : 'info');
+      crewLog.post(text, text.startsWith('Repaired') ? 'good' : /^(Through|Knocked out|Struck .*broken)/.test(text) ? 'bad' : 'info', note.say);
       console.info(`[Damage] sign: ${text}`);
     }
     if (this.sign.visible && this.time > this.signUntil) this.sign.setVisible(false);

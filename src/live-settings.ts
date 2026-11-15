@@ -33,6 +33,17 @@ export const LIVE_ITEMS: readonly LiveItem[] = [
     ],
     current: (s) => String(s.sound),
   },
+  // The commander's voice over the intercom (docs/commander-voice.md).
+  {
+    key: 'commander',
+    label: 'Commander',
+    options: [
+      ['1', 'On'],
+      ['0.5', 'Quiet'],
+      ['0', 'Off'],
+    ],
+    current: (s) => String(s.commander),
+  },
   // Comfort (F1.14): shown in the menu's Comfort and stats section.
   {
     key: 'vignette',

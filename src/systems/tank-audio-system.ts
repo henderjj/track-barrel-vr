@@ -1,6 +1,7 @@
 import { createSystem, Quaternion, Vector3, VisibilityState } from '@iwsdk/core';
 import { onSettingChange } from '../live-settings.js';
 import { settings } from '../settings.js';
+import { commanderSpeaking } from '../sim/commander-voice.js';
 import { demandOf, NEUTRAL } from '../sim/gearbox.js';
 import { groundLine, TankFooting, type Footing, type Surface } from '../sim/ground-surface.js';
 import { CASING_FLIGHT, RECOIL } from '../sim/loading.js';
@@ -325,7 +326,8 @@ export class TankAudioSystem extends createSystem({}) {
     }
     sirenVoice(controls?.siren ?? false, v.siren);
     v.turretYaw = turret.yaw;
-    const duck = this.ducker.step(netLink.micLevel(), netLink.crewLevel(), dt);
+    // Under the crew's voices, and the commander's (docs/commander-voice.md).
+    const duck = this.ducker.step(netLink.micLevel(), Math.max(netLink.crewLevel(), commanderSpeaking.now ? 1 : 0), dt);
 
     // The short sounds this frame's changes make.
     const c = this.cueState;

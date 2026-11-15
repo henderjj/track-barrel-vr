@@ -51,14 +51,9 @@ Nothing to learn: the board is read, not worked.
 - No Practice shortcut: the board hangs in the seat, and Combat → Damage's test hits (or Battle's scenario) put news on it.
 - No net test: nothing new is shared.
 
-## Next: the commander's voice
+## The commander's voice
 
-John chose a British voice, urgent, through the heavy intercom filter (2026-11-14). The plan:
-
-- The lines are generated once (Kokoro's British voice, made urgent by Chatterbox; both free to ship) and stored dry; the intercom filter is applied in the game's Web Audio graph (band-pass, a nasal lift, soft clipping, hiss and crackle while keyed, the switch's click and hash), so its strength can be a setting and it matches across stitched parts.
-- A fire order is stitched from parts said as one call: *Gunner, traverse left! Anti-tank gun! Ten o'clock! Three hundred!*, the direction worked out when it is spoken (F3.10's `enemyBearing`).
-- The same notes that go on the board trigger the lines, so voice and board never disagree; both pages play them, ducking the tank under the voice.
-- Nothing goes in until John has listened to every line.
+The notes on the board are also called by a tank commander over the intercom: [commander-voice.md](commander-voice.md). A system posting a note passes the commander's call with it (`crewLog.post(text, tone, say)`), so voice and board never disagree.
 
 ## Headset check
 

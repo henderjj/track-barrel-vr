@@ -3477,6 +3477,9 @@ async function partTwo() {
 
   // 6z. The crew board (F6.5).
   await theCrewBoard();
+
+  // 6za. The commander's voice.
+  await theCommander();
 }
 
 /**
@@ -3528,6 +3531,73 @@ async function theCrewBoard() {
   check('Sound and view → Pop-ups → On floats the sign again, Off puts it back on the board only',
     floats === true && back === true && evalInApp('window.__settings.popups') === false,
     `floated ${floats === true}, back on the board only ${back === true}`);
+  if (evalInApp('window.__gameMenu.open')) await menuButtonPress();
+  evalInApp('(window.__damage.repair(), true)');
+}
+
+/**
+ * 6za. The commander's voice (docs/commander-voice.md): every line's clip
+ *      loads; a hit on the tank has him call it over the intercom while the
+ *      tank's sounds duck under him; a fire order's four parts go out as one
+ *      call; Sound and view → Commander → Off keeps him quiet (the board
+ *      still logs the note), On again.
+ */
+async function theCommander() {
+  const c = () => evalInApp('({ said: window.__commander.said(), asked: window.__commander.asked(), speaking: window.__commander.speaking(), loaded: window.__commander.loaded(), context: window.__commander.context() })');
+  const loaded = await waitFor("the commander's lines to load", () => {
+    const l = c().loaded;
+    return l[0] === l[1] ? l : null;
+  }, 20000).catch(() => c().loaded);
+  evalInApp('(window.__damage.repair(), window.__commander.reset(), true)');
+  await sleep(500);
+  const before = c().said.length;
+  // While he speaks: the tank ducked, and his voice coming out (watched in the page: a call lasts a second or two).
+  evalInApp(`(() => {
+    const p = (window.__commanderProbe = { duck: 0, level: 0, frames: 0 });
+    const id = setInterval(() => {
+      if (!window.__commander.speaking()) return;
+      p.frames++;
+      p.duck = Math.min(p.duck, window.__audio.state().duckDb);
+      p.level = Math.max(p.level, window.__commander.outputLevel());
+    }, 40);
+    setTimeout(() => clearInterval(id), 10000);
+    return true;
+  })()`);
+  evalInApp('(window.__damage.test("engine"), true)');
+  await waitFor('the commander to call the hit', () => c().said.length > before, 8000).catch(() => null);
+  await waitFor('him to finish', () => !c().speaking, 10000).catch(() => null);
+  const probe = evalInApp('window.__commanderProbe');
+  const heard = probe.frames > 0 && probe.duck < -3 && probe.level > 0.005 ? probe : null;
+  const said = c().said.slice(before).map((l) => l.join(' '));
+  check('A hit on the tank: the commander calls it over the intercom and the tank ducks under him',
+    loaded[0] === loaded[1] && said.includes('hit-engine') && heard !== null,
+    `lines ${loaded.join(' of ')}, context ${c().context}, said [${said.join(', ')}], while speaking (${probe.frames} looks) the tank ducked ${probe.duck.toFixed(1)} dB, voice RMS up to ${probe.level.toFixed(3)}`);
+
+  const order = ['traverse-left', 'anti-tank-gun', 'clock-10', 'range-300'];
+  const start = Date.now();
+  evalInApp(`window.__commander.say(${JSON.stringify(order)})`);
+  await waitFor('the fire order to start', () => c().speaking, 5000).catch(() => null);
+  await waitFor('the fire order to finish', () => !c().speaking, 15000).catch(() => null);
+  const last = c().said.at(-1) ?? [];
+  const seconds = (Date.now() - start) / 1000;
+  check("A fire order's four parts go out as one call",
+    last.join(' ') === order.join(' ') && seconds > 2 && seconds < 12,
+    `said "${last.join(' ')}" in about ${seconds.toFixed(1)} s`);
+
+  iwsdk(['xr', 'set-device-state'], {});
+  await menuButtonPress();
+  await menuClick('row-commander-2');
+  evalInApp('(window.__damage.repair(), window.__commander.reset(), true)');
+  await sleep(500);
+  const off = c();
+  evalInApp('(window.__damage.test("track"), true)');
+  await waitFor('the hit on the board', () => c().asked > off.asked, 6000).catch(() => null);
+  await sleep(1500);
+  const quiet = c();
+  await menuClick('row-commander-0');
+  check('Sound and view → Commander → Off keeps him quiet, the note still asked for; On again',
+    quiet.asked > off.asked && quiet.said.length === off.said.length && quiet.speaking === false && evalInApp('window.__settings.commander') === 1,
+    `asked ${off.asked} → ${quiet.asked}, said ${off.said.length} → ${quiet.said.length}`);
   if (evalInApp('window.__gameMenu.open')) await menuButtonPress();
   evalInApp('(window.__damage.repair(), true)');
 }

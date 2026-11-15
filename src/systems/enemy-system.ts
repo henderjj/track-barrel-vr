@@ -39,6 +39,7 @@ import { damageState, repairTank, takeHit } from './damage-system.js';
 import { placeTank, resetTank, tankState } from './drive-system.js';
 import { decidedListeners, setFaceOff, setFacePose } from './firing-system.js';
 import { type BoardCall, crewLog } from '../sim/crew-board.js';
+import { fireOrder, type VoiceCue } from '../sim/commander-voice.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { netLink } from './net-system.js';
 import { seating } from './seating.js';
@@ -73,6 +74,8 @@ interface Note {
   text: string;
   gun: number;
   hit: boolean;
+  /** What the commander calls for it (docs/commander-voice.md). */
+  say?: VoiceCue;
 }
 
 let active: EnemySystem | null = null;
@@ -291,6 +294,8 @@ export class EnemySystem extends createSystem({}) {
   /** The second line (the gunner's traverse), and the numbers last drawn, so the sign is redrawn only when they change. */
   private signLine = '';
   private bearing: EnemyBearing = { clock: 0, range: 0, traverse: 0 };
+  /** The bearing the commander's fire order is worked out into. */
+  private readonly orderBearing: EnemyBearing = { clock: 0, range: 0, traverse: 0 };
   private drawnBearing: EnemyBearing = { clock: -1, range: -1, traverse: 0 };
   private drawnGunner = false;
   private target: TankTarget = { x: 0, ground: 0, z: 0, heading: 0, speed: 0 };
@@ -502,7 +507,7 @@ export class EnemySystem extends createSystem({}) {
     for (const group of ['guns', 'tanks'] as const) {
       const before = sharedGroupOn(was, group);
       const now = sharedGroupOn(s, group);
-      if (now && !before) this.note(group === 'guns' ? 'Enemy guns ahead: watch for their flashes' : 'Enemy tanks about: watch for them moving');
+      if (now && !before) this.note(group === 'guns' ? 'Enemy guns ahead: watch for their flashes' : 'Enemy tanks about: watch for them moving', [group === 'guns' ? 'guns-ahead' : 'tanks-about']);
       if (!now || !before) continue;
       let knocked = false;
       let left = 0;
@@ -512,11 +517,15 @@ export class EnemySystem extends createSystem({}) {
         count++;
         if (s.alive[i]) left++;
         if (was.present[i] && was.alive[i] && !s.alive[i]) {
-          this.note(`${enemyName(i)} knocked out`);
+          this.note(`${enemyName(i)} knocked out`, [group === 'guns' ? 'gun-out' : 'tank-out']);
           knocked = true;
         }
       }
-      if (knocked && left === 0) this.note(group === 'guns' ? `All ${count} guns knocked out` : count === 2 ? 'Both tanks knocked out' : `All ${count} tanks knocked out`);
+      if (knocked && left === 0) {
+        this.note(group === 'guns' ? `All ${count} guns knocked out` : count === 2 ? 'Both tanks knocked out' : `All ${count} tanks knocked out`, [
+          group === 'guns' ? 'all-guns-out' : 'all-tanks-out',
+        ]);
+      }
     }
     for (let i = 0; i < ENEMY_COUNT; i++) {
       if (s.present[i] && !was.present[i]) this.revealed[i] = false;
@@ -596,13 +605,24 @@ export class EnemySystem extends createSystem({}) {
     console.info(`[Enemy] ${enemyName(shot.gun)} fired from ${Math.round(shot.range)} m: ${shot.hit ? 'hit' : 'miss'}`);
   }
 
-  private note(text: string): void {
-    this.notes.push({ text, gun: -1, hit: false });
+  private note(text: string, say?: VoiceCue): void {
+    this.notes.push({ text, gun: -1, hit: false, say });
   }
 
-  /** A notice about enemy `gun` (it fired, or its shell hit): its clock, range and the gunner's traverse are worked out as it shows. */
+  /**
+   * A notice about enemy `gun` (it fired, or its shell hit): its clock, range
+   * and the gunner's traverse are worked out as it shows. The commander gives
+   * a fire order on it, its bearing worked out as he speaks; a hit's damage is
+   * the damage's call (DamageSystem).
+   */
   private noteEnemy(gun: number, hit: boolean): void {
-    this.notes.push({ text: '', gun, hit });
+    this.notes.push({ text: '', gun, hit, say: () => this.fireOrder(gun) });
+  }
+
+  /** The commander's fire order on enemy `gun` from the tank and turret as they are now. */
+  private fireOrder(gun: number): string[] {
+    const t = tankState();
+    return fireOrder(enemyBearing(gun, t.x, t.z, t.heading, turretState().yaw, this.along[gun], this.orderBearing), groupOf(gun) === 'tanks');
   }
 
   update(delta: number): void {
@@ -820,7 +840,12 @@ export class EnemySystem extends createSystem({}) {
       this.noteCall = null;
       if (n.gun < 0) this.paintSign(n.text, '', false);
       else this.enemyNotice();
-      this.noteCall = crewLog.post(this.signText, n.gun < 0 ? (n.text.includes('knocked out') ? 'good' : 'info') : n.hit ? 'bad' : 'info');
+      this.noteCall = crewLog.post(
+        this.signText,
+        n.gun < 0 ? (n.text.includes('knocked out') ? 'good' : 'info') : n.hit ? 'bad' : 'info',
+        n.say,
+        n.gun >= 0 ? `fire-order-${n.gun}` : undefined,
+      );
       if (this.noteCall) crewLog.update(this.noteCall, this.signText, this.signLine);
       this.sign.setVisible(true, 'game');
       console.info(`[Enemy] sign: ${this.signText}${this.signLine ? ` (${this.signLine})` : ''}`);
