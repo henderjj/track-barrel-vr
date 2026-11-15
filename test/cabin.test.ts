@@ -12,7 +12,7 @@ import {
   parseSeat,
   placeInSeat,
   type RigPlace,
-  RESEAT_DISTANCE,
+  OUT_OF_SEAT,
   SEAT_IDS,
   SEATS,
   seatingWith,
@@ -107,8 +107,8 @@ describe('keeping the head in the seat', () => {
     expect(headFade(HEAD_FADE_DEPTH / 2)).toBeCloseTo(0.5, 9);
     expect(headFade(HEAD_FADE_DEPTH)).toBe(1);
     expect(headFade(1)).toBe(1);
-    // Black well before a head is far enough out to count as a recentre.
-    expect(HEAD_FADE_DEPTH).toBeLessThan(RESEAT_DISTANCE / 2);
+    // Black well before a head is far enough out to have left the seat.
+    expect(HEAD_FADE_DEPTH).toBeLessThan(OUT_OF_SEAT / 2);
   });
 
   const out: [number, number] = [0, 0];
@@ -147,12 +147,12 @@ describe('keeping the head in the seat', () => {
     expect(head[2] + out[1]).toBeCloseTo(fixed[2], 9);
   });
 
-  it('tells a head far outside the box (a recentre) from one leant past the edge', () => {
+  it('tells a head out of the seat from one leant past the edge', () => {
     const seat = SEATS.driver;
-    expect(headFix(seat, 0, [0, 1.6, 0], out)).toBe('reseat');
+    expect(headFix(seat, 0, [0, 1.6, 0], out)).toBe('out');
     const edge = seat.eye[0] + seat.headBox[1];
-    expect(headFix(seat, 0, [edge + RESEAT_DISTANCE - 0.01, 1.4, seat.eye[2]], out)).toBe('fade');
-    expect(headFix(seat, 0, [edge + RESEAT_DISTANCE + 0.01, 1.4, seat.eye[2]], out)).toBe('reseat');
+    expect(headFix(seat, 0, [edge + OUT_OF_SEAT - 0.01, 1.4, seat.eye[2]], out)).toBe('fade');
+    expect(headFix(seat, 0, [edge + OUT_OF_SEAT + 0.01, 1.4, seat.eye[2]], out)).toBe('out');
   });
 });
 

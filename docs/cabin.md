@@ -7,7 +7,7 @@ The crew's place in the tank: the hull with the driver's seat, the turret with i
 - On entering VR each player is in their seat: eyes at the seat's eye point, facing the tank's front, wherever they are in their real room. Their real floor goes at the seat's floor, with the body-height offset on top, which since F1.2 puts the calibrated eyes on the eye point ([seat-choice.md](seat-choice.md)).
 - The **driver** sits front left in the hull under an open hatch. The glacis slopes over their legs, as a Sherman's does, to the hood in front of their face with the vision slit 30 cm ahead of their eyes; in front of them are the tillers with the instrument box between them and the gear lever, on their left the hand throttle, on their right the periscope ([driver-station.md](driver-station.md), F1.5; [interior.md](interior.md)).
 - The **gunner** sits right of the gun in the turret basket, 71 cm above the hull floor. The breech is on their left at chest height, and the gunsight's eyepiece (F1.9, [gunsight.md](gunsight.md)) is 18 cm ahead of their eyes, over the wheels: leaning in opens it.
-- A player moves their head freely inside their seat. Leaning past the edge of the seat's head box, as the eyes come within 9 cm of a wall, the hood or the roof, fades the whole view to black over 4 cm; leaning back clears it ([interior.md](interior.md#johns-third-headset-check-2026-10-31)). The seat stays where calibration put it: nothing pushes the player (John's headset check, [interior.md](interior.md)). A head far outside the box that got there in one jump (the headset recentred), or stays there two seconds (the player stood up and walked across the room), puts the player back in the seat.
+- A player moves their head freely inside their seat. Leaning past the edge of the seat's head box, as the eyes come within 9 cm of a wall, the hood or the roof, fades the whole view to black over 4 cm; leaning back clears it ([interior.md](interior.md#johns-third-headset-check-2026-10-31)). The seat stays where calibration put it: nothing pushes the player (John's headset check, [interior.md](interior.md)). Nothing a head does moves the seat ([below](#out-of-the-seat-johns-play-test-2026-11-15)): a head far outside the box (the player stood up and walked, or leant a long way) keeps the view black, and after a second a sign over the black says to lean back or choose Back in my seat. The game menu lifts the black while it is open. Only VR starting, a change of seats, Back in my seat and the headset's own recentre place the player in the seat.
 - The crewmate is drawn sitting in their seat: head and hands from their poses, legs bent on their seat's cushion.
 - Game menu: **Practice → Sit in Driver / Gunner** changes seats; **You → Seat → Back in my seat** puts the player back at the eye point facing forward.
 - The spikes' Practice buttons still work. Riding (S2) hides the cabin while it shows its own blockout and puts the player back in their seat when it stops. Loading (S4) is in the turret since F1.10 ([loading-firing.md](loading-firing.md)). While a spike seats the player somewhere else, the seat system leaves the play space alone (`seating.away`); choosing a seat or Back in my seat ends that.
@@ -30,7 +30,7 @@ Hull space: hull floor at y = 0, front towards −Z, +X to the right. The tank s
 | Gunner's head box | 50 cm left, 58 cm right, 16 cm forward, 50 cm back | The turret's wall 9 cm off; forward, 2 cm short of the sight's eyecup |
 | Sight eyepiece | (0.32, 1.98, −0.38), turret | An 18 cm lean from the eye point ([interior.md](interior.md)); the sight opens within 9 cm |
 | Head fade | from the head box's edge (9 cm off a wall, the hood or the roof), black 4 cm later | Black before the near plane (5 cm) cuts into the wall; the shell is 50 cm out, so the whole view goes black |
-| Reseat distance | 30 cm past the head box, after a jump of over 20 cm or 2 s there | Further than any lean, nearer than a step |
+| Out of the seat | 30 cm past the head box (`OUT_OF_SEAT`); the sign after 1 s | Black stays; the seat is never moved by a head |
 | Ground | 0.46 m under the hull floor (0.6 m before), a Sherman's 17 in ground clearance and floor plate; the drive's rolling ground since F1.4 ([tank-drive.md](tank-drive.md)) | The tracks reach it |
 
 The models are lit by the sky's image-based light (`IBLGradient` in the scene), which only lights `MeshStandardMaterial`: every model uses it, rough and not metallic. There are no lights in the scene. Inside the tank that light is dimmed and pooled under the hatches and the dome lamps by the cabin materials' shader (`litInside`, [interior.md](interior.md)).
@@ -57,10 +57,10 @@ The bot sits in the seat the player leaves free (it is a guest, so the host's `s
 - `test/body-height.test.ts`: a seated player's eyes land on either seat's eye point.
 - `test/sight.test.ts`: the sight hangs where a seated gunner can lean into it, and their head stops short of the lens.
 - `test/z-fighting.test.ts`: the hull with the turret at several angles, the ground, the S1 sight inside the turret, the loading in the turret (F1.10), the seated crew avatars (posed sitting, leaning and looking round since F1.1b, [seated-avatars.md](seated-avatars.md)).
-- `npm run test:xr`: in the driver's seat on entering VR, a lean past the head box fading the view and leaning back clearing it, a big jump reseating, the menu changing to the gunner's seat and back, the S1 sight from the gunner's seat, back in the seat after riding. Screenshots: `artifacts/xr-driver-seat.png`, `xr-gunner-seat.png`.
+- `npm run test:xr`: in the driver's seat on entering VR, a lean past the head box fading the view and leaning back clearing it, a head out of the seat staying black with the seat put and the sign up, the menu lifting the black and Back in my seat, the headset's recentre (a reference space `reset`) reseating, the menu changing to the gunner's seat and back, the S1 sight from the gunner's seat, back in the seat after riding. Screenshots: `artifacts/xr-driver-seat.png`, `xr-gunner-seat.png`.
 - `npm run test:net` (`ONLY_SEATS=1`, or `=lag`, for just this): the host in the driver's seat and the guest in the gunner's, the guest's ask swapping both, legs drawn in the crewmate's seat, on a clean link, after a rejoin and at 150 ms RTT; the practice crewmate in the free seat, moving over when the player changes seats.
 
-`window.__seats` gives `mine`, `crew`, `ask(seat)`, `reseat()`, `eye(seat)`, `head()` and `fixes` (how often the head was stopped and the player reseated).
+`window.__seats` gives `mine`, `crew`, `ask(seat)`, `reseat()`, `recentre()` (fires the reference space's `reset`, as a headset does), `eye(seat)`, `head()`, `outSign` (the sign's words while it is up) and `fixes` (how often the view faded at the walls and the roof, the head left the seat, the player was seated, and the headset recentred).
 
 ## Headset check
 
@@ -68,10 +68,27 @@ On a Quest 3, with a second headset or the practice crewmate:
 
 1. Enter VR alone. You are in the driver's seat facing the vision slit, with the hatch open above. Your eyes are at a natural seated height, and the space in front of you is clear.
 2. Lean forward towards the slit, then left. Just before your eyes reach the brow pad or the side wall the whole view fades to black; lean back and it clears, your seat where it was.
-3. Stand up and take a step. You are put back in the seat.
+3. Stand up and take a step. The view stays black and, after a second, a sign says to lean back or choose Back in my seat. Step back and it clears with the seat where it was; or open the game menu (the black lifts) and choose You → Back in my seat.
 4. Game menu → Practice → Sit in Gunner. You are in the turret right of the gun, with the breech on your left at chest height.
 5. Lean forward into the sight. It opens before the view starts to fade, and the fade begins 2 cm short of the eyecup.
 6. Look round the turret and down into the hull: no flickering faces, no gaps to see through, and every surface is lit, not black.
 7. Game menu → You → Back in my seat: you face forward at the eye point again.
 8. With a crewmate (or `?bot=1` on a PC page), the crewmate sits in the other seat with its legs on the cushion, and swaps when either of you changes seats from the menu.
 9. Perf HUD (X): frames stay within budget at 72 Hz in both seats.
+
+## Out of the seat (John's play-test, 2026-11-15)
+
+John, on a Quest in stationary boundary mode: leaning far in some directions made the view jump to a new place, and leaning again jumped it back; the fade to black worked, but it shouldn't shift the view. The cause was the seat system's reseat: a head more than 30 cm past the head box (46 cm ahead of the gunner's eye point, 50 cm ahead of the driver's) that stayed there two seconds, or got there in a one-frame jump of over 20 cm, put the player back in the seat where their head was. A long lean, or a tracking hiccup at the stationary boundary's edge, did both. The view went black, then cleared with the seat moved under the lean; leaning back out of the new box did it again.
+
+Now a head never moves the seat:
+
+- Past the head box's edge the view fades to black as before. More than 30 cm past it (`OUT_OF_SEAT`) the view stays black however long the head is out there, and after a second (`OUT_OF_SEAT_SIGN_AFTER`) a sign over the black says: lean back to your seat, or open the game menu (Y): You, Back in my seat.
+- The game menu lifts the black while it is open, so its buttons can be seen.
+- The play space is placed only when VR starts, on a change of seats, by Back in my seat (and the spikes and calibration that ask for it), and when the headset itself says its origin moved: the reference space's `reset` event, which a Quest sends when the player holds the Meta button to recentre. The page logs `[Seat] the headset recentred` when that happens.
+
+### Headset check
+
+1. Quest in stationary boundary mode, either seat. Lean as far as you can forwards, left, right and back, several times, holding each lean for a few seconds. The view may fade to black; it must never come back shifted. Sitting up always clears it with the cabin where it was.
+2. Stand up and step a metre to the side. The view stays black, and a sign says to lean back or use the menu. Step back: the view clears, seat unchanged.
+3. Step aside again, press Y: the menu shows over the cabin; choose You → Back in my seat. You are sat down facing forward where you stand.
+4. Hold the Meta button to recentre. You are sat back in the seat facing forward. If nothing happens, say so: the browser may not send the recentre to the page, and Back in my seat does the same.

@@ -1,7 +1,6 @@
 import { BackSide, createSystem, Euler, Mesh, MeshBasicMaterial, Quaternion, SphereGeometry, Vector3 } from '@iwsdk/core';
 import { saveSettings, settings } from '../settings.js';
 import {
-  HEAD_JUMP,
   headDrop,
   headFade,
   headFix,
@@ -9,7 +8,7 @@ import {
   otherSeat,
   parseSeat,
   placeInSeat,
-  RESEAT_AFTER,
+  OUT_OF_SEAT_SIGN_AFTER,
   type RigPlace,
   type SeatId,
   seatingWith,
@@ -21,6 +20,7 @@ import {
 import { CONVOY_MOVE, type ConvoyMove, seatAs, stepConvoyMove } from '../sim/convoy-seat.js';
 import { body } from './body-height-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
+import { gameMenu } from './game-menu-system.js';
 import { netLink } from './net-system.js';
 import { seating } from './seating.js';
 
@@ -36,8 +36,15 @@ interface SeatDebug {
   eye(seat: SeatId): number[];
   /** This player's head, hull space. */
   head(): number[];
-  /** How often the view faded with the head past its box's edge and over the roof stop, and the player was put back in the seat. */
-  readonly fixes: { walls: number; roof: number; reseat: number };
+  /**
+   * How often the view faded with the head past its box's edge and over the roof stop, the head left the seat, the
+   * player was put back in the seat, and the headset recentred (the reference space's `reset`).
+   */
+  readonly fixes: { walls: number; roof: number; out: number; reseat: number; recentres: number };
+  /** Make the headset's reference space say it recentred, as a headset does (for the tests). */
+  recentre(): boolean;
+  /** What the sign over the black says while the head is out of the seat, or '' while it isn't up. */
+  readonly outSign: string;
   /** How dark the view is now, 0 to 1, from the head past its box or over the roof stop. */
   readonly fade: number;
   /** A swap waiting for a word: 'asked', 'offered' or 'none'. */
@@ -58,9 +65,14 @@ interface SeatDebug {
  * fades the whole view to black over 4 cm (`headFade`), and rising up to
  * the roof does the same: the play space stays where the player was
  * calibrated, so the seat never shifts under them, and leaning back clears
- * the view. A head that jumps far outside the box (the headset recentred),
- * or stays far outside for two seconds (the player stood up and walked),
- * puts the player back in the seat.
+ * the view. Nothing a head does moves the seat: a head far outside the box
+ * (the player stood up and walked, or leant a long way) keeps the view black
+ * and, after a second, puts up a sign over the black saying how to get back.
+ * The game menu lifts the fade while it is open, so its Back in my seat can
+ * be chosen. Only that, VR starting, a change of seats and the headset's own
+ * recentre (the reference space's `reset` event) place the play space (John's
+ * play-test, 2026-11-15: a far lean used to reseat him, a jump of the view,
+ * and leaning again jumped it back).
  *
  * Seats are shared: the host decides who sits where (`seats` event). Alone,
  * or before the crewmate is aboard, the player sits where they like. In a
@@ -81,13 +93,23 @@ export class SeatSystem extends createSystem({}) {
   private headHull: [number, number, number] = [0, 0, 0];
   private fix: [number, number] = [0, 0];
   private place: RigPlace = { x: 0, z: 0, yaw: 0 };
-  private fixes = { walls: 0, roof: 0, reseat: 0 };
+  private fixes = { walls: 0, roof: 0, out: 0, reseat: 0, recentres: 0 };
   private lastFix: HeadFix = 'inside';
   private overRoof = false;
   /** How long the head has been far outside its box, s. */
   private farFor = 0;
-  /** The head's play-space position last frame, for telling a recentre's jump. */
-  private lastLocal = new Vector3();
+  /** Over the black while the head is out of the seat: how to get back. */
+  private outSign!: FloatingSign;
+  /** The reference space listened to for the headset's recentre, while in VR. */
+  private space: XRReferenceSpace | null = null;
+  private onRecentre = (event: Event): void => {
+    // The headset moved its origin under the player (they held the Meta button, or its tracking started afresh): the
+    // seat's placement no longer fits, so sit them down again where their head is now.
+    const transform = (event as Event & { transform?: XRRigidTransform | null }).transform;
+    this.fixes.recentres++;
+    this.needsPlace = true;
+    console.info(`[Seat] the headset recentred (${transform ? 'its move given' : 'no move given'}): back in the seat`);
+  };
   private fade = 0;
   /** Black round the eyes, as dark as `fade`. */
   private blind!: Mesh<SphereGeometry, MeshBasicMaterial>;
@@ -117,6 +139,11 @@ export class SeatSystem extends createSystem({}) {
     this.blind.visible = false;
     this.camera.add(this.blind);
     this.world.createTransformEntity(this.sign.mesh);
+    this.outSign = new FloatingSign('Out of Seat Sign', 0.8, [640, 200], 1.1, 0.1);
+    // Over the black round the eyes (the Head Fade, renderOrder 1000): both skip the depth test, so the order decides.
+    this.outSign.mesh.renderOrder = 1001;
+    this.world.createTransformEntity(this.outSign.mesh);
+    this.drawOutSign();
     seating.ask = (seat) => this.ask(seat);
     seating.reseat = () => {
       seating.away = false;
@@ -154,6 +181,7 @@ export class SeatSystem extends createSystem({}) {
       this.offered();
     });
     this.cleanupFuncs.push(() => {
+      this.listenForRecentre(null);
       this.blind.removeFromParent();
       this.blind.geometry.dispose();
       this.blind.material.dispose();
@@ -174,6 +202,13 @@ export class SeatSystem extends createSystem({}) {
       },
       head: () => this.player.head.getWorldPosition(new Vector3()).toArray(),
       get fixes() { return self.fixes; },
+      recentre: () => {
+        const space = this.renderer.xr.getReferenceSpace();
+        if (!space) return false;
+        space.dispatchEvent(new Event('reset'));
+        return true;
+      },
+      get outSign() { return self.outSign.visible ? OUT_SIGN_LINES.join(' / ') : ''; },
       get fade() { return self.fade; },
       get swap() { return seating.swap; },
       get swapSign() { return self.sign.visible ? self.signText : ''; },
@@ -195,10 +230,13 @@ export class SeatSystem extends createSystem({}) {
     }
     if (seating.away) {
       this.setFade(0);
+      this.showOutSign(false);
       return;
     }
     if (!this.world.session) {
       this.setFade(0);
+      this.showOutSign(false);
+      this.listenForRecentre(null);
       if (this.inVr) {
         // Back on the flat page: the play space goes back where it started.
         this.inVr = false;
@@ -211,14 +249,13 @@ export class SeatSystem extends createSystem({}) {
       this.inVr = true;
       this.needsPlace = true;
     }
+    this.listenForRecentre(this.renderer.xr.getReferenceSpace());
     // On top of the body-height system's offset (it runs just before this).
     player.position.y = seat.floorY + body.offset;
     const local = player.head.position;
     if (local.x === 0 && local.y === 0 && local.z === 0) {
       return; // no head pose yet
     }
-    const jumped = local.distanceTo(this.lastLocal) > HEAD_JUMP;
-    this.lastLocal.copy(local);
     // Standing up out of the seat: the head is over the roof stop. The play space only turns about the vertical, so its height adds straight on.
     const over = -headDrop(seat, player.position.y + local.y);
     if (over > 0 && !this.overRoof) this.fixes.roof++;
@@ -234,20 +271,25 @@ export class SeatSystem extends createSystem({}) {
         out = Math.hypot(this.fix[0], this.fix[1]);
         if (this.lastFix === 'inside') this.fixes.walls++;
       }
-      this.farFor = fix === 'reseat' ? this.farFor + delta : 0;
-      if (fix === 'reseat') {
+      if (fix === 'out') {
+        // Far out: black, and the seat stays put. Leaning back clears it; the sign says how else to get back.
         out = Infinity;
-        if (jumped || this.farFor >= RESEAT_AFTER) {
-          this.needsPlace = true;
-          this.fixes.reseat++;
-          this.farFor = 0;
-        }
+        if (this.lastFix !== 'out') this.fixes.out++;
+        this.farFor += delta;
+      } else {
+        this.farFor = 0;
       }
       this.lastFix = fix;
     }
-    this.setFade(Math.max(convoyDark, this.needsPlace ? 0 : headFade(Math.max(out, over))));
+    this.showOutSign(!this.needsPlace && this.farFor >= OUT_OF_SEAT_SIGN_AFTER, delta);
+    // The game menu lifts the fade while it is open, so a player out of the seat can see it to choose Back in my seat.
+    const wallDark = this.needsPlace || gameMenu.open ? 0 : headFade(Math.max(out, over));
+    this.setFade(Math.max(convoyDark, wallDark));
     if (this.needsPlace) {
       this.needsPlace = false;
+      this.farFor = 0;
+      this.lastFix = 'inside';
+      this.fixes.reseat++;
       this.headQuat.copy(player.head.quaternion);
       this.euler.setFromQuaternion(this.headQuat, 'YXZ');
       placeInSeat(seat, seating.turretYaw, local.x, local.z, this.euler.y, this.place);
@@ -289,6 +331,33 @@ export class SeatSystem extends createSystem({}) {
     }
     seating.convoyShown = move.shown;
     return dark;
+  }
+
+  /** Listen for `space`'s recentre (null: stop listening). */
+  private listenForRecentre(space: XRReferenceSpace | null): void {
+    if (space === this.space) return;
+    this.space?.removeEventListener('reset', this.onRecentre);
+    this.space = space;
+    space?.addEventListener('reset', this.onRecentre);
+  }
+
+  /** Show or hide the sign over the black while the head is out of the seat, keeping it in front of the player. */
+  private showOutSign(show: boolean, delta = 0): void {
+    if (show !== this.outSign.visible) this.outSign.setVisible(show);
+    if (show) this.outSign.follow(this.player.head, delta);
+  }
+
+  private drawOutSign(): void {
+    const { ctx, width, height } = this.outSign;
+    drawSignBackground(ctx, width, height);
+    ctx.fillStyle = '#f4ead8';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 40px sans-serif';
+    ctx.fillText(OUT_SIGN_LINES[0], width / 2, 72);
+    ctx.font = '30px sans-serif';
+    ctx.fillText(OUT_SIGN_LINES[1], width / 2, 124);
+    ctx.fillText(OUT_SIGN_LINES[2], width / 2, 166);
+    this.outSign.refresh();
   }
 
   /** Darken the view to `fade` (0 clear, 1 black). */
@@ -429,6 +498,9 @@ export class SeatSystem extends createSystem({}) {
     }
   }
 }
+
+/** What the sign over the black says while the head is out of the seat. */
+const OUT_SIGN_LINES = ['You have left your seat', 'Lean back to your seat, or open the game', 'menu (Y): You, Back in my seat'] as const;
 
 /** Seconds on the page's clock. */
 function now(): number {

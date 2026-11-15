@@ -297,15 +297,16 @@ export function hullToSeat(seat: Seat, turretYaw: number, p: readonly number[], 
 }
 
 /**
- * Beyond the head box by more than this, the head is far outside: a jump this
- * far in one frame (the headset recentred) or a head kept out here for
- * `RESEAT_AFTER` (the player stood up and walked) puts them back in the seat, m.
+ * Beyond the head box by more than this the player has left the seat (stood
+ * up and stepped away, or the room's floor moved under them), m: the view
+ * stays black and, after `OUT_OF_SEAT_SIGN_AFTER`, a sign says how to get
+ * back. Nothing moves the seat: only the menu's Back in my seat, a change
+ * of seats or the headset's own recentre do (John's play-test, 2026-11-15:
+ * a far lean used to put him back in the seat, a jump of the view).
  */
-export const RESEAT_DISTANCE = 0.3;
-/** How long a head stays far outside the box before the player is put back in the seat, s. */
-export const RESEAT_AFTER = 2;
-/** A head that moves this far in one frame has jumped (the headset recentred), m. */
-export const HEAD_JUMP = 0.2;
+export const OUT_OF_SEAT = 0.3;
+/** How long the head stays out of the seat before the sign says how to get back, s. */
+export const OUT_OF_SEAT_SIGN_AFTER = 1;
 /** How far past the head box's edge, or over the roof stop, the view has faded to black, m: the eyes then 5 cm from the wall (`EYE_CLEARANCE`). */
 export const HEAD_FADE_DEPTH = 0.04;
 
@@ -319,7 +320,7 @@ export function headFade(depth: number): number {
 }
 
 /** Where the head is: inside its box, past the edge (the view fades), or far outside. */
-export type HeadFix = 'inside' | 'fade' | 'reseat';
+export type HeadFix = 'inside' | 'fade' | 'out';
 
 /**
  * Keeping the head in the seat's box. `head` is the head's hull-space
@@ -331,9 +332,9 @@ export type HeadFix = 'inside' | 'fade' | 'reseat';
  * - 'fade': the eyes leant past the edge, up to a wall or the hood, so
  *   the view fades (`headFade`); the seat stays where the
  *   player calibrated it, and leaning back clears the view;
- * - 'reseat': the head is far outside (the player recentred the headset,
- *   or stood up and walked); after a jump or `RESEAT_AFTER` out there, put
- *   them back in the seat (`placeInSeat`).
+ * - 'out': the head is far outside (`OUT_OF_SEAT`): the player stood up
+ *   and walked, or leant a long way. The view stays black and the seat
+ *   stays put; the player leans back in, or chooses Back in my seat.
  */
 export function headFix(seat: Seat, turretYaw: number, head: readonly number[], out: [number, number]): HeadFix {
   const local = hullToSeat(seat, turretYaw, head, tmpLocal);
@@ -349,8 +350,8 @@ export function headFix(seat: Seat, turretYaw: number, head: readonly number[], 
   if (dx === 0 && dz === 0) {
     return 'inside';
   }
-  if (Math.hypot(dx, dz) > RESEAT_DISTANCE) {
-    return 'reseat';
+  if (Math.hypot(dx, dz) > OUT_OF_SEAT) {
+    return 'out';
   }
   // The correction turned from seat space into hull space.
   const yaw = frameYaw(seat, turretYaw);
