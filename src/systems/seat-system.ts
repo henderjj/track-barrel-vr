@@ -229,12 +229,13 @@ export class SeatSystem extends createSystem({}) {
       this.needsPlace = true;
     }
     if (seating.away) {
-      this.setFade(0);
+      this.setFade(seating.fallDark);
       this.showOutSign(false);
       return;
     }
     if (!this.world.session) {
-      this.setFade(0);
+      // A fall off the bridge darkens the flat page too.
+      this.setFade(seating.fallDark);
       this.showOutSign(false);
       this.listenForRecentre(null);
       if (this.inVr) {
@@ -284,7 +285,7 @@ export class SeatSystem extends createSystem({}) {
     this.showOutSign(!this.needsPlace && this.farFor >= OUT_OF_SEAT_SIGN_AFTER, delta);
     // The game menu lifts the fade while it is open, so a player out of the seat can see it to choose Back in my seat.
     const wallDark = this.needsPlace || gameMenu.open ? 0 : headFade(Math.max(out, over));
-    this.setFade(Math.max(convoyDark, wallDark));
+    this.setFade(Math.max(convoyDark, seating.fallDark, wallDark));
     if (this.needsPlace) {
       this.needsPlace = false;
       this.farFor = 0;

@@ -25,7 +25,7 @@ const DT = 1 / 60;
 
 /** The course's progress as a race reads it, moved on by hand. */
 function feed(): CourseFeed {
-  return { laps: 0, missed: 0, penalties: 0, box: -1, halted: false, faults: 0 };
+  return { laps: 0, missed: 0, penalties: 0, box: -1, halted: false, faults: 0, falls: 0 };
 }
 
 function step(r: RangeRun, c: CourseFeed, seconds: number): void {
