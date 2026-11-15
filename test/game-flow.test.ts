@@ -59,7 +59,7 @@ describe("the game menu's tabs", () => {
     const outside = new Set(['menu-root', 'menu-close', 'menu-start', 'menu-exit', 'menu-hint']);
     const firstPage = menu.indexOf('id="page-');
     const lastPageEnd = menu.indexOf('<Divider>', firstPage);
-    for (const m of menu.matchAll(/id="((?:menu|row|call|coat|height)-[a-z0-9-]+)"/g)) {
+    for (const m of menu.matchAll(/id="((?:menu|row|call|coat|height|vol)-[a-z0-9-]+)"/g)) {
       const inPages = m.index > firstPage && m.index < lastPageEnd;
       expect(inPages, m[1]).toBe(!outside.has(m[1]));
     }

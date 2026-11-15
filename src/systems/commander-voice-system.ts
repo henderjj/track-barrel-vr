@@ -2,6 +2,7 @@ import { createSystem, VisibilityState } from '@iwsdk/core';
 import { onSettingChange } from '../live-settings.js';
 import { settings } from '../settings.js';
 import { callSeconds, commander, commanderSpeaking, INTERCOM, LINE_IDS } from '../sim/commander-voice.js';
+import { commanderGain, commanderHeard, volumeText } from '../sim/volume.js';
 
 /** What the tests read and do (`window.__commander`). */
 interface CommanderDebug {
@@ -94,7 +95,7 @@ export class CommanderVoiceSystem extends createSystem({}) {
       () => document.removeEventListener('visibilitychange', onPageVisibility),
       this.world.visibilityState.subscribe(() => this.checkHidden()),
       onSettingChange((key) => {
-        if (key === 'commander') this.applyLevel();
+        if (key === 'commander' || key === 'sound') this.applyLevel();
       }),
       () => void this.ctx?.close(),
     );
@@ -180,7 +181,7 @@ export class CommanderVoiceSystem extends createSystem({}) {
 
   update(): void {
     const ctx = this.ctx;
-    if (!ctx || settings.commander === 0 || this.hidden) {
+    if (!ctx || !commanderHeard(settings) || this.hidden) {
       // Nothing to say them with: old news by the time there is.
       commander.waiting.length = 0;
       commanderSpeaking.now = false;
@@ -240,7 +241,7 @@ export class CommanderVoiceSystem extends createSystem({}) {
   }
 
   private resume(): void {
-    if (this.ctx && settings.commander > 0 && !this.hidden && this.ctx.state === 'suspended') void this.ctx.resume();
+    if (this.ctx && commanderHeard(settings) && !this.hidden && this.ctx.state === 'suspended') void this.ctx.resume();
   }
 
   /** Quiet while the page is hidden or the headset is off. */
@@ -257,13 +258,13 @@ export class CommanderVoiceSystem extends createSystem({}) {
   private applyLevel(): void {
     const ctx = this.ctx;
     if (!ctx || !this.out) return;
-    this.out.gain.setTargetAtTime(LEVEL * settings.commander, ctx.currentTime, 0.05);
-    if (settings.commander === 0) {
+    this.out.gain.setTargetAtTime(LEVEL * commanderGain(settings), ctx.currentTime, 0.05);
+    if (!commanderHeard(settings)) {
       void ctx.suspend();
     } else {
       this.resume();
     }
-    console.info(`[Commander] voice ${settings.commander === 0 ? 'off' : settings.commander < 1 ? 'quiet' : 'on'}`);
+    console.info(`[Commander] voice ${commanderHeard(settings) ? volumeText(settings.commander) : 'off'}`);
   }
 
   private outputLevel(): number {

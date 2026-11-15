@@ -19,7 +19,7 @@ import {
 import { CrewLog } from '../src/sim/crew-board.js';
 import { commander } from '../src/sim/commander-voice.js';
 import { DEFAULT_SETTINGS, parseSettings } from '../src/settings.js';
-import { LIVE_ITEMS } from '../src/live-settings.js';
+import { VOLUME_ITEMS } from '../src/live-settings.js';
 
 const hit = (over: object) => ({ zone: 'hull-side' as const, through: true, armour: 38, pen: 90, effects: [], right: false, ...over });
 
@@ -140,10 +140,10 @@ describe('the intercom', () => {
     expect(callSeconds([1, 0.5, 0.6, 0.7])).toBeCloseTo(INTERCOM.pre + 2.8 + 3 * INTERCOM.join + INTERCOM.post + INTERCOM.hash, 6);
   });
 
-  it('the Commander setting: on by default, ?commander=0 and the Sound and view tab turn it off or down', () => {
+  it("the Commander setting: full by default, ?commander=0 and the Sound and view tab's slider turn it off or down", () => {
     expect(DEFAULT_SETTINGS.commander).toBe(1);
     expect(parseSettings('?commander=0').commander).toBe(0);
-    const item = LIVE_ITEMS.find((i) => i.key === 'commander');
-    expect(item?.options.map(([value]) => value)).toEqual(['1', '0.5', '0']);
+    expect(parseSettings('?commander=0.35').commander).toBe(0.35);
+    expect(VOLUME_ITEMS.find((i) => i.key === 'commander')?.label).toBe('Commander');
   });
 });
