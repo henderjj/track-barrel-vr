@@ -24,6 +24,7 @@ import {
 } from '../sim/course.js';
 import { groundHeight, wrapTile } from '../sim/terrain.js';
 import { placeTank, startEngine, tankState } from './drive-system.js';
+import { createSignLabels } from './sign-labels.js';
 import { crewLog } from '../sim/crew-board.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { netLink } from './net-system.js';
@@ -158,12 +159,14 @@ export class CourseSystem extends createSystem({}) {
 
     const ground = this.world.getSceneEntity('ground') ?? null;
     if (ground == null) console.warn('[Course] no ground in the scene');
-    for (const [x, z] of SLALOM_POSTS) {
-      const post = createSlalomPost();
+    for (const [i, [x, z]] of SLALOM_POSTS.entries()) {
+      const post = createSlalomPost(i);
       this.posts.push(post);
       this.postY.push(groundHeight(x, z));
       if (ground) this.world.createTransformEntity(post, { parent: ground });
     }
+    // The words on the course's signs, in a road-sign typeface (docs/biathlon-signs.md): the signs themselves are in the ground's chunks.
+    if (ground) this.world.createTransformEntity(createSignLabels(), { parent: ground });
 
     const self = this;
     (window as unknown as { __course: CourseDebug }).__course = {

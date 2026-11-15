@@ -12,7 +12,8 @@ import {
   onMud,
   PENALTY_GATE,
   PENALTY_PATH,
-  SLALOM_GATES,
+  COURSE,
+  JOIN,
   SLALOM_POSTS,
   type Vec2,
 } from '../src/sim/course.js';
@@ -30,14 +31,13 @@ function nearest(path: typeof COURSE_PATH, x: number, z: number) {
 }
 
 describe('biathlon course signs', () => {
-  it('has each sign John asked for: the ford limit, the mud caution, the penalty loop and its chevrons, the slalom and an arrow for each gate', () => {
+  it('has each sign John asked for: the ford limit, the mud caution, the penalty loop and its chevrons, and the slalom', () => {
     const count = (kind: string) => COURSE_SIGNS.filter((s) => s.kind === kind).length;
     expect(count('ford')).toBe(1);
     expect(count('mud')).toBe(1);
     expect(count('penalty')).toBe(1);
     expect(count('chevron')).toBe(4);
     expect(count('slalom')).toBe(1);
-    expect(count('bear-left') + count('bear-right')).toBe(SLALOM_GATES.length);
     // The ford's limit is the drive model's: 8 km/h.
     expect(FORD_LIMIT_KMH).toBe(8);
     expect(FORD_LIMIT_KMH / 3.6).toBeCloseTo(FORD_SPEED, 6);
@@ -73,23 +73,31 @@ describe('biathlon course signs', () => {
     }
   });
 
-  it("puts each slalom gate's arrow before it, on the side the gate is set to, the way the arrow points", () => {
-    const arrows = COURSE_SIGNS.filter((s) => s.kind === 'bear-left' || s.kind === 'bear-right');
-    const f: Vec2 = [0, 0];
-    SLALOM_GATES.forEach((gate, k) => {
-      const sign = arrows[k];
-      forwardOf(gate.heading, f);
-      // Before the gate along the way it's driven.
-      const ahead = (gate.x - sign.x) * f[0] + (gate.z - sign.z) * f[1];
-      expect(ahead).toBeGreaterThan(4);
-      expect(ahead).toBeLessThan(12);
-      // The gate's middle and the sign on the same side of the course's middle line, the side the arrow says.
-      const left: Vec2 = [-Math.cos(gate.heading), Math.sin(gate.heading)];
-      const middle = COURSE_PATH.at(gate.s);
-      const gateSide = Math.sign((gate.x - middle.x) * left[0] + (gate.z - middle.z) * left[1]);
-      const signSide = Math.sign((sign.x - middle.x) * left[0] + (sign.z - middle.z) * left[1]);
-      expect(signSide).toBe(gateSide);
-      expect(sign.kind).toBe(gateSide > 0 ? 'bear-left' : 'bear-right');
-    });
+  it("stands the penalty loop's sign in the mouth of the turn, right of the course, a driver's last word before it", () => {
+    const sign = COURSE_SIGNS.find((s) => s.kind === 'penalty')!;
+    // Within a couple of metres of where the loop leaves (JOIN.leave), on the loop's side.
+    expect(Math.abs(sign.z - JOIN.leave)).toBeLessThan(2);
+    expect(sign.x).toBeGreaterThan(COURSE.east + COURSE.halfWidth);
+  });
+
+  it("gives every sign's words a place in the labels' canvas, inside it and apart, over the sign's face", async () => {
+    const { signLabelAtlas, signLabels, signLabelGeometry, LABEL_ATLAS } = await import('../src/scene-assets/course.scene-asset.js');
+    const rects = [...signLabelAtlas().values()].flat();
+    for (const [x, y, w, h] of rects) {
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(x + w).toBeLessThanOrEqual(LABEL_ATLAS.width);
+      expect(y + h).toBeLessThanOrEqual(LABEL_ATLAS.height);
+    }
+    for (let a = 0; a < rects.length; a++) {
+      for (let b = a + 1; b < rects.length; b++) {
+        const [ax, ay, aw, ah] = rects[a];
+        const [bx, by, bw, bh] = rects[b];
+        expect(ax + aw <= bx || bx + bw <= ax || ay + ah <= by || by + bh <= ay).toBe(true);
+      }
+    }
+    const quads = COURSE_SIGNS.reduce((n, s) => n + signLabels(s.kind).length, 0);
+    expect(signLabelGeometry([[0, 0]]).getAttribute('position').count).toBe(quads * 6);
+    expect(signLabels('ford')[0].lines).toEqual([String(FORD_LIMIT_KMH)]);
   });
 });

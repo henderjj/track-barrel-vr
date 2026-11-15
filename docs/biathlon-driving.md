@@ -32,7 +32,7 @@ The tank's packet carries the fall's time still to go (one more byte; a page on 
 
 **The tilt** (John's 13 November decision): the hull's pitch and roll limit went from 4° to 15°, so the tank tips with the ground on the hill, the ditch banks and the ford. Reduced bumps (Comfort) still cap it at 6°.
 
-**Signs** (from John's play test of 2026-11-15, [biathlon-signs.md](biathlon-signs.md)): a SLALOM board and an arrow before each gate on its side, a caution triangle with MUD before the bypass leaves, an 8 km/h limit roundel with FORD before the water, and PENALTY LOOP with chevrons round the loop.
+**Signs** (from John's play test of 2026-11-15, [biathlon-signs.md](biathlon-signs.md)): a SLALOM board and red and blue gates as in ski slalom, a caution triangle with MUD before the bypass leaves, an 8 km/h limit roundel with FORD before the water, and PENALTY LOOP with chevrons round the loop.
 
 ## How it works
 

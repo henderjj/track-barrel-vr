@@ -402,33 +402,46 @@ export function waterParts(dx = 0, dz = 0): { part: Part; x: number; z: number }
   ];
 }
 
-const SLALOM_RED = 0xd8322a;
+/** The slalom's gates alternate these, as a ski slalom's do: the first gate red, the second blue, and so on. */
+export const SLALOM_COLORS: readonly number[] = [0xd8322a, 0x1f58b0];
 /** The radius of a slalom post's rubber foot, m: a knocked post lies on it. */
 export const SLALOM_FOOT = 0.22;
+/** A slalom post's flag: a panel at its top in its gate's colour, flying away from the gate's gap, m. */
+export const SLALOM_FLAG = { width: 0.55, height: 0.42, thickness: 0.03 } as const;
 
 /**
  * A slalom post standing at the origin: a white pole SLALOM.post m in
- * radius and SLALOM.height tall with red bands a centimetre proud of it, on
- * a black rubber foot. The course system draws the eight of them on their
- * own (they fall over when the tank knocks them).
+ * radius and SLALOM.height tall with bands of its gate's colour (`gate`'s,
+ * SLALOM_COLORS) a centimetre proud of it, on a black rubber foot, and a
+ * flag of that colour at its top, flying along `out` z (+1 or -1): away from
+ * the gap, so the two posts of a gate read as a pair from far off. The
+ * course system draws the eight of them on their own (they fall over when
+ * the tank knocks them).
  */
-export function slalomPostParts(): Part[] {
+export function slalomPostParts(gate = 0, out = 1): Part[] {
   const { post, height } = SLALOM;
+  const color = SLALOM_COLORS[gate % SLALOM_COLORS.length];
+  const f = SLALOM_FLAG;
   const parts: Part[] = [
     { geometry: new CylinderGeometry(0.2, SLALOM_FOOT, 0.06, 10, 1), color: BLACK, position: [0, 0.03, 0] },
     // The pole's foot inside the rubber foot.
     { geometry: new CylinderGeometry(post, post, height, 8, 1), color: POLE, position: [0, height / 2 + 0.02, 0] },
+    // The flag faces along x (the way the slalom is driven), its inner edge inside the pole.
+    { geometry: new BoxGeometry(f.thickness, f.height, f.width), color, position: [0, height - 0.02 - f.height / 2, out * (f.width / 2 + post * 0.3)] },
   ];
-  for (let b = 0; b < 4; b++) {
-    parts.push({ geometry: new CylinderGeometry(post + 0.01, post + 0.01, 0.2, 8, 1), color: SLALOM_RED, position: [0, 0.35 + b * 0.38, 0] });
+  for (let b = 0; b < 3; b++) {
+    parts.push({ geometry: new CylinderGeometry(post + 0.01, post + 0.01, 0.2, 8, 1), color, position: [0, 0.35 + b * 0.38, 0] });
   }
   return parts;
 }
 
 const postMaterial = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, metalness: 0 });
 
-export function createSlalomPost(): Mesh {
-  const mesh = new Mesh(mergeParts(slalomPostParts()), postMaterial);
+/** Slalom post `i` (SLALOM_POSTS' order: each gate's left post, then its right). */
+export function createSlalomPost(i = 0): Mesh {
+  const gate = Math.floor(i / 2);
+  // Driven west, a gate's first post stands south of its gap (+z), its second north.
+  const mesh = new Mesh(mergeParts(slalomPostParts(gate, i % 2 === 0 ? 1 : -1)), postMaterial);
   mesh.name = 'Slalom Post';
   return mesh;
 }
@@ -495,84 +508,6 @@ function triangle(r: number, x: number, y: number, n: number, color: number, ang
   return { geometry, color, position: [x, y, layerZ(n)] };
 }
 
-/**
- * The signs' letters: a blocky face five cells high, `#` for ink. Only the
- * letters and figures the signs use.
- */
-const GLYPHS: Readonly<Record<string, readonly string[]>> = {
-  A: ['.##.', '#..#', '####', '#..#', '#..#'],
-  D: ['###.', '#..#', '#..#', '#..#', '###.'],
-  E: ['####', '#...', '###.', '#...', '####'],
-  F: ['####', '#...', '###.', '#...', '#...'],
-  L: ['#...', '#...', '#...', '#...', '####'],
-  M: ['#...#', '##.##', '#.#.#', '#...#', '#...#'],
-  N: ['#...#', '##..#', '#.#.#', '#..##', '#...#'],
-  O: ['.##.', '#..#', '#..#', '#..#', '.##.'],
-  P: ['###.', '#..#', '###.', '#...', '#...'],
-  R: ['###.', '#..#', '###.', '#.#.', '#..#'],
-  S: ['.###', '#...', '.##.', '...#', '###.'],
-  T: ['###', '.#.', '.#.', '.#.', '.#.'],
-  U: ['#..#', '#..#', '#..#', '#..#', '.##.'],
-  Y: ['#...#', '.#.#.', '..#..', '..#..', '..#..'],
-  '!': ['#', '#', '#', '.', '#'],
-  '1': ['.#.', '##.', '.#.', '.#.', '###'],
-  '2': ['.##.', '#..#', '..#.', '.#..', '####'],
-  '3': ['###.', '...#', '.##.', '...#', '###.'],
-  '4': ['#..#', '#..#', '####', '...#', '...#'],
-  '5': ['####', '#...', '###.', '...#', '###.'],
-  '6': ['.##.', '#...', '###.', '#..#', '.##.'],
-  '7': ['####', '...#', '..#.', '.#..', '.#..'],
-  '8': ['.##.', '#..#', '.##.', '#..#', '.##.'],
-  '9': ['.##.', '#..#', '.###', '...#', '.##.'],
-  '0': ['.##.', '#..#', '#..#', '#..#', '.##.'],
-};
-
-/** How wide `text` is in cells: each glyph's width and a cell between. */
-function textCells(text: string): number {
-  let w = 0;
-  for (const ch of text) w += (ch === ' ' ? 2 : GLYPHS[ch][0].length) + 1;
-  return Math.max(0, w - 1);
-}
-
-/**
- * `text` in cells of `cell` m, its middle at (x, y) on layer `n`: each
- * glyph's ink as the fewest rectangles (grown right, then down), so a
- * letter is a few boxes.
- */
-function text(t: string, cell: number, x: number, y: number, n: number, color: number): Part[] {
-  const parts: Part[] = [];
-  let left = x - (textCells(t) * cell) / 2;
-  const top = y + 2.5 * cell;
-  for (const ch of t) {
-    if (ch === ' ') {
-      left += 3 * cell;
-      continue;
-    }
-    const rows = GLYPHS[ch];
-    const w = rows[0].length;
-    const used = rows.map(() => new Array<boolean>(w).fill(false));
-    for (let r = 0; r < rows.length; r++) {
-      for (let c = 0; c < w; c++) {
-        if (rows[r][c] !== '#' || used[r][c]) continue;
-        let c2 = c;
-        while (c2 + 1 < w && rows[r][c2 + 1] === '#' && !used[r][c2 + 1]) c2++;
-        let r2 = r;
-        const rowFree = (rr: number) => {
-          for (let cc = c; cc <= c2; cc++) if (rows[rr][cc] !== '#' || used[rr][cc]) return false;
-          return true;
-        };
-        while (r2 + 1 < rows.length && rowFree(r2 + 1)) r2++;
-        for (let rr = r; rr <= r2; rr++) for (let cc = c; cc <= c2; cc++) used[rr][cc] = true;
-        const bw = (c2 - c + 1) * cell;
-        const bh = (r2 - r + 1) * cell;
-        parts.push(slab(bw, bh, left + c * cell + bw / 2, top - r * cell - bh / 2, n, color));
-      }
-    }
-    left += (w + 1) * cell;
-  }
-  return parts;
-}
-
 /** An arrow from (x0, y0) to (x1, y1) on layer `n`: a shaft `width` m wide and a head at (x1, y1). */
 function arrow(x0: number, y0: number, x1: number, y1: number, width: number, n: number, color: number): Part[] {
   const angle = Math.atan2(y1 - y0, x1 - x0);
@@ -622,7 +557,7 @@ function framedPlate(w: number, h: number, y: number, frame: number, fill: numbe
   return [slab(w, h, 0, y, 0, frame), slab(w - 2 * border, h - 2 * border, 0, y, 1, fill)];
 }
 
-/** A sign's face and posts, standing at the origin, its face along +Z: for its kind. */
+/** A sign's face and posts, standing at the origin, its face along +Z: for its kind. Its words are labels (signLabels), drawn in a road-sign typeface over the face by CourseSystem. */
 export function signLocalParts(kind: CourseSignKind): Part[] {
   switch (kind) {
     case 'ford': {
@@ -632,23 +567,14 @@ export function signLocalParts(kind: CourseSignKind): Part[] {
         ...signPosts([0], y),
         disc(0.6, 0, y, 0, SIGN_RED),
         disc(0.47, 0, y, 1, SIGN_WHITE),
-        ...text(String(FORD_LIMIT_KMH), 0.11, 0, y, 2, SIGN_BLACK),
         ...framedPlate(1.2, 0.7, 1.33, SIGN_BLACK, SIGN_WHITE, 0.04),
-        ...text('FORD', 0.055, 0, 1.45, 2, SIGN_BLACK),
         ...bars([[-0.42, 1.1], [-0.21, 1.16], [0, 1.1], [0.21, 1.16], [0.42, 1.1]], 0.045, 2, WAVE_BLUE),
       ];
     }
     case 'mud': {
       // A caution triangle: red border, white field, a black "!"; under it a MUD plate.
       const y = 2.3;
-      return [
-        ...signPosts([0], y),
-        triangle(0.75, 0, y, 0, SIGN_RED),
-        triangle(0.52, 0, y - 0.03, 1, SIGN_WHITE),
-        ...text('!', 0.075, 0, y - 0.07, 2, SIGN_BLACK),
-        ...framedPlate(1.2, 0.5, 1.3, SIGN_BLACK, SIGN_WHITE, 0.04),
-        ...text('MUD', 0.065, 0, 1.3, 2, SIGN_BLACK),
-      ];
+      return [...signPosts([0], y), triangle(0.75, 0, y, 0, SIGN_RED), triangle(0.52, 0, y - 0.03, 1, SIGN_WHITE), ...framedPlate(1.2, 0.5, 1.3, SIGN_BLACK, SIGN_WHITE, 0.04)];
     }
     case 'penalty': {
       // PENALTY LOOP and an arrow to the right, black on the penalty gate's yellow.
@@ -656,8 +582,6 @@ export function signLocalParts(kind: CourseSignKind): Part[] {
       return [
         ...signPosts([-0.9, 0.9], y),
         ...framedPlate(2.6, 1.7, y, SIGN_BLACK, SIGN_YELLOW, 0.05),
-        ...text('PENALTY', 0.055, 0, y + 0.5, 2, SIGN_BLACK),
-        ...text('LOOP', 0.055, 0, y + 0.08, 2, SIGN_BLACK),
         // Up and then to the right, as a turn-off's arrow.
         ...bentArrow([[-0.6, y - 0.72], [-0.6, y - 0.38], [0.8, y - 0.38]], 0.12, 2, SIGN_BLACK),
       ];
@@ -673,26 +597,134 @@ export function signLocalParts(kind: CourseSignKind): Part[] {
       return parts;
     }
     case 'slalom': {
-      // SLALOM over a weaving arrow, white on blue: left first, as the first gate is set, then right, left and right.
+      // SLALOM over a weaving arrow, black on white: left first, as the first gate is set, then right, left and right.
       const y = 2.1;
-      const parts: Part[] = [...signPosts([-0.8, 0.8], y), ...framedPlate(2.3, 1.9, y, SIGN_WHITE, SIGN_BLUE, 0.05)];
-      parts.push(...text('SLALOM', 0.06, 0, y + 0.6, 2, SIGN_WHITE));
-      parts.push(...bentArrow([[0.15, y - 0.85], [-0.35, y - 0.6], [0.35, y - 0.3], [-0.35, y], [0.25, y + 0.28]], 0.09, 2, SIGN_WHITE));
-      return parts;
-    }
-    case 'bear-left':
-    case 'bear-right': {
-      // A blue roundel with a white arrow bearing to the side the gate ahead is set to.
-      const y = 1.7;
-      const side = kind === 'bear-left' ? -1 : 1;
       return [
-        ...signPosts([0], y),
-        disc(0.45, 0, y, 0, SIGN_WHITE),
-        disc(0.41, 0, y, 1, SIGN_BLUE),
-        ...arrow(-side * 0.2, y - 0.24, side * 0.2, y + 0.2, 0.11, 2, SIGN_WHITE),
+        ...signPosts([-0.8, 0.8], y),
+        ...framedPlate(2.3, 1.9, y, SIGN_BLACK, SIGN_WHITE, 0.05),
+        ...bentArrow([[0.15, y - 0.85], [-0.35, y - 0.6], [0.35, y - 0.3], [-0.35, y], [0.25, y + 0.28]], 0.09, 2, SIGN_BLACK),
       ];
     }
   }
+}
+
+/**
+ * A sign's words: a block of `lines` in `ink` over the sign's face
+ * (`paper` is that face's colour), `w` by `h` m with its middle at (x, y)
+ * on the sign, standing LAYER_STEP proud of that face (the 8 mm rule).
+ * CourseSystem draws them all into one canvas in a road-sign typeface
+ * (Overpass, after the US highway signs' letters) and lays them over the
+ * signs as one textured mesh.
+ */
+export interface SignLabel {
+  lines: readonly string[];
+  w: number;
+  h: number;
+  x: number;
+  y: number;
+  ink: number;
+  paper: number;
+}
+
+/** Each kind of sign's words (none on a chevron). */
+export function signLabels(kind: CourseSignKind): SignLabel[] {
+  const black = SIGN_BLACK;
+  switch (kind) {
+    case 'ford':
+      return [
+        { lines: [String(FORD_LIMIT_KMH)], w: 0.62, h: 0.62, x: 0, y: 2.35, ink: black, paper: SIGN_WHITE },
+        { lines: ['FORD'], w: 1.0, h: 0.32, x: 0, y: 1.46, ink: black, paper: SIGN_WHITE },
+      ];
+    case 'mud':
+      return [
+        { lines: ['!'], w: 0.2, h: 0.4, x: 0, y: 2.23, ink: black, paper: SIGN_WHITE },
+        { lines: ['MUD'], w: 1.0, h: 0.36, x: 0, y: 1.3, ink: black, paper: SIGN_WHITE },
+      ];
+    case 'penalty':
+      return [{ lines: ['PENALTY', 'LOOP'], w: 2.3, h: 0.8, x: 0, y: 2.4, ink: black, paper: SIGN_YELLOW }];
+    case 'slalom':
+      return [{ lines: ['SLALOM'], w: 2.0, h: 0.42, x: 0, y: 2.7, ink: black, paper: SIGN_WHITE }];
+    case 'chevron':
+      return [];
+  }
+}
+
+/** The labels' face stands this far in front of a sign's middle plane, m: LAYER_STEP proud of layer 1's face. */
+export const LABEL_Z = PLATE_THICK / 2 + 2 * LAYER_STEP;
+/** The labels' canvas: its size, px, and how many px a metre of label gets. */
+export const LABEL_ATLAS = { width: 1024, height: 512, perMetre: 240, pad: 4 } as const;
+
+/** Where each kind's labels are drawn in the canvas: x, y, width and height, px, in the order signLabels gives them. */
+export function signLabelAtlas(): Map<CourseSignKind, [number, number, number, number][]> {
+  const out = new Map<CourseSignKind, [number, number, number, number][]>();
+  const { width, perMetre, pad } = LABEL_ATLAS;
+  let x = pad;
+  let y = pad;
+  let row = 0;
+  for (const kind of SIGN_KINDS) {
+    const rects: [number, number, number, number][] = [];
+    for (const l of signLabels(kind)) {
+      const w = Math.ceil(l.w * perMetre);
+      const h = Math.ceil(l.h * perMetre);
+      if (x + w + pad > width) {
+        x = pad;
+        y += row + pad;
+        row = 0;
+      }
+      rects.push([x, y, w, h]);
+      x += w + pad;
+      row = Math.max(row, h);
+    }
+    out.set(kind, rects);
+  }
+  return out;
+}
+
+const SIGN_KINDS: readonly CourseSignKind[] = ['ford', 'mud', 'penalty', 'chevron', 'slalom'];
+
+/**
+ * Every sign's labels as quads facing out of its face, in the ground's
+ * space, for each copy at (dx, dz) offsets: positions, normals and the
+ * canvas's uvs (v up, as three.js's).
+ */
+export function signLabelGeometry(offsets: readonly (readonly [number, number])[]): BufferGeometry {
+  const atlas = signLabelAtlas();
+  const { width, height } = LABEL_ATLAS;
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const uv: number[] = [];
+  for (const [dx, dz] of offsets) {
+    for (const sign of COURSE_SIGNS) {
+      const labels = signLabels(sign.kind);
+      const rects = atlas.get(sign.kind) ?? [];
+      const c = Math.cos(sign.yaw);
+      const sn = Math.sin(sign.yaw);
+      const ground = groundHeight(sign.x, sign.z);
+      labels.forEach((l, k) => {
+        const [rx, ry, rw, rh] = rects[k];
+        const corner = (u: number, v: number) => {
+          const px = l.x + (u - 0.5) * l.w;
+          const py = l.y + (v - 0.5) * l.h;
+          // Turned about +Y as place() turns the sign's parts.
+          pos.push(sign.x + dx + px * c + LABEL_Z * sn, ground + py, sign.z + dz - px * sn + LABEL_Z * c);
+          nor.push(sn, 0, c);
+          uv.push((rx + u * rw) / width, 1 - (ry + (1 - v) * rh) / height);
+        };
+        // Two triangles facing +Z (anticlockwise seen from the front).
+        for (const [u, v] of [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]] as const) corner(u, v);
+      });
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  geometry.setAttribute('normal', new BufferAttribute(new Float32Array(nor), 3));
+  geometry.setAttribute('uv', new BufferAttribute(new Float32Array(uv), 2));
+  return geometry;
+}
+
+/** The colours the labels are drawn in, as CSS. */
+export function cssColor(hex: number): string {
+  return `#${hex.toString(16).padStart(6, '0')}`;
 }
 
 /** Sign `sign` where it stands on the ground, each copy offset by (dx, dz). */

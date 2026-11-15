@@ -437,10 +437,11 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     const { groundHeight } = await import('../src/sim/terrain.js');
     expectNone([mesh(mergeParts(course.bridgeParts()), 'Bridge')], WORLD_GAP);
     expectNone([mesh(mergeParts(course.waterParts().map((p) => p.part)), 'Water')], WORLD_GAP);
-    expectNone([mesh(mergeParts(course.slalomPostParts()), 'Slalom post')], WORLD_GAP);
+    expectNone([mesh(mergeParts(course.slalomPostParts(0, 1)), 'Slalom post red')], WORLD_GAP);
+    expectNone([mesh(mergeParts(course.slalomPostParts(1, -1)), 'Slalom post blue')], WORLD_GAP);
     // Every post where it stands on the gravel, and one knocked flat on it, as the course system draws them.
     const posts = SLALOM_POSTS.map(([x, z], k) => {
-      const post = course.createSlalomPost();
+      const post = course.createSlalomPost(k);
       post.position.set(x, groundHeight(x, z), z);
       if (k === 0) {
         post.rotation.z = Math.PI / 2;
@@ -456,10 +457,12 @@ describe('no faces that flicker through each other (z-fighting)', () => {
   it('on the biathlon course\'s road signs: each on its own, and all of them on the course', async () => {
     const course = await import('../src/scene-assets/course.scene-asset.js');
     const { COURSE_SIGNS } = await import('../src/sim/course-signs.js');
-    for (const kind of ['ford', 'mud', 'penalty', 'chevron', 'slalom', 'bear-left', 'bear-right'] as const) {
+    for (const kind of ['ford', 'mud', 'penalty', 'chevron', 'slalom'] as const) {
       expectNone([mesh(mergeParts(course.signLocalParts(kind)), `Sign ${kind}`)], WORLD_GAP);
     }
-    expectNone([mesh(mergeParts(COURSE_SIGNS.flatMap((sign) => course.signParts(sign))), 'Signs')], WORLD_GAP);
+    // The words' quads (a textured mesh of their own) over the signs' faces.
+    const labels = mesh(mergeParts([{ geometry: course.signLabelGeometry([[0, 0]]), color: 0x101010 }]), 'Sign labels');
+    expectNone([mesh(mergeParts(COURSE_SIGNS.flatMap((sign) => course.signParts(sign))), 'Signs'), labels], WORLD_GAP);
   });
 
   it('on the range run\'s hit flags (F1.11), on their own and raised beside each target on the ground', async () => {

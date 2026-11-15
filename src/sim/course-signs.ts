@@ -8,12 +8,14 @@
  * - The mud: a red caution triangle with a MUD plate, before the bypass
  *   leaves, so the driver can still choose.
  * - The penalty loop: a yellow PENALTY LOOP board with an arrow to the
- *   right where the loop leaves the course, and yellow chevron boards round
- *   the outside of its two curves, pointing the way it is driven
- *   (clockwise).
- * - The slalom: a SLALOM board with a weaving arrow before it, and before
- *   each gate a blue roundel with an arrow bearing towards the side that
- *   gate is set to.
+ *   right at the loop's mouth, where it turns off the course (John,
+ *   2026-11-15: 15 m short of it, it didn't say where to go), and yellow
+ *   chevron boards round the outside of its two curves, pointing the way it
+ *   is driven (clockwise).
+ * - The slalom: a SLALOM board with a weaving arrow before it. Its gates
+ *   alternate red and blue, as a ski slalom's do (the posts' own colours,
+ *   course.scene-asset.ts's slalomPostParts), in place of the blue arrow
+ *   roundels John found confusing.
  *
  * Where each stands, and which way it faces, is here (engine-free, so the
  * tests can check every sign stands clear of the tracks); how each looks is
@@ -32,14 +34,13 @@ import {
   PENALTY_PATH,
   type Path,
   SLALOM,
-  SLALOM_GATES,
   southSideAt,
   type Vec2,
 } from './course.js';
 import { FORD_SPEED } from './going.js';
 import { STREAM } from './terrain.js';
 
-export type CourseSignKind = 'ford' | 'mud' | 'penalty' | 'chevron' | 'slalom' | 'bear-left' | 'bear-right';
+export type CourseSignKind = 'ford' | 'mud' | 'penalty' | 'chevron' | 'slalom';
 
 /**
  * A sign: what it says, where its middle stands on the ground (x, z) and
@@ -59,20 +60,16 @@ export const FORD_LIMIT_KMH = Math.round(FORD_SPEED * 3.6);
 
 /** How far from a track's middle line its signs stand, m: 3 m clear of the course's 5 m half-width, outside the gates' posts and flags. */
 export const SIGN_OFFSET = COURSE.halfWidth + 3;
-/** The slalom's gate signs stand a little nearer, m: just off the track's edge, on the side the gate is set to. */
-const BEAR_OFFSET = COURSE.halfWidth + 2;
 /** How far short of each thing its sign stands, m. */
 const BEFORE = {
   /** The ford's water starts about STREAM.half m short of its middle; the sign stands this much before that, room to slow to the limit. */
   ford: 12,
   /** The bypass leaves for the mud at BYPASS.from: the caution stands this far before it, so the driver can still choose. */
   mud: 12,
-  /** Where the penalty loop leaves the course (JOIN.leave): the sign stands this far before it, beside the loop's shared straight. */
-  penalty: 15,
+  /** Where the penalty loop leaves the course (JOIN.leave): the sign stands at its mouth, this far before it, inside the loop's first curve. */
+  penalty: 1,
   /** The slalom's first gate: its board stands this far short. */
   slalom: 26,
-  /** Each slalom gate: its arrow stands this far short, halfway from the gate before (16 m apart). */
-  gate: 8,
 } as const;
 
 const tmp: Vec2 = [0, 0];
@@ -97,16 +94,12 @@ const CHEVRONS: readonly { curve: 0 | 1; at: number }[] = [
 /** Every sign on the course. */
 export const COURSE_SIGNS: readonly CourseSign[] = (() => {
   const list: CourseSign[] = [];
-  // The slalom (driven west along the north side): its board on the right, then an arrow before each gate on the gate's own side (+1: the driver's left).
+  // The slalom (driven west along the north side): its board on the right.
   list.push(beside('slalom', COURSE_PATH, northSideAt(SLALOM.xs[0] + BEFORE.slalom), SIGN_OFFSET));
-  SLALOM_GATES.forEach((gate, k) => {
-    const left = k % 2 === 0;
-    list.push(beside(left ? 'bear-left' : 'bear-right', COURSE_PATH, gate.s - BEFORE.gate, left ? -BEAR_OFFSET : BEAR_OFFSET));
-  });
   // The south side is driven east: the mud's caution before the bypass leaves, the ford's limit before its water. Both on the right, outside the loop.
   list.push(beside('mud', COURSE_PATH, southSideAt(BYPASS.from - BEFORE.mud), SIGN_OFFSET));
   list.push(beside('ford', COURSE_PATH, southSideAt(STREAM.x - STREAM.half - BEFORE.ford), SIGN_OFFSET));
-  // Up the east side to the finish: the penalty loop leaves to the right.
+  // Up the east side to the finish: the penalty loop turns off to the right, and its sign stands in the mouth of the turn.
   list.push(beside('penalty', COURSE_PATH, eastSideAt(JOIN.leave + BEFORE.penalty), SIGN_OFFSET));
   // Round the penalty loop's curves (each a half turn of PENALTY.radius), on the left: the outside of its right-hand turns.
   const half = PENALTY.radius * Math.PI;
