@@ -3680,8 +3680,9 @@ async function theCombatScenario() {
  *     tank in too fast and the water drowns the engine, the sign saying so.
  *     Obstacles → Bridge parks the tank short of the treadway bridge
  *     (screenshot from the driver's eyes); set down off line over the ditch
- *     it falls and comes back to the bridge's start, the course's sign
- *     saying so. Obstacles → Slalom, then the tank moved straight down the
+ *     it falls: the view fades to black and back, the tank comes back to
+ *     the bridge's start with its engine off ('fall'), and the course's
+ *     sign gives the +30 s penalty. Obstacles → Slalom, then the tank moved straight down the
  *     middle line knocks a post down: drawn lying, a fault on the sign
  *     (screenshot). A track thrown puts up a sign and holds the tank.
  */
@@ -3721,16 +3722,38 @@ async function theDrivingChallenge() {
   await sleep(500);
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-bridge.png'], {});
   const falls = tank().falls;
+  // The fade changes faster than evals come back: watched inside the page, with whether the tank had gone back while it was still clearing.
+  evalInApp(`(() => {
+    const w = { darkest: 0, backAt: -1, clearedAt: -1, darkAtBack: -1 };
+    const falls = window.__drive.state().falls;
+    w.timer = setInterval(() => {
+      const fade = window.__seats.fade;
+      const t = window.__drive.state();
+      w.darkest = Math.max(w.darkest, fade);
+      if (w.backAt < 0 && t.falls > falls) { w.backAt = performance.now(); w.darkAtBack = fade; }
+      if (w.backAt >= 0 && w.clearedAt < 0 && t.fall === 0 && fade === 0) { w.clearedAt = performance.now(); clearInterval(w.timer); }
+    }, 10);
+    window.__fallWatch = w;
+    return true;
+  })()`);
   evalInApp(`(window.__drive.place(${layout.bridge.x + 0.9}, ${layout.bridge.z - 10}, ${start.heading}), true)`);
   const fell = await waitFor('the tank to fall and come back', () => {
     const t = tank();
-    return t.falls === falls + 1 && Math.abs(t.z - start.z) < 0.5 && Math.abs(t.x - start.x) < 0.5 && t;
-  }, 8000).catch(() => tank());
+    return t.falls === falls + 1 && t.fall === 0 && Math.abs(t.z - start.z) < 0.5 && Math.abs(t.x - start.x) < 0.5 && t;
+  }, 10000).catch(() => tank());
   const fallNote = await waitFor("the course's sign", () => /bridge/.test(evalInApp('window.__course.sign')) && evalInApp('window.__course.sign'), 4000)
     .catch(() => evalInApp('window.__course.sign'));
-  check("Off line over the ditch the tank falls off the bridge and comes back to its start, the course's sign saying so",
-    fell.falls === falls + 1 && Math.abs(fell.z - start.z) < 0.5 && /Fell off the bridge/.test(fallNote) && course().falls >= 1,
+  const fallSign = evalInApp('window.__drive.sign');
+  const watch = evalInApp('(clearInterval(window.__fallWatch.timer), window.__fallWatch)');
+  check("Off line over the ditch the tank falls off the bridge and comes back to its start, the course's sign giving the penalty",
+    fell.falls === falls + 1 && Math.abs(fell.z - start.z) < 0.5 && /Fell off the bridge: \+30 s/.test(fallNote) && course().falls >= 1,
     `falls ${fell.falls - falls}, tank at ${fell.x.toFixed(1)}, ${fell.z.toFixed(1)}; sign "${fallNote}"`);
+  check('The fall fades the view to black, the tank goes back while it is black, and the view clears again',
+    watch.darkest >= 0.99 && watch.darkAtBack >= 0.99 && watch.clearedAt > watch.backAt && evalInApp('window.__seats.fade') === 0,
+    `darkest ${watch.darkest.toFixed(2)}, dark ${watch.darkAtBack.toFixed(2)} as it went back, cleared ${watch.clearedAt > 0 ? ((watch.clearedAt - watch.backAt) / 1000).toFixed(2) + ' s later' : 'never'}`);
+  check("After the fall the engine is off and must be started again, the driver's sign saying so",
+    !fell.running && fell.stallCause === 'fall' && /Off the bridge/.test(fallSign),
+    `engine ${fell.running ? 'running' : 'off'} (${fell.stallCause}), sign "${fallSign}"`);
 
   // The slalom: straight down the middle line knocks a post.
   await menuButtonPress();

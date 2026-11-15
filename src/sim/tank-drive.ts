@@ -51,7 +51,7 @@ import {
   stepEngine,
   stopEngine,
 } from './engine.js';
-import { BRIDGE_START, driveHeight, fellOffBridge, goingUnder, waterDepth } from './course.js';
+import { BRIDGE_FALL, BRIDGE_START, driveHeight, FALL_TOTAL, fellOffBridge, goingUnder, waterDepth } from './course.js';
 import {
   BRAKE_HOLD,
   DROWN_SECONDS,
@@ -239,8 +239,10 @@ export interface TankDrive extends EngineState {
   refit: number;
   /** How long the hull has pushed through the ford too fast, s: FORD_SECONDS drowns the engine. */
   wet: number;
-  /** How many times it fell off the bridge (it goes back to BRIDGE_START each time). */
+  /** How many times it fell off the bridge (it goes back to BRIDGE_START each time, in the dark of the fall). */
   falls: number;
+  /** A fall off the bridge's seconds still to go (BRIDGE_FALL; 0 none): the tank held still, its engine off, the view faded (fallDark). */
+  fall: number;
   /** The ground's load against the way the gear drives, m/s², and how hard that makes the engine labour, 0 to 1 (its heat). */
   against: number;
   load: number;
@@ -260,7 +262,7 @@ export function createTankDrive(x = 0, z = 0, heading = 0): TankDrive {
     running: true, cranking: false, power: true, rough: false, crankTime: 0, starterRest: 0, runTime: 0, coldStart: false,
     chokeTime: 0, bogTime: 0, coldTime: 0, coughTimer: 0, heatTime: 0, stalls: 0, coughs: 0, stallCause: 'none', switchedOn: true,
     lastStart: 'starter', damage: 0, immobile: false,
-    sink: 0, strain: 0, side: 0, thrown: 0, refit: 0, wet: 0, falls: 0, against: 0, load: 0, mud: 0, water: 0,
+    sink: 0, strain: 0, side: 0, thrown: 0, refit: 0, wet: 0, falls: 0, fall: 0, against: 0, load: 0, mud: 0, water: 0,
   };
   settle(s);
   return s;
@@ -332,10 +334,17 @@ export function stepDrive(
       s.strain = 0;
     }
   }
-  if ((s.immobile || s.thrown !== 0) && !c.parkingBrake) {
-    // Immobilised (F3.4), or a track off: the tracks held as the parking brake holds them.
+  const falling = s.fall > 0;
+  if (falling) stepFall(s, dt);
+  if (falling || ((s.immobile || s.thrown !== 0) && !c.parkingBrake)) {
+    // Immobilised (F3.4), a track off, or fallen off the bridge: the tracks held as the parking brake holds them.
     Object.assign(heldControls, c);
     heldControls.parkingBrake = true;
+    if (falling) {
+      // Nobody drives or starts the engine until the view is back.
+      heldControls.starter = false;
+      heldControls.left = heldControls.right = heldControls.accel = 0;
+    }
     c = heldControls;
   }
   const g0 = groundUnder(s.x, s.z, s.heading, slopeSample);
@@ -479,15 +488,38 @@ function stepGoing(s: TankDrive, demand: number, forwards: boolean, dt: number):
       s.starterRest = DROWN_SECONDS;
     }
   }
-  if (fellOffBridge(s.x, s.z, s.heading)) {
-    s.falls++;
-    s.x += wrapTile(BRIDGE_START.x - s.x);
-    s.z += wrapTile(BRIDGE_START.z - s.z);
-    s.heading = BRIDGE_START.heading;
-    s.sink = 0;
-    s.strain = 0;
-    settle(s);
+  if (s.fall === 0 && fellOffBridge(s.x, s.z, s.heading)) {
+    // Over the edge: the view starts to fade, the engine dies, and the tracks are held (stepDrive) while it goes dark.
+    s.fall = FALL_TOTAL;
+    if (s.running || s.cranking) stopEngine(s, 'fall');
   }
+}
+
+/**
+ * A fall off the bridge `dt` s on: halfway through the black, the tank goes
+ * back to BRIDGE_START, at rest. Halfway, not as the view turns black: the
+ * fade drawn on a frame is the one worked out the frame before
+ * (SeatSystem runs before DriveSystem), so the frame that moves the tank
+ * must already be black.
+ */
+function stepFall(s: TankDrive, dt: number): void {
+  const before = s.fall;
+  s.fall = Math.max(0, s.fall - dt);
+  if (before > FALL_BACK && s.fall <= FALL_BACK) backToBridge(s);
+}
+/** A fall's time still to go when the tank goes back, s: halfway through the black. */
+export const FALL_BACK = BRIDGE_FALL.in + BRIDGE_FALL.dark / 2;
+
+/** The tank put back at BRIDGE_START after a fall, at rest, counted. */
+function backToBridge(s: TankDrive): void {
+  s.falls++;
+  s.x += wrapTile(BRIDGE_START.x - s.x);
+  s.z += wrapTile(BRIDGE_START.z - s.z);
+  s.heading = BRIDGE_START.heading;
+  s.sink = 0;
+  s.strain = 0;
+  s.wet = 0;
+  settle(s);
 }
 
 /**
@@ -729,6 +761,7 @@ export function lerpTankDrive(a: TankDrive, b: TankDrive, t: number, out: TankDr
   out.side = b.side;
   out.thrown = b.thrown;
   out.refit = b.refit;
+  out.fall = b.fall;
   return out;
 }
 
