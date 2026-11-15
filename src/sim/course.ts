@@ -251,8 +251,28 @@ export const WATER_Y = -0.35;
 export const DITCH_WATER_Y = -1.5;
 /** A slalom fault costs this much on a race's time, s. */
 export const FAULT_SECONDS = 10;
+/** A fall off the bridge costs this much on a race's time, s, on top of the time lost restarting the engine and driving back onto it. */
+export const FALL_SECONDS = 30;
 /** Where a tank that fell off the bridge goes back to: lined up on the course's middle line, short of the ramp. */
 export const BRIDGE_START = { x: BRIDGE.x, z: BRIDGE.z - BRIDGE.length / 2 - 8, heading: Math.PI } as const;
+/**
+ * A fall off the bridge, s (John's playtest, 15 November 2026: the jump back
+ * was abrupt): the view fades to black over `out` as the tank tips into the
+ * ditch and its engine dies, stays black `dark` (the tank goes back to
+ * BRIDGE_START halfway through), and fades in over `in`. The tank is held still throughout,
+ * its engine off: the driver must start it again.
+ */
+export const BRIDGE_FALL = { out: 0.8, dark: 0.6, in: 0.9 } as const;
+/** A fall's whole length, s. */
+export const FALL_TOTAL = BRIDGE_FALL.out + BRIDGE_FALL.dark + BRIDGE_FALL.in;
+
+/** How dark a fall with `left` s still to go makes the view, 0 (clear) to 1 (black); 0 with none. */
+export function fallDark(left: number): number {
+  if (!(left > 0)) return 0;
+  const gone = FALL_TOTAL - left;
+  if (gone < BRIDGE_FALL.out) return Math.max(0, gone / BRIDGE_FALL.out);
+  return Math.min(1, left / BRIDGE_FALL.in);
+}
 
 /**
  * Practice → Obstacles (F5.3d): where each of the driving challenge's
@@ -830,7 +850,7 @@ export class CourseProgress {
     this.tankFalls = falls;
     if (fell && !Number.isNaN(this.x)) {
       s.falls++;
-      this.say('Fell off the bridge: back to its start');
+      this.say(fallNote());
       this.x = x;
       this.z = z;
       this.boxes(x, z, speed);
@@ -958,6 +978,11 @@ export class CourseProgress {
     this.s.noteId++;
     this.version++;
   }
+}
+
+/** The course's sign on a fall off the bridge: the penalty and what to do. */
+export function fallNote(): string {
+  return `Fell off the bridge: +${FALL_SECONDS} s. Restart the engine`;
 }
 
 /** A slalom gate as wide as the track and more: crossing its line outside the gate itself misses it. */

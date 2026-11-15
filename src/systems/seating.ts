@@ -48,4 +48,10 @@ export const seating = {
   convoyShown: false,
   /** The crewmate, as driver, has their seat raised (their page's `convoy` event). */
   crewConvoy: false,
+  /**
+   * How dark a fall off the course's bridge has made the view, 0 (clear) to
+   * 1 (black): DriveSystem sets it from the tank's fall (fallDark), on both
+   * pages; SeatSystem darkens the whole view at least this much.
+   */
+  fallDark: 0,
 };

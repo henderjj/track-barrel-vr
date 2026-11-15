@@ -41,6 +41,7 @@ import {
 } from '../sim/engine.js';
 import { GEARBOX_NAMES, type GearboxMode, nextGear, realControls } from '../sim/gearbox.js';
 import { DROWN_SECONDS, REFIT_SECONDS, THROW_WARN } from '../sim/going.js';
+import { fallDark, FALL_SECONDS } from '../sim/course.js';
 import {
   angleDelta,
   COOLANT_IDLE,
@@ -708,6 +709,8 @@ export class DriveSystem extends createSystem({}) {
       if (seating.mine === 'driver') copyControls(this.controls, this.shownControls);
     }
     this.send(delta);
+    // A fall off the bridge fades the whole view out and back in (SeatSystem draws it), the guest's with the host's.
+    seating.fallDark = ride.active ? 0 : fallDark(this.shown.fall);
 
     // Spike S2's ride moves its own world and hides this one.
     if (ride.active) {
@@ -965,6 +968,7 @@ export class DriveSystem extends createSystem({}) {
         heat: 'Overheated: let it cool below 110 °C, then start',
         hit: 'Knocked out by a hit: it will not start until repaired',
         water: `Drowned in the ford: restart after ${DROWN_SECONDS} s, ford slower`,
+        fall: `Off the bridge: +${FALL_SECONDS} s. Start it again`,
       };
       this.say('Engine stalled', why[s.stallCause]);
     }

@@ -194,11 +194,12 @@ export class SeatSystem extends createSystem({}) {
       this.needsPlace = true;
     }
     if (seating.away) {
-      this.setFade(0);
+      this.setFade(seating.fallDark);
       return;
     }
     if (!this.world.session) {
-      this.setFade(0);
+      // A fall off the bridge darkens the flat page too.
+      this.setFade(seating.fallDark);
       if (this.inVr) {
         // Back on the flat page: the play space goes back where it started.
         this.inVr = false;
@@ -245,7 +246,7 @@ export class SeatSystem extends createSystem({}) {
       }
       this.lastFix = fix;
     }
-    this.setFade(Math.max(convoyDark, this.needsPlace ? 0 : headFade(Math.max(out, over))));
+    this.setFade(Math.max(convoyDark, seating.fallDark, this.needsPlace ? 0 : headFade(Math.max(out, over))));
     if (this.needsPlace) {
       this.needsPlace = false;
       this.headQuat.copy(player.head.quaternion);
