@@ -42,6 +42,7 @@ The practice crewmate now aims at the flagged board too (before, the nearest sta
 - **Engine-free rules** in `src/sim/biathlon.ts`: `aimBoard(s)` and `boardFlag(s, j)` read the race's snapshot. A miss needs to be known on both pages, so the race keeps `misses` and `missAt` (the run's clock when the last miss landed) in `RunSnapshot` (`src/sim/range-run.ts`). The host now follows every round fired while the lap's line is open until it lands: a hit as before, anything else as a miss, counted when its shell lands, or `MISS_LANDS` (1.2 s) after the shot, whichever is sooner, since a shell over the boards flies on far past them. The line still closes when its last round has landed.
 - **Shared** in the `run` event (two new fields). A page on the previous build reads no misses, so it shows no red flash, but the yellow and green flags and the line's result still come from the fields it has. No packet, no HoldKind.
 - **Drawn** by `RangeRunSystem`, one mesh a board (six, at most three showing), standing where the board is drawn and recoloured only when its state changes (the cloth's vertex colours, nothing allocated).
+- **Cost.** The signs are about 3,100 triangles a tile, 28,000 across the ground's nine copies (the ground was about 102,000), merged into its chunks, so no new draw calls. A flag is 48 triangles and one draw call while it shows (three at most).
 
 ## Tests
 
