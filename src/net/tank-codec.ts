@@ -36,11 +36,15 @@ const HEADER = 7;
  * why it last stalled (uint8, STALL_CAUSES' index). F5.3d (the going): the
  * tracks' sink into mud (uint8, 0-255 for 0 to 1), the sideways push on them
  * (uint8, SIDE_SCALE per m/s²), the track thrown (uint8: 0, 1 left, 2 right)
- * and the refit's seconds left (uint8, rounded up).
+ * and the refit's seconds left (uint8, rounded up). Since the bridge fall's
+ * fade (docs/biathlon-driving.md): a fall's time still to go (uint8, in
+ * FALL_STEP s), so the guest's view fades with the host's.
  */
-export const TANK_STATE_BYTES = HEADER + 12 + 20 + 2 + 1 + 1 + 2 + 4 + 2 + 9 + 4 + 4;
+export const TANK_STATE_BYTES = HEADER + 12 + 20 + 2 + 1 + 1 + 2 + 4 + 2 + 9 + 4 + 4 + 1;
+/** F5.3d's TankState, without a bridge fall's fade: still decoded, with no fall. */
+export const TANK_STATE_V5_BYTES = TANK_STATE_BYTES - 1;
 /** F1.17's TankState, without the going: still decoded, its tracks read as firm and on. */
-export const TANK_STATE_V4_BYTES = TANK_STATE_BYTES - 4;
+export const TANK_STATE_V4_BYTES = TANK_STATE_V5_BYTES - 4;
 /** F1.16's TankState, without the engine: still decoded, its engine read as running. */
 export const TANK_STATE_V3_BYTES = TANK_STATE_V4_BYTES - 6;
 /** F1.5's TankState, with the controls' first four bytes only: still decoded. */
@@ -70,6 +74,8 @@ const FLAG_TOUCHING = 2;
 const FLAG_BOGGING = 4;
 /** The sideways push's scale in TankState, per m/s² (up to 5.1 m/s²). */
 const SIDE_SCALE = 50;
+/** A bridge fall's time to go in TankState counts in these, s (up to 5.1 s). */
+export const FALL_STEP = 0.02;
 
 /** The engine's flags in TankState (F1.17). */
 const ENGINE_FLAGS = { running: 1, cranking: 2, power: 4, rough: 8, starterHot: 16 } as const;
@@ -149,7 +155,10 @@ export function encodeTankState(buffer: ArrayBuffer, seq: number, timeMs: number
   view.setUint8(o + 1, Math.max(0, Math.min(255, Math.round(s.side * SIDE_SCALE))));
   view.setUint8(o + 2, s.thrown);
   view.setUint8(o + 3, Math.max(0, Math.min(255, Math.ceil(s.refit))));
-  return o + 4;
+  o += 4;
+  // Rounded up, so a fall still going never reads as none.
+  view.setUint8(o, Math.max(0, Math.min(255, Math.ceil(s.fall / FALL_STEP - 1e-6))));
+  return o + 1;
 }
 
 /**
@@ -218,7 +227,7 @@ export function decodeTankState(view: DataView, header: TankHeader, out: TankDri
     out.starterRest = 0;
   }
   o += 4;
-  if (view.byteLength >= TANK_STATE_BYTES) {
+  if (view.byteLength >= TANK_STATE_V5_BYTES) {
     out.sink = view.getUint8(o) / 255;
     out.side = view.getUint8(o + 1) / SIDE_SCALE;
     const thrown = view.getUint8(o + 2);
@@ -230,6 +239,8 @@ export function decodeTankState(view: DataView, header: TankHeader, out: TankDri
     out.thrown = 0;
     out.refit = 0;
   }
+  o += 4;
+  out.fall = view.byteLength >= TANK_STATE_BYTES ? view.getUint8(o) * FALL_STEP : 0;
   return true;
 }
 
