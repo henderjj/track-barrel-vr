@@ -479,9 +479,9 @@ function slab(w: number, h: number, x: number, y: number, n: number, color: numb
   return { geometry, color, position: [x, y, layerZ(n)] };
 }
 
-/** A disc of radius `r` on layer `n`, its middle at (x, y). */
-function disc(r: number, x: number, y: number, n: number, color: number): Part {
-  const geometry = new CylinderGeometry(r, r, n === 0 ? PLATE_THICK : LAYER_THICK, 28, 1);
+/** A disc of radius `r` on layer `n`, its middle at (x, y), with `sides` sides. */
+function disc(r: number, x: number, y: number, n: number, color: number, sides = 20): Part {
+  const geometry = new CylinderGeometry(r, r, n === 0 ? PLATE_THICK : LAYER_THICK, sides, 1);
   geometry.rotateX(Math.PI / 2);
   return { geometry, color, position: [x, y, layerZ(n)] };
 }
@@ -594,7 +594,7 @@ function bars(points: readonly (readonly [number, number])[], width: number, n: 
     const [x0, y0] = points[i - 1];
     const [x1, y1] = points[i];
     parts.push(slab(Math.hypot(x1 - x0, y1 - y0), width, (x0 + x1) / 2, (y0 + y1) / 2, n, color, Math.atan2(y1 - y0, x1 - x0)));
-    if (i < points.length - 1) parts.push(disc(width / 2, x1, y1, n, color));
+    if (i < points.length - 1) parts.push(disc(width / 2, x1, y1, n, color, 8));
   }
   return parts;
 }
@@ -604,7 +604,7 @@ function bentArrow(points: readonly (readonly [number, number])[], width: number
   const last = points.length - 1;
   const [xa, ya] = points[last - 1];
   const [xb, yb] = points[last];
-  const parts = last > 1 ? [...bars(points.slice(0, last), width, n, color), disc(width / 2, xa, ya, n, color)] : [];
+  const parts = last > 1 ? [...bars(points.slice(0, last), width, n, color), disc(width / 2, xa, ya, n, color, 8)] : [];
   return [...parts, ...arrow(xa, ya, xb, yb, width, n, color)];
 }
 
