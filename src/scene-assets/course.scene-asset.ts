@@ -27,6 +27,7 @@ import {
   WATER_Y,
   DITCH_WATER_Y,
 } from '../sim/course.js';
+import { COURSE_SIGNS, type CourseSign, type CourseSignKind, FORD_LIMIT_KMH } from '../sim/course-signs.js';
 import { CELL, DITCH, groundHeight, STREAM } from '../sim/terrain.js';
 import { beam, mergeParts, type Part } from './lowpoly.js';
 
@@ -443,5 +444,258 @@ export function courseFixtureParts(dx = 0, dz = 0): { parts: Part[]; x: number; 
   });
   out.push({ parts: bridgeParts(dx, dz), x: BRIDGE.x + dx, z: BRIDGE.z + dz });
   for (const { part, x, z } of waterParts(dx, dz)) out.push({ parts: [part], x, z });
+  for (const sign of COURSE_SIGNS) out.push({ parts: signParts(sign, dx, dz), x: sign.x + dx, z: sign.z + dz });
   return out;
+}
+
+// ---------------------------------------------------------------- Road signs (docs/biathlon-signs.md)
+
+const SIGN_RED = 0xc8282a;
+const SIGN_WHITE = 0xf4f2ea;
+const SIGN_BLUE = 0x1f58b0;
+const SIGN_YELLOW = FLAG_PENALTY;
+const SIGN_GREY = 0x8a8c86;
+const SIGN_BLACK = 0x161616;
+const WAVE_BLUE = 0x2f6fb4;
+
+/**
+ * Each layer of a sign's face stands this much proud of the one under it,
+ * m (the 8 mm rule out in the world), and is this thick, its back sunk
+ * into the layer under it. The plate is PLATE_THICK, its face at +Z.
+ */
+const LAYER_STEP = 0.012;
+const LAYER_THICK = 0.02;
+const PLATE_THICK = 0.05;
+/** How far in front of the sign's own middle plane layer `n`'s middle stands (0: the plate). */
+function layerZ(n: number): number {
+  if (n === 0) return 0;
+  return PLATE_THICK / 2 + n * LAYER_STEP - LAYER_THICK / 2;
+}
+
+/** A flat box on layer `n` of a sign's face, `w` by `h`, its middle at (x, y), turned `angle` rad in the face's plane. */
+function slab(w: number, h: number, x: number, y: number, n: number, color: number, angle = 0): Part {
+  const geometry = new BoxGeometry(w, h, n === 0 ? PLATE_THICK : LAYER_THICK);
+  if (angle !== 0) geometry.rotateZ(angle);
+  return { geometry, color, position: [x, y, layerZ(n)] };
+}
+
+/** A disc of radius `r` on layer `n`, its middle at (x, y). */
+function disc(r: number, x: number, y: number, n: number, color: number): Part {
+  const geometry = new CylinderGeometry(r, r, n === 0 ? PLATE_THICK : LAYER_THICK, 28, 1);
+  geometry.rotateX(Math.PI / 2);
+  return { geometry, color, position: [x, y, layerZ(n)] };
+}
+
+/** A triangle with corners `r` m from its middle at (x, y) on layer `n`, its point turned `angle` rad from straight up (anticlockwise). */
+function triangle(r: number, x: number, y: number, n: number, color: number, angle = 0): Part {
+  const geometry = new CylinderGeometry(r, r, n === 0 ? PLATE_THICK : LAYER_THICK, 3, 1);
+  // A three-sided cylinder's first corner is at +Z; laid face-on it points up.
+  geometry.rotateX(-Math.PI / 2);
+  if (angle !== 0) geometry.rotateZ(angle);
+  return { geometry, color, position: [x, y, layerZ(n)] };
+}
+
+/**
+ * The signs' letters: a blocky face five cells high, `#` for ink. Only the
+ * letters and figures the signs use.
+ */
+const GLYPHS: Readonly<Record<string, readonly string[]>> = {
+  A: ['.##.', '#..#', '####', '#..#', '#..#'],
+  D: ['###.', '#..#', '#..#', '#..#', '###.'],
+  E: ['####', '#...', '###.', '#...', '####'],
+  F: ['####', '#...', '###.', '#...', '#...'],
+  L: ['#...', '#...', '#...', '#...', '####'],
+  M: ['#...#', '##.##', '#.#.#', '#...#', '#...#'],
+  N: ['#...#', '##..#', '#.#.#', '#..##', '#...#'],
+  O: ['.##.', '#..#', '#..#', '#..#', '.##.'],
+  P: ['###.', '#..#', '###.', '#...', '#...'],
+  R: ['###.', '#..#', '###.', '#.#.', '#..#'],
+  S: ['.###', '#...', '.##.', '...#', '###.'],
+  T: ['###', '.#.', '.#.', '.#.', '.#.'],
+  U: ['#..#', '#..#', '#..#', '#..#', '.##.'],
+  Y: ['#...#', '.#.#.', '..#..', '..#..', '..#..'],
+  '!': ['#', '#', '#', '.', '#'],
+  '1': ['.#.', '##.', '.#.', '.#.', '###'],
+  '2': ['.##.', '#..#', '..#.', '.#..', '####'],
+  '3': ['###.', '...#', '.##.', '...#', '###.'],
+  '4': ['#..#', '#..#', '####', '...#', '...#'],
+  '5': ['####', '#...', '###.', '...#', '###.'],
+  '6': ['.##.', '#...', '###.', '#..#', '.##.'],
+  '7': ['####', '...#', '..#.', '.#..', '.#..'],
+  '8': ['.##.', '#..#', '.##.', '#..#', '.##.'],
+  '9': ['.##.', '#..#', '.###', '...#', '.##.'],
+  '0': ['.##.', '#..#', '#..#', '#..#', '.##.'],
+};
+
+/** How wide `text` is in cells: each glyph's width and a cell between. */
+function textCells(text: string): number {
+  let w = 0;
+  for (const ch of text) w += (ch === ' ' ? 2 : GLYPHS[ch][0].length) + 1;
+  return Math.max(0, w - 1);
+}
+
+/**
+ * `text` in cells of `cell` m, its middle at (x, y) on layer `n`: each
+ * glyph's ink as the fewest rectangles (grown right, then down), so a
+ * letter is a few boxes.
+ */
+function text(t: string, cell: number, x: number, y: number, n: number, color: number): Part[] {
+  const parts: Part[] = [];
+  let left = x - (textCells(t) * cell) / 2;
+  const top = y + 2.5 * cell;
+  for (const ch of t) {
+    if (ch === ' ') {
+      left += 3 * cell;
+      continue;
+    }
+    const rows = GLYPHS[ch];
+    const w = rows[0].length;
+    const used = rows.map(() => new Array<boolean>(w).fill(false));
+    for (let r = 0; r < rows.length; r++) {
+      for (let c = 0; c < w; c++) {
+        if (rows[r][c] !== '#' || used[r][c]) continue;
+        let c2 = c;
+        while (c2 + 1 < w && rows[r][c2 + 1] === '#' && !used[r][c2 + 1]) c2++;
+        let r2 = r;
+        const rowFree = (rr: number) => {
+          for (let cc = c; cc <= c2; cc++) if (rows[rr][cc] !== '#' || used[rr][cc]) return false;
+          return true;
+        };
+        while (r2 + 1 < rows.length && rowFree(r2 + 1)) r2++;
+        for (let rr = r; rr <= r2; rr++) for (let cc = c; cc <= c2; cc++) used[rr][cc] = true;
+        const bw = (c2 - c + 1) * cell;
+        const bh = (r2 - r + 1) * cell;
+        parts.push(slab(bw, bh, left + c * cell + bw / 2, top - r * cell - bh / 2, n, color));
+      }
+    }
+    left += (w + 1) * cell;
+  }
+  return parts;
+}
+
+/** An arrow from (x0, y0) to (x1, y1) on layer `n`: a shaft `width` m wide and a head at (x1, y1). */
+function arrow(x0: number, y0: number, x1: number, y1: number, width: number, n: number, color: number): Part[] {
+  const angle = Math.atan2(y1 - y0, x1 - x0);
+  const head = width * 1.6;
+  // The shaft ends inside the head.
+  const length = Math.hypot(x1 - x0, y1 - y0) - head * 0.9;
+  const cx = x0 + Math.cos(angle) * (length / 2);
+  const cy = y0 + Math.sin(angle) * (length / 2);
+  // The head's point at (x1, y1): a triangle's corners stand `head` from its middle.
+  const hx = x1 - Math.cos(angle) * head;
+  const hy = y1 - Math.sin(angle) * head;
+  return [slab(length, width, cx, cy, n, color, angle), triangle(head, hx, hy, n, color, angle - Math.PI / 2)];
+}
+
+/** Bars through `points` on layer `n`, `width` m wide, each joint rounded with a disc. */
+function bars(points: readonly (readonly [number, number])[], width: number, n: number, color: number): Part[] {
+  const parts: Part[] = [];
+  for (let i = 1; i < points.length; i++) {
+    const [x0, y0] = points[i - 1];
+    const [x1, y1] = points[i];
+    parts.push(slab(Math.hypot(x1 - x0, y1 - y0), width, (x0 + x1) / 2, (y0 + y1) / 2, n, color, Math.atan2(y1 - y0, x1 - x0)));
+    if (i < points.length - 1) parts.push(disc(width / 2, x1, y1, n, color));
+  }
+  return parts;
+}
+
+/** Bars through `points` on layer `n`, the last ending in an arrow's head. */
+function bentArrow(points: readonly (readonly [number, number])[], width: number, n: number, color: number): Part[] {
+  const last = points.length - 1;
+  const [xa, ya] = points[last - 1];
+  const [xb, yb] = points[last];
+  const parts = last > 1 ? [...bars(points.slice(0, last), width, n, color), disc(width / 2, xa, ya, n, color)] : [];
+  return [...parts, ...arrow(xa, ya, xb, yb, width, n, color)];
+}
+
+/** Posts behind a sign's plate, from under the ground up to `top` m, at each x in `xs`. */
+function signPosts(xs: readonly number[], top: number): Part[] {
+  return xs.map((x) => ({
+    geometry: new CylinderGeometry(0.05, 0.05, top + 0.4, 6, 1),
+    color: SIGN_GREY,
+    position: [x, (top - 0.4) / 2, -PLATE_THICK / 2 - 0.06] as const,
+  }));
+}
+
+/** A rectangular plate `w` by `h` with a `border` m frame of `frame` around a `fill` field, its middle at (0, y). */
+function framedPlate(w: number, h: number, y: number, frame: number, fill: number, border: number): Part[] {
+  return [slab(w, h, 0, y, 0, frame), slab(w - 2 * border, h - 2 * border, 0, y, 1, fill)];
+}
+
+/** A sign's face and posts, standing at the origin, its face along +Z: for its kind. */
+export function signLocalParts(kind: CourseSignKind): Part[] {
+  switch (kind) {
+    case 'ford': {
+      // A speed limit roundel: red ring, white field, the limit in black; under it a FORD plate with blue water.
+      const y = 2.35;
+      return [
+        ...signPosts([0], y),
+        disc(0.6, 0, y, 0, SIGN_RED),
+        disc(0.47, 0, y, 1, SIGN_WHITE),
+        ...text(String(FORD_LIMIT_KMH), 0.11, 0, y, 2, SIGN_BLACK),
+        ...framedPlate(1.2, 0.7, 1.33, SIGN_BLACK, SIGN_WHITE, 0.04),
+        ...text('FORD', 0.055, 0, 1.45, 2, SIGN_BLACK),
+        ...bars([[-0.42, 1.1], [-0.21, 1.16], [0, 1.1], [0.21, 1.16], [0.42, 1.1]], 0.045, 2, WAVE_BLUE),
+      ];
+    }
+    case 'mud': {
+      // A caution triangle: red border, white field, a black "!"; under it a MUD plate.
+      const y = 2.3;
+      return [
+        ...signPosts([0], y),
+        triangle(0.75, 0, y, 0, SIGN_RED),
+        triangle(0.52, 0, y - 0.03, 1, SIGN_WHITE),
+        ...text('!', 0.075, 0, y - 0.07, 2, SIGN_BLACK),
+        ...framedPlate(1.2, 0.5, 1.3, SIGN_BLACK, SIGN_WHITE, 0.04),
+        ...text('MUD', 0.065, 0, 1.3, 2, SIGN_BLACK),
+      ];
+    }
+    case 'penalty': {
+      // PENALTY LOOP and an arrow to the right, black on the penalty gate's yellow.
+      const y = 2.1;
+      return [
+        ...signPosts([-0.9, 0.9], y),
+        ...framedPlate(2.6, 1.7, y, SIGN_BLACK, SIGN_YELLOW, 0.05),
+        ...text('PENALTY', 0.055, 0, y + 0.5, 2, SIGN_BLACK),
+        ...text('LOOP', 0.055, 0, y + 0.08, 2, SIGN_BLACK),
+        // Up and then to the right, as a turn-off's arrow.
+        ...bentArrow([[-0.6, y - 0.72], [-0.6, y - 0.38], [0.8, y - 0.38]], 0.12, 2, SIGN_BLACK),
+      ];
+    }
+    case 'chevron': {
+      // A tall yellow board with a black chevron pointing right, the way the loop turns.
+      const y = 1.9;
+      const parts: Part[] = [...signPosts([0], y), ...framedPlate(0.9, 1.2, y, SIGN_BLACK, SIGN_YELLOW, 0.04)];
+      for (const up of [1, -1]) {
+        // Two bars meeting at the point, each ending inside the other.
+        parts.push(slab(0.6, 0.15, 0, y + up * 0.2, 2, SIGN_BLACK, -up * (Math.PI / 4)));
+      }
+      return parts;
+    }
+    case 'slalom': {
+      // SLALOM over a weaving arrow, white on blue: left first, as the first gate is set, then right, left and right.
+      const y = 2.1;
+      const parts: Part[] = [...signPosts([-0.8, 0.8], y), ...framedPlate(2.3, 1.9, y, SIGN_WHITE, SIGN_BLUE, 0.05)];
+      parts.push(...text('SLALOM', 0.06, 0, y + 0.6, 2, SIGN_WHITE));
+      parts.push(...bentArrow([[0.15, y - 0.85], [-0.35, y - 0.6], [0.35, y - 0.3], [-0.35, y], [0.25, y + 0.28]], 0.09, 2, SIGN_WHITE));
+      return parts;
+    }
+    case 'bear-left':
+    case 'bear-right': {
+      // A blue roundel with a white arrow bearing to the side the gate ahead is set to.
+      const y = 1.7;
+      const side = kind === 'bear-left' ? -1 : 1;
+      return [
+        ...signPosts([0], y),
+        disc(0.45, 0, y, 0, SIGN_WHITE),
+        disc(0.41, 0, y, 1, SIGN_BLUE),
+        ...arrow(-side * 0.2, y - 0.24, side * 0.2, y + 0.2, 0.11, 2, SIGN_WHITE),
+      ];
+    }
+  }
+}
+
+/** Sign `sign` where it stands on the ground, each copy offset by (dx, dz). */
+export function signParts(sign: Readonly<CourseSign>, dx = 0, dz = 0): Part[] {
+  return place(signLocalParts(sign.kind), sign.x + dx, sign.z + dz, sign.yaw);
 }

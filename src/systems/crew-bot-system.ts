@@ -3,7 +3,7 @@ import type { PoseSample } from '../net/pose-codec.js';
 import { settings } from '../settings.js';
 import { AMMO, type AmmoKind } from '../sim/ammo.js';
 import { aimAt, COURSE_TARGET_FIRST, ENEMY_TARGET_FIRST, syncCourseFaces, TARGET_NAMES, targetFaces } from '../sim/ballistics.js';
-import { boardDown, BOARD_FIRST, lineClosed, lineFor } from '../sim/biathlon.js';
+import { aimBoard, BOARD_FIRST, lineClosed, lineFor } from '../sim/biathlon.js';
 import { boxAt, LINE_ACROSS } from '../sim/course.js';
 import { FIRST_TANK } from '../sim/enemy-guns.js';
 import { RANGE_TARGETS } from '../sim/range.js';
@@ -622,10 +622,10 @@ export class CrewBotSystem extends createSystem({}) {
     const race = shownRun();
     if (race.mode === 'biathlon' && race.phase === 'running') {
       const line = raceLineNow();
-      for (let i = 0; i < this.faces.length; i++) {
-        const j = i - BOARD_FIRST;
-        this.skip[i] = line < 0 || j < 0 || j >= LINE_ACROSS.length * 2 || Math.floor(j / LINE_ACROSS.length) !== line || boardDown(race, j);
-      }
+      // The board under the yellow flag (aimBoard), as a crew is shown.
+      const board = line < 0 ? -1 : aimBoard(race);
+      const aim = board < 0 ? -1 : BOARD_FIRST + board;
+      for (let i = 0; i < this.faces.length; i++) this.skip[i] = i !== aim;
       this.target = line < 0 ? -1 : chooseTarget(tank.x, tank.z, this.faces, this.skip, sightLimit());
       if (this.target < 0) {
         // Loaded and waiting for the line: its right hand off the grip, so the firing lamp (F2.5) doesn't tell the driver to stop.

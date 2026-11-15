@@ -85,6 +85,42 @@ export function raceMisses(s: Readonly<RunSnapshot>): number {
   return Math.max(0, s.shots - boardsDown(s));
 }
 
+/**
+ * The board flags (docs/biathlon-race.md, "Board flags"): a flag over a
+ * board of the line the crew shoots at on this lap. 'aim' (yellow) over the
+ * board to shoot next, 'hit' (green) over each board brought down, 'miss'
+ * (red) over the board aimed at for MISS_FLASH s after a round misses, and
+ * over every board left standing once the line is shot. 'none' elsewhere:
+ * the other line's boards, the last lap, outside a race.
+ */
+export type BoardFlag = 'none' | 'aim' | 'hit' | 'miss';
+export const BOARD_FLAGS: readonly BoardFlag[] = ['none', 'aim', 'hit', 'miss'];
+/** How long a miss shows red over the board aimed at, s. */
+export const MISS_FLASH = 2.5;
+
+/** The board (0 to 5) to shoot next: this lap's line's first still standing, left to right; -1 when none (no race, the last lap, the line shot). */
+export function aimBoard(s: Readonly<RunSnapshot>): number {
+  if (s.mode !== 'biathlon' || s.phase !== 'running') return -1;
+  const line = lineFor(s.laps);
+  if (line < 0 || lineClosed(s, line)) return -1;
+  for (let j = line * BOARDS_PER_LINE; j < (line + 1) * BOARDS_PER_LINE; j++) if (s.boardAt[j] < 0) return j;
+  return -1;
+}
+
+/** Board `j`'s flag in the race shown. */
+export function boardFlag(s: Readonly<RunSnapshot>, j: number): BoardFlag {
+  if (s.mode !== 'biathlon' || s.phase !== 'running') return 'none';
+  const line = lineFor(s.laps);
+  if (line < 0 || COURSE_TARGETS[j]?.line !== line) return 'none';
+  if (s.boardAt[j] >= 0) return 'hit';
+  if (lineClosed(s, line)) return 'miss';
+  if (j !== aimBoard(s)) return 'none';
+  if (!(s.missAt >= 0 && s.clock >= s.missAt && s.clock - s.missAt < MISS_FLASH)) return 'aim';
+  // A board brought down since the miss moved the aim on: the new board hasn't been missed.
+  for (let k = line * BOARDS_PER_LINE; k < (line + 1) * BOARDS_PER_LINE; k++) if (s.boardAt[k] > s.missAt) return 'aim';
+  return 'miss';
+}
+
 /** Whether line `k` is shot (closed): its rounds are fired, or the crew went on past it. */
 export function lineClosed(s: Readonly<RunSnapshot>, k: number): boolean {
   return (s.closed & (1 << k)) !== 0;

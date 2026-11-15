@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { ENEMY_COUNT } from '../src/sim/enemy-guns.js';
 import {
+  aimBoard,
   BOARD_COUNT,
   BOARD_FIRST,
   boardDown,
+  boardFlag,
+  MISS_FLASH,
   boardsDown,
   lineClosed,
   lineFor,
@@ -17,7 +20,7 @@ import {
 import { COURSE_TARGET_FIRST, targetFaces } from '../src/sim/ballistics.js';
 import { BotDriver, createDriveWish, RACE_LOOP_FIRST, RACE_ROUTE } from '../src/sim/crew-bot.js';
 import { COURSE, COURSE_START, COURSE_TARGETS, CourseProgress, distanceToTrack, LINE_RANGE_SPAN, LINE_RANGES } from '../src/sim/course.js';
-import { clockLines, type CourseFeed, createRunSnapshot, formatRunTime, RangeRun, readRunEvent, RUN_COUNTDOWN, runEvent, runLine, runSign } from '../src/sim/range-run.js';
+import { clockLines, type CourseFeed, createRunSnapshot, formatRunTime, MISS_LANDS, RangeRun, readRunEvent, RUN_COUNTDOWN, runEvent, runLine, runSign } from '../src/sim/range-run.js';
 import { createControls, createTankDrive, stepDrive } from '../src/sim/tank-drive.js';
 import { OBSTACLES } from '../src/sim/terrain.js';
 
@@ -241,6 +244,94 @@ describe('biathlon race rules (F5.3b)', () => {
     kept.ranges[0] = 370;
     readRunEvent(old, kept);
     expect(kept.ranges).toEqual([370, LINE_RANGES[1]]);
+  });
+
+  it('flags the board to shoot next yellow, a hit green, a miss red for a moment, and what was left standing red once the line is shot', () => {
+    const r = new RangeRun();
+    const c = feed();
+    const flags = () => COURSE_TARGETS.map((_, j) => boardFlag(r.s, j));
+    expect(flags().every((f) => f === 'none')).toBe(true);
+    r.start('biathlon');
+    // From the start, line 1's first board is flagged, so the gunner can lay on it on the way; line 2's boards have none.
+    expect(aimBoard(r.s)).toBe(0);
+    expect(flags()).toEqual(['aim', 'none', 'none', 'none', 'none', 'none']);
+    step(r, c, RUN_COUNTDOWN + 1);
+    c.box = 0;
+    c.halted = true;
+    step(r, c, 0.1);
+    // A miss: red over the board aimed at once the round lands, for MISS_FLASH s, then yellow again.
+    r.shot(-1, 0.5);
+    step(r, c, 0.3);
+    expect(boardFlag(r.s, 0)).toBe('aim');
+    step(r, c, 0.3);
+    expect(r.s.misses).toBe(1);
+    expect(boardFlag(r.s, 0)).toBe('miss');
+    step(r, c, MISS_FLASH - 0.2);
+    expect(boardFlag(r.s, 0)).toBe('miss');
+    step(r, c, 0.3);
+    expect(boardFlag(r.s, 0)).toBe('aim');
+    // A hit on another standing board than the flagged one: green there, the flag stays on board 0.
+    r.shot(board(2), 0.5);
+    step(r, c, 0.6);
+    expect(flags()).toEqual(['aim', 'none', 'hit', 'none', 'none', 'none']);
+    // The last round brings board 0 down: the line is shot, board 1 left standing goes red.
+    r.shot(board(0), 0.5);
+    step(r, c, 0.6);
+    expect(lineClosed(r.s, 0)).toBe(true);
+    expect(aimBoard(r.s)).toBe(-1);
+    expect(flags()).toEqual(['hit', 'miss', 'hit', 'none', 'none', 'none']);
+    // Lap 2: line 2's flags, line 1's gone.
+    c.box = -1;
+    c.halted = false;
+    c.laps = 1;
+    step(r, c, 0.1);
+    expect(flags()).toEqual(['none', 'none', 'none', 'aim', 'none', 'none']);
+    // A hit within the flash of a miss moves the aim on: the next board starts yellow.
+    c.box = 1;
+    c.halted = true;
+    step(r, c, 0.1);
+    // A shell flying on over the boards counts as landed within MISS_LANDS.
+    r.shot(-1, 5);
+    step(r, c, MISS_LANDS + 0.05);
+    expect(boardFlag(r.s, 3)).toBe('miss');
+    r.shot(board(3), 0.2);
+    step(r, c, 0.3);
+    expect(flags()).toEqual(['none', 'none', 'none', 'hit', 'aim', 'none']);
+    // A second round at a board already down is a miss (and the line's last).
+    r.shot(board(3), 0.2);
+    step(r, c, 0.3);
+    expect(r.s.misses).toBe(3);
+    expect(flags()).toEqual(['none', 'none', 'none', 'hit', 'miss', 'miss']);
+    // The last lap and the finish: no flags.
+    c.laps = 2;
+    step(r, c, 0.1);
+    expect(flags().every((f) => f === 'none')).toBe(true);
+  });
+
+  it('sends the misses in the run event, and reads a page from before them as none', () => {
+    const r = new RangeRun();
+    const c = feed();
+    r.start('biathlon');
+    step(r, c, RUN_COUNTDOWN + 1);
+    c.box = 0;
+    c.halted = true;
+    step(r, c, 0.1);
+    r.shot(-1, 0.3);
+    step(r, c, 0.5);
+    const event = JSON.parse(JSON.stringify(runEvent(r.s, 7)));
+    const copy = createRunSnapshot();
+    readRunEvent(event, copy);
+    expect(copy.misses).toBe(1);
+    expect(copy.missAt).toBeCloseTo(r.s.missAt, 6);
+    expect(boardFlag(copy, 0)).toBe('miss');
+    const old = { ...event };
+    delete old.misses;
+    delete old.missAt;
+    const read = createRunSnapshot();
+    readRunEvent(old, read);
+    expect(read.misses).toBe(0);
+    expect(read.missAt).toBe(-1);
+    expect(boardFlag(read, 0)).toBe('aim');
   });
 
   it('gives gold, silver and bronze by time', () => {

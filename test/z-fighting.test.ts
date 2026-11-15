@@ -453,6 +453,15 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     expectNone([tracks, ...posts], WORLD_GAP);
   });
 
+  it('on the biathlon course\'s road signs: each on its own, and all of them on the course', async () => {
+    const course = await import('../src/scene-assets/course.scene-asset.js');
+    const { COURSE_SIGNS } = await import('../src/sim/course-signs.js');
+    for (const kind of ['ford', 'mud', 'penalty', 'chevron', 'slalom', 'bear-left', 'bear-right'] as const) {
+      expectNone([mesh(mergeParts(course.signLocalParts(kind)), `Sign ${kind}`)], WORLD_GAP);
+    }
+    expectNone([mesh(mergeParts(COURSE_SIGNS.flatMap((sign) => course.signParts(sign))), 'Signs')], WORLD_GAP);
+  });
+
   it('on the range run\'s hit flags (F1.11), on their own and raised beside each target on the ground', async () => {
     const run = await import('../src/scene-assets/range-run.scene-asset.js');
     const { hitFlagFoot, hitFlagYaw } = await import('../src/sim/range-run.js');
@@ -484,6 +493,21 @@ describe('no faces that flicker through each other (z-fighting)', () => {
       return cover;
     });
     expectNone([terrain, ...covers], WORLD_GAP);
+  });
+
+  it("on the biathlon race's board flags, on their own and over every board on the ground", async () => {
+    const run = await import('../src/scene-assets/range-run.scene-asset.js');
+    const course = await import('../src/scene-assets/course.scene-asset.js');
+    const { COURSE_TARGETS } = await import('../src/sim/course.js');
+    const { groundHeight } = await import('../src/sim/terrain.js');
+    expectNone([run.createBoardFlag()], WORLD_GAP);
+    COURSE_TARGETS.forEach((t, j) => {
+      const flag = run.createBoardFlag();
+      flag.position.set(t.x, groundHeight(t.x, t.z), t.z);
+      flag.rotation.y = t.yaw;
+      flag.updateMatrixWorld(true);
+      expectNone([mesh(mergeParts(course.boardParts(j)), t.name), flag], WORLD_GAP);
+    });
   });
 
   it('on the gunsight (F1.9): its eyepiece fixed in the turret and its objective on the gun, through the whole elevation', () => {

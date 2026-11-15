@@ -9,10 +9,10 @@ import {
   VisibilityState,
 } from '@iwsdk/core';
 import { crewPresence } from '../net/crew-presence.js';
-import { boardCoverSpot, createBoardCover, createCourseBoard, createHitFlag, RUN_CLOCKS, type RunClockPlace } from '../scene-assets/range-run.scene-asset.js';
+import { boardCoverSpot, createBoardCover, createBoardFlag, createCourseBoard, createHitFlag, FLAG_COLORS, RUN_CLOCKS, type RunClockPlace, setBoardFlagColor } from '../scene-assets/range-run.scene-asset.js';
 import { AMMO, type AmmoKind, ammoIndex, parseAmmo } from '../sim/ammo.js';
 import { aimAt, syncCourseFaces, targetFaces } from '../sim/ballistics.js';
-import { BOARD_FIRST, boardDown, boardsDown, BOARDS_PER_LINE, lineClosed, lineFor } from '../sim/biathlon.js';
+import { aimBoard, BOARD_FIRST, type BoardFlag, boardDown, boardFlag, boardsDown, BOARDS_PER_LINE, lineClosed, lineFor } from '../sim/biathlon.js';
 import { BOX_Z, boxSpot, COURSE_START, COURSE_TARGETS, laneMiddle, LINE_RANGES, lineRanges, pickLineRanges, setLineRanges } from '../sim/course.js';
 import {
   clockLines,
@@ -182,6 +182,10 @@ interface RangeRunDebug {
   pickRanges(on?: boolean): boolean;
   /** Where course board `j` is drawn (ground space). */
   boardAt(j: number): number[] | null;
+  /** Each course board's flag as drawn: 'none', 'aim' (yellow), 'hit' (green) or 'miss' (red). */
+  boardFlags(): BoardFlag[];
+  /** The board to shoot next (0 to 5), or -1. */
+  aimBoard(): number;
   /** The rounds the loading on this page allows (null: no limit, or not the loading page). */
   rounds(): number | null;
   /** The line a shot counts at now, or -1. */
@@ -223,6 +227,9 @@ export class RangeRunSystem extends createSystem({}) {
   /** The course's boards (drawn here since they move with each race's ranges), and where each stands: x, ground height, z, yaw. */
   private boards: Mesh[] = [];
   private boardSpots: [number, number, number, number][] = [];
+  /** The board flags (one a board, over it), and what each shows now. */
+  private boardFlags: Mesh[] = [];
+  private boardFlagShown: BoardFlag[] = [];
   /** Each firing lane's middle (x, z): the boards are drawn at its copy nearest the tank. */
   private laneMiddles = BOX_Z.map((_, k) => laneMiddle(k, [0, 0]));
   /** The boards' version (src/sim/course.ts boardsVersion) the faces and spots were last brought to. */
@@ -285,6 +292,11 @@ export class RangeRunSystem extends createSystem({}) {
       this.covers.push(cover);
       this.coverSpots.push([0, 0, 0, 0]);
       if (ground) this.world.createTransformEntity(cover, { parent: ground });
+      const flag = createBoardFlag();
+      flag.visible = false;
+      this.boardFlags.push(flag);
+      this.boardFlagShown.push('none');
+      if (ground) this.world.createTransformEntity(flag, { parent: ground });
     });
     this.followBoards();
     const turret = this.world.getSceneEntity('turret') ?? null;
@@ -344,6 +356,8 @@ export class RangeRunSystem extends createSystem({}) {
         return settings.boardRanges;
       },
       boardAt: (j) => (self.boards[j] ? self.boards[j].position.toArray() : null),
+      boardFlags: () => [...self.boardFlagShown],
+      aimBoard: () => aimBoard(self.run.s),
       coverAt: (j) => (self.covers[j]?.visible ? self.covers[j].position.toArray() : null),
       rounds: () => {
         const n = loadingRounds();
@@ -489,6 +503,7 @@ export class RangeRunSystem extends createSystem({}) {
     this.drawFlags();
     this.drawBoards();
     this.drawCovers();
+    this.drawBoardFlags();
     this.drawClocks();
     this.drawSign(delta);
   }
@@ -588,6 +603,23 @@ export class RangeRunSystem extends createSystem({}) {
       const [x, y, z] = this.coverSpots[j];
       const [mx, mz] = this.laneMiddles[COURSE_TARGETS[j].line];
       cover.position.set(tx + wrapTile(mx - tank.x) + (x - mx), y, tz + wrapTile(mz - tank.z) + (z - mz));
+    }
+  }
+
+  /** Each course board's flag over it in a race (docs/biathlon-race.md, "Board flags"), coloured for what it shows; drawn after the boards, where they stand. */
+  private drawBoardFlags(): void {
+    const s = this.run.s;
+    for (let j = 0; j < this.boardFlags.length; j++) {
+      const flag = this.boardFlags[j];
+      const shown = boardFlag(s, j);
+      if (shown !== this.boardFlagShown[j]) {
+        this.boardFlagShown[j] = shown;
+        if (shown !== 'none') setBoardFlagColor(flag, FLAG_COLORS[shown]);
+        flag.visible = shown !== 'none';
+      }
+      if (shown === 'none') continue;
+      flag.position.copy(this.boards[j].position);
+      flag.rotation.y = this.boardSpots[j][3];
     }
   }
 
