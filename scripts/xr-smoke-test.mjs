@@ -69,7 +69,8 @@
  *  6j. listens to the tank (F1.12): the earlier steps' shifts, loading and
  *     shot made their sounds, the engine note climbs with the revs and the
  *     tracks rumble as it drives, Practice → Tank sounds → Play each plays
- *     every short sound, and the menu's Tank sounds row turns them off;
+ *     every short sound, and the Sound and view tab's volume sliders turn
+ *     Master off and on and Engine down by itself;
  *  6k. runs the range (F1.11): Practice → Range run → Start parks the tank
  *     at the start with a countdown sign, the clocks in both seats run,
  *     Ready to fire on each target lays and loads the gun so the trigger
@@ -422,6 +423,18 @@ async function menuClick(id) {
     await sleep(600);
   }
   await rayClick(elementPosition('menu-panel', id));
+}
+
+/** Ray-touch the menu's element `id` (a volume slider's track) `fraction` of the way from its left end to its right. */
+async function menuTouch(id, fraction) {
+  const tab = MENU_TAB_OF.get(id);
+  if (tab !== undefined && evalInApp('window.__gameMenu.tab') !== tab) {
+    evalInApp(`window.__gameMenu.showTab('${tab}')`);
+    await sleep(600);
+  }
+  const at = evalInApp(`(() => { const w = window.__debug.world; const el = w.getSceneObject('menu-panel').getElementById('${id}'); `
+    + `const p = el.localToWorld(w.player.head.position.clone().set(${fraction} - 0.5, 0, 0)); return [p.x, p.y, p.z]; })()`);
+  await rayClick(at);
 }
 
 /**
@@ -2279,7 +2292,7 @@ async function layingTheGun() {
  *     grass, gravel); the pins squeak now and then, and in a hard turn at
  *     speed the tracks strain and squeak more; the traverse crank ticks; Practice → Tank sounds →
  *     Play each plays every short sound and Run through revs the engine;
- *     the menu's Tank sounds row turns them off and on. The emulator can't listen, so this checks what
+ *     the volume sliders turn Master off and on and Engine down by itself. The emulator can't listen, so this checks what
  *     the page sends to Web Audio.
  */
 async function tankSounds() {
@@ -2383,13 +2396,27 @@ async function tankSounds() {
     touring.tour && touring.engineHz > 100 && touring.rumble < 0.01 && !toured.tour && toured.engineHz < 60,
     `touring: engine ${touring.engineHz.toFixed(0)} Hz, "${tourLine}"; after: ${toured.tour ? 'still touring' : 'stopped'}, engine ${toured.engineHz.toFixed(0)} Hz`);
 
-  await menuClick('row-sound-2');
-  const off = await waitFor('the sounds off', () => { const a = audio(); return a.sound === 0 && a; }, 5000).catch(() => audio());
-  const offLit = evalInApp("window.__gameMenu.selected('row-sound-2')");
-  await menuClick('row-sound-0');
+  // The volume sliders (docs/volume.md): - steps Master down a tenth, a touch at the track's left end turns it off
+  // (the audio stopped), at its right end full again; a touch half way along Engine turns the engine's group down to
+  // a quarter of its gain and leaves Effects alone.
+  await menuClick('vol-sound-down');
+  const stepped = await waitFor('Master down a step', () => { const a = audio(); return a.sound === 0.9 && a; }, 5000).catch(() => audio());
+  const steppedText = evalInApp("window.__gameMenu.text('vol-sound-value')");
+  await menuTouch('vol-sound-track', 0.01);
+  const off = await waitFor('the sounds off', () => { const a = audio(); return a.sound === 0 && a.context === 'suspended' && a; }, 5000).catch(() => audio());
+  const offText = evalInApp("window.__gameMenu.text('vol-sound-value')");
+  await menuTouch('vol-sound-track', 0.99);
   const on = await waitFor('the sounds back on', () => { const a = audio(); return a.sound === 1 && a; }, 5000).catch(() => audio());
-  check("The menu's Tank sounds row turns the tank's sounds off and on again",
-    off.sound === 0 && offLit && on.sound === 1, `off: ${off.sound} (${off.context}), on: ${on.sound} (${on.context})`);
+  await menuTouch('vol-enginevol-track', 0.5);
+  const half = await waitFor('the engine at half', () => { const a = audio(); return Math.abs(a.engineVolume - 0.25) < 0.02 && a; }, 5000).catch(() => audio());
+  const halfText = evalInApp("window.__gameMenu.text('vol-enginevol-value')");
+  await menuTouch('vol-enginevol-track', 0.99);
+  const engineBack = await waitFor('the engine back to full', () => { const a = audio(); return a.engineVolume > 0.98 && a; }, 5000).catch(() => audio());
+  check('Sound and view → the volume sliders: - steps Master down, its track turns the sound off and full again, and Engine half way quarters only the engine',
+    stepped.sound === 0.9 && steppedText === '90%' && off.sound === 0 && offText === 'Off' && off.context === 'suspended' && on.sound === 1
+      && Math.abs(half.engineVolume - 0.25) < 0.02 && half.effectsVolume > 0.98 && halfText === '50%' && engineBack.engineVolume > 0.98,
+    `master ${stepped.sound} ("${steppedText}"), then ${off.sound} ("${offText}", ${off.context}), then ${on.sound} (${on.context}); `
+      + `engine slider "${halfText}": gains engine ${half.engineVolume.toFixed(3)}, effects ${half.effectsVolume.toFixed(3)}; back ${engineBack.engineVolume.toFixed(3)}`);
   await menuButtonPress();
   iwsdk(['xr', 'set-device-state'], {});
 }
@@ -3653,7 +3680,7 @@ async function theCommander() {
 
   iwsdk(['xr', 'set-device-state'], {});
   await menuButtonPress();
-  await menuClick('row-commander-2');
+  await menuTouch('vol-commander-track', 0.01);
   evalInApp('(window.__damage.repair(), window.__commander.reset(), true)');
   await sleep(500);
   const off = c();
@@ -3661,8 +3688,8 @@ async function theCommander() {
   await waitFor('the hit on the board', () => c().asked > off.asked, 6000).catch(() => null);
   await sleep(1500);
   const quiet = c();
-  await menuClick('row-commander-0');
-  check('Sound and view → Commander → Off keeps him quiet, the note still asked for; On again',
+  await menuTouch('vol-commander-track', 0.99);
+  check("Sound and view → Commander's slider at its left end keeps him quiet, the note still asked for; at its right end, full again",
     quiet.asked > off.asked && quiet.said.length === off.said.length && quiet.speaking === false && evalInApp('window.__settings.commander') === 1,
     `asked ${off.asked} → ${quiet.asked}, said ${off.said.length} → ${quiet.said.length}`);
   if (evalInApp('window.__gameMenu.open')) await menuButtonPress();

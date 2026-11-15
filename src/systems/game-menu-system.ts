@@ -1,6 +1,6 @@
-import { createSystem, InputComponent, type UIKitMLAsset, VisibilityState } from '@iwsdk/core';
+import { createSystem, InputComponent, type UIKitMLAsset, Vector3, VisibilityState } from '@iwsdk/core';
 import { calibrationShown, FIRST_MENU_TAB, MENU_TABS, type MenuTab, menuCrewLine, menuTab, parseMenuTab, raiseShown, stepRaise } from '../game-flow.js';
-import { changeSetting, LIVE_ITEMS, MAX_OPTIONS, onSettingChange } from '../live-settings.js';
+import { changeSetting, type LiveItem, LIVE_ITEMS, MAX_OPTIONS, onSettingChange, VOLUME_ITEMS } from '../live-settings.js';
 import { crewControls, onCrewChange } from '../net/crew-controls.js';
 import { CREW_COLORS } from '../scene-assets/avatar.scene-asset.js';
 import { settings } from '../settings.js';
@@ -36,6 +36,7 @@ import { startScreen } from './start-screen-system.js';
 import { crewCallStatus, sendCrewCall } from './crew-bot-system.js';
 import type { CrewCall } from '../sim/crew-bot.js';
 import { AMMO_KINDS, RACK_CHOICES } from '../sim/ammo.js';
+import { stepVolume, volumeAt, volumeText } from '../sim/volume.js';
 
 /** The range's anti-tank gun's board (src/sim/range.ts RANGE_TARGETS, the 250 m one): the Combat tab's Ready on the gun lays on it, a soft target for HE's blast. */
 const GUN_TARGET = 1;
@@ -171,6 +172,15 @@ const CHOICE_ROWS: readonly ChoiceRow[] = [
 /** What the Swap seats button says: an ask waiting for the crewmate, one waiting for this player, or neither. */
 const SWAP_LABELS: Record<typeof seating.swap, string> = { none: 'Swap seats', asked: 'Asked...', offered: 'Agree to swap' };
 
+/** What a ray's (or the mouse's) pointer event on a volume slider's track carries (@pmndrs/pointer-events). */
+interface TrackPointerEvent {
+  readonly pointerId: number;
+  /** Where it hit, in the world. */
+  readonly point: Vector3;
+  readonly target?: { setPointerCapture?: (pointerId: number) => void } | null;
+  stopPropagation?: () => void;
+}
+
 /** Whether the game menu is open, for the systems that stand aside while it is. */
 export const gameMenu = { open: false };
 
@@ -186,6 +196,8 @@ interface GameMenuDebug {
   shown(id: string): boolean;
   /** Whether choice button or swatch `id` shows as the one in effect. */
   selected(id: string): boolean;
+  /** Set volume slider `key` (Master is `sound`) to `level`, 0 to 1, as touching its track there would. */
+  slide(key: string, level: number): boolean;
   position(): number[];
 }
 
@@ -209,8 +221,10 @@ interface GameMenuDebug {
  * - Comfort (F1.14): the vignette's strength and reduced bumps
  *   (live settings), I feel queasy (a row in the play-test stats), and
  *   saving or clearing the stats CSV;
- * - Sound and view: the settings that apply straight away (LIVE_ITEMS,
- *   src/live-settings.ts), kept in this browser;
+ * - Sound and view: the volume sliders, Master, Engine, Effects and
+ *   Commander (VOLUME_ITEMS, src/sim/volume.ts), then the settings that
+ *   apply straight away (LIVE_ITEMS, src/live-settings.ts), all kept in
+ *   this browser;
  * - Tank: driving (not while riding: who drives and how fast, and the
  *   gearbox, F1.16), the range, and riding (only
  *   while riding the tank, spike S2: the ride's options);
@@ -237,6 +251,10 @@ export class GameMenuSystem extends createSystem({}) {
   private shownSwap = seating.swap;
   private shownEye = Number.NaN;
   private shownReach = Number.NaN;
+  /** Each volume slider's fill as last drawn, percent. */
+  private shownFill = new Map<string, number>();
+  /** Where a ray touched a volume slider's track, in the track's own frame. */
+  private trackPoint = new Vector3();
 
   init(): void {
     const asset = this.world.getSceneObject<UIKitMLAsset>('menu-panel');
@@ -269,6 +287,7 @@ export class GameMenuSystem extends createSystem({}) {
         });
       }
     }
+    for (const item of VOLUME_ITEMS) this.wireVolume(ui, item);
     CREW_COLORS.forEach((color, i) => {
       asset.getElementById(`coat-${i}-dot`)?.setProperties({ backgroundColor: `#${color.toString(16).padStart(6, '0')}` });
       ui.on(`coat-${i}`, () => {
@@ -607,6 +626,11 @@ export class GameMenuSystem extends createSystem({}) {
       text: (id) => ui.text(id),
       shown: (id) => ui.isShown(id),
       selected: (id) => this.selected.get(id) ?? false,
+      slide: (key, level) => {
+        const item = VOLUME_ITEMS.find((i) => i.key === key);
+        if (item) this.setVolume(item, volumeAt(level));
+        return item !== undefined;
+      },
       position: () => ui.object.position.toArray(),
     };
   }
@@ -706,6 +730,15 @@ export class GameMenuSystem extends createSystem({}) {
         this.select(id, value === current);
       });
     }
+    for (const item of VOLUME_ITEMS) {
+      const level = Number(item.current(settings));
+      ui.setText(`vol-${item.key}-value`, volumeText(level));
+      const fill = Math.round(level * 100);
+      if (this.shownFill.get(item.key) !== fill) {
+        this.shownFill.set(item.key, fill);
+        ui.asset.getElementById(`vol-${item.key}-fill`)?.setProperties({ width: `${fill}%` });
+      }
+    }
     CREW_COLORS.forEach((_, i) => this.select(`coat-${i}`, i === c.color));
     ui.show('menu-drive', !ride.active);
     ui.setText('menu-drive-status', driveStatus());
@@ -748,6 +781,60 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-swap', SWAP_LABELS[seating.swap]);
     this.select('menu-swap', seating.swap === 'offered');
     ui.setText('menu-calib-status', calibrationShown(body.calibratedEye, body.reach));
+  }
+
+  /**
+   * A volume slider (src/sim/volume.ts): − and + step by a tenth, and the
+   * track sets the level where the ray (or the mouse) touches it, following
+   * it while the trigger is held, as the Horizon kit's slider does: the
+   * track's own frame runs from −0.5 at its left end to 0.5 at its right.
+   */
+  private wireVolume(ui: PanelUi, item: LiveItem): void {
+    const level = () => Number(item.current(settings));
+    ui.on(`vol-${item.key}-down`, () => this.setVolume(item, stepVolume(level(), -1)));
+    ui.on(`vol-${item.key}-up`, () => this.setVolume(item, stepVolume(level(), 1)));
+    const track = ui.asset.getElementById(`vol-${item.key}-track`);
+    if (track == null) {
+      console.warn(`[Menu] no slider for ${item.key}`);
+      return;
+    }
+    let held: number | undefined;
+    const touch = (e: TrackPointerEvent) => {
+      this.trackPoint.copy(e.point);
+      track.worldToLocal(this.trackPoint);
+      this.setVolume(item, volumeAt(this.trackPoint.x + 0.5));
+      e.stopPropagation?.();
+    };
+    const down = (e: TrackPointerEvent) => {
+      if (held !== undefined) return;
+      held = e.pointerId;
+      touch(e);
+      e.target?.setPointerCapture?.(e.pointerId);
+    };
+    const move = (e: TrackPointerEvent) => {
+      if (held !== undefined && held === e.pointerId) touch(e);
+    };
+    const up = () => {
+      held = undefined;
+    };
+    const on = track.addEventListener.bind(track) as unknown as (type: string, listener: (e: TrackPointerEvent) => void) => void;
+    const off = track.removeEventListener.bind(track) as unknown as (type: string, listener: (e: TrackPointerEvent) => void) => void;
+    on('pointerdown', down);
+    on('pointermove', move);
+    on('pointerup', up);
+    this.cleanupFuncs.push(
+      () => off('pointerdown', down),
+      () => off('pointermove', move),
+      () => off('pointerup', up),
+    );
+  }
+
+  /** Set volume `item` to `level` if that changes it, and redraw. */
+  private setVolume(item: LiveItem, level: number): void {
+    if (Number(item.current(settings)) !== level) {
+      changeSetting(item, String(level));
+    }
+    this.render();
   }
 
   /** Show tab `tab`'s page, and keep it for the next time the menu opens. */

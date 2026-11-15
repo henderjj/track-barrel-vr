@@ -19,6 +19,7 @@ import { createFooting, footingBetween, SURFACE_SOUND, type Footing, type Surfac
 import { CASING_BIN, LEVER_CLOSED } from './loading.js';
 import { rng } from './random.js';
 import { IDLE_RPM, MAX_RPM, TRACK_GAUGE } from './tank-drive.js';
+import type { SoundGroup } from './volume.js';
 
 /**
  * The short sounds: a gear going in, the gears grinding (a loop), the gun,
@@ -196,6 +197,22 @@ export const SOUND_FROM: Record<SoundId, SoundPlace | null> = {
   casing: 'bin',
   ram: 'breech',
   bump: null,
+  crank: 'engine',
+  catch: 'engine',
+  cough: 'engine',
+  stall: 'engine',
+};
+
+/** Which volume slider each short sound answers to (src/sim/volume.ts): the engine's own under Engine, the rest under Effects. */
+export const SOUND_GROUP: Record<SoundId, SoundGroup> = {
+  clunk: 'effects',
+  grind: 'effects',
+  shot: 'effects',
+  breech: 'effects',
+  latch: 'effects',
+  casing: 'effects',
+  ram: 'effects',
+  bump: 'effects',
   crank: 'engine',
   catch: 'engine',
   cough: 'engine',

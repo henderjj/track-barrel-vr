@@ -68,13 +68,19 @@ export interface Settings {
    */
   fog: boolean;
   /**
-   * The tank's sounds (F1.12, src/systems/tank-audio-system.ts): 1 full,
-   * 0.5 quiet, 0 off. The game menu's Sound and view section changes it at once.
+   * Master volume (src/sim/volume.ts, docs/volume.md), 0 off to 1 full: every
+   * game sound, the tank and the commander. Its key is `sound` because it
+   * began as the Tank sounds setting, so a choice saved then still holds.
+   * The game menu's Sound and view tab changes it at once, with a slider.
    */
   sound: number;
+  /** Engine volume, 0 to 1: the engine and gearbox (src/sim/volume.ts). Sound and view tab. */
+  enginevol: number;
+  /** Effects volume, 0 to 1: the tracks, the gun and the rest of the tank (src/sim/volume.ts). Sound and view tab. */
+  effectsvol: number;
   /**
-   * The commander's voice over the intercom (docs/commander-voice.md): 1
-   * on, 0.5 quiet, 0 off. The game menu's Sound and view section changes it at once.
+   * The commander's voice over the intercom (docs/commander-voice.md), 0
+   * off to 1 full, under Master. The game menu's Sound and view tab changes it at once.
    */
   commander: number;
   /**
@@ -166,6 +172,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ground: true,
   fog: true,
   sound: 1,
+  enginevol: 1,
+  effectsvol: 1,
   commander: 1,
   vignette: VIGNETTE_STRENGTHS.normal,
   bumps: 'full',
@@ -228,6 +236,8 @@ export function parseSettings(search: string): Settings {
     ground: bool(params, 'ground', d.ground),
     fog: bool(params, 'fog', d.fog),
     sound: num(params, 'sound', d.sound, 0, 1),
+    enginevol: num(params, 'enginevol', d.enginevol, 0, 1),
+    effectsvol: num(params, 'effectsvol', d.effectsvol, 0, 1),
     commander: num(params, 'commander', d.commander, 0, 1),
     vignette: num(params, 'vignette', d.vignette, 0, 1),
     bumps: parseBumps(params.get('bumps'), d.bumps),
