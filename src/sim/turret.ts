@@ -171,6 +171,8 @@ export const ELEVATION_WHEEL: WheelSpec = {
   grip: 'crank',
   knobLength: 0.06,
   trigger: true,
+  // A degree of hand round the handle's circle is a degree of wheel, for laying the gun precisely (John, 15 November 2026).
+  direct: true,
   // The handle faces away from the gunner's eyes, so their clockwise is the kit's anticlockwise (src/sim/mechanism.ts), a positive turn.
   min: wheelForElevation(MIN_ELEVATION),
   max: wheelForElevation(MAX_ELEVATION),
@@ -183,6 +185,8 @@ export const TRAVERSE_CRANK: WheelSpec = {
   radius: 0.08,
   grip: 'crank',
   knobLength: 0.06,
+  // A degree of hand round the knob's circle is a degree of crank, for laying the gun precisely (John, 15 November 2026).
+  direct: true,
   min: -Infinity,
   max: Infinity,
   tickEvery: Math.PI / 2,
