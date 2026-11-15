@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { decodeTankState, encodeTankState, TANK_STATE_BYTES, TANK_STATE_V4_BYTES } from '../src/net/tank-codec.js';
-import { penaltySeconds } from '../src/sim/biathlon.js';
+import { decodeTankState, encodeTankState, TANK_STATE_BYTES, TANK_STATE_V4_BYTES, TANK_STATE_V5_BYTES } from '../src/net/tank-codec.js';
+import { penaltySeconds, raceClockLines, raceLine } from '../src/sim/biathlon.js';
 import {
   BRIDGE,
+  BRIDGE_FALL,
   BRIDGE_START,
   BYPASS,
   BYPASS_PATH,
   COURSE,
   CourseProgress,
   deckHeight,
+  FALL_SECONDS,
+  FALL_TOTAL,
+  fallDark,
   FAULT_SECONDS,
   goingAt,
   MUD,
@@ -32,8 +36,8 @@ import {
   THROW_SECONDS,
 } from '../src/sim/going.js';
 import { headingTo, steer } from '../src/sim/crew-bot.js';
-import { type CourseFeed, RangeRun } from '../src/sim/range-run.js';
-import { coolantTarget, createControls, createTankDrive, settle, stepDrive, type TankDrive } from '../src/sim/tank-drive.js';
+import { type CourseFeed, formatRunTime, RangeRun, readRunEvent, runEvent, createRunSnapshot } from '../src/sim/range-run.js';
+import { coolantTarget, createControls, createTankDrive, FALL_BACK, settle, stepDrive, type TankDrive } from '../src/sim/tank-drive.js';
 import { courseRelief, groundHeight, HILL, OBSTACLES, STREAM } from '../src/sim/terrain.js';
 
 /**
@@ -305,6 +309,73 @@ describe("the course's obstacles, driven (F5.3d)", () => {
     expect(off.t.z).toBeCloseTo(BRIDGE_START.z, 3);
     expect(off.t.speed).toBe(0);
   });
+
+  it('fades a fall out, puts the tank back at the start in the dark, fades it in, and leaves the engine off to restart', () => {
+    const { t, c } = parked('bridge');
+    t.x += 0.8;
+    settle(t);
+    c.left = c.right = 0.3;
+    // Engine start: Running, which starts the engine as it is chosen but doesn't restart one after a stall.
+    c.start = 'running';
+    drive(t, c, 40, (s) => s.fall > 0);
+    expect(t.fall).toBeGreaterThan(0);
+    expect(t.falls).toBe(0);
+    // Over the edge: the engine dies (said why), the view starts to darken, the tank is still where it went over.
+    expect(t.running).toBe(false);
+    expect(t.stallCause).toBe('fall');
+    expect(fallDark(t.fall)).toBeLessThan(0.1);
+    const edge = { x: t.x, z: t.z };
+    // Fading out: held, going nowhere much, never yet back at the start; the dark only deepens.
+    let dark = 0;
+    let moved = 0;
+    drive(t, c, BRIDGE_FALL.out - 2 * DT, () => false, (s) => {
+      expect(fallDark(s.fall)).toBeGreaterThanOrEqual(dark);
+      dark = fallDark(s.fall);
+      moved = Math.hypot(s.x - edge.x, s.z - edge.z);
+    });
+    expect(t.falls).toBe(0);
+    expect(moved).toBeLessThan(2);
+    // Black, and still not moved back until a frame has been black (the fade drawn lags a frame).
+    c.starter = true;
+    drive(t, c, 4 * DT);
+    expect(fallDark(t.fall)).toBe(1);
+    expect(t.falls).toBe(0);
+    // Halfway through the black it goes back to the start, at rest; the starter does nothing while the view is dark.
+    drive(t, c, t.fall - FALL_BACK + DT / 2);
+    expect(t.falls).toBe(1);
+    expect(fallDark(t.fall)).toBe(1);
+    expect(Math.hypot(t.x - BRIDGE_START.x, t.z - BRIDGE_START.z)).toBeLessThan(0.01);
+    expect(t.heading).toBe(BRIDGE_START.heading);
+    expect(t.speed).toBe(0);
+    // Fading in: the tracks held, the tillers pushed or not, until the fall is over.
+    drive(t, c, t.fall - 2 * DT);
+    expect(t.fall).toBeGreaterThan(0);
+    expect(t.running).toBe(false);
+    expect(Math.hypot(t.x - BRIDGE_START.x, t.z - BRIDGE_START.z)).toBeLessThan(0.01);
+    drive(t, c, 4 * DT);
+    expect(t.fall).toBe(0);
+    expect(fallDark(t.fall)).toBe(0);
+    // The view back: the engine must be started again.
+    c.starter = false;
+    drive(t, c, 2);
+    expect(t.running).toBe(false);
+    c.starter = true;
+    drive(t, c, 3, (s) => s.running);
+    expect(t.running).toBe(true);
+    expect(t.falls).toBe(1);
+  });
+
+  it('fades the view out, holds it black, then fades it in over a fall', () => {
+    expect(fallDark(0)).toBe(0);
+    expect(fallDark(FALL_TOTAL)).toBe(0);
+    expect(fallDark(FALL_TOTAL - BRIDGE_FALL.out / 2)).toBeCloseTo(0.5, 6);
+    expect(fallDark(FALL_TOTAL - BRIDGE_FALL.out)).toBe(1);
+    expect(fallDark(BRIDGE_FALL.in)).toBe(1);
+    expect(fallDark(BRIDGE_FALL.in / 2)).toBeCloseTo(0.5, 6);
+    // Gentle both ways: no faster than black in half a second.
+    expect(BRIDGE_FALL.out).toBeGreaterThanOrEqual(0.5);
+    expect(BRIDGE_FALL.in).toBeGreaterThanOrEqual(0.5);
+  });
 });
 
 describe('slalom faults and bridge falls on the course and in the race (F5.3d)', () => {
@@ -348,13 +419,13 @@ describe('slalom faults and bridge falls on the course and in the race (F5.3d)',
     for (let z = z0; z < BRIDGE.z; z += 0.2) p.step(DT, BRIDGE.x, z, 3, Math.PI, 0);
     p.step(DT, BRIDGE_START.x, BRIDGE_START.z, 0, Math.PI, 1);
     expect(p.s.falls).toBe(1);
-    expect(p.s.note).toMatch(/bridge/);
+    expect(p.s.note).toBe(`Fell off the bridge: +${FALL_SECONDS} s. Restart the engine`);
     expect(westSideAt(BRIDGE_START.z)).toBeLessThan(westSideAt(BRIDGE.z));
   });
 
   it("adds FAULT_SECONDS a fault to a race's time", () => {
     const r = new RangeRun();
-    const c: CourseFeed = { laps: 0, missed: 0, penalties: 0, box: -1, halted: false, faults: 0 };
+    const c: CourseFeed = { laps: 0, missed: 0, penalties: 0, box: -1, halted: false, faults: 0, falls: 0 };
     r.start('biathlon');
     for (let i = 0; i < 45 * 6; i++) {
       r.course(c);
@@ -364,6 +435,42 @@ describe('slalom faults and bridge falls on the course and in the race (F5.3d)',
     r.course(c);
     expect(r.s.faults).toBe(2);
     expect(penaltySeconds(r.s)).toBe(2 * FAULT_SECONDS);
+  });
+
+  it("adds FALL_SECONDS a bridge fall to a race's time, shown on the clocks as it happens and at the finish", () => {
+    const r = new RangeRun();
+    const c: CourseFeed = { laps: 0, missed: 0, penalties: 0, box: -1, halted: false, faults: 0, falls: 0 };
+    r.start('biathlon');
+    for (let i = 0; i < 45 * 6; i++) {
+      r.course(c);
+      r.step(DT);
+    }
+    expect(raceClockLines(r.s, formatRunTime)[0]).toBe('Lap 1/3');
+    c.falls = 1;
+    r.course(c);
+    expect(r.s.falls).toBe(1);
+    expect(penaltySeconds(r.s)).toBe(FALL_SECONDS);
+    expect(raceClockLines(r.s, formatRunTime)[0]).toBe('Lap 1/3   +0:30');
+    expect(raceLine(r.s, formatRunTime)).toMatch(/\+0:30 in penalties/);
+    // The guest hears of it; a page on an older build sends no falls.
+    const copy = createRunSnapshot();
+    expect(readRunEvent(runEvent(r.s, 0), copy)).not.toBeNull();
+    expect(copy.falls).toBe(1);
+    const old = runEvent(r.s, 0);
+    delete old.falls;
+    expect(readRunEvent(old, copy)).not.toBeNull();
+    expect(copy.falls).toBe(0);
+    // Through to the finish: the time carries the fall, and the finish says so.
+    for (const laps of [1, 2, 3]) {
+      c.laps = laps;
+      r.course(c);
+      r.step(DT);
+    }
+    expect(r.s.phase).toBe('done');
+    expect(r.s.time).toBeCloseTo(r.s.clock, 6);
+    expect(r.s.time).toBeGreaterThan(FALL_SECONDS + 6);
+    expect(raceLine(r.s, formatRunTime)).toMatch(/1 bridge fall/);
+    expect(raceClockLines(r.s, formatRunTime)[2]).toMatch(/Falls 1/);
   });
 });
 
@@ -413,5 +520,22 @@ describe("the going in the tank's packet (F5.3d)", () => {
     expect(old.sink).toBe(0);
     expect(old.thrown).toBe(0);
     expect(old.refit).toBe(0);
+  });
+
+  it("round-trips a bridge fall's time to go, never reading one still going as over, and reads an older packet as none", () => {
+    const buffer = new ArrayBuffer(TANK_STATE_BYTES);
+    const out = createTankDrive();
+    for (const fall of [0, 0.001, 0.5, 1.37, FALL_TOTAL]) {
+      encodeTankState(buffer, 1, 10, Object.assign(createTankDrive(), { fall }), createControls());
+      expect(decodeTankState(new DataView(buffer), { seq: 0, timeMs: 0 }, out)).toBe(true);
+      if (fall === 0) expect(out.fall).toBe(0);
+      else expect(out.fall).toBeGreaterThan(0);
+      expect(Math.abs(out.fall - fall)).toBeLessThan(0.021);
+    }
+    encodeTankState(buffer, 1, 10, Object.assign(createTankDrive(), { fall: 1, sink: 0.5 }), createControls());
+    const old = Object.assign(createTankDrive(), { fall: 1 });
+    expect(decodeTankState(new DataView(buffer, 0, TANK_STATE_V5_BYTES), { seq: 0, timeMs: 0 }, old)).toBe(true);
+    expect(old.fall).toBe(0);
+    expect(old.sink).toBeCloseTo(0.5, 2);
   });
 });
