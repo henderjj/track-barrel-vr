@@ -29,6 +29,7 @@ import {
   MIX,
   PLACED_SHARE,
   SOUND_FROM,
+  SOUND_GROUP,
   SOUND_IDS,
   SOUND_PLACES,
   SQUEAK_VARIANTS,
@@ -38,6 +39,7 @@ import {
   type TraverseVoice,
   TURRET_PLACES,
 } from '../sim/tank-audio.js';
+import type { SoundGroup } from '../sim/volume.js';
 
 /** How smoothly the continuous sounds glide to each new value, s (a time constant). */
 const GLIDE = 0.06;
@@ -164,8 +166,10 @@ const MOTOR_HARMONICS = [0, 1, 0.35, 0.3, 0.08, 0.14, 0.04, 0.06];
  *   round, through the cabin's echo, which every sound goes through.
  * - For a moment after the gun fires, the steady sounds dip.
  *
- * Everything passes the duck (the intercom), the player's level, and a
- * soft clip so the gun over a roaring engine doesn't crackle.
+ * Each sound passes its volume slider's group gain (Engine or Effects,
+ * src/sim/volume.ts) on its way into its place; then everything passes the
+ * duck (the intercom), the Master volume, and a soft clip so the gun over a
+ * roaring engine doesn't crackle.
  */
 export class TankSoundGraph {
   readonly master: GainNode;
@@ -214,6 +218,9 @@ export class TankSoundGraph {
   private readonly siren: OscillatorNode;
   private readonly sirenAmp: GainNode;
   private readonly at: [number, number, number] = [0, 0, 0];
+  /** Each volume group's gain into each place it plays in (`into`), and the level they are at. */
+  private readonly groups: Record<SoundGroup, Map<AudioNode, GainNode>> = { engine: new Map(), effects: new Map() };
+  private readonly groupLevel: Record<SoundGroup, number> = { engine: 1, effects: 1 };
 
   constructor(
     readonly ctx: BaseAudioContext,
@@ -266,7 +273,7 @@ export class TankSoundGraph {
     const floor = new BiquadFilterNode(ctx, { type: 'highpass', frequency: 28, Q: 0.7 });
     this.engineAmp = new GainNode(ctx, { gain: 0 });
     this.engineLoop.connect(this.exhaust[0]).connect(this.exhaust[1]).connect(pipe1).connect(pipe2).connect(floor).connect(this.engineAmp);
-    this.engineAmp.connect(this.places.engine.steady);
+    this.engineAmp.connect(this.into('engine', this.places.engine.steady));
 
     // Its roar: noise in the fan's and intakes' band, fluttering as the cylinders blow, through resonances that stay where
     // they are whatever the revs (ROAR_RING: the same bands stand out all through the recording of a real Sherman).
@@ -281,7 +288,7 @@ export class TankSoundGraph {
     this.roarAmp = new GainNode(ctx, { gain: 0 });
     let roar: AudioNode = this.noise().connect(roarBand);
     for (const [f, q, gain] of ROAR_RING) roar = roar.connect(new BiquadFilterNode(ctx, { type: 'peaking', frequency: f, Q: q, gain }));
-    roar.connect(roarTop).connect(roarPulse).connect(this.roarAmp).connect(this.places.engine.steady);
+    roar.connect(roarTop).connect(roarPulse).connect(this.roarAmp).connect(this.into('engine', this.places.engine.steady));
 
     // The gears: the gearbox's whine through its case, and the final drives', each wavering a little as real gears do.
     const whine = ctx.createPeriodicWave(new Float32Array(WHINE_HARMONICS.length), new Float32Array(WHINE_HARMONICS));
@@ -289,12 +296,12 @@ export class TankSoundGraph {
     this.waver(this.gearboxOsc, 5.7, 14);
     const gearCase = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 620, Q: 0.8 });
     this.gearboxAmp = new GainNode(ctx, { gain: 0 });
-    this.gearboxOsc.connect(gearCase).connect(this.gearboxAmp).connect(this.places.gearbox.steady);
+    this.gearboxOsc.connect(gearCase).connect(this.gearboxAmp).connect(this.into('engine', this.places.gearbox.steady));
     this.finalOsc = new OscillatorNode(ctx, { periodicWave: whine, frequency: 20 });
     this.waver(this.finalOsc, 3.1, 22);
     const finalTop = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 900, Q: 0.7 });
     this.finalAmp = new GainNode(ctx, { gain: 0 });
-    this.finalOsc.connect(finalTop).connect(this.finalAmp).connect(this.places.gearbox.steady);
+    this.finalOsc.connect(finalTop).connect(this.finalAmp).connect(this.into('engine', this.places.gearbox.steady));
 
     // The tracks' rumble: brown noise under a low-pass that opens with speed, through the floor's own resonances,
     // with nothing under what a hull (or a headset's speakers) can pass.
@@ -305,7 +312,7 @@ export class TankSoundGraph {
     const floor3 = new BiquadFilterNode(ctx, { type: 'peaking', frequency: 245, Q: 2.5, gain: 4 });
     this.rumbleAmp = new GainNode(ctx, { gain: 0 });
     this.loop(this.brown).connect(this.rumbleFilter).connect(rumbleFloor).connect(floor1).connect(floor2).connect(floor3).connect(this.rumbleAmp);
-    this.rumbleAmp.connect(this.places.all.steady);
+    this.rumbleAmp.connect(this.into('effects', this.places.all.steady));
 
     // Each track's links: a gate opens for each strike of a link (played faster as the track runs faster) and lets
     // noise into resonances that stay where they are, so the links come quicker without turning into a higher note.
@@ -326,7 +333,7 @@ export class TankSoundGraph {
     // A gain's own value adds to what is connected to it: the steady share under the grains.
     this.gritGrain = { left: new GainNode(ctx, { gain: 0 }), right: new GainNode(ctx, { gain: 0 }) };
     for (const side of ['left', 'right'] as const) {
-      const out = this.places[side === 'left' ? 'leftTrack' : 'rightTrack'].steady;
+      const out = this.into('effects', this.places[side === 'left' ? 'leftTrack' : 'rightTrack'].steady);
       const strike = new GainNode(ctx, { gain: 0 });
       this.linkGate[side].connect(strike.gain);
       this.noise().connect(strike);
@@ -368,7 +375,7 @@ export class TankSoundGraph {
         slip.connect(ring).connect(new GainNode(ctx, { gain: STRAIN_LEVEL * share * Math.sqrt(q) })).connect(this.strainAmp[side]);
       }
       slip.connect(this.strainScrub[side]).connect(new GainNode(ctx, { gain: STRAIN_SCRUB_LEVEL })).connect(this.strainAmp[side]);
-      this.strainAmp[side].connect(this.places[side === 'left' ? 'leftTrack' : 'rightTrack'].steady);
+      this.strainAmp[side].connect(this.into('effects', this.places[side === 'left' ? 'leftTrack' : 'rightTrack'].steady));
     }
     // The pins' squeaks: each played by itself when it comes (`squeak`).
     for (let k = 0; k < SQUEAK_VARIANTS; k++) this.squeaks.push(this.buffer(renderSqueak(rate, k)));
@@ -379,17 +386,17 @@ export class TankSoundGraph {
     this.waver(this.motor, 7.3, 10);
     const motorTop = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 1500, Q: 0.7 });
     this.motorAmp = new GainNode(ctx, { gain: 0 });
-    this.motor.connect(motorTop).connect(this.motorAmp).connect(this.places.traverse.steady);
+    this.motor.connect(motorTop).connect(this.motorAmp).connect(this.into('effects', this.places.traverse.steady));
     const growl = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 420, Q: 1.5 });
     const teeth = new GainNode(ctx, { gain: 0.5 });
     this.mesh = new OscillatorNode(ctx, { type: 'sine', frequency: 8 });
     this.mesh.connect(new GainNode(ctx, { gain: 0.5 })).connect(teeth.gain);
     this.traverseGearAmp = new GainNode(ctx, { gain: 0 });
-    this.noise().connect(growl).connect(teeth).connect(this.traverseGearAmp).connect(this.places.traverse.steady);
+    this.noise().connect(growl).connect(teeth).connect(this.traverseGearAmp).connect(this.into('effects', this.places.traverse.steady));
     const ringLow = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 220, Q: 0.7 });
     const ringFloor = new BiquadFilterNode(ctx, { type: 'highpass', frequency: 55, Q: 0.8 });
     this.traverseRumbleAmp = new GainNode(ctx, { gain: 0 });
-    this.loop(this.brown, 0.71).connect(ringLow).connect(ringFloor).connect(this.traverseRumbleAmp).connect(this.places.traverse.steady);
+    this.loop(this.brown, 0.71).connect(ringLow).connect(ringFloor).connect(this.traverseRumbleAmp).connect(this.into('effects', this.places.traverse.steady));
 
     // The handwheels' gears: a tick a tooth.
     this.tickGate = this.gate(renderGate(TICK_GATE, rate), 0);
@@ -400,19 +407,19 @@ export class TankSoundGraph {
     for (const [f, q, share] of [[1300, 4, 0.6], [2800, 3, 1]] as const) {
       tick.connect(new BiquadFilterNode(ctx, { type: 'bandpass', frequency: f, Q: q })).connect(new GainNode(ctx, { gain: share * Math.sqrt(q) })).connect(this.handAmp);
     }
-    this.handAmp.connect(this.places.traverse.steady);
+    this.handAmp.connect(this.into('effects', this.places.traverse.steady));
 
     // The grind and the starter, looping, let through while they last.
     this.grindAmp = new GainNode(ctx, { gain: 0 });
-    this.loop(this.buffers.grind).connect(this.grindAmp).connect(this.places.gearbox.knock);
+    this.loop(this.buffers.grind).connect(this.grindAmp).connect(this.into(SOUND_GROUP.grind, this.places.gearbox.knock));
     this.crankAmp = new GainNode(ctx, { gain: 0 });
-    this.loop(this.buffers.crank).connect(this.crankAmp).connect(this.places.engine.knock);
+    this.loop(this.buffers.crank).connect(this.crankAmp).connect(this.into(SOUND_GROUP.crank, this.places.engine.knock));
 
     // The siren: a motor siren's wail, a square wave through a band-pass, gliding up while held (F1.17).
     this.siren = new OscillatorNode(ctx, { type: 'square', frequency: 120 });
     this.sirenAmp = new GainNode(ctx, { gain: 0 });
     const sirenBand = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 700, Q: 0.8 });
-    this.siren.connect(sirenBand).connect(this.sirenAmp).connect(this.places.siren.steady);
+    this.siren.connect(sirenBand).connect(this.sirenAmp).connect(this.into('effects', this.places.siren.steady));
 
     for (const osc of [this.gearboxOsc, this.finalOsc, this.motor, this.mesh, this.siren]) osc.start();
   }
@@ -482,9 +489,9 @@ export class TankSoundGraph {
   play(id: SoundId, at: number, seconds = 0): void {
     const source = new AudioBufferSourceNode(this.ctx, { buffer: this.buffers[id], loop: seconds > 0 });
     const from = SOUND_FROM[id];
-    source.connect(this.places[from ?? 'all'].knock);
+    source.connect(this.into(SOUND_GROUP[id], this.places[from ?? 'all'].knock));
     if (id === 'shot') {
-      source.connect(this.shotSend);
+      source.connect(this.into(SOUND_GROUP.shot, this.shotSend));
       this.blast(at);
     }
     source.start(at);
@@ -499,7 +506,7 @@ export class TankSoundGraph {
    */
   squeak(side: 0 | 1, variant: number, level: number, at: number): void {
     const source = new AudioBufferSourceNode(this.ctx, { buffer: this.squeaks[variant % this.squeaks.length] });
-    source.connect(new GainNode(this.ctx, { gain: MIX.squeak * level })).connect(this.places[side === 0 ? 'leftTrack' : 'rightTrack'].knock);
+    source.connect(new GainNode(this.ctx, { gain: MIX.squeak * level })).connect(this.into('effects', this.places[side === 0 ? 'leftTrack' : 'rightTrack'].knock));
     source.start(at);
   }
 
@@ -517,9 +524,38 @@ export class TankSoundGraph {
     this.duck.gain.setTargetAtTime(gain, t, 0.02);
   }
 
-  /** The player's Tank sounds setting, from `t`. */
+  /** The Master volume's gain (src/sim/volume.ts), from `t`. */
   setLevel(level: number, t: number): void {
     this.master.gain.setTargetAtTime(level, t, 0.05);
+  }
+
+  /** The gain `group`'s volume plays at now, as the graph has it (tests). */
+  groupGain(group: SoundGroup): number {
+    const first = this.groups[group].values().next().value;
+    return first ? first.gain.value : this.groupLevel[group];
+  }
+
+  /** The Engine and Effects volumes' gains, from `t`. */
+  setGroups(engine: number, effects: number, t: number): void {
+    for (const g of this.groups.engine.values()) g.gain.setTargetAtTime(engine, t, 0.05);
+    for (const g of this.groups.effects.values()) g.gain.setTargetAtTime(effects, t, 0.05);
+    this.groupLevel.engine = engine;
+    this.groupLevel.effects = effects;
+  }
+
+  /**
+   * The way into `dest` for sounds under `group`'s volume slider: one gain
+   * for each group and each place, made the first time it is asked for, so
+   * a short sound played later costs nothing more.
+   */
+  private into(group: SoundGroup, dest: AudioNode): GainNode {
+    let g = this.groups[group].get(dest);
+    if (g === undefined) {
+      g = new GainNode(this.ctx, { gain: this.groupLevel[group] });
+      g.connect(dest);
+      this.groups[group].set(dest, g);
+    }
+    return g;
   }
 
   /** Where the player's head is and which way it faces, in the hull's space, from `t`. Allocation free. */

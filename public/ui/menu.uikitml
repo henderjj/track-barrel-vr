@@ -18,7 +18,10 @@
     in a crew once the crewmate agrees) and Calibration (eyes and reach again).
   - Comfort (F1.14): the vignette's strength and reduced bumps, a mark for
     the moment the player feels queasy, and the play-test stats CSV.
-  - Sound and view: the other live settings.
+  - Sound and view: the volume sliders (vol-<key>, VOLUME_ITEMS in
+    src/live-settings.ts: Master, Engine, Effects and Commander, each a
+    track to touch or drag with - and + either side and its level), then
+    the other live settings.
   - Tank: the drive's state and gearbox, the range's state, and spike
     S2's ride options while riding.
   - Practice, Sights and Test rigs hold shortcuts straight to a situation
@@ -213,6 +216,53 @@
     color: rgba(255, 255, 255, 0.95);
   }
 
+  .slim {
+    width: 36px;
+    min-width: 36px;
+    padding-left: 0px;
+    padding-right: 0px;
+  }
+
+  .track {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    height: 26px;
+    border-radius: 13px;
+    background-color: rgba(0, 0, 0, 0.12);
+    flex-direction: row;
+    padding-left: 3px;
+    padding-right: 3px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    cursor: pointer;
+  }
+
+  .track:dark {
+    background-color: rgba(255, 255, 255, 0.16);
+  }
+
+  .fill {
+    height: 20px;
+    min-width: 20px;
+    width: 100%;
+    border-radius: 10px;
+    background-color: #2d6bdb;
+  }
+
+  .level {
+    width: 48px;
+    flex-shrink: 0;
+    text-align: right;
+    font-size: 15px;
+    font-weight: 700;
+    color: #272727;
+  }
+
+  .level:dark {
+    color: rgba(255, 255, 255, 0.95);
+  }
+
   .own {
     width: 88px;
     flex-shrink: 0;
@@ -401,22 +451,48 @@
       </div>
       <div id="page-view" class="page" style="display: none">
         <div class="section">
-          <div id="row-sound" class="setting">
-            <div id="row-sound-label" class="label">Setting</div>
-            <div id="row-sound-choices" class="choices">
-              <Button id="row-sound-0" class="choice" size="sm" variant="secondary">Choice</Button>
-              <Button id="row-sound-1" class="choice" size="sm" variant="secondary">Choice</Button>
-              <Button id="row-sound-2" class="choice" size="sm" variant="secondary">Choice</Button>
-              <Button id="row-sound-3" class="choice" size="sm" variant="secondary">Choice</Button>
+          <div id="vol-sound" class="setting">
+            <div id="vol-sound-label" class="label">Master</div>
+            <div class="choices">
+              <Button id="vol-sound-down" class="stepper slim" size="sm" variant="secondary">-</Button>
+              <div id="vol-sound-track" class="track">
+                <div id="vol-sound-fill" class="fill"></div>
+              </div>
+              <Button id="vol-sound-up" class="stepper slim" size="sm" variant="secondary">+</Button>
+              <div id="vol-sound-value" class="level">100%</div>
             </div>
           </div>
-          <div id="row-commander" class="setting">
-            <div id="row-commander-label" class="label">Setting</div>
-            <div id="row-commander-choices" class="choices">
-              <Button id="row-commander-0" class="choice" size="sm" variant="secondary">Choice</Button>
-              <Button id="row-commander-1" class="choice" size="sm" variant="secondary">Choice</Button>
-              <Button id="row-commander-2" class="choice" size="sm" variant="secondary">Choice</Button>
-              <Button id="row-commander-3" class="choice" size="sm" variant="secondary">Choice</Button>
+          <div id="vol-enginevol" class="setting">
+            <div id="vol-enginevol-label" class="label">Engine</div>
+            <div class="choices">
+              <Button id="vol-enginevol-down" class="stepper slim" size="sm" variant="secondary">-</Button>
+              <div id="vol-enginevol-track" class="track">
+                <div id="vol-enginevol-fill" class="fill"></div>
+              </div>
+              <Button id="vol-enginevol-up" class="stepper slim" size="sm" variant="secondary">+</Button>
+              <div id="vol-enginevol-value" class="level">100%</div>
+            </div>
+          </div>
+          <div id="vol-effectsvol" class="setting">
+            <div id="vol-effectsvol-label" class="label">Effects</div>
+            <div class="choices">
+              <Button id="vol-effectsvol-down" class="stepper slim" size="sm" variant="secondary">-</Button>
+              <div id="vol-effectsvol-track" class="track">
+                <div id="vol-effectsvol-fill" class="fill"></div>
+              </div>
+              <Button id="vol-effectsvol-up" class="stepper slim" size="sm" variant="secondary">+</Button>
+              <div id="vol-effectsvol-value" class="level">100%</div>
+            </div>
+          </div>
+          <div id="vol-commander" class="setting">
+            <div id="vol-commander-label" class="label">Commander</div>
+            <div class="choices">
+              <Button id="vol-commander-down" class="stepper slim" size="sm" variant="secondary">-</Button>
+              <div id="vol-commander-track" class="track">
+                <div id="vol-commander-fill" class="fill"></div>
+              </div>
+              <Button id="vol-commander-up" class="stepper slim" size="sm" variant="secondary">+</Button>
+              <div id="vol-commander-value" class="level">100%</div>
             </div>
           </div>
           <div id="row-hatches" class="setting">

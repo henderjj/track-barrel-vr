@@ -45,7 +45,7 @@ describe('in-game settings', () => {
     expect(withSetting('voice=plain&hud=0', 'hud', '1', '1')).toBe('voice=plain');
     const s = parseSettings(mergeSettings(withSetting('', 'hz', '72', '90'), ''));
     expect(s.hz).toBe(72);
-    // Tank sounds (F1.12): quiet is kept, on is the default and dropped.
+    // Master volume (once Tank sounds, F1.12): a level below full is kept, full is the default and dropped.
     expect(withSetting('', 'sound', '0.5', '1')).toBe('sound=0.5');
     expect(parseSettings('?sound=0.5').sound).toBe(0.5);
     expect(parseSettings('?sound=3').sound).toBe(1);

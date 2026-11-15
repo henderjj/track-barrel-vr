@@ -23,27 +23,6 @@ const onOff = (s: boolean) => (s ? '1' : '0');
  * public/ui/menu.uikitml (`row-<key>`, with up to four choices).
  */
 export const LIVE_ITEMS: readonly LiveItem[] = [
-  {
-    key: 'sound',
-    label: 'Tank sounds',
-    options: [
-      ['1', 'On'],
-      ['0.5', 'Quiet'],
-      ['0', 'Off'],
-    ],
-    current: (s) => String(s.sound),
-  },
-  // The commander's voice over the intercom (docs/commander-voice.md).
-  {
-    key: 'commander',
-    label: 'Commander',
-    options: [
-      ['1', 'On'],
-      ['0.5', 'Quiet'],
-      ['0', 'Off'],
-    ],
-    current: (s) => String(s.commander),
-  },
   // Comfort (F1.14): shown in the menu's Comfort and stats section.
   {
     key: 'vignette',
@@ -147,6 +126,20 @@ export const LIVE_ITEMS: readonly LiveItem[] = [
     ],
     current: (s) => String(s.foveation),
   },
+];
+
+/**
+ * The volume sliders (src/sim/volume.ts, docs/volume.md), in the order the
+ * Sound and view tab shows them: each a row in public/ui/menu.uikitml with
+ * a track to touch or drag (`vol-<key>-track`, its fill `vol-<key>-fill`),
+ * − and + buttons (`vol-<key>-down`, `-up`) and the level (`vol-<key>-value`).
+ * Changed with `changeSetting` like the others; `options` is empty.
+ */
+export const VOLUME_ITEMS: readonly LiveItem[] = [
+  { key: 'sound', label: 'Master', options: [], current: (s) => String(s.sound) },
+  { key: 'enginevol', label: 'Engine', options: [], current: (s) => String(s.enginevol) },
+  { key: 'effectsvol', label: 'Effects', options: [], current: (s) => String(s.effectsvol) },
+  { key: 'commander', label: 'Commander', options: [], current: (s) => String(s.commander) },
 ];
 
 /** Most choices a setting may offer: the buttons in a menu row. */
