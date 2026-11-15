@@ -1,4 +1,5 @@
 import { createSystem, InputComponent, type StatefulGamepad } from '@iwsdk/core';
+import { stickY } from '../sim/stick.js';
 import { HandGrip, JOINT_COUNT } from '../sim/hand-grip.js';
 import {
   type ControllerFingers,
@@ -70,9 +71,9 @@ export const handCurls: Record<Side, FingerCurls> = { left: createFingerCurls(),
  * thumb down) rather than pointing with its thumb up. Shown on the perf HUD
  * so the sensors can be checked on a headset.
  */
-export const fingerInputs: Record<Side, ControllerFingers & { touchSeen: boolean; touches: number }> = {
-  left: { trigger: 0, triggerTouched: false, squeeze: 0, thumbTouched: false, touchSeen: false, touches: 0 },
-  right: { trigger: 0, triggerTouched: false, squeeze: 0, thumbTouched: false, touchSeen: false, touches: 0 },
+export const fingerInputs: Record<Side, ControllerFingers & { touchSeen: boolean; touches: number; stickY: number }> = {
+  left: { trigger: 0, triggerTouched: false, squeeze: 0, thumbTouched: false, touchSeen: false, touches: 0, stickY: 0 },
+  right: { trigger: 0, triggerTouched: false, squeeze: 0, thumbTouched: false, touchSeen: false, touches: 0, stickY: 0 },
 };
 
 /** Bits of `fingerInputs[side].touches`: which sensors report a touch. */
@@ -148,6 +149,8 @@ export class GripSystem extends createSystem({}) {
     input.trigger = pad.getButtonValue(InputComponent.Trigger);
     input.triggerTouched = pad.getButtonTouched(InputComponent.Trigger);
     input.squeeze = pad.getButtonValue(InputComponent.Squeeze);
+    // The stick's forward/back as the gears read it (shown on the perf HUD, to check a controller's stick on a headset).
+    input.stickY = stickY(pad.gamepad.axes, pad.gamepad.mapping, pad.getAxesValues(InputComponent.Thumbstick)?.y ?? 0);
     const lower = side === 'left' ? InputComponent.X_Button : InputComponent.A_Button;
     const upper = side === 'left' ? InputComponent.Y_Button : InputComponent.B_Button;
     input.touches =

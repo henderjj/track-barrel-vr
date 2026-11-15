@@ -40,6 +40,7 @@ import {
   stopEngine,
 } from '../sim/engine.js';
 import { GEARBOX_NAMES, type GearboxMode, nextGear, realControls } from '../sim/gearbox.js';
+import { StickFlick, stickY } from '../sim/stick.js';
 import { DROWN_SECONDS, REFIT_SECONDS, THROW_WARN } from '../sim/going.js';
 import { fallDark, FALL_SECONDS } from '../sim/course.js';
 import {
@@ -142,10 +143,6 @@ function copyControls(from: DriverControls, to: DriverControls): void {
 
 /** What Back to start, a Practice shortcut or a run does with the engine: stop it (cold), leave it as it is, or start it warm. */
 type EngineReset = 'off' | 'keep' | 'warm';
-
-/** A thumbstick pushed this far forwards or back changes gear, once, until it comes back within STICK_REARM of the middle. */
-const STICK_FLICK = 0.7;
-const STICK_REARM = 0.3;
 
 /** Practice → Drive: into the driver's seat, with a sign saying how to drive. */
 export function startDriving(): void {
@@ -422,8 +419,8 @@ export class DriveSystem extends createSystem({}) {
   start: EngineStart = settings.engine;
   /** This page's driver's gearbox mode (gearboxMode). */
   mode: GearboxMode = settings.gearbox;
-  /** Each stick (left, right) has flicked and not yet come back: no further shift until it does. */
-  private flicked = [false, false];
+  /** The right stick's gear flicks, holding the tillers. */
+  private gearFlick = new StickFlick();
   private keys = new Set<string>();
   private matrix = new Matrix4();
   private euler = new Euler(0, 0, 0, 'YXZ');
@@ -666,8 +663,8 @@ export class DriveSystem extends createSystem({}) {
     }
     const how: Record<GearboxMode, [string, string]> = {
       auto: ['Grip the tillers and push', 'W A S D to drive'],
-      stick: ['R trigger: go. Tillers: brakes. R stick: gears', 'W: go, S A D: brakes, E Q: gears'],
-      clutch: ['Hold L trigger (clutch), flick R stick to shift', 'W: go, S A D: brakes, Shift: clutch, E Q: gears'],
+      stick: ['R trigger: go. Tillers: brakes. R stick or A/B: gears', 'W: go, S A D: brakes, E Q: gears'],
+      clutch: ['Hold L trigger (clutch), R stick or A/B to shift', 'W: go, S A D: brakes, Shift: clutch, E Q: gears'],
     };
     if (this.controls.parkingBrake) {
       this.sayBrakeOn();
@@ -770,17 +767,25 @@ export class DriveSystem extends createSystem({}) {
     if (drive.tillersHeld) {
       c.left = drive.left;
       c.right = drive.right;
-      // Hands on the tillers: the right stick flicked forwards or back changes gear.
-      if (vr && this.mode !== 'auto') this.flick(1, pads.right?.getAxesValues(InputComponent.Thumbstick)?.y ?? 0);
-    } else if (vr) {
-      const left = pads.left?.getAxesValues(InputComponent.Thumbstick);
-      const right = pads.right?.getAxesValues(InputComponent.Thumbstick);
-      twinStickControls(left?.y ?? 0, right?.y ?? 0, c);
-      // Driving on the sticks: A changes up, B down (B closes the menu while it is open).
-      if (this.mode !== 'auto' && !gameMenu.open) {
-        if (pads.right?.getButtonDown(InputComponent.A_Button)) shiftBy(1);
-        if (pads.right?.getButtonDown(InputComponent.B_Button)) shiftBy(-1);
+      // Hands on the tillers: the right stick flicked forwards or back changes gear, and A and B change up and down as
+      // they do driving on the sticks, so a controller whose stick the browser reports oddly still shifts (John's Rift
+      // play-test, 15 November 2026).
+      if (vr && this.mode !== 'auto') {
+        const pad = pads.right;
+        const step = this.gearFlick.step(stickY(pad?.gamepad.axes, pad?.gamepad.mapping, pad?.getAxesValues(InputComponent.Thumbstick)?.y ?? 0));
+        if (step !== 0) shiftBy(step);
+        if (!gameMenu.open) this.faceButtonShift();
       }
+    } else if (vr) {
+      const left = pads.left;
+      const right = pads.right;
+      twinStickControls(
+        stickY(left?.gamepad.axes, left?.gamepad.mapping, left?.getAxesValues(InputComponent.Thumbstick)?.y ?? 0),
+        stickY(right?.gamepad.axes, right?.gamepad.mapping, right?.getAxesValues(InputComponent.Thumbstick)?.y ?? 0),
+        c,
+      );
+      // Driving on the sticks: A changes up, B down (B closes the menu while it is open).
+      if (this.mode !== 'auto' && !gameMenu.open) this.faceButtonShift();
     } else if (this.keys.size > 0) {
       const k = this.keys;
       const forward = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0);
@@ -801,16 +806,11 @@ export class DriveSystem extends createSystem({}) {
   }
 
 
-  /** A stick (0 left, 1 right) pushed past STICK_FLICK forwards changes up a gear, back down one; once each push. */
-  private flick(i: number, y: number): void {
-    if (this.flicked[i]) {
-      if (Math.abs(y) < STICK_REARM) this.flicked[i] = false;
-      return;
-    }
-    if (Math.abs(y) < STICK_FLICK) return;
-    this.flicked[i] = true;
-    // Forwards on a stick is -Y.
-    shiftBy(y < 0 ? 1 : -1);
+  /** A on the right controller changes up a gear, B down. */
+  private faceButtonShift(): void {
+    const pad = this.input.xr.gamepads.right;
+    if (pad?.getButtonDown(InputComponent.A_Button)) shiftBy(1);
+    if (pad?.getButtonDown(InputComponent.B_Button)) shiftBy(-1);
   }
 
   /** The host: drive the tank from whoever sits in the driver's seat. */
