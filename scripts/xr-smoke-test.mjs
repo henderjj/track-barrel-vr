@@ -1327,6 +1327,23 @@ async function driverFeedback() {
   trigger('controller-right', 1);
   const onTiller = await waitFor('the accelerator from the hand on the tiller', () => { const c = controls(); return c.accel > 0.9 && c; }, 3000).catch(() => controls());
   trigger('controller-right', 0);
+  // Holding the tillers, the right stick flicked forwards changes up a gear, and B changes down (John's Rift play-test,
+  // 15 November 2026: the Rift's stick changed no gears, A and B did; A and B now work with the tillers held too).
+  // Held for two and a half of the slowest recent frames (at least 0.3 s): a shorter push is never seen.
+  const hold = () => sleep(Math.max(300, 2.5 * slowestFrameMs()));
+  const stickY = (y) => iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', axes: [{ index: 0, value: 0 }, { index: 1, value: y }] });
+  const before = station().gear;
+  stickY(-1);
+  await hold();
+  stickY(0);
+  const flicked = await waitFor('the flick to change up', () => { const s = station(); return s.gear === before + 1 && s; }, 3000, 100).catch(() => station());
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: 4, value: 1 }] });
+  await hold();
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: 4, value: 0 }] });
+  const pressedB = await waitFor('B to change down', () => { const s = station(); return s.gear === before && s; }, 3000, 100).catch(() => station());
+  check('Holding the tillers, the right stick flicked forwards changes up a gear and B changes down',
+    flicked.gear === before + 1 && pressedB.gear === before && pressedB.heldBy.tillerRight === 'right',
+    `lever in ${before}, after the flick ${flicked.gear}, after B ${pressedB.gear}, right tiller held by ${pressedB.heldBy.tillerRight}`);
   squeeze('controller-right', 0);
   await waitFor('the right hand off its tiller', () => station().heldBy.tillerRight === null, 3000, 100).catch(() => null);
   iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin(on(starter, 0.25)), duration: 0.3 });
@@ -3687,8 +3704,9 @@ async function theCombatScenario() {
  *     tank in too fast and the water drowns the engine, the sign saying so.
  *     Obstacles → Bridge parks the tank short of the treadway bridge
  *     (screenshot from the driver's eyes); set down off line over the ditch
- *     it falls and comes back to the bridge's start, the course's sign
- *     saying so. Obstacles → Slalom, then the tank moved straight down the
+ *     it falls: the view fades to black and back, the tank comes back to
+ *     the bridge's start with its engine off ('fall'), and the course's
+ *     sign gives the +30 s penalty. Obstacles → Slalom, then the tank moved straight down the
  *     middle line knocks a post down: drawn lying, a fault on the sign
  *     (screenshot). A track thrown puts up a sign and holds the tank.
  */
@@ -3728,16 +3746,38 @@ async function theDrivingChallenge() {
   await sleep(500);
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-bridge.png'], {});
   const falls = tank().falls;
+  // The fade changes faster than evals come back: watched inside the page, with whether the tank had gone back while it was still clearing.
+  evalInApp(`(() => {
+    const w = { darkest: 0, backAt: -1, clearedAt: -1, darkAtBack: -1 };
+    const falls = window.__drive.state().falls;
+    w.timer = setInterval(() => {
+      const fade = window.__seats.fade;
+      const t = window.__drive.state();
+      w.darkest = Math.max(w.darkest, fade);
+      if (w.backAt < 0 && t.falls > falls) { w.backAt = performance.now(); w.darkAtBack = fade; }
+      if (w.backAt >= 0 && w.clearedAt < 0 && t.fall === 0 && fade === 0) { w.clearedAt = performance.now(); clearInterval(w.timer); }
+    }, 10);
+    window.__fallWatch = w;
+    return true;
+  })()`);
   evalInApp(`(window.__drive.place(${layout.bridge.x + 0.9}, ${layout.bridge.z - 10}, ${start.heading}), true)`);
   const fell = await waitFor('the tank to fall and come back', () => {
     const t = tank();
-    return t.falls === falls + 1 && Math.abs(t.z - start.z) < 0.5 && Math.abs(t.x - start.x) < 0.5 && t;
-  }, 8000).catch(() => tank());
+    return t.falls === falls + 1 && t.fall === 0 && Math.abs(t.z - start.z) < 0.5 && Math.abs(t.x - start.x) < 0.5 && t;
+  }, 10000).catch(() => tank());
   const fallNote = await waitFor("the course's sign", () => /bridge/.test(evalInApp('window.__course.sign')) && evalInApp('window.__course.sign'), 4000)
     .catch(() => evalInApp('window.__course.sign'));
-  check("Off line over the ditch the tank falls off the bridge and comes back to its start, the course's sign saying so",
-    fell.falls === falls + 1 && Math.abs(fell.z - start.z) < 0.5 && /Fell off the bridge/.test(fallNote) && course().falls >= 1,
+  const fallSign = evalInApp('window.__drive.sign');
+  const watch = evalInApp('(clearInterval(window.__fallWatch.timer), window.__fallWatch)');
+  check("Off line over the ditch the tank falls off the bridge and comes back to its start, the course's sign giving the penalty",
+    fell.falls === falls + 1 && Math.abs(fell.z - start.z) < 0.5 && /Fell off the bridge: \+30 s/.test(fallNote) && course().falls >= 1,
     `falls ${fell.falls - falls}, tank at ${fell.x.toFixed(1)}, ${fell.z.toFixed(1)}; sign "${fallNote}"`);
+  check('The fall fades the view to black, the tank goes back while it is black, and the view clears again',
+    watch.darkest >= 0.99 && watch.darkAtBack >= 0.99 && watch.clearedAt > watch.backAt && evalInApp('window.__seats.fade') === 0,
+    `darkest ${watch.darkest.toFixed(2)}, dark ${watch.darkAtBack.toFixed(2)} as it went back, cleared ${watch.clearedAt > 0 ? ((watch.clearedAt - watch.backAt) / 1000).toFixed(2) + ' s later' : 'never'}`);
+  check("After the fall the engine is off and must be started again, the driver's sign saying so",
+    !fell.running && fell.stallCause === 'fall' && /Off the bridge/.test(fallSign),
+    `engine ${fell.running ? 'running' : 'off'} (${fell.stallCause}), sign "${fallSign}"`);
 
   // The slalom: straight down the middle line knocks a post.
   await menuButtonPress();

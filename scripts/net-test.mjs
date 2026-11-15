@@ -1105,7 +1105,9 @@ async function runChecks(host, guest, label) {
  * the start line and the guest hears Lap 1 start; the guest's Line 2
  * shortcut parks the tank in firing box 2 through the host, and both pages
  * show it halted there. The driving challenge's going (F5.3d): a thrown
- * track and the sink reach the guest in the tank's packet.
+ * track and the sink reach the guest in the tank's packet. A fall off the
+ * bridge fades the guest's view out and in with the host's, and the guest
+ * hears the +30 s penalty.
  */
 async function courseChecks(host, guest, label) {
   const course = (p) => p.page.evaluate(() => window.__course.state());
@@ -1150,9 +1152,28 @@ async function courseChecks(host, guest, label) {
     })));
   await host.page.evaluate(() => window.__drive.going({ thrown: 0, refit: 0 }));
 
-  // Back to the range start as the later checks expect, the ranges fixed again.
+  // A fall off the bridge: the guest's view goes dark and clears again with the host's, and the guest hears the penalty. A page
+  // drawn in software may step past the 0.6 s of full black, so any deep fade passes here; the XR test checks the black.
+  await guest.page.evaluate(() => {
+    const w = { darkest: 0, timer: 0 };
+    w.timer = setInterval(() => { w.darkest = Math.max(w.darkest, window.__seats.fade); }, 10);
+    window.__fallWatch = w;
+  });
+  await host.page.evaluate(() => {
+    const { bridge, obstacles } = window.__course.layout();
+    window.__drive.place(bridge.x + 0.9, bridge.z - 10, obstacles.bridge.heading);
+  });
+  const fell = await waitFor('the guest to see the fall and its view clear again', async () => {
+    const g = await guest.page.evaluate(() => ({ ...window.__course.state(), darkest: window.__fallWatch.darkest, fade: window.__seats.fade, fall: window.__drive.state().fall }));
+    return g.falls >= 1 && /\+30 s/.test(g.note) && g.darkest >= 0.5 && g.fade === 0 && g.fall === 0 ? g : null;
+  }, 12000).catch(() => null);
+  const guestFall = await guest.page.evaluate(() => (clearInterval(window.__fallWatch.timer), { ...window.__course.state(), darkest: window.__fallWatch.darkest, fade: window.__seats.fade }));
+  check(`A fall off the bridge fades the guest's view to black and back with the host's, and the guest hears the +30 s (${label})`,
+    fell !== null, `guest: darkest ${guestFall.darkest.toFixed(2)}, now ${guestFall.fade.toFixed(2)}, falls ${guestFall.falls}, note "${guestFall.note}"`);
+
+  // Back to the range start as the later checks expect, the ranges fixed again, the engine as it was (the fall stopped it).
   await host.page.evaluate(() => window.__rangeRun.pickRanges(false));
-  await host.page.evaluate((running) => { if (!running) window.__drive.engine('stop'); window.__drive.reset(); }, wasRunning);
+  await host.page.evaluate((running) => { window.__drive.engine(running ? 'start' : 'stop'); window.__drive.reset(); }, wasRunning);
   await waitFor('the guest to see the tank back', async () => {
     const t = await guest.page.evaluate(() => window.__drive.state());
     return Math.hypot(t.x, t.z) < 0.5;

@@ -272,8 +272,9 @@ export class PerfHudSystem extends createSystem({}) {
       );
     } else {
       // Posed hands: what each controller's sensors report, to check the
-      // touch sensors on a headset ("*" touched; stick, lower and upper face
-      // button, thumb rest), and the pose they give.
+      // touch sensors on a headset ("*" touched; stick, with its forward/back
+      // as the gears read it, -1 forwards; lower and upper face button, thumb
+      // rest), and the pose they give.
       this.drawFingers('L', 'left', graphTop + graphH + 212);
       this.drawFingers('R', 'right', graphTop + graphH + 236);
     }
@@ -289,8 +290,8 @@ export class PerfHudSystem extends createSystem({}) {
     this.ctx.font = '16px monospace';
     const t = (bit: number) => ((f.touches & bit) !== 0 ? '*' : '-');
     this.ctx.fillText(
-      `${label} trig ${f.trigger.toFixed(2)}${t(Touch.Trigger)} grip ${f.squeeze.toFixed(2)} ` +
-        `st${t(Touch.Thumbstick)} lo${t(Touch.LowerButton)} up${t(Touch.UpperButton)} rest${t(Touch.Thumbrest)} ${poseName(handCurls[side])}`,
+      `${label} tr ${f.trigger.toFixed(2)}${t(Touch.Trigger)} gr ${f.squeeze.toFixed(2)} ` +
+        `st${t(Touch.Thumbstick)}${f.stickY < 0 ? '' : '+'}${f.stickY.toFixed(2)} lo${t(Touch.LowerButton)} up${t(Touch.UpperButton)} rest${t(Touch.Thumbrest)} ${poseName(handCurls[side])}`,
       10,
       y,
     );
