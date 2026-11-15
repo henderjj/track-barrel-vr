@@ -1327,6 +1327,23 @@ async function driverFeedback() {
   trigger('controller-right', 1);
   const onTiller = await waitFor('the accelerator from the hand on the tiller', () => { const c = controls(); return c.accel > 0.9 && c; }, 3000).catch(() => controls());
   trigger('controller-right', 0);
+  // Holding the tillers, the right stick flicked forwards changes up a gear, and B changes down (John's Rift play-test,
+  // 15 November 2026: the Rift's stick changed no gears, A and B did; A and B now work with the tillers held too).
+  // Held for two and a half of the slowest recent frames (at least 0.3 s): a shorter push is never seen.
+  const hold = () => sleep(Math.max(300, 2.5 * slowestFrameMs()));
+  const stickY = (y) => iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', axes: [{ index: 0, value: 0 }, { index: 1, value: y }] });
+  const before = station().gear;
+  stickY(-1);
+  await hold();
+  stickY(0);
+  const flicked = await waitFor('the flick to change up', () => { const s = station(); return s.gear === before + 1 && s; }, 3000, 100).catch(() => station());
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: 4, value: 1 }] });
+  await hold();
+  iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: 4, value: 0 }] });
+  const pressedB = await waitFor('B to change down', () => { const s = station(); return s.gear === before && s; }, 3000, 100).catch(() => station());
+  check('Holding the tillers, the right stick flicked forwards changes up a gear and B changes down',
+    flicked.gear === before + 1 && pressedB.gear === before && pressedB.heldBy.tillerRight === 'right',
+    `lever in ${before}, after the flick ${flicked.gear}, after B ${pressedB.gear}, right tiller held by ${pressedB.heldBy.tillerRight}`);
   squeeze('controller-right', 0);
   await waitFor('the right hand off its tiller', () => station().heldBy.tillerRight === null, 3000, 100).catch(() => null);
   iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin(on(starter, 0.25)), duration: 0.3 });
