@@ -25,7 +25,7 @@ The rules live in [`src/sim/commander-voice.ts`](../src/sim/commander-voice.ts);
 - **One call at a time.** A call waits for the one before; one that has waited 6 s is old news and dropped, no more than 3 wait, and a call he has just made (within 8 s) isn't made again (a knock-out ends the fight too, and he says "Bail out!" once). A fire order on each enemy is its own call.
 - **The tank ducks 12 dB under him**, as it does under the crew's own voices.
 - Not everything the board logs is called: the range run's, the race's and the course's notes, the crewmate's calls, gears grinding, the engine labouring or not starting (the driver hears and feels those), and the gunner's view blocked by the driver's head.
-- **Game menu → Sound and view → Commander**: On (the default), Quiet or Off, each player's own, kept for next time (`?commander=0` at load). Off, the board still logs every note.
+- **Game menu → Sound and view → Commander**: a slider, 0 to 100% (full by default), under Master, each player's own, kept for next time (`?commander=0` at load; [volume.md](volume.md)). Off, the board still logs every note. It was On, Quiet or Off buttons until John asked for sliders (2026-11-15).
 
 ## The lines
 
@@ -58,7 +58,7 @@ Nothing to teach: the commander is heard, not worked.
 
 ## Test hooks
 
-`window.__commander`: `said()` (the calls said lately, as lines), `asked()`, `speaking()`, `loaded()`, `context()`, `say(lines)` to ask for a call, `reset()` to forget recent calls, `outputLevel()`. XR step 6za checks every clip loads, a hit on the tank is called while the tank ducks under him, a fire order's four parts go out as one call, and Commander → Off keeps him quiet.
+`window.__commander`: `said()` (the calls said lately, as lines), `asked()`, `speaking()`, `loaded()`, `context()`, `say(lines)` to ask for a call, `reset()` to forget recent calls, `outputLevel()`. XR step 6za checks every clip loads, a hit on the tank is called while the tank ducks under him, a fire order's four parts go out as one call, and Commander's slider at Off keeps him quiet.
 
 ## Headset check
 
@@ -66,5 +66,5 @@ Nothing to teach: the commander is heard, not worked.
 2. Damage → Repair: "Repairs done. We're fit to fight."
 3. Battle → Advance to contact → Start: the brief. Drive towards the guns; when one fires, a fire order. Turn the turret or the tank before the next: the traverse, clock and range should match where it is.
 4. Throw a track in a hard turn, or run the engine hot: his warning, once.
-5. Sound and view → Commander → Quiet, then Off: quieter, then silent, with the board still logging the notes. On again.
+5. Sound and view → Commander's slider down to half, then Off: quieter, then silent, with the board still logging the notes. Full again.
 6. Say whether he is loud enough over the tank, too loud, or comes too often in a fight.

@@ -25,6 +25,7 @@ import {
   traverseVoice,
 } from '../sim/tank-audio.js';
 import { angleDelta, ELEVATION_PER_TURN } from '../sim/turret.js';
+import { tankHeard, volumeGain, volumeText } from '../sim/volume.js';
 import { shownDriverControls, shownDriverState } from './drive-system.js';
 import { shotListeners } from './firing-system.js';
 import { loadingShown } from './loading-system.js';
@@ -69,7 +70,10 @@ export function audioStatus(): string {
 interface AudioDebug {
   state(): {
     context: string;
+    /** The Master volume's level (0 to 1), and the gains Engine and Effects play at now (src/sim/volume.ts). */
     sound: number;
+    engineVolume: number;
+    effectsVolume: number;
     /** One bank of the engine's firing beat, Hz, its exhaust's level and its roar. */
     engineHz: number;
     engineGain: number;
@@ -199,6 +203,8 @@ export class TankAudioSystem extends createSystem({}) {
         return {
           context: self.ctx?.state ?? 'none',
           sound: settings.sound,
+          engineVolume: self.graph ? self.graph.groupGain('engine') : 1,
+          effectsVolume: self.graph ? self.graph.groupGain('effects') : 1,
           engineHz: v.engine.freq,
           engineGain: v.engine.gain,
           roar: v.engine.roar,
@@ -242,7 +248,7 @@ export class TankAudioSystem extends createSystem({}) {
     try {
       this.ctx = new AudioContext({ latencyHint: 'interactive' });
       engineVoice(800, 0, this.voices.engine);
-      this.graph = new TankSoundGraph(this.ctx, settings.sound);
+      this.graph = new TankSoundGraph(this.ctx, volumeGain(settings.sound));
     } catch (error) {
       this.ctx = null;
       this.graph = null;
@@ -264,7 +270,7 @@ export class TankAudioSystem extends createSystem({}) {
       () => document.removeEventListener('visibilitychange', onPageVisibility),
       this.world.visibilityState.subscribe(() => this.checkHidden()),
       onSettingChange((key) => {
-        if (key === 'sound') this.applySound();
+        if (key === 'sound' || key === 'enginevol' || key === 'effectsvol') this.applySound();
       }),
       () => void this.ctx?.close(),
     );
@@ -444,7 +450,7 @@ export class TankAudioSystem extends createSystem({}) {
     if (settings.bot) return "The practice crewmate's page makes no sound.";
     const ctx = this.ctx;
     if (ctx == null) return 'No sound: this browser has no Web Audio.';
-    if (settings.sound === 0) return 'Tank sounds off (Sound and view).';
+    if (!tankHeard(settings)) return 'Tank sounds off (Sound and view).';
     if (ctx.state !== 'running') return 'Sound starts with a click or Enter VR.';
     const duck = this.ducker.speaking ? `ducked ${this.ducker.db.toFixed(0)} dB for the intercom` : 'nobody speaking';
     const tour = this.touring() ? `run through ${Math.ceil(TOUR_SECONDS - this.tourTime())} s to go, ` : '';
@@ -452,7 +458,7 @@ export class TankAudioSystem extends createSystem({}) {
   }
 
   private resume(): void {
-    if (this.ctx && settings.sound > 0 && !this.hidden && this.ctx.state === 'suspended') void this.ctx.resume();
+    if (this.ctx && tankHeard(settings) && !this.hidden && this.ctx.state === 'suspended') void this.ctx.resume();
   }
 
   /** Quiet while the page is hidden or the headset is off: the tank stops being drawn, so it stops being heard. */
@@ -466,16 +472,17 @@ export class TankAudioSystem extends createSystem({}) {
     }
   }
 
-  /** The player's Tank sounds setting: the level, and the context stopped while Off. */
+  /** The Master, Engine and Effects volumes (src/sim/volume.ts): the levels, and the context stopped while nothing is heard. */
   private applySound(): void {
     const ctx = this.ctx;
     if (ctx == null || this.graph == null) return;
-    this.graph.setLevel(settings.sound, ctx.currentTime);
-    if (settings.sound === 0) {
+    this.graph.setLevel(volumeGain(settings.sound), ctx.currentTime);
+    this.graph.setGroups(volumeGain(settings.enginevol), volumeGain(settings.effectsvol), ctx.currentTime);
+    if (!tankHeard(settings)) {
       void ctx.suspend();
     } else {
       this.resume();
     }
-    console.info(`[Audio] tank sounds ${settings.sound === 0 ? 'off' : settings.sound < 1 ? 'quiet' : 'on'}`);
+    console.info(`[Audio] volume: master ${volumeText(settings.sound)}, engine ${volumeText(settings.enginevol)}, effects ${volumeText(settings.effectsvol)}`);
   }
 }

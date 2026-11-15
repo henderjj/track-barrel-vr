@@ -51,7 +51,7 @@ Some of the rows:
 | You | Eye height | − and + in 5 cm steps from the seat's eye point, Eye point |
 | You | Seat | Back in my seat (eyes back at the seat's eye point, facing forward); Swap seats (in a crew it asks your crewmate, or agrees to their ask: [seat-choice.md](seat-choice.md)) |
 | You | Calibration | Calibrate again; the line below says the eye height and reach it took |
-| Sound and view | Tank sounds | On, Quiet, Off ([audio.md](audio.md)) |
+| Sound and view | Master, Engine, Effects, Commander | A slider each, 0 to 100%: touch or drag the track with the ray, or − and + for a tenth ([volume.md](volume.md)) |
 | Sound and view | Callout card | On (the default), Off: the card in each seat ([callout-card.md](callout-card.md)) |
 | Sound and view | Perf HUD (X) | On, Off |
 | Sound and view | Frame rate (Hz) | 72, 80, 90, 120 |
@@ -65,7 +65,7 @@ Below them, **Back to start screen** leaves any crew and shows the start screen,
 
 Add a Practice button for each feature (in the Practice tab, or Sights or Test rigs if it belongs there; a new tab is one `MENU_TABS` entry in `src/game-flow.ts` plus its `tab-<id>` button and `page-<id>` page in the panel, and the pages area's height may need to grow to the tallest page) that jumps straight to the situation its headset check needs. In a crew, a guest's Practice button asks the host, who sets it up for both.
 
-In code, the crew, Playing and live-setting rows are `CHOICE_ROWS` in the menu system; the live settings come from `LIVE_ITEMS` in `src/live-settings.ts`, applied by the system that owns each from `onSettingChange`. A new live setting is one `LIVE_ITEMS` entry (up to four choices) plus a `row-<key>` row in the panel. Start-up settings are `MENU_ITEMS` in `src/settings-menu.ts`.
+In code, the crew, Playing and live-setting rows are `CHOICE_ROWS` in the menu system; the live settings come from `LIVE_ITEMS` in `src/live-settings.ts`, applied by the system that owns each from `onSettingChange`. A new live setting is one `LIVE_ITEMS` entry (up to four choices) plus a `row-<key>` row in the panel; a new volume slider is one `VOLUME_ITEMS` entry plus a `vol-<key>` row. Start-up settings are `MENU_ITEMS` in `src/settings-menu.ts`.
 
 ## Checks
 
