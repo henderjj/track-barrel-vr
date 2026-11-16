@@ -1,4 +1,4 @@
-import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial } from '@iwsdk/core';
+import { BoxGeometry, BufferAttribute, Color, CylinderGeometry, Mesh, MeshStandardMaterial } from '@iwsdk/core';
 import { TURRET, VISION_SLIT } from '../sim/cabin.js';
 import { COURSE_BOARD, COURSE_TARGETS, courseBoardMiddle } from '../sim/course.js';
 import { groundHeight } from '../sim/terrain.js';
@@ -161,4 +161,57 @@ export function createBoardCover(): Mesh {
   const mesh = new Mesh(mergeParts([{ geometry: disk, color: COVER_WHITE }]), material);
   mesh.name = 'Board Cover';
   return mesh;
+}
+
+/**
+ * A board flag (docs/biathlon-race.md, "Board flags"): a pole behind a
+ * course board's middle rising well above it, a crossbar at its top and a
+ * cloth hanging from the bar square over the board, facing the box. The
+ * cloth's colour says what the board is: yellow to shoot next, green
+ * brought down, red missed (src/sim/biathlon.ts's boardFlag). Its foot at
+ * the origin, its cloth facing +Z, as the board it stands behind.
+ */
+export const BOARD_FLAG = {
+  /** Behind the board's middle plane, m: clear of the board's back (5 cm) and its posts (10 cm, 6 cm thick). */
+  back: 0.25,
+  /** Its cloth's foot about 0.7 m over the board's top (2.9 m with its bar), so it is plainly this board's. */
+  pole: 5.0,
+  radius: 0.05,
+  /** The cloth: narrower than the board (2.2 m) so it reads as this board's, and its top inside the bar. */
+  width: 2.0,
+  height: 1.3,
+  thickness: 0.03,
+  bar: 0.08,
+} as const;
+export const FLAG_COLORS: Readonly<Record<'aim' | 'hit' | 'miss', number>> = { aim: 0xf2c81e, hit: 0x2fb84a, miss: 0xe0282a };
+const FLAG_POLE = 0x6e6a60;
+
+/** The cloth is the merged mesh's last part: a box, 36 vertices. */
+const CLOTH_VERTICES = 36;
+
+export function boardFlagParts(): Part[] {
+  const f = BOARD_FLAG;
+  const top = f.pole - 0.1;
+  return [
+    { geometry: new CylinderGeometry(f.radius, f.radius, f.pole + 0.2, 6, 1), color: FLAG_POLE, position: [0, f.pole / 2 - 0.1, -f.back] },
+    box([f.width + 0.1, f.bar, f.bar], [0, top, -f.back], FLAG_POLE),
+    // Its top edge inside the bar.
+    box([f.width, f.height, f.thickness], [0, top + f.bar / 4 - f.height / 2, -f.back], FLAG_COLORS.aim),
+  ];
+}
+
+export function createBoardFlag(): Mesh {
+  const mesh = new Mesh(mergeParts(boardFlagParts()), material);
+  mesh.name = 'Board Flag';
+  return mesh;
+}
+
+const flagColor = new Color();
+
+/** Colour a board flag's cloth `hex` (nothing allocated). */
+export function setBoardFlagColor(mesh: Mesh, hex: number): void {
+  const colors = mesh.geometry.getAttribute('color') as BufferAttribute;
+  flagColor.setHex(hex);
+  for (let v = colors.count - CLOTH_VERTICES; v < colors.count; v++) colors.setXYZ(v, flagColor.r, flagColor.g, flagColor.b);
+  colors.needsUpdate = true;
 }

@@ -1227,10 +1227,11 @@ async function raceChecks(host, guest, label) {
   }, 15000).catch(() => false);
   await guest.page.evaluate(() => window.__turret.pullTrigger());
   const down = await waitFor('the board down on both pages, a round spent', async () => {
-    const [h, g, gc, hp] = await Promise.all([run(host), run(guest), guest.page.evaluate(() => window.__rangeRun.covers()), places(host)]);
-    return h.boardAt[0] >= 0 && g.boardAt[0] >= 0 && gc[0] && h.rounds === 2 && g.rounds === 2 && hp.filter((x) => x === 'spent').length === 2 ? { h, g } : null;
+    const [h, g, gc, hp, gf] = await Promise.all([run(host), run(guest), guest.page.evaluate(() => window.__rangeRun.covers()), places(host), guest.page.evaluate(() => window.__rangeRun.boardFlags())]);
+    // The guest's board flags (docs/biathlon-race.md): green over the board down, yellow moved on to the next.
+    return h.boardAt[0] >= 0 && g.boardAt[0] >= 0 && gc[0] && gf[0] === 'hit' && gf[1] === 'aim' && h.rounds === 2 && g.rounds === 2 && hp.filter((x) => x === 'spent').length === 2 ? { h, g } : null;
   }, 10000).catch(() => null);
-  check(`The host's Ready line 1 has the guest gunner lay and load; the guest's round brings the board down and spends a round on both pages (${label})`,
+  check(`The host's Ready line 1 has the guest gunner lay and load; the guest's round brings the board down (its flag green, the next yellow) and spends a round on both pages (${label})`,
     laid && down !== null && down.h.shots === 1,
     down ? `host "${down.h.line}"` : `laid ${laid}; ${JSON.stringify({ h: await run(host), g: await run(guest), hp: await places(host) })}`);
 

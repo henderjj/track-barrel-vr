@@ -43,6 +43,10 @@ export const GO_SECONDS = 1.5;
 export const FINISH_SECONDS = 8;
 /** Hits on their way (a shell takes up to a second to reach the 500 m target): more than ever fly at once. */
 const PENDING = 8;
+/** A round on its way that can't bring a board down (pendingTarget's -1 is an empty slot). */
+const MISS = -2;
+/** A miss counts as landed after its flight, but no later than this, s: a shell over the boards flies on far past them. */
+export const MISS_LANDS = 1.2;
 
 export type RunPhase = 'idle' | 'running' | 'done';
 export const RUN_PHASES: readonly RunPhase[] = ['idle', 'running', 'done'];
@@ -105,13 +109,20 @@ export interface RunSnapshot {
   noteId: number;
   /** The range each firing line's boards stand at in this race, m (src/sim/course.ts: picked at its start; LINE_RANGES before any race). */
   ranges: number[];
+  /**
+   * Rounds fired at a line in this race that landed without bringing a
+   * board down, and when the last of them landed on the run's clock (-1:
+   * none yet): the board flags (docs/biathlon-race.md) show a miss red.
+   */
+  misses: number;
+  missAt: number;
 }
 
 export function createRunSnapshot(): RunSnapshot {
   return {
     id: 0, phase: 'idle', clock: 0, paused: false, shots: 0, hitAt: RANGE_TARGETS.map(() => -1), time: -1, best: -1, assisted: false,
     mode: 'range', laps: 0, rounds: 0, boardAt: COURSE_TARGETS.map(() => -1), owed: 0, loops: 0, skipped: 0, faults: 0, falls: 0, closed: 0, note: '', noteId: 0,
-    ranges: [...LINE_RANGES],
+    ranges: [...LINE_RANGES], misses: 0, missAt: -1,
   };
 }
 
@@ -160,6 +171,8 @@ export class RangeRun {
     s.faults = 0;
     s.falls = 0;
     s.closed = 0;
+    s.misses = 0;
+    s.missAt = -1;
     this.seen.fed = false;
     this.pendingTarget.fill(-1);
     this.version++;
@@ -215,8 +228,10 @@ export class RangeRun {
       this.version++;
       const line = lineFor(s.laps);
       const j = boardOf(target);
-      if (had > 0 && this.counting && line >= 0 && !lineClosed(s, line) && this.box === line && this.halted && j >= 0 && COURSE_TARGETS[j].line === line && s.boardAt[j] < 0) {
-        this.pend(target, flight);
+      // A round fired while the lap's line is open lands as a hit or a miss (the board flags show which); one at a closed line, or with none left, is no one's business.
+      if (had > 0 && this.counting && line >= 0 && !lineClosed(s, line)) {
+        const hit = this.box === line && this.halted && j >= 0 && COURSE_TARGETS[j].line === line && s.boardAt[j] < 0;
+        this.pend(hit ? target : MISS, hit ? flight : Math.min(Math.max(0, flight), MISS_LANDS));
       }
       return true;
     }
@@ -328,7 +343,7 @@ export class RangeRun {
     let pending = false;
     for (let k = 0; k < PENDING; k++) {
       const target = this.pendingTarget[k];
-      if (target < 0) continue;
+      if (target === -1) continue;
       if (this.pendingAt[k] > s.clock) {
         pending = true;
         continue;
@@ -338,7 +353,12 @@ export class RangeRun {
       if (race && j >= 0 && s.boardAt[j] < 0) {
         s.boardAt[j] = this.pendingAt[k];
         this.version++;
-      } else if (!race && s.hitAt[target] < 0) {
+      } else if (race) {
+        // A miss, or a second round at a board already down.
+        s.misses++;
+        s.missAt = this.pendingAt[k];
+        this.version++;
+      } else if (s.hitAt[target] < 0) {
         s.hitAt[target] = this.pendingAt[k];
         this.version++;
       }
@@ -397,6 +417,8 @@ export function copyRunSnapshot(from: RunSnapshot, to: RunSnapshot): RunSnapshot
   to.note = from.note;
   to.noteId = from.noteId;
   for (let k = 0; k < to.ranges.length; k++) to.ranges[k] = from.ranges[k] ?? LINE_RANGES[k];
+  to.misses = from.misses;
+  to.missAt = from.missAt;
   return to;
 }
 
@@ -438,6 +460,8 @@ export function runEvent(s: RunSnapshot, atMs: number): { t: 'run' } & Record<st
     note: s.note,
     noteId: s.noteId,
     ranges: [...s.ranges],
+    misses: s.misses,
+    missAt: s.missAt,
     at: atMs,
   };
 }
@@ -484,6 +508,9 @@ export function readRunEvent(e: Record<string, unknown>, out: RunSnapshot): { at
   // The lines' ranges (since the harder shooting); a page from before them keeps its boards where they stood.
   const ranges = Array.isArray(e.ranges) ? e.ranges : null;
   if (ranges) for (let k = 0; k < out.ranges.length; k++) out.ranges[k] = clampLineRange(k, ranges[k]);
+  // The misses (the board flags); a page from before them sends none.
+  out.misses = count(e.misses);
+  out.missAt = num(e.missAt) ?? -1;
   return { at };
 }
 
