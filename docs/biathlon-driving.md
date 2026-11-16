@@ -32,6 +32,8 @@ The tank's packet carries the fall's time still to go (one more byte; a page on 
 
 **The tilt** (John's 13 November decision): the hull's pitch and roll limit went from 4° to 15°, so the tank tips with the ground on the hill, the ditch banks and the ford. Reduced bumps (Comfort) still cap it at 6°.
 
+**Signs** (from John's play test of 2026-11-15, [biathlon-signs.md](biathlon-signs.md)): a SLALOM board and red and blue gates as in ski slalom, a caution triangle with MUD before the bypass leaves, an 8 km/h limit roundel with FORD before the water, and PENALTY LOOP with chevrons round the loop.
+
 ## How it works
 
 - **Engine-free rules** in `src/sim/going.ts`: each gear's steepest climb (`GEAR_GRADE`: 1st 25°, 2nd 15°, 3rd 9°, 4th 5.5°, 5th 3°, reverse 15°), `groundPull`, which leaves over whatever slope and drag the engine and brakes can't answer, the mud's sink, the throw strain and the load's heat share. `src/sim/tank-drive.ts` applies them each step. Its flat-ground drive is unchanged, the ground's leftover pull is added under the same comfort limit on acceleration, and `stepGoing` does the sink, the throw, the ford and the bridge fall.

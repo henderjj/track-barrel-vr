@@ -3335,6 +3335,8 @@ async function theBiathlonRace() {
   await menuButtonPress();
   await menuClick('menu-race-ready-0');
   const fallen = [];
+  // The board flags (docs/biathlon-race.md): yellow over the board to shoot next, green over each one down.
+  let flagsBefore = [];
   for (let k = 0; k < 3; k++) {
     if (k > 0) evalInApp('(window.__rangeRun.readyLine(0), true)');
     const loaded = await waitFor(`laid on board ${k + 1} and loaded`, () => {
@@ -3342,6 +3344,7 @@ async function theBiathlonRace() {
       return l.loaded && evalInApp('window.__rangeRun.lineNow()') === 0 && evalInApp('window.__seats.mine') === 'gunner' && l;
     }, 15000).catch(() => null);
     if (loaded === null) break;
+    if (k === 0) flagsBefore = evalInApp('window.__rangeRun.boardFlags()');
     evalInApp('(window.__turret.pullTrigger(), true)');
     const down = await waitFor(`board ${k + 1} down`, () => {
       const s = run();
@@ -3358,6 +3361,10 @@ async function theBiathlonRace() {
     fallen.length === 3 && fallen.every(Boolean) && shot.closed === 1 && shot.owed === 0 && shot.rounds === 0 && shot.shots === 3 &&
       covers.slice(0, 3).every(Boolean) && !covers.slice(3).some(Boolean) && evalInApp('window.__rangeRun.coverAt(0)') !== null,
     `boards down ${fallen.join('/')}, covers ${covers.join('/')}, rounds ${shot.rounds}, owed ${shot.owed}, note "${shot.note}", "${shot.line}"`);
+  const flagsAfter = evalInApp('window.__rangeRun.boardFlags()');
+  check('A yellow flag stands over line 1\'s first board before the first round, and a green one over each board once the line is shot clean; line 2 has none',
+    flagsBefore.join() === 'aim,none,none,none,none,none' && flagsAfter.join() === 'hit,hit,hit,none,none,none',
+    `before ${flagsBefore.join('/')}, after ${flagsAfter.join('/')}`);
   const sign = await waitFor('the line\'s sign', () => { const t = evalInApp('window.__rangeRun.sign'); return t === 'Line 1: clean!' && t; }, 5000)
     .catch(() => evalInApp('window.__rangeRun.sign'));
   const empty = await waitFor('the rack empty', () => {
