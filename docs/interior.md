@@ -15,7 +15,7 @@ So a crewman's eyes and hands work together: the vision device is a short lean f
 
 After the first pass John reported: it reads as a tank and nothing flickers, but the lighting was still bright, so the hatch and lamp light didn't show; the tillers were low and pushing them fully forwards needed a lean that put the head into the slit and pushed the view back, which made testing hard ("it might be better to fade out instead so the calibrated seating position stays fixed"); the instrument box would be handier in front (and where is a Sherman's?); the periscope works; the gunner's crank clashed with the turret ring and the controls were still a bit low; 85 fps in the gunner's seat and 90 in the driver's; the turret roof looked square and basic. The second pass:
 
-- **Fade, don't push.** Leaning past the head box, or standing up over the roof stop, now fades the view to black over 8 cm, and leaning back clears it. The play space stays where calibration put it, so the seat never shifts under the player. A head more than 30 cm past the box's edge still puts the player back in the seat if it got there in one jump of over 20 cm (a recentre) or stays there two seconds (standing up and walking off).
+- **Fade, don't push.** Leaning past the head box, or standing up over the roof stop, now fades the view to black over 8 cm, and leaning back clears it. The play space stays where calibration put it, so the seat never shifts under the player. A head more than 30 cm past the box's edge used to put the player back in the seat after a jump of over 20 cm or two seconds there; since John's play-test of 2026-11-15 it never does: the view stays black and a sign says how to get back ([cabin.md](cabin.md#out-of-the-seat-johns-play-test-2026-11-15)).
 - **Darker.** Away from the pools the cabin now gets about 6% of the sky's light (26% before), so the daylight under each hatch, now a tighter pool, and the dome lamps, now brighter, stand out.
 - **Tillers.** The handles stand 42 cm under the eyes (55 before) and 32 cm ahead, and swing 20° each way (25° before): full forwards is 45 cm ahead, within a seated arm's reach with no lean.
 - **The instrument box** on a Sherman is at the driver's left front, by the steering levers (figure 9's "instrument box", top left), which is where ours was. It now stands in front instead, on the glacis between the tillers like a car's dashboard: a glance 37° down from the slit, 57 cm away.
@@ -64,7 +64,7 @@ John found the fade to black came in too early, and only the middle of the view 
 | Hood face | upright at z −1.9 from 1.32 m to the roof | The slit 30 cm ahead of the eyes |
 | Vision slit | as before (34 × 10 cm at the driver's eye height, 1.27 m since [crew-heights.md](crew-heights.md)), in the hood face | About 60° across from the seat, 80° leant in |
 | Driver's head box | 51 cm left, 50 cm right, 20 cm forward, 50 cm back; eyes up 26 cm (10 cm forward and 20 cm up before the fourth pass) | The eyes 9 cm from the left wall, the brow pad and the roof at its edges; open to the right and behind |
-| Head fade | from 9 cm off a wall, the hood or the roof (`EYE_CLEARANCE`), black 4 cm later; more than 30 cm out, reseat after a jump of over 20 cm or 2 s | Black before the near plane (5 cm) cuts into the wall; the seat stays where it was calibrated |
+| Head fade | from 9 cm off a wall, the hood or the roof (`EYE_CLEARANCE`), black 4 cm later; more than 30 cm out, black stays and a sign says how to get back (never reseats) | Black before the near plane (5 cm) cuts into the wall; the seat stays where it was calibrated |
 | Tiller pivots | 81 cm under the eyes, 32 cm ahead (94 and 42 before); ±20° (±25°) | Handles 42 cm under the eyes, 19 to 45 cm ahead |
 | Hand throttle pivot | 0.66 m (0.8 m before) | On its quadrant by the left knee |
 | Instrument box | face's middle (−0.5, 1.1, −2.06), 28 × 16 cm, facing the eyes 57 cm away, 37° down | Between the tillers with a fist's room either side, in front of the glacis |
@@ -94,7 +94,7 @@ Nothing new goes over the network: the layout is the same numbers on both pages,
 ## Departures and what to watch
 
 - **The instrument box is in front, not on the left** as on a Sherman: John found the left wall awkward. Between the tillers it leaves the fists 5 cm either side; whether the hands brush it at full travel is a headset question.
-- **No push at the walls.** With the fade, nothing stops a head going through a plate; the view is black by then. A head kept far out for two seconds reseats the player.
+- **No push at the walls.** With the fade, nothing stops a head going through a plate; the view is black by then. A head kept far out stays black, with a sign saying how to get back ([cabin.md](cabin.md#out-of-the-seat-johns-play-test-2026-11-15)).
 - **The periscope's yoke turned sideways** brings a handle within 8 cm of the eyes' plane (beside the right shoulder, 26 cm out); before it stayed 18 cm ahead. The unit test now asks for 7 cm. Check it doesn't knock the chest when turned.
 - **The S3 lever-test rig** (Test rigs → Lever test) still stands where it did, in front of the station's tillers.
 - **The run clock** in the driver's seat moved to the left of the slit (the periscope covers the right).

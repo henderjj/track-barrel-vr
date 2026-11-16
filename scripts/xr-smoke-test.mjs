@@ -639,8 +639,9 @@ const flatGap = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 /**
  * 1b. The cabin (F1.1): playing solo the player sits in the driver's seat,
  *     eyes over its eye point; a lean forward past the head box's edge fades the view
- *     (the controls and the front plate are beyond); a recentre, a jump of
- *     over a metre, puts them back in the seat; the game menu's Practice
+ *     (the controls and the front plate are beyond); a head out of the seat
+ *     keeps the view black and the seat put, with a sign, until leaning back,
+ *     the menu's Back in my seat or the headset's recentre; the game menu's Practice
  *     row moves them to the gunner's seat in the turret basket, its floor
  *     80 cm up, and back.
  */
@@ -678,16 +679,65 @@ async function seatStep() {
     clear.fade === 0 && Math.abs(clear.head[2] - (eye[2] - 0.05)) < 0.01 && clear.fixes.reseat === start.fixes.reseat,
     `head at ${fmt(clear.head)}, fade ${clear.fade}`);
 
-  // A recentre: the head jumps 1.5 m sideways in the room.
+  // Out of the seat: the head 1.5 m sideways in the room (stood up and walked, or a long lean; John's play-test,
+  // 2026-11-15). The view stays black and the seat stays put however long it is out there; a sign over the black says
+  // how to get back. Leaning back clears it, the seat still where it was.
+  const rig = () => evalInApp('[window.__debug.world.player.position.x, window.__debug.world.player.position.z]');
+  const rigBefore = rig();
   const now = iwsdk(['xr', 'get-transform'], { device: 'headset' }).result.position;
   iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: now.x + 1.5, y: now.y, z: now.z } });
-  const back = await waitFor('back in the seat', () => {
+  const away = await waitFor('the sign over the black', () => {
+    const s = { ...seated(), sign: evalInApp('window.__seats.outSign') };
+    return s.fixes.out > start.fixes.out && s.sign ? s : null;
+  }, 8000).catch(() => ({ ...seated(), sign: evalInApp('window.__seats.outSign') }));
+  await sleep(2500);
+  const stillAway = seated();
+  const rigAway = rig();
+  check('A head out of the seat keeps the view black and the seat put, with a sign saying how to get back',
+    away.fixes.out > start.fixes.out && away.sign.includes('Back in my seat') && stillAway.fade > 0.99 &&
+      stillAway.fixes.reseat === start.fixes.reseat && flatGap([rigAway[0], 0, rigAway[1]], [rigBefore[0], 0, rigBefore[1]]) < 1e-6,
+    `fade ${stillAway.fade.toFixed(2)}, sign "${away.sign}", ${stillAway.fixes.reseat - start.fixes.reseat} reseat(s), play space moved ${flatGap([rigAway[0], 0, rigAway[1]], [rigBefore[0], 0, rigBefore[1]]).toFixed(3)} m`);
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: now });
+  const backIn = await waitFor('the view to clear', () => {
+    const s = { ...seated(), sign: evalInApp('window.__seats.outSign') };
+    return s.fade === 0 && !s.sign ? s : null;
+  }, 5000).catch(() => ({ ...seated(), sign: evalInApp('window.__seats.outSign') }));
+  const rigBack = rig();
+  check('Leaning back from out of the seat clears the view, the seat where it was',
+    backIn.fade === 0 && !backIn.sign && backIn.fixes.reseat === start.fixes.reseat &&
+      flatGap([rigBack[0], 0, rigBack[1]], [rigBefore[0], 0, rigBefore[1]]) < 1e-6,
+    `fade ${backIn.fade}, sign "${backIn.sign}", ${backIn.fixes.reseat - start.fixes.reseat} reseat(s)`);
+
+  // Out of the seat again: the game menu lifts the black, and its Back in my seat sits the player down where they are.
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: now.x + 1.5, y: now.y, z: now.z } });
+  await waitFor('the view black', () => seated().fade > 0.99, 5000).catch(() => null);
+  evalInApp('(window.__gameMenu.toggle(true), true)');
+  const menuView = await waitFor('the black lifted', () => {
     const s = seated();
-    return s.fixes.reseat > start.fixes.reseat && flatGap(s.head, s.eye) < 0.01 ? s : null;
+    return s.fade === 0 ? s : null;
   }, 5000).catch(() => seated());
-  check('A head far outside the seat (a recentre) is put back in the seat',
-    back.fixes.reseat > start.fixes.reseat && flatGap(back.head, back.eye) < 0.01,
-    `head ${fmt(back.head)}, eye point ${fmt(back.eye)}, ${back.fixes.reseat - start.fixes.reseat} reseat(s)`);
+  evalInApp("window.__gameMenu.click('menu-reseat')");
+  const reseated = await waitFor('back in the seat', () => {
+    const s = seated();
+    return s.fixes.reseat > start.fixes.reseat && flatGap(s.head, s.eye) < 0.01 && s.fade === 0 ? s : null;
+  }, 5000).catch(() => seated());
+  check('With the head out of the seat, the game menu lifts the black and Back in my seat sits the player down',
+    menuView.fade === 0 && reseated.fixes.reseat > start.fixes.reseat && flatGap(reseated.head, reseated.eye) < 0.01 && reseated.fade === 0 && !evalInApp('window.__gameMenu.open'),
+    `fade with the menu open ${menuView.fade}, head ${fmt(reseated.head)}, eye point ${fmt(reseated.eye)}`);
+
+  // The headset's own recentre (the reference space's reset event): the player is sat down where their head is.
+  const mid = iwsdk(['xr', 'get-transform'], { device: 'headset' }).result.position;
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: { x: mid.x + 0.3, y: mid.y, z: mid.z } });
+  await waitFor('the head moved', () => flatGap(seated().head, reseated.eye) > 0.25, 5000).catch(() => null);
+  const before = seated();
+  evalInApp('window.__seats.recentre()');
+  const recentred = await waitFor('back in the seat', () => {
+    const s = seated();
+    return s.fixes.recentres > before.fixes.recentres && flatGap(s.head, s.eye) < 0.01 ? s : null;
+  }, 5000).catch(() => seated());
+  check("The headset's recentre puts the player back in the seat",
+    recentred.fixes.recentres > before.fixes.recentres && flatGap(recentred.head, recentred.eye) < 0.01,
+    `head ${fmt(recentred.head)}, eye point ${fmt(recentred.eye)}, ${recentred.fixes.recentres - before.fixes.recentres} recentre(s)`);
   iwsdk(['xr', 'set-device-state'], {});
   await sleep(300);
 
@@ -1426,12 +1476,12 @@ async function driverFeedback() {
  *     reading 28 V; the gunner's power traverse has nothing while it is off.
  */
 async function startingTheEngine() {
-  const engine = () => ({
-    ...evalInApp('(({ running, cranking, rpm, power, stalls }) => ({ running, cranking, rpm, power, stalls }))(window.__drive.state())'),
-    box: evalInApp('window.__driverStation.engine()'),
-    volts: evalInApp('window.__driverStation.gauges().volts'),
-    zones: evalInApp('window.__driverStation.zones().at'),
-  });
+  // One evaluation, so the voltmeter is read in the same frame as the engine's state: on a slow runner the engine can
+  // catch between two evaluations, and a crank seen in one would meet the generator's 28 V in the next.
+  const engine = () => evalInApp(`(() => {
+    const { running, cranking, rpm, power, stalls } = window.__drive.state();
+    return { running, cranking, rpm, power, stalls, box: window.__driverStation.engine(), volts: window.__driverStation.gauges().volts, zones: window.__driverStation.zones().at };
+  })()`);
   const off = engine();
   check('The tank starts with its engine stopped: the oil and generator lamps lit, the voltmeter at 24 V',
     !off.running && off.rpm < 50 && off.box.lamps.oil && off.box.lamps.generator && Math.abs(off.volts - 24) < 0.5,
@@ -3812,13 +3862,14 @@ async function theDrivingChallenge() {
   const slalom = layout.obstacles.slalom;
   await waitFor('the tank parked short of the slalom', () => { const t = tank(); return Math.abs(t.x - slalom.x) < 0.5; }, 8000).catch(() => null);
   const standing = evalInApp('window.__course.posts()');
-  // The first fault's sign, caught as it goes up (it stays 3 s, less than the hops take).
+  // The first fault's sign, caught as it goes up (it stays 3 s, less than the hops take). The bridge's sign from the
+  // step before can still be up on the first hops of a slow runner, so wait for the slalom's own.
   let slalomSign = '';
   for (let x = slalom.x - 2; x >= layout.posts[0][0] - 12; x -= 2) {
     const frames = evalInApp('window.__course.frames');
     evalInApp(`(window.__drive.place(${x}, ${slalom.z}, ${slalom.heading}), true)`);
     await waitFor('a frame after the move', () => evalInApp('window.__course.frames') >= frames + 2, 10000).catch(() => null);
-    if (slalomSign === '') slalomSign = evalInApp('window.__course.sign');
+    if (!/^Slalom: /.test(slalomSign)) slalomSign = evalInApp('window.__course.sign');
   }
   const knocked = course();
   const posts = evalInApp('window.__course.posts()');
