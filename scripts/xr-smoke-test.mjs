@@ -1476,12 +1476,12 @@ async function driverFeedback() {
  *     reading 28 V; the gunner's power traverse has nothing while it is off.
  */
 async function startingTheEngine() {
-  const engine = () => ({
-    ...evalInApp('(({ running, cranking, rpm, power, stalls }) => ({ running, cranking, rpm, power, stalls }))(window.__drive.state())'),
-    box: evalInApp('window.__driverStation.engine()'),
-    volts: evalInApp('window.__driverStation.gauges().volts'),
-    zones: evalInApp('window.__driverStation.zones().at'),
-  });
+  // One evaluation, so the voltmeter is read in the same frame as the engine's state: on a slow runner the engine can
+  // catch between two evaluations, and a crank seen in one would meet the generator's 28 V in the next.
+  const engine = () => evalInApp(`(() => {
+    const { running, cranking, rpm, power, stalls } = window.__drive.state();
+    return { running, cranking, rpm, power, stalls, box: window.__driverStation.engine(), volts: window.__driverStation.gauges().volts, zones: window.__driverStation.zones().at };
+  })()`);
   const off = engine();
   check('The tank starts with its engine stopped: the oil and generator lamps lit, the voltmeter at 24 V',
     !off.running && off.rpm < 50 && off.box.lamps.oil && off.box.lamps.generator && Math.abs(off.volts - 24) < 0.5,
