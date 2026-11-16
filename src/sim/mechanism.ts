@@ -295,6 +295,30 @@ class HandAngle {
     this.lastY = y;
     return this.filter.filter(this.unwrapped, dt);
   }
+
+  /**
+   * Round a wheel's axle, directly (a `direct` wheel): the hand is at (x, y)
+   * in wheel space now, `dt` after the last; its steadied, unwrapped angle.
+   * The angle moves on by how far the hand went round the axle as seen from
+   * where it was, never nearer the axle than `near`: so out on the knob's
+   * circle the wheel goes exactly where the hand is, a degree of hand for a
+   * degree of wheel, and only a hand cutting in close to the axle turns it
+   * less there instead of making it jump. This is how all wheels turned from
+   * 28 October to 7 November 2026 (PR #32); John found the turret's wheels
+   * harder to lay precisely once they followed the hand's circling
+   * (`stepAround`), so they went back to it (playtest, 15 November 2026).
+   */
+  stepDirect(x: number, y: number, near: number, dt: number): number {
+    const c = Math.cos(this.unwrapped);
+    const s = Math.sin(this.unwrapped);
+    // The hand's offset along the way round (anticlockwise) and out from the axle, at the angle it was at.
+    const along = -x * c - y * s;
+    const out = y * c - x * s;
+    this.unwrapped += Math.atan2(along, out > near ? out : near);
+    this.lastX = x;
+    this.lastY = y;
+    return this.filter.filter(this.unwrapped, dt);
+  }
 }
 
 /** Ticks as an angle passes marks every `every` radians, each felt again only once the angle has moved off it. */
@@ -657,7 +681,18 @@ export interface WheelSpec {
   perTurn: number;
   /** A crank with a trigger bar along its knob, pulled by the holding hand's index finger: `firing`, with Press and Release events. */
   trigger?: boolean;
+  /**
+   * Turns with the hand's angle round the axle (`HandAngle.stepDirect`): a
+   * degree of hand round the knob's circle is a degree of wheel, for precise
+   * laying. Otherwise it follows the hand's circling (`HandAngle.stepAround`),
+   * which forgives circles off the axle but reads small careful moves less
+   * exactly. The turret's traverse crank and elevation handwheel are direct.
+   */
+  direct?: boolean;
 }
+
+/** Nearer a direct wheel's axle than this share of its radius, a hand turns it less the nearer it is (`HandAngle.stepDirect`). */
+const NEAR_AXLE = 0.5;
 
 
 
@@ -680,8 +715,10 @@ export function wheelAngleOf(x: number, y: number): number {
  * since the last (`HandAngle.stepAround`), so where the hand took hold
  * doesn't matter, a hand going round a little off the axle (as hands
  * turning a crank do) still turns it smoothly, and one drifting over the
- * middle doesn't make it jump. Two hands on a rim turn it by the mean of
- * where each would take it. It stops
+ * middle doesn't make it jump. A `direct` wheel (the turret's) instead
+ * follows the hand's angle round the axle (`HandAngle.stepDirect`), so its
+ * knob stays under the hand for precise laying. Two hands on a rim turn it
+ * by the mean of where each would take it. It stops
  * at its limits like a lever; a wheel let go stays where it is. A crank
  * with a `trigger` reads its holding hand's trigger as `firing`, like a
  * twist grip.
@@ -749,7 +786,9 @@ export class Wheel extends Mechanism {
       if (!this.held[i]) continue;
       const hand = hands[i];
       if (!hand) continue;
-      sum += this.hands[i].stepAround(hand.fist[0], hand.fist[1], this.spec.radius, dt) + this.offset[i];
+      const [x, y] = hand.fist;
+      const r = this.spec.radius;
+      sum += (this.spec.direct ? this.hands[i].stepDirect(x, y, NEAR_AXLE * r, dt) : this.hands[i].stepAround(x, y, r, dt)) + this.offset[i];
       count++;
     }
     let overshoot = 0;
