@@ -95,10 +95,30 @@ export function startRace(): void {
  * Practice → Biathlon race → Ready at line 1 or 2: the tank parked halted
  * in firing box `k` with the engine running, the gun laid on the line's
  * first board still standing and loaded. Alone, the player takes the
- * gunner's seat. Marks a race on now as assisted.
+ * gunner's seat. Marks a race on now as assisted; with no race on, starts
+ * line practice there.
  */
 export function readyAtLine(k: number): void {
   active?.readyLine(k);
+}
+
+/**
+ * Practice → Biathlon → Line 1 or 2 (docs/biathlon-signs.md, "Line
+ * practice"): the tank parked in firing box `k` (course-system's
+ * goToFiringLine) and, with no race on, line practice there, so the line's
+ * boards fall and fly their flags as in a race. The host does it; a guest
+ * asks.
+ */
+export function practiseLine(k: number): void {
+  if (!(k >= 0 && k < BOX_Z.length)) return;
+  goToFiringLine(k);
+  if (!raceOn()) active?.ask('start', 'line', k);
+}
+
+/** Whether a biathlon race is running, as this page shows it (line practice doesn't take its place). */
+function raceOn(): boolean {
+  const s = shownRun();
+  return s.mode === 'biathlon' && s.phase === 'running';
 }
 
 /**
@@ -118,7 +138,9 @@ export function readyToFire(i: number, seat: SeatId = 'gunner', ammo: AmmoKind |
 export function runStatus(): string {
   if (active == null) return '';
   const s = active.run.s;
-  return s.mode === 'range' ? runLine(s) : 'No range run on: a biathlon race is.';
+  if (s.mode === 'range') return runLine(s);
+  if (s.phase !== 'running') return 'No run on.';
+  return s.mode === 'biathlon' ? 'No range run on: a biathlon race is.' : `No range run on. ${runLine(s)}`;
 }
 
 /** One line for the game menu's Biathlon race row (F5.3b). */
@@ -135,13 +157,14 @@ export function shownRun(): Readonly<RunSnapshot> {
 const NO_RUN = createRunSnapshot();
 
 /**
- * The firing line whose boards a shot can bring down now in a race (F5.3b),
- * or -1: the race's clock running, this lap's line not shot yet, and the
- * tank halted in its box. The practice crewmate fires only then.
+ * The firing line whose boards a shot can bring down now in a race (F5.3b)
+ * or line practice, or -1: the clock running, this lap's (the practice's)
+ * line not shot yet, and the tank halted in its box. The practice crewmate
+ * fires only then.
  */
 export function raceLineNow(): number {
   const s = shownRun();
-  if (s.mode !== 'biathlon' || s.phase !== 'running' || s.clock < 0 || s.paused) return -1;
+  if (s.mode === 'range' || s.phase !== 'running' || s.clock < 0 || s.paused) return -1;
   const line = lineFor(s.laps);
   if (line < 0 || lineClosed(s, line) || s.rounds <= 0) return -1;
   const c = shownCourse();
@@ -172,6 +195,8 @@ interface RangeRunDebug {
   race(): void;
   /** Ready at line k: parked in its box, laid on a standing board and loaded. */
   readyLine(k: number): void;
+  /** Practice → Biathlon → Line k: parked in its box, line practice there with no race on. */
+  practise(k: number): void;
   /** Which course boards are covered (fallen), line 1's three then line 2's. */
   covers(): boolean[];
   /** Where board cover `j` is drawn (ground space), or null while it's hidden. */
@@ -310,7 +335,7 @@ export class RangeRunSystem extends createSystem({}) {
       const what = ASKS.find((a) => a === e.what);
       // A page from before the race (F5.3b) sends no mode: a range run.
       const mode = RUN_MODES.find((m) => m === e.mode) ?? 'range';
-      if (netLink.isHost && what) this.act(what, mode);
+      if (netLink.isHost && what) this.act(what, mode, Number(e.line) || 0);
     });
     netLink.events.set('range-ready', (e) => {
       const target = Number(e.target);
@@ -349,6 +374,7 @@ export class RangeRunSystem extends createSystem({}) {
       flagAt: (i) => (self.flags[i]?.visible ? self.flags[i].position.toArray() : null),
       race: () => startRace(),
       readyLine: (k) => readyAtLine(k),
+      practise: (k) => practiseLine(k),
       covers: () => self.covers.map((c) => c.visible),
       ranges: () => [...lineRanges()],
       pickRanges: (on) => {
@@ -371,18 +397,22 @@ export class RangeRunSystem extends createSystem({}) {
     };
   }
 
-  /** Start (a run of `mode`), stop or mark the run assisted: the host does it; a guest asks the host. */
-  ask(what: RunAsk, mode: RunMode = 'range'): void {
-    if (netLink.isHost) this.act(what, mode);
+  /** Start (a run of `mode`; line practice at `line`), stop or mark the run assisted: the host does it; a guest asks the host. */
+  ask(what: RunAsk, mode: RunMode = 'range', line = 0): void {
+    if (netLink.isHost) this.act(what, mode, line);
     else {
-      const event = { t: 'run-ask', what, mode };
+      const event = { t: 'run-ask', what, mode, line };
       netLink.sendEvent(event);
     }
   }
 
   /** The host. */
-  private act(what: RunAsk, mode: RunMode = 'range'): void {
-    if (what === 'start') {
+  private act(what: RunAsk, mode: RunMode = 'range', line = 0): void {
+    if (what === 'start' && mode === 'line') {
+      // Line practice: the tank is already on its way to the box (practiseLine); its boards stay at their ranges.
+      this.run.start('line', undefined, line);
+      console.info(`[RangeRun] line ${this.run.s.laps + 1} practice ${this.run.s.id} starting`);
+    } else if (what === 'start') {
       // A race picks its lines' ranges afresh (`boardranges=0`: the fixed ones), so the gunner judges them.
       this.run.start(mode, settings.boardRanges ? pickLineRanges(Math.random) : LINE_RANGES);
       // The run starts at its start line with the engine as the crew left it (F1.17): the range's, or short of the course's.
@@ -416,7 +446,9 @@ export class RangeRunSystem extends createSystem({}) {
   readyLine(k: number): void {
     if (!(k >= 0 && k < BOX_Z.length)) return;
     goToFiringLine(k);
-    this.ask('assist');
+    // In a race it is a shortcut (assisted); with none on, line practice there, its flags over the boards.
+    if (raceOn()) this.ask('assist');
+    else if (!(this.run.s.mode === 'line' && this.run.s.phase === 'running' && lineFor(this.run.s.laps) === k)) this.ask('start', 'line', k);
     const s = this.run.s;
     let board = k * BOARDS_PER_LINE;
     for (let j = board; j < board + BOARDS_PER_LINE; j++) {
@@ -664,7 +696,7 @@ export class RangeRunSystem extends createSystem({}) {
     const tenths = Math.floor(s.clock * 10);
     // A race's clocks also show its lap, the line's rounds, what is owed and what is down (F5.3b).
     const race = s.mode === 'biathlon';
-    const targets = race ? boardsDown(s) + 10 * s.laps + 100 * s.owed + 1000 * s.rounds + 10000 * s.loops : targetsHit(s);
+    const targets = s.mode !== 'range' ? boardsDown(s) + 10 * s.laps + 100 * s.owed + 1000 * s.rounds + 10000 * s.loops : targetsHit(s);
     const flags = (s.paused ? 1 : 0) + (s.assisted ? 2 : 0) + (race ? 4 : 0) + 8 * s.closed;
     if (k[0] === phase && k[1] === tenths && k[2] === targets && k[3] === s.shots && k[4] === flags && k[5] === s.best && k[6] === s.time) return;
     k[0] = phase;

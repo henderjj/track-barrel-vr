@@ -66,9 +66,9 @@ export function boardOf(target: number): number {
   return j >= 0 && j < BOARD_COUNT ? j : -1;
 }
 
-/** Whether board `j` has fallen (its disc covered) in the race shown. */
+/** Whether board `j` has fallen (its disc covered) in the race or line practice shown. */
 export function boardDown(s: Readonly<RunSnapshot>, j: number): boolean {
-  return s.mode === 'biathlon' && s.phase !== 'idle' && s.boardAt[j] >= 0;
+  return s.mode !== 'range' && s.phase !== 'idle' && s.boardAt[j] >= 0;
 }
 
 /** How many of line `k`'s boards have fallen (all lines' with k = -1). */
@@ -91,7 +91,8 @@ export function raceMisses(s: Readonly<RunSnapshot>): number {
  * board to shoot next, 'hit' (green) over each board brought down, 'miss'
  * (red) over the board aimed at for MISS_FLASH s after a round misses, and
  * over every board left standing once the line is shot. 'none' elsewhere:
- * the other line's boards, the last lap, outside a race.
+ * the other line's boards, the last lap, outside a race. Line practice
+ * (Practice → Biathlon → Line 1 or 2) shows its line's flags the same way.
  */
 export type BoardFlag = 'none' | 'aim' | 'hit' | 'miss';
 export const BOARD_FLAGS: readonly BoardFlag[] = ['none', 'aim', 'hit', 'miss'];
@@ -100,7 +101,7 @@ export const MISS_FLASH = 2.5;
 
 /** The board (0 to 5) to shoot next: this lap's line's first still standing, left to right; -1 when none (no race, the last lap, the line shot). */
 export function aimBoard(s: Readonly<RunSnapshot>): number {
-  if (s.mode !== 'biathlon' || s.phase !== 'running') return -1;
+  if (s.mode === 'range' || s.phase !== 'running') return -1;
   const line = lineFor(s.laps);
   if (line < 0 || lineClosed(s, line)) return -1;
   for (let j = line * BOARDS_PER_LINE; j < (line + 1) * BOARDS_PER_LINE; j++) if (s.boardAt[j] < 0) return j;
@@ -109,7 +110,7 @@ export function aimBoard(s: Readonly<RunSnapshot>): number {
 
 /** Board `j`'s flag in the race shown. */
 export function boardFlag(s: Readonly<RunSnapshot>, j: number): BoardFlag {
-  if (s.mode !== 'biathlon' || s.phase !== 'running') return 'none';
+  if (s.mode === 'range' || s.phase !== 'running') return 'none';
   const line = lineFor(s.laps);
   if (line < 0 || COURSE_TARGETS[j]?.line !== line) return 'none';
   if (s.boardAt[j] >= 0) return 'hit';
@@ -197,6 +198,23 @@ export function raceClockLines(s: Readonly<RunSnapshot>, fmt: (t: number) => str
       return [s.assisted ? 'Finished (assisted)' : medal ? `${medal}!` : 'Finished', fmt(s.time), `Down ${boardsDown(s)}/${BOARD_COUNT}   Loops ${s.loops}${faults}`];
     }
   }
+}
+
+/** The game menu's line on line practice (mode 'line'; `laps` holds the line). */
+export function practiceLine(s: Readonly<RunSnapshot>): string {
+  const line = lineFor(s.laps);
+  if (s.phase !== 'running' || line < 0) return 'No line practice on.';
+  const go = lineClosed(s, line) ? 'the boards stand again in a moment' : `${plural(s.rounds, 'round')} left of this go`;
+  return `Practising at line ${line + 1}: ${boardsDown(s, line)} of ${BOARDS_PER_LINE} down, ${go}.`;
+}
+
+/** What the run clocks show in line practice: the line, the time since it started, and the go. */
+export function practiceClockLines(s: Readonly<RunSnapshot>, fmt: (t: number) => string): [string, string, string] {
+  const line = lineFor(s.laps);
+  if (s.phase !== 'running' || line < 0) return ['Line practice', '-:--.-', 'Menu: Practice, Biathlon'];
+  const down = `Down ${boardsDown(s, line)}/${BOARDS_PER_LINE}`;
+  const bottom = lineClosed(s, line) ? `${down}   Standing again` : `Rounds ${s.rounds}   ${down}`;
+  return [s.paused ? `Line ${line + 1} practice (paused)` : `Line ${line + 1} practice`, fmt(s.clock), bottom];
 }
 
 /** The countdown and Go! in a race (the notes and the finish come as notes). */
