@@ -83,25 +83,36 @@ export function outsideCourseField(x: number, z: number): number {
 
 /**
  * The biathlon's firing lanes (docs/biathlon-race.md, "Judging the
- * range"): from each firing box on the course's east side (x, z) south,
- * behind the tank as it stands in the box, out over the open ground south
- * of the course, line 1's swung `swing` rad east of due south and line 2's
- * as far west so the two fan apart, `length` m long (to short of the tile's
- * edge and the enemy tank route beyond it). The ground along each is flat
- * to `half` m either side of its line, rolling fully `blend` m further
- * out, and no obstacle stands within LANE_CLEAR of its line, so no crest or
- * wall hides a board from its box at any range a race picks
+ * range"): from each firing box on the course's east side (x, z), where
+ * the tank halts facing north, out to the right front at about 1 o'clock,
+ * `bearing` rad clockwise from north (the hull's heading in the box): line
+ * 1's at 23° and line 2's, from the box 18 m further up and 7 m to the
+ * left of line 1's, at 20°, so the two fan apart. Each misses the penalty
+ * loop's gate posts and signs by 3 m or more, so none stands in the
+ * gunner's view of the boards (at 25° to 31° line 1 runs into the gate's
+ * post or a chevron), and the bearings are as far round to the right as
+ * the enemy tanks' routes allow. Each is `length` m long. Due right (3 o'clock) has no room:
+ * the ground repeats every TILE, so 550 m east of the boxes is the range's
+ * own lane and the course's west side; behind the tank (6 o'clock, where
+ * they stood until John's note of 17 November 2026) is no longer wanted.
+ * Each runs north-east over the penalty loop, between tank
+ * A's route and tank B's, more than `half + blend` m from either (so the
+ * flattening leaves the ground under both as it was), and on into the next tile's
+ * open south-west corner, where the boards stand. The ground along each is
+ * flat to `half` m either side of its line, rolling fully `blend` m
+ * further out, and no obstacle stands within LANE_CLEAR of its line, so no
+ * crest or wall hides a board from its box at any range a race picks
  * (src/sim/course.ts).
  */
-export const FIRING_LANES: readonly { x: number; z: number; swing: number; length: number; half: number; blend: number }[] = [
-  { x: 320, z: -152, swing: (5 * Math.PI) / 180, length: 580, half: 16, blend: 45 },
-  { x: 320, z: -170, swing: (-5 * Math.PI) / 180, length: 580, half: 16, blend: 45 },
+export const FIRING_LANES: readonly { x: number; z: number; bearing: number; length: number; half: number; blend: number }[] = [
+  { x: 320, z: -152, bearing: (23 * Math.PI) / 180, length: 580, half: 16, blend: 45 },
+  { x: 320, z: -170, bearing: (20 * Math.PI) / 180, length: 580, half: 16, blend: 45 },
 ];
 
-/** Lane `l`'s direction from its box, (x, z): south, swung east by `swing`. */
-export function laneDirection(l: { swing: number }, out: [number, number]): [number, number] {
-  out[0] = Math.sin(l.swing);
-  out[1] = Math.cos(l.swing);
+/** Lane `l`'s direction from its box, (x, z): `bearing` clockwise from north (−z). */
+export function laneDirection(l: { bearing: number }, out: [number, number]): [number, number] {
+  out[0] = Math.sin(l.bearing);
+  out[1] = -Math.cos(l.bearing);
   return out;
 }
 

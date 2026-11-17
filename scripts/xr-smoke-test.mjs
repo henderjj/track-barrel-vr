@@ -3429,7 +3429,7 @@ async function theBiathlonRace() {
     sign === 'Line 1: clean!' && empty.shells.every((x) => x.place === 'spent') && /No rounds left$/.test(empty.board[2]),
     `sign "${sign}", rack ${empty.shells.map((x) => x.place).join('/')}, board "${empty.board[2]}"`);
 
-  // The boards are at 6 o'clock, and the seated gunner turns with the turret: face forward again for the menu's ray.
+  // The boards are at 1 o'clock, and the seated gunner turns with the turret: face forward again for the menu's ray.
   evalInApp('(window.__turret.forward(), true)');
   await sleep(500);
   await menuButtonPress();
@@ -4049,7 +4049,7 @@ async function theBiathlonCourse() {
     const r = evalInApp('window.__firing.records()');
     return r.length === shots + 1 && evalInApp('window.__firing.flying()') === 0 && r.at(-1);
   }, 5000).catch(() => evalInApp('window.__firing.records()').at(-1));
-  check("A shell laid on a line 1 board from firing box 1 (its lane at 6 o'clock) hits it, the course's boards being among the gun's targets",
+  check("A shell laid on a line 1 board from firing box 1 (its lane at 1 o'clock) hits it, the course's boards being among the gun's targets",
     predicted.target === 3 && shot?.kind === 'target' && shot.target === 3 && shot.line === 'Hit: the line 1 left board' && evalInApp('window.__firing.hits()')[3] >= 1,
     `would: ${predicted.line}; shot: ${shot?.line}`);
   const practiceAfter = await waitFor('the line 1 practice flags to move on', () => {

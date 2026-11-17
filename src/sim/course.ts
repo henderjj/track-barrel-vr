@@ -493,15 +493,17 @@ export const LINE_RANGE_SPAN: readonly (readonly [number, number])[] = [
 ];
 export const LINE_RANGE_STEP = 10;
 /**
- * Each line of fire runs south from its box, behind the tank as it stands
- * there (the gunner traverses to 6 o'clock), down the ground's firing lane
- * (FIRING_LANES in src/sim/terrain.ts: flat, with nothing standing in it),
- * line 1's swung this far east of due south and line 2's as far west, rad,
- * so the two fan apart and a shell over one line's boards never reaches
- * the other's. The open ground south of the course is clear of the range,
- * its roads' targets and the enemies.
+ * Each line of fire runs out to the right front of its box, at about 1
+ * o'clock as the tank stands there facing north, down the ground's firing
+ * lane (FIRING_LANES in src/sim/terrain.ts: flat, with nothing standing in
+ * it), this far clockwise from north, rad: line 1's at 23° and line 2's at
+ * 20°, so the two fan apart and a shell over one line's boards never
+ * reaches the other's. The lanes keep clear of the range, its roads'
+ * targets and the enemies.
  */
-export const LINE_SWING: readonly number[] = FIRING_LANES.map((l) => l.swing);
+export const LINE_BEARING: readonly number[] = FIRING_LANES.map((l) => l.bearing);
+/** The clock hour each line's boards stand at, seen from its box (the hull facing 12). */
+export const LINE_HOUR: readonly number[] = LINE_BEARING.map((b) => Math.round((b * 6) / Math.PI) % 12 || 12);
 export const LINE_ACROSS: readonly number[] = [-6, 0, 6];
 /** The words for each board's place in its line, as the gunner sees them. */
 const ACROSS_WORDS = ['left', 'middle', 'right'] as const;
@@ -946,7 +948,7 @@ export class CourseProgress {
     const arrived = halted && !s.halted;
     s.box = box;
     s.halted = halted;
-    if (arrived) this.say(`Halted in firing box ${box + 1}: boards at 6 o'clock`);
+    if (arrived) this.say(`Halted in firing box ${box + 1}: boards at ${LINE_HOUR[box]} o'clock`);
     this.version++;
   }
 
