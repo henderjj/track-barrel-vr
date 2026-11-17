@@ -618,9 +618,9 @@ export class CrewBotSystem extends createSystem({}) {
     }
     // In a biathlon race (F5.3b) it lays only halted in this lap's firing
     // box, on that line's boards still standing: anywhere else a round would
-    // be wasted.
+    // be wasted. Line practice the same, at its line.
     const race = shownRun();
-    if (race.mode === 'biathlon' && race.phase === 'running') {
+    if (race.mode !== 'range' && race.phase === 'running') {
       const line = raceLineNow();
       // The board under the yellow flag (aimBoard), as a crew is shown.
       const board = line < 0 ? -1 : aimBoard(race);
