@@ -20,7 +20,7 @@ import {
 import { COURSE_TARGET_FIRST, targetFaces } from '../src/sim/ballistics.js';
 import { BotDriver, createDriveWish, RACE_LOOP_FIRST, RACE_ROUTE } from '../src/sim/crew-bot.js';
 import { COURSE, COURSE_START, COURSE_TARGETS, CourseProgress, distanceToTrack, LINE_RANGE_SPAN, LINE_RANGES } from '../src/sim/course.js';
-import { clockLines, type CourseFeed, createRunSnapshot, formatRunTime, MISS_LANDS, RangeRun, readRunEvent, RUN_COUNTDOWN, runEvent, runLine, runSign } from '../src/sim/range-run.js';
+import { clockLines, type CourseFeed, createRunSnapshot, formatRunTime, LINE_RESET, MISS_LANDS, RangeRun, readRunEvent, RUN_COUNTDOWN, runEvent, runLine, runSign } from '../src/sim/range-run.js';
 import { createControls, createTankDrive, stepDrive } from '../src/sim/tank-drive.js';
 import { OBSTACLES } from '../src/sim/terrain.js';
 
@@ -332,6 +332,78 @@ describe('biathlon race rules (F5.3b)', () => {
     expect(read.misses).toBe(0);
     expect(read.missAt).toBe(-1);
     expect(boardFlag(read, 0)).toBe('aim');
+  });
+
+  it('flags line practice (Practice → Biathlon → Line 1 or 2) as a race: three rounds a go, the boards standing again after, ending when the tank leaves the box', () => {
+    const r = new RangeRun();
+    const c = feed();
+    const flags = () => COURSE_TARGETS.map((_, j) => boardFlag(r.s, j));
+    r.start('line', undefined, 1);
+    // No countdown: line 2's first board is flagged at once, line 1's have none.
+    expect(r.s.clock).toBe(0);
+    expect(lineFor(r.s.laps)).toBe(1);
+    expect(flags()).toEqual(['none', 'none', 'none', 'aim', 'none', 'none']);
+    expect(clockLines(r.s)[0]).toBe('Line 2 practice');
+    expect(runSign(r.s, 0)).toBe('');
+    // On the way to the box: not ended yet.
+    step(r, c, 1);
+    expect(r.s.phase).toBe('running');
+    c.box = 1;
+    c.halted = true;
+    step(r, c, 0.1);
+    // A miss red for a moment, a hit green, the aim moving on.
+    r.shot(-1, 0.3);
+    step(r, c, 0.5);
+    expect(boardFlag(r.s, 3)).toBe('miss');
+    r.shot(board(3), 0.3);
+    step(r, c, 0.5);
+    expect(flags()).toEqual(['none', 'none', 'none', 'hit', 'aim', 'none']);
+    expect(boardDown(r.s, 3)).toBe(true);
+    expect(runLine(r.s)).toBe('Practising at line 2: 1 of 3 down, 1 round left of this go.');
+    // The third round: the go is shot, what's left standing red, nothing owed.
+    r.shot(board(4), 0.3);
+    step(r, c, 0.5);
+    expect(lineClosed(r.s, 1)).toBe(true);
+    expect(r.s.owed).toBe(0);
+    expect(flags()).toEqual(['none', 'none', 'none', 'hit', 'hit', 'miss']);
+    // A round while it shows doesn't count.
+    r.shot(board(5), 0.3);
+    step(r, c, 0.5);
+    expect(boardDown(r.s, 5)).toBe(false);
+    // LINE_RESET s after the go the boards stand again, three more rounds, the first yellow.
+    step(r, c, LINE_RESET);
+    expect(lineClosed(r.s, 1)).toBe(false);
+    expect(r.s.rounds).toBe(RACE.rounds);
+    expect(flags()).toEqual(['none', 'none', 'none', 'aim', 'none', 'none']);
+    // It carries in the run event.
+    const copy = createRunSnapshot();
+    readRunEvent(JSON.parse(JSON.stringify(runEvent(r.s, 7))), copy);
+    expect(copy.mode).toBe('line');
+    expect(COURSE_TARGETS.map((_, j) => boardFlag(copy, j))).toEqual(flags());
+    // Driven out of the box: it ends, the flags go.
+    c.box = -1;
+    c.halted = false;
+    step(r, c, 0.1);
+    expect(r.s.phase).toBe('idle');
+    expect(flags().every((f) => f === 'none')).toBe(true);
+  });
+
+  it('ends line practice if the tank never reaches its box, and keeps it out of the stats', async () => {
+    const { RunRecorder } = await import('../src/sim/play-stats.js');
+    const r = new RangeRun();
+    const c = feed();
+    const recorder = new RunRecorder();
+    r.start('range');
+    recorder.watch(r.s);
+    step(r, c, RUN_COUNTDOWN + 1);
+    recorder.watch(r.s);
+    // Line practice ends a range run on as restarted, and is no run itself.
+    r.start('line', undefined, 0);
+    expect(recorder.watch(r.s)?.result).toBe('restarted');
+    expect(recorder.counting).toBe(false);
+    step(r, c, 9);
+    expect(r.s.phase).toBe('idle');
+    expect(recorder.watch(r.s)).toBeNull();
   });
 
   it('gives gold, silver and bronze by time', () => {

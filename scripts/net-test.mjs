@@ -1104,7 +1104,7 @@ async function runChecks(host, guest, label) {
  * course and sends it as a reliable `course` event. The host drives across
  * the start line and the guest hears Lap 1 start; the guest's Line 2
  * shortcut parks the tank in firing box 2 through the host, and both pages
- * show it halted there. The driving challenge's going (F5.3d): a thrown
+ * show it halted there, with line practice's flags over line 2. The driving challenge's going (F5.3d): a thrown
  * track and the sink reach the guest in the tank's packet. A fall off the
  * bridge fades the guest's view out and in with the host's, and the guest
  * hears the +30 s penalty.
@@ -1129,7 +1129,8 @@ async function courseChecks(host, guest, label) {
     started !== null && received > heard && started.g.laps === 0,
     started ? `guest "${started.g.line}", ${received - heard} course events heard` : JSON.stringify(await Promise.all([course(host), course(guest)])));
 
-  await guest.page.evaluate(() => window.__course.line(1));
+  // Practice → Biathlon → Line 2 from the guest: the tank parked through the host, and line practice there (its board flags).
+  await guest.page.evaluate(() => window.__rangeRun.practise(1));
   const inBox = await waitFor('both pages to show the tank halted in box 2', async () => {
     const [h, g] = await Promise.all([course(host), course(guest)]);
     return h.box === 1 && h.halted && g.box === 1 && g.halted ? { h, g } : null;
@@ -1138,6 +1139,12 @@ async function courseChecks(host, guest, label) {
   check(`The guest's Line 2 parks the tank in firing box 2 with the engine running, halted there on both pages (${label})`,
     inBox !== null && tank.running && !inBox.g.started,
     inBox ? `tank at ${tank.x.toFixed(1)}, ${tank.z.toFixed(1)}, engine ${tank.running ? 'running' : 'off'}; guest "${inBox.g.line}"` : JSON.stringify(await Promise.all([course(host), course(guest)])));
+  const practice = await waitFor('both pages to show line 2 practice flags', async () => {
+    const [h, g] = await Promise.all([host, guest].map((p) => p.page.evaluate(() => ({ mode: window.__rangeRun.state().mode, flags: window.__rangeRun.boardFlags() }))));
+    return h.mode === 'line' && g.mode === 'line' && g.flags.join() === 'none,none,none,aim,none,none' ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Line 2 starts line practice on the host, and the guest sees line 2's left board flagged yellow (${label})`,
+    practice !== null, practice ? `guest ${practice.g.flags.join()}` : JSON.stringify(await guest.page.evaluate(() => ({ mode: window.__rangeRun.state().mode, flags: window.__rangeRun.boardFlags() }))));
 
   // The going (F5.3d): a thrown track reaches the guest in the tank's packet, with the crew's sign (out of the mud the sink goes at once).
   await host.page.evaluate(() => window.__drive.going({ thrown: 1, refit: 40 }));

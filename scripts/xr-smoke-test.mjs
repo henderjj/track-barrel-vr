@@ -4036,6 +4036,8 @@ async function theBiathlonCourse() {
   check('Practice → Biathlon → Line 1 seats a solo player as gunner, halted in firing box 1 with the engine running; the progress starts again',
     inBox.box === 0 && inBox.halted && !inBox.started && engine.running && evalInApp('window.__seats.mine') === 'gunner',
     `box ${inBox.box + 1}, halted ${inBox.halted}, started ${inBox.started}, engine ${engine.running ? 'running' : 'off'}, seat ${evalInApp('window.__seats.mine')}`);
+  // Line practice (docs/biathlon-signs.md): with no race on, the line's board flags show as in one.
+  const practiceBefore = evalInApp('window.__rangeRun.boardFlags()');
   evalInApp('(window.__firing.aimAt(3), true)');
   const predicted = await waitFor('the gun laid on the line 1 left board', () => { const p = evalInApp('window.__firing.predict()'); return p.target === 3 && p; }, 8000)
     .catch(() => evalInApp('window.__firing.predict()'));
@@ -4050,6 +4052,13 @@ async function theBiathlonCourse() {
   check("A shell laid on a line 1 board from firing box 1 (its lane at 6 o'clock) hits it, the course's boards being among the gun's targets",
     predicted.target === 3 && shot?.kind === 'target' && shot.target === 3 && shot.line === 'Hit: the line 1 left board' && evalInApp('window.__firing.hits()')[3] >= 1,
     `would: ${predicted.line}; shot: ${shot?.line}`);
+  const practiceAfter = await waitFor('the line 1 practice flags to move on', () => {
+    const f = evalInApp('window.__rangeRun.boardFlags()');
+    return f[0] === 'hit' && f[1] === 'aim' && f;
+  }, 5000).catch(() => evalInApp('window.__rangeRun.boardFlags()'));
+  check('Line 1 practice flags the left board yellow before the shot, then green with the middle one yellow',
+    practiceBefore.join() === 'aim,none,none,none,none,none' && practiceAfter.join() === 'hit,aim,none,none,none,none' && evalInApp('window.__rangeRun.state().mode') === 'line',
+    `before ${practiceBefore.join()}; after ${practiceAfter.join()}; "${evalInApp('window.__rangeRun.state().line')}"`);
   // Only the black disc counts: laid on the white at the corner of the old square hit box, a miss.
   const fireOnce = async (what) => {
     const n = evalInApp('window.__firing.records().length');

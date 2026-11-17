@@ -194,20 +194,22 @@ export class RunRecorder {
   /** The run as shown this frame; returns `ended` if a run just ended, otherwise null. */
   watch(s: Readonly<RunSnapshot>): RunEnd | null {
     let end: RunEnd | null = null;
+    // Line practice (Practice → Biathlon → Line 1 or 2) is no run: no time, no row. Starting it ends a run on as restarted.
+    const phase: RunPhase = s.mode === 'line' ? 'idle' : s.phase;
     if (this.id !== 0 && this.phase === 'running') {
       const e = this.ended;
       if (s.id !== this.id) {
         end = this.end('restarted', this.lastClock, this.lastShots, this.lastTargets, this.lastAssisted);
-      } else if (s.phase === 'done') {
+      } else if (phase === 'done') {
         if (s.mode === 'biathlon') this.raceNumbers(s, true);
         end = this.end('done', s.time, s.shots, s.mode === 'biathlon' ? boardsDown(s) : targetsHit(s), s.assisted);
-      } else if (s.phase === 'idle') {
+      } else if (phase === 'idle') {
         end = this.end('stopped', this.lastClock, this.lastShots, this.lastTargets, this.lastAssisted);
       }
       if (end) e.run = this.id;
     }
     if (s.id !== this.id) resetTally(this.tally);
-    if (s.phase === 'running') {
+    if (phase === 'running') {
       this.lastClock = Math.max(0, s.clock);
       this.lastShots = s.shots;
       this.lastTargets = s.mode === 'biathlon' ? boardsDown(s) : targetsHit(s);
@@ -216,8 +218,8 @@ export class RunRecorder {
       if (s.mode === 'biathlon') this.raceNumbers(s, false);
     }
     this.id = s.id;
-    this.phase = s.phase;
-    this.counting = s.phase === 'running' && s.clock >= 0 && !s.paused;
+    this.phase = phase;
+    this.counting = phase === 'running' && s.clock >= 0 && !s.paused;
     return end;
   }
 
