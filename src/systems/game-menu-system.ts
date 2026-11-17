@@ -16,8 +16,8 @@ import { resetCombatTuning, scenarioStatus, setCombatTune, shownScenario, startS
 import { TUNE_ROWS } from '../sim/combat.js';
 import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-system.js';
 import { goUpTheRange, rangeStatus } from './range-system.js';
-import { raceStatus, readyAtLine, readyToFire, runStatus, shownRun, startRace, startRun, stopRun } from './range-run-system.js';
-import { courseStatus, goToCourse, goToFiringLine, goToObstacle } from './course-system.js';
+import { practiseLine, raceStatus, readyAtLine, readyToFire, runStatus, shownRun, startRace, startRun, stopRun } from './range-run-system.js';
+import { courseStatus, goToCourse, goToObstacle } from './course-system.js';
 import { OBSTACLES } from '../sim/course.js';
 import { turretToHour } from './turret-dial-system.js';
 import { watchTheLamp } from './firing-lamp-system.js';
@@ -361,7 +361,8 @@ export class GameMenuSystem extends createSystem({}) {
       ui.on(`menu-course-line-${k}`, () => {
         this.setOpen(false);
         stopRide();
-        goToFiringLine(k);
+        // With no race on, line practice there: the line's boards fall and fly their flags as in a race.
+        practiseLine(k);
       });
     }
     for (const name of OBSTACLES) {
