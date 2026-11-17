@@ -60,7 +60,7 @@ On a Quest 3 after the deploy, with the cache cleared (Ctrl+Shift+R), seated.
 2. **Obstacles → Mud**: say whether the caution triangle and MUD plate are clear in time to choose the bypass on the left.
 3. **Obstacles → Ford**: say whether the 8 roundel and FORD plate read in time to slow down.
 4. Drive up the east side past the firing boxes: say whether PENALTY LOOP, in the mouth of the turn, makes it clear where to go, and whether the chevrons round the loop make its way round obvious.
-5. As gunner, **Biathlon race → Start** (with the crewmate driving, or Ready line 1 alone): traverse to 6 o'clock. A yellow flag stands over line 1's left board. Say whether it is plainly the board to aim at, through the sight and with the naked eye.
+5. As gunner, **Biathlon race → Start** (with the crewmate driving, or Ready line 1 alone): traverse right to about 1 o'clock. A yellow flag stands over line 1's left board. Say whether it is plainly the board to aim at, through the sight and with the naked eye.
 6. Fire: say whether the flag turning green on a hit, and red for a moment on a miss, is clear in the sight, and whether it moves on to the next board in time to lay on it.
 7. When the line is shot, say whether the red flags over the boards left standing read as the penalty loops owed.
 8. With the performance HUD on round the course, say whether the frame time stays as before.

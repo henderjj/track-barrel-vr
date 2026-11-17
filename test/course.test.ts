@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ENEMY_COUNT, ENEMY_GUNS } from '../src/sim/enemy-guns.js';
 import { ENEMY_TANKS } from '../src/sim/enemy-tanks.js';
+import { COURSE_SIGNS } from '../src/sim/course-signs.js';
 import {
   aimAt,
   COURSE_TARGET_FIRST,
@@ -65,7 +66,7 @@ import { RANGE_TARGETS, sightLimit, targetFoot } from '../src/sim/range.js';
 import { SIGHT_STAND, TRUE_HALF_FIELD } from '../src/sim/sight.js';
 import { MAX_YAW_RATE } from '../src/sim/comfort.js';
 import { createTankDrive, FOOTPRINT } from '../src/sim/tank-drive.js';
-import { CELL, COURSE_FIELD, courseRelief, groundHeight, HILL, LANE_HALF, obstacleDistance, OBSTACLES, outsideCourseField, outsideFiringLanes, roughness, TILE, wrapTile } from '../src/sim/terrain.js';
+import { CELL, COURSE_FIELD, CROSS_HALF, courseRelief, FIRING_LANES, laneDirection, groundHeight, HILL, LANE_HALF, obstacleDistance, OBSTACLES, outsideCourseField, outsideFiringLanes, roughness, TILE, wrapTile } from '../src/sim/terrain.js';
 import { barrelDirection, muzzlePoint } from '../src/sim/turret.js';
 
 const DEG = Math.PI / 180;
@@ -129,7 +130,8 @@ describe('biathlon course (F5.3a)', () => {
     expect(onCourse(200, -190)).toBe(false);
     // The field is flat inside and rolls again outside it.
     expect(roughness(200, -200)).toBe(0);
-    expect(roughness(COURSE_FIELD.east + COURSE_FIELD.blend + 5, -200)).toBeGreaterThan(0.9);
+    // (South of the boxes: north of them the firing lanes cross the field's edge.)
+    expect(roughness(COURSE_FIELD.east + COURSE_FIELD.blend + 5, -110)).toBeGreaterThan(0.9);
   });
 
   it('has a gate about every 80 m round to the south side, the finish line first, one on the hill and one past the bridge, and one on the penalty loop', () => {
@@ -192,7 +194,7 @@ describe('biathlon course (F5.3a)', () => {
     for (let b = LINE_RANGE_SPAN[1][0]; b <= LINE_RANGE_SPAN[1][1]; b += 50) RANGE_PAIRS.push([a, b]);
   }
 
-  it('stands three boards per firing line down its lane south of the box, square to it, all three in the sight at once, at every range a race picks', () => {
+  it('stands three boards per firing line down its lane to the box\'s right front, square to it, all three in the sight at once, at every range a race picks', () => {
     expect(COURSE_TARGETS.length).toBe(6);
     expect(lineRanges()).toEqual(LINE_RANGES);
     for (const ranges of [...RANGE_PAIRS, LINE_RANGES]) {
@@ -202,9 +204,13 @@ describe('biathlon course (F5.3a)', () => {
         expect(t.range).toBe(ranges[t.line]);
         expect(Math.hypot(t.x - bx, t.z - bz)).toBeGreaterThanOrEqual(t.range - 0.01);
         expect(Math.hypot(t.x - bx, t.z - bz)).toBeLessThan(t.range + 1);
-        // South of the course, on the flat lane, inside the tile, clear of obstacles.
-        expect(t.z).toBeGreaterThan(COURSE_FIELD.south + 100);
-        expect(t.z).toBeLessThan(TILE / 2 - 10);
+        // To the box's right front, at 1 o'clock: off the course's field and the range's roads (any copy), on the flat lane, clear of obstacles.
+        const clock = Math.atan2(t.x - bx, -(t.z - bz)) / DEG;
+        expect(clock).toBeGreaterThan(15);
+        expect(clock).toBeLessThan(40);
+        expect(outsideCourseField(t.x, t.z)).toBeGreaterThan(100);
+        expect(Math.abs(wrapTile(t.x))).toBeGreaterThan(LANE_HALF + 100);
+        expect(Math.abs(wrapTile(t.z))).toBeGreaterThan(CROSS_HALF + 50);
         expect(outsideFiringLanes(t.x, t.z)).toBe(0);
         expect(Math.abs(groundHeight(t.x, t.z))).toBeLessThan(0.02);
         const n: [number, number] = [0, 0];
@@ -270,18 +276,39 @@ describe('biathlon course (F5.3a)', () => {
   it('keeps each line\'s shots clear of the other line\'s boards, the range\'s targets and the enemies, at every range a race picks', () => {
     const guns = ENEMY_GUNS.map((g) => [g.x, g.z]);
     const routes = ENEMY_TANKS.flatMap((t) => t.points);
+    // No course sign or gate post stands in a line's view of its boards (the penalty loop lies under both lines).
+    const tall: [number, number][] = COURSE_SIGNS.map((g) => [g.x, g.z]);
+    for (const g of [PENALTY_GATE, ...GATES]) {
+      const fx = -Math.sin(g.heading);
+      const fz = -Math.cos(g.heading);
+      tall.push([g.x - fz * g.half, g.z + fx * g.half], [g.x + fz * g.half, g.z - fx * g.half]);
+    }
+    BOX_Z.forEach((_, k) => {
+      const [bx, bz] = boxSpot(k);
+      const d = laneDirection(FIRING_LANES[k], [0, 0]);
+      for (const [x, z] of tall) {
+        const along = (x - bx) * d[0] + (z - bz) * d[1];
+        if (along > 3) expect(Math.abs((x - bx) * d[1] - (z - bz) * d[0])).toBeGreaterThan(3);
+      }
+    });
+    // The lanes' flattening leaves the ground under the guns and along the tanks' routes as it was.
+    for (const [x, z] of guns) expect(outsideFiringLanes(x, z)).toBeGreaterThan(FIRING_LANES[0].blend);
+    for (let k = 0; k + 1 < routes.length; k += 2) {
+      const [ax, az] = routes[k];
+      const [cx, cz] = routes[k + 1];
+      for (let f = 0; f <= 1; f += 5 / Math.hypot(cx - ax, cz - az)) expect(outsideFiringLanes(ax + (cx - ax) * f, az + (cz - az) * f)).toBeGreaterThan(FIRING_LANES[0].blend);
+    }
     for (const ranges of RANGE_PAIRS) {
       setLineRanges(ranges);
       COURSE_TARGETS.forEach((t) => {
         const [bx, bz] = boxSpot(t.line);
         const ux = (t.x - bx) / t.range;
         const uz = (t.z - bz) / t.range;
-        // How far a point (its nearest copy) stands from this shot's line, out to 700 m.
+        // How far a point stands from this shot's line, out to 700 m: the nearest of its copies to any point along the line (a line longer than half a tile can pass a copy other than the one nearest the box).
         const offLine = (px: number, pz: number) => {
-          const x = bx + wrapTile(px - bx);
-          const z = bz + wrapTile(pz - bz);
-          const a = (x - bx) * ux + (z - bz) * uz;
-          return a < 0 || a > 700 ? Infinity : Math.abs((x - bx) * uz - (z - bz) * ux);
+          let near = Infinity;
+          for (let a = 0; a <= 700; a += 1) near = Math.min(near, Math.hypot(wrapTile(bx + ux * a - px), wrapTile(bz + uz * a - pz)));
+          return near;
         };
         for (const other of COURSE_TARGETS) if (other.line !== t.line) expect(offLine(other.x, other.z)).toBeGreaterThan(8);
         RANGE_TARGETS.forEach((_, i) => {
@@ -319,8 +346,9 @@ describe('biathlon course (F5.3a)', () => {
           return { yaw, origin, d, result: flyShell(origin, d, faces, createShotResult()) };
         };
         const { yaw, origin, d, result } = fire(faces[i]);
-        // The lane is behind the box: the turret turns to 6 o'clock.
-        expect(Math.abs(yaw)).toBeGreaterThan(170 * DEG);
+        // The lane is to the right front of the box: the turret turns right, to about 1 o'clock (turned right is negative).
+        expect(-yaw).toBeGreaterThan(15 * DEG);
+        expect(-yaw).toBeLessThan(40 * DEG);
         expect(result.kind, t.name).toBe('target');
         expect(result.target).toBe(i);
         expect(describeShot(result, origin, d, faces, TARGET_NAMES)).toBe(`Hit: ${t.name}`);
@@ -337,7 +365,10 @@ describe('biathlon course (F5.3a)', () => {
     setLineRanges(LINE_RANGES);
   });
 
-  it('scatters the gun\'s shots about the bore, 0.3 mil each way, and none the same', () => {
+  it('scatters the gun\'s shots about the bore, 0.1 mil each way, and none the same', () => {
+    // Little enough that a shell laid on a board's disc hits it even three deviations off, at the longest range a race picks.
+    expect(SCATTER).toBeCloseTo(0.0001, 9);
+    expect(3 * SCATTER * LINE_RANGE_SPAN[1][1]).toBeLessThan(COURSE_BOARD.hitRadius / 2);
     const dir: [number, number, number] = [0.3, 0.05, -0.95];
     const l = Math.hypot(...dir);
     for (let k = 0; k < 3; k++) dir[k] /= l;
@@ -363,8 +394,8 @@ describe('biathlon course (F5.3a)', () => {
     }
     expect(Math.abs(across / n)).toBeLessThan(SCATTER / 10);
     expect(Math.abs(up / n)).toBeLessThan(SCATTER / 10);
-    expect(Math.sqrt(across2 / n)).toBeCloseTo(SCATTER, 4);
-    expect(Math.sqrt(up2 / n)).toBeCloseTo(SCATTER, 4);
+    expect(Math.sqrt(across2 / n) / SCATTER).toBeCloseTo(1, 1);
+    expect(Math.sqrt(up2 / n) / SCATTER).toBeCloseTo(1, 1);
     // No scatter: the bore's line.
     scatterDir(dir, 0.5, 0.25, 0, out);
     for (let k = 0; k < 3; k++) expect(out[k]).toBeCloseTo(dir[k], 12);
@@ -419,7 +450,7 @@ describe('biathlon course (F5.3a)', () => {
     expect(progress.s.halted).toBe(false);
     progress.step(0.1, box.x, box.z, 0);
     expect(progress.s.halted).toBe(true);
-    expect(progress.s.note).toBe("Halted in firing box 2: boards at 6 o'clock");
+    expect(progress.s.note).toBe("Halted in firing box 2: boards at 1 o'clock");
     expect(courseLine(progress.s)).toContain('In firing box 2, halted.');
     // Up to the penalty loop, twice round it, and on to the finish.
     driveAlong(progress, along(eastSideAt(BOX_Z[1]), eastSideAt(JOIN.leave)));

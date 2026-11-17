@@ -63,10 +63,13 @@ export function dropAt(range: number, speed = MUZZLE_SPEED): number {
  * leave a real gun along quite the same line, from the round, the barrel's
  * heat and its whip. Each shot's direction is turned off the bore's by a
  * random amount, normal in each direction across it with this standard
- * deviation, rad (0.3 mil: 15 cm at 500 m). The firing page draws it, so
- * both pages fly the same shell; `scatter=0` turns it off for the tests.
+ * deviation, rad (0.1 mil: 5 cm at 500 m). It was 0.3 mil (15 cm at
+ * 500 m) until John's note of 17 November 2026 asked for less: now a shell
+ * laid on a biathlon board's disc hits it, and judging the range is what
+ * decides a hit. The firing page draws it, so both pages fly the same
+ * shell; `scatter=0` turns it off for the tests.
  */
-export const SCATTER = 0.0003;
+export const SCATTER = 0.0001;
 
 /**
  * `dir` (a unit vector) turned off its line by scatter: `u1`, `u2` are
