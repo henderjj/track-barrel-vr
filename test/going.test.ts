@@ -8,12 +8,14 @@ import {
   BYPASS,
   BYPASS_PATH,
   COURSE,
+  COURSE_PATH,
   CourseProgress,
   deckHeight,
   FALL_SECONDS,
   FALL_TOTAL,
   fallDark,
   FAULT_SECONDS,
+  GATES,
   goingAt,
   MUD,
   OBSTACLE_SPOTS,
@@ -35,10 +37,13 @@ import {
   THROW_LIMIT,
   THROW_SECONDS,
 } from '../src/sim/going.js';
+import { MAX_SPEED } from '../src/sim/comfort.js';
 import { headingTo, steer } from '../src/sim/crew-bot.js';
+import { BARRIER, BYPASS_WALLS, SOUTH_Z } from '../src/sim/mud-bypass.js';
 import { type CourseFeed, formatRunTime, RangeRun, readRunEvent, runEvent, createRunSnapshot } from '../src/sim/range-run.js';
 import { coolantTarget, createControls, createTankDrive, FALL_BACK, settle, stepDrive, type TankDrive } from '../src/sim/tank-drive.js';
-import { courseRelief, groundHeight, HILL, OBSTACLES, STREAM } from '../src/sim/terrain.js';
+import { courseRelief, groundHeight, HILL, obstacleDistance, OBSTACLES, STREAM } from '../src/sim/terrain.js';
+import { fastestLine } from './support/fastest-line.js';
 
 /**
  * The biathlon's driving challenge (F5.3d, docs/biathlon-driving.md): the
@@ -187,11 +192,12 @@ describe("the course's obstacles, driven (F5.3d)", () => {
     expect(gentle.t.sink).toBeLessThan(1);
   });
 
-  it('makes the mud quicker than the bypass for a driver who eases off, and slower for one who floors it', () => {
-    // John's note (2026-11-14): the mud route should be quicker, if done well.
+  describe('the mud against the walled bypass (John: the mud quicker if done well, the bypass not cut)', () => {
     const end = BYPASS.to + 10;
     const from = BYPASS.from - 10;
-    /** Parked 50 m short of the bypass (more run-up than Practice's spot), so both routes are timed from full speed. */
+    /** The hull's middle keeps this far off a wall, m: half the hull's width and a little. */
+    const HULL_CLEAR = 1.5;
+    /** Parked 50 m short of the bypass (more run-up than Practice's spot), so each route is timed from full speed. */
     const runUp = () => {
       const t = createTankDrive(BYPASS.from - 50, COURSE.south, OBSTACLE_SPOTS.mud.heading);
       return { t, c: createControls() };
@@ -208,37 +214,83 @@ describe("the course's obstacles, driven (F5.3d)", () => {
       }
       return Infinity;
     };
-    /** The same round the bypass, steered along its middle line, or Infinity if the tank strays off its gravel or throws a track. */
-    const roundBypass = (base: number): number => {
+    const mud = throughMud(0.6);
+
+    it('stands the bypass\'s walls clear of its gravel, the course and the mud', () => {
+      expect(SOUTH_Z).toBe(COURSE.south);
+      const normal: [number, number] = [0, 0];
+      const nearest = (x: number, z: number) => Math.min(...BYPASS_WALLS.map((w) => obstacleDistance(w, x, z, normal)));
+      for (const p of samplePath(BYPASS_PATH, 0, BYPASS_PATH.length, 1)) expect(nearest(p.x, p.z)).toBeGreaterThan(BYPASS.halfWidth + 0.4);
+      for (const p of samplePath(COURSE_PATH, 0, COURSE_PATH.length, 1)) expect(nearest(p.x, p.z)).toBeGreaterThan(COURSE.halfWidth + 0.4);
+      for (const w of BYPASS_WALLS) {
+        expect(OBSTACLES).toContain(w);
+        for (const [dx, dz] of [[-w.hx, -w.hz], [w.hx, -w.hz], [w.hx, w.hz], [-w.hx, w.hz], [0, 0]]) {
+          const x = w.x + dx * Math.cos(w.yaw) + dz * Math.sin(w.yaw);
+          const z = w.z - dx * Math.sin(w.yaw) + dz * Math.cos(w.yaw);
+          expect(goingAt(x, z)).toBe(0);
+        }
+      }
+    });
+
+    it('drives round the bypass at a careful speed without touching a wall or throwing a track', () => {
       const { t, c } = runUp();
-      const line = samplePath(BYPASS_PATH, 0, BYPASS_PATH.length, 1);
-      const aims = [...line, { x: end + 20, z: COURSE.south }];
+      const aims = [...samplePath(BYPASS_PATH, 0, BYPASS_PATH.length, 1), { x: end + 20, z: COURSE.south }];
       const tillers = { left: 0, right: 0 };
+      const normal: [number, number] = [0, 0];
       let k = 0;
-      let start = -1;
-      for (let n = 0; n < 120 * 45; n++) {
-        while (k < aims.length - 1 && Math.hypot(aims[k].x - t.x, aims[k].z - t.z) < 8) k++;
-        let error = headingTo(aims[k].x - t.x, aims[k].z - t.z) - t.heading;
-        error = Math.atan2(Math.sin(error), Math.cos(error));
-        // Flat out up to the bypass, then at `base` round its bends, flat out again once back on the course.
-        steer(t.x < BYPASS.from - 35 || t.x > BYPASS.to ? 1 : base, error, 8, tillers);
+      let closest = Infinity;
+      let took = Infinity;
+      for (let n = 0; n < 150 * 45; n++) {
+        while (k < aims.length - 1 && Math.hypot(aims[k].x - t.x, aims[k].z - t.z) < 5) k++;
+        const error = headingTo(aims[k].x - t.x, aims[k].z - t.z) - t.heading;
+        steer(t.x < BYPASS.from - 40 || t.x > BYPASS.to ? 1 : 0.33, Math.atan2(Math.sin(error), Math.cos(error)), 8, tillers);
         c.left = tillers.left;
         c.right = tillers.right;
         stepDrive(t, c, DT, OBSTACLES);
-        if (t.thrown !== 0) return Infinity;
-        if (t.x > BYPASS.from + 2 && t.x < BYPASS.to - 2 && Math.min(...line.map((p) => Math.hypot(p.x - t.x, p.z - t.z))) > BYPASS.halfWidth) return Infinity;
-        if (start < 0 && t.x > from) start = n;
-        if (t.x > end) return (n - start) * DT;
+        expect(t.thrown).toBe(0);
+        for (const w of BYPASS_WALLS) closest = Math.min(closest, obstacleDistance(w, t.x, t.z, normal));
+        if (t.x > end) {
+          took = n * DT;
+          break;
+        }
       }
-      return Infinity;
-    };
-    const mud = throughMud(0.6);
-    const bypass = Math.min(...[0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75].map(roundBypass));
-    console.info(`[going] mud eased through: ${mud.toFixed(1)} s, bypass at its best: ${bypass.toFixed(1)} s`);
-    expect(bypass).toBeLessThan(40);
-    expect(mud).toBeLessThan(bypass - 2);
-    // Floored, it bogs: far slower than either.
-    expect(throughMud(1)).toBeGreaterThan(bypass + 30);
+      expect(took).toBeLessThan(150);
+      expect(closest).toBeGreaterThan(HULL_CLEAR);
+    });
+
+    it('gives no line round the bypass, even a perfect driver\'s, as quick as the mud eased through; floored, the mud bogs', () => {
+      // Start on the bypass's middle line with the course either side, and let the line find its quickest way between the walls.
+      const start = [
+        ...Array.from({ length: 16 }, (_, i) => ({ x: BYPASS.from - 60 + i * 4, z: COURSE.south })),
+        ...samplePath(BYPASS_PATH, 0, BYPASS_PATH.length, 2),
+        ...Array.from({ length: 16 }, (_, i) => ({ x: BYPASS.to + 2 + i * 4, z: COURSE.south })),
+      ];
+      const inMud = (x: number, z: number) => x > MUD.from - HULL_CLEAR && x < MUD.to + HULL_CLEAR && Math.abs(z - COURSE.south) < MUD.half + HULL_CLEAR;
+      const best = fastestLine(start, from, end, { walls: BYPASS_WALLS, clear: HULL_CLEAR, banned: inMud, tries: 60000 });
+      const deepest = Math.min(...best.zs);
+      console.info(`[going] mud eased through: ${mud.toFixed(1)} s; the bypass's quickest line: ${best.time.toFixed(1)} s, out to z ${deepest.toFixed(0)}`);
+      // The quickest line still goes all the way round the walled lane: no corner cut through.
+      expect(deepest).toBeLessThan(COURSE.south - BYPASS.depth + BYPASS.halfWidth);
+      expect(mud).toBeLessThan(best.time - 3);
+      // Floored, the tank bogs: far slower than either.
+      expect(throughMud(1)).toBeGreaterThan(best.time + 30);
+    }, 30000);
+
+    it('leaves going round the walls across the field far slower than the mud', () => {
+      // From gate 5 (the last before the mud) to gate 6 (just after it), in straight lines at full speed: quicker than any real way round.
+      const g5 = GATES[5];
+      const g6 = GATES[6];
+      const direct = Math.hypot(g6.x - g5.x, g6.z - g5.z) / MAX_SPEED;
+      const c = HULL_CLEAR;
+      const south = (Math.hypot(BARRIER.fromX - c - g5.x, BARRIER.south + c - g5.z) + (BARRIER.toX - BARRIER.fromX + 2 * c) + Math.hypot(g6.x - BARRIER.toX - c, g6.z - BARRIER.south - c)) / MAX_SPEED;
+      const north = (Math.hypot(BARRIER.x - g5.x, BARRIER.north - c - g5.z) + Math.hypot(g6.x - BARRIER.x, g6.z - BARRIER.north + c)) / MAX_SPEED;
+      // The mud costs the eased-through driver its time less the same stretch flat out.
+      const mudCost = mud - (end - from) / MAX_SPEED;
+      expect(g5.x).toBeLessThan(BARRIER.fromX);
+      expect(g6.x).toBeLessThan(BARRIER.toX);
+      expect(south - direct).toBeGreaterThan(mudCost + 5);
+      expect(north - direct).toBeGreaterThan(mudCost + 5);
+    });
   });
 
   it("lays the bypass on firm ground all the way round the mud", () => {

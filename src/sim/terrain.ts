@@ -20,6 +20,7 @@
  * below the hull floor (src/sim/cabin.ts).
  */
 
+import { BYPASS_WALLS } from './mud-bypass.js';
 import { rng } from './random.js';
 
 /** The ground repeats every TILE metres in x and z. */
@@ -312,7 +313,7 @@ export const OBSTACLES: readonly Obstacle[] = (() => {
   place(ROCKS_PER_TILE, () => rock(spot(), spot(), 0.8 + random() * 1.4));
   place(WALLS_PER_TILE, () => block('wall', spot(), spot(), 4 + random() * 8, 0.35, random() * Math.PI, 1.0 + random() * 0.6));
   place(HOUSES_PER_TILE, () => block('house', spot(), spot(), 2.5 + random() * 2, 3 + random() * 2.5, random() * Math.PI, 2.6 + random() * 1));
-  return [...list.filter((o) => outsideCourseField(o.x, o.z) > o.r + COURSE_CLEAR && firingLaneOffset(o.x, o.z) > o.r + LANE_CLEAR), ...LANE_WALLS];
+  return [...list.filter((o) => outsideCourseField(o.x, o.z) > o.r + COURSE_CLEAR && firingLaneOffset(o.x, o.z) > o.r + LANE_CLEAR), ...LANE_WALLS, ...BYPASS_WALLS];
 })();
 
 /**
