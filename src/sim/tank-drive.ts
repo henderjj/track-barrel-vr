@@ -77,7 +77,7 @@ import {
   type ThrownSide,
   WATER_DRAG,
 } from './going.js';
-import { type Obstacle, obstacleDistance, OBSTACLES, wrapTile } from './terrain.js';
+import { type Obstacle, obstacleDistance, OBSTACLES, TILE, wrapTile } from './terrain.js';
 import { OUTLINE_EXTENT } from './exterior.js';
 
 /** Height of the hull floor above the ground under the tracks, m. */
@@ -639,6 +639,67 @@ const normal: [number, number] = [0, 0];
 const slowed = { factor: 1, touching: false, closing: 0 };
 
 /**
+ * The obstacles near a point, from a list bucketed into BUCKET m squares of
+ * the tile (built once per list): the world has a couple of hundred, and
+ * each step needs only the few within reach of the tank.
+ */
+const BUCKET = 20;
+const BUCKETS = Math.round(TILE / BUCKET);
+interface ObstacleIndex {
+  /** Each bucket's obstacles, as indices into the list. */
+  buckets: number[][];
+  /** The query each obstacle was last gathered for, so one in several buckets is gathered once. */
+  seen: Int32Array;
+  stamp: number;
+}
+const indexes = new WeakMap<readonly Obstacle[], ObstacleIndex>();
+const near: Obstacle[] = [];
+
+function bucketOf(v: number): number {
+  return Math.min(BUCKETS - 1, Math.floor((wrapTile(v) + TILE / 2) / BUCKET));
+}
+
+function indexOf(list: readonly Obstacle[]): ObstacleIndex {
+  let index = indexes.get(list);
+  if (index) return index;
+  const buckets: number[][] = Array.from({ length: BUCKETS * BUCKETS }, () => []);
+  list.forEach((o, i) => {
+    // Every bucket its circle reaches into.
+    const span = Math.ceil(o.r / BUCKET);
+    const bx = bucketOf(o.x);
+    const bz = bucketOf(o.z);
+    for (let a = -span; a <= span; a++) {
+      for (let b = -span; b <= span; b++) buckets[((bx + a + BUCKETS) % BUCKETS) * BUCKETS + ((bz + b + BUCKETS) % BUCKETS)].push(i);
+    }
+  });
+  index = { buckets, seen: new Int32Array(list.length), stamp: 0 };
+  indexes.set(list, index);
+  return index;
+}
+
+/** The obstacles of `list` that could be within `radius` m of (x, z), into the shared `near` (no allocation once warm). */
+function nearby(list: readonly Obstacle[], x: number, z: number, radius: number): readonly Obstacle[] {
+  const index = indexOf(list);
+  const stamp = ++index.stamp;
+  near.length = 0;
+  const span = Math.ceil(radius / BUCKET);
+  const bx = bucketOf(x);
+  const bz = bucketOf(z);
+  for (let a = -span; a <= span; a++) {
+    for (let b = -span; b <= span; b++) {
+      const bucket = index.buckets[((bx + a + BUCKETS * 4) % BUCKETS) * BUCKETS + ((bz + b + BUCKETS * 4) % BUCKETS)];
+      for (let k = 0; k < bucket.length; k++) {
+        const i = bucket[k];
+        if (index.seen[i] === stamp) continue;
+        index.seen[i] = stamp;
+        near.push(list[i]);
+      }
+    }
+  }
+  return near;
+}
+
+/**
  * How much to scale the tank's speed and turn rate this step so that no
  * point of its outline closes on an obstacle faster than it could stop in
  * the gap braking at BUMP_DECEL (about sqrt(2 · BUMP_DECEL · gap)): the tank slows into a soft stop as it reaches one, and can always
@@ -655,10 +716,12 @@ function obstacleFactor(s: TankDrive, speed: number, yawRate: number, dt: number
   const vz = -c * speed;
   // Only obstacles the tank could reach within a couple of seconds.
   const reach = OUTLINE_REACH + Math.abs(speed) * 2 + Math.abs(yawRate) * OUTLINE_REACH * 2 + 0.5;
-  for (const o of obstacles) {
+  for (const o of nearby(obstacles, s.x, s.z, reach)) {
     const dx = wrapTile(o.x - s.x);
     const dz = wrapTile(o.z - s.z);
-    if (Math.hypot(dx, dz) > reach + o.r) continue;
+    // Squared, not Math.hypot: this runs for every obstacle in the world each step.
+    const far = reach + o.r;
+    if (dx * dx + dz * dz > far * far) continue;
     for (const [hx, hz] of OUTLINE) {
       // The point in world space (hull space turned by the heading about +Y), relative to the hull's middle.
       const rx = hx * c + hz * sn;
@@ -687,7 +750,7 @@ function obstacleFactor(s: TankDrive, speed: number, yawRate: number, dt: number
 function pushOut(s: TankDrive, obstacles: readonly Obstacle[]): void {
   const c = Math.cos(s.heading);
   const sn = Math.sin(s.heading);
-  for (const o of obstacles) {
+  for (const o of nearby(obstacles, s.x, s.z, OUTLINE_REACH + 0.5)) {
     const dx = wrapTile(o.x - s.x);
     const dz = wrapTile(o.z - s.z);
     if (Math.hypot(dx, dz) > OUTLINE_REACH + o.r + 0.5) continue;

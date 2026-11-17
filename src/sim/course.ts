@@ -18,6 +18,7 @@
  */
 
 import { BOGIES, OUTLINE_EXTENT, TRACK } from './exterior.js';
+import { BYPASS, BYPASS_MOVES, MUD } from './mud-bypass.js';
 import { COURSE_FIELD, DITCH, FIRING_LANES, groundHeight, HILL, laneDirection, STREAM, wrapTile } from './terrain.js';
 
 export type Vec2 = [number, number];
@@ -237,15 +238,7 @@ export const PENALTY_OWN = PENALTY_PATH.length - (JOIN.back - JOIN.leave);
  */
 export const SLALOM = { xs: [256, 240, 224, 208], offset: 2, half: 2.2, post: 0.06, height: 1.6 } as const;
 export const BRIDGE = { x: COURSE.west, z: DITCH.z, length: 38, ramp: 2.5, height: 0.25, tread: 1.0, gauge: TRACK.x } as const;
-/** The mud: 24 m of the south side (x), `half` m either side of the middle line, so going round it takes the bypass (or as long a way round outside). */
-export const MUD = { from: 168, to: 192, half: 9 } as const;
-/**
- * The bypass leaves the course at `from`, swings out to the infield in two
- * `radius` m curves of `swing` and back in by `to` (x on the south side):
- * tight S-bends that throw a track taken faster than about 17 km/h, so it is
- * safe but slower than the mud driven well.
- */
-export const BYPASS = { from: 130, to: 230, radius: 12, swing: (70 * Math.PI) / 180, halfWidth: 4, lift: 0.02 } as const;
+export { BYPASS, MUD } from './mud-bypass.js';
 /** The ford's water and the ditch's, m (heights as the ground's). */
 export const WATER_Y = -0.35;
 export const DITCH_WATER_Y = -1.5;
@@ -309,24 +302,8 @@ export const SLALOM_POSTS: readonly (readonly [number, number])[] = SLALOM_GATES
 /** A gate driven past this far either side of its middle counts as passed outside it, m. */
 const SLALOM_REACH = COURSE.halfWidth + 8;
 
-/** The bypass round the mud: out to the infield (left, driven east) and back. */
-const BYPASS_SWING = BYPASS.swing;
-const BYPASS_ACROSS = 2 * BYPASS.radius * Math.sin(BYPASS_SWING);
-export const BYPASS_PATH = new Path(
-  BYPASS.from,
-  COURSE.south,
-  -QUARTER,
-  [
-    { kind: 'turn', radius: BYPASS.radius, angle: BYPASS_SWING },
-    { kind: 'turn', radius: BYPASS.radius, angle: -BYPASS_SWING },
-    { kind: 'straight', length: BYPASS.to - BYPASS.from - 2 * BYPASS_ACROSS },
-    { kind: 'turn', radius: BYPASS.radius, angle: -BYPASS_SWING },
-    { kind: 'turn', radius: BYPASS.radius, angle: BYPASS_SWING },
-  ],
-  false,
-);
-/** How far the bypass's straight runs from the course's middle line, m. */
-export const BYPASS_OFFSET = 2 * BYPASS.radius * (1 - Math.cos(BYPASS_SWING));
+/** The bypass round the mud: a walled lane out into the infield (left, driven east) and back (src/sim/mud-bypass.ts). */
+export const BYPASS_PATH = new Path(BYPASS.from, COURSE.south, -QUARTER, BYPASS_MOVES, false);
 
 /** Where the bridge's deck and the mud lie along the course, m: the course's gravel isn't drawn there. */
 export const BRIDGE_SPAN: readonly [number, number] = [westSideAt(BRIDGE.z - BRIDGE.length / 2), westSideAt(BRIDGE.z + BRIDGE.length / 2)];
