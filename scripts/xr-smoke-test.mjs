@@ -610,8 +610,11 @@ async function calibrationStep() {
   check('Calibration: standing, choosing standing play calibrates again and the eyes land on the same eye point',
     standing.step === 'reach' && Math.abs(standing.eye - 1.68) < 0.005 && Math.abs(standing.head[1] - standing.seatEye[1]) < 0.005 && standing.sign.startsWith('Hold both hands out'),
     `step ${standing.step}, eyes taken ${standing.eye?.toFixed?.(3)} m, head at ${fmt(standing.head)} for ${fmt(standing.seatEye)}`);
-  // Back to seated play with the headset where the later steps put it, skipping the reach this time.
+  // Back to seated play with the headset where the later steps put it, skipping the reach this time. The reset
+  // lands a frame or more later: wait for it, or on a slow runner the seated eyes are taken at the standing 1.68 m
+  // and every later seat check finds the head 8 cm low.
   iwsdk(['xr', 'set-device-state'], {});
+  await waitFor('the headset back from standing', () => Math.abs(evalInApp('window.__debug.world.player.head.position.y') - 1.68) > 0.01, 8000).catch(() => null);
   evalInApp('(window.__body.choose({ raise: 0, seated: true }), true)');
   await waitFor('the seated eyes again', () => calState().step === 'reach', 8000).catch(() => null);
   evalInApp('(window.__calibration.skip(), true)');
