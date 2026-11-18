@@ -565,6 +565,12 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     expectNone([createEnemyTankWreck(0)], WORLD_GAP);
   });
 
+  it('on an enemy lorry, whole and knocked out (F5.10)', async () => {
+    const { createEnemyTruck } = await import('../src/scene-assets/enemy-truck.scene-asset.js');
+    expectNone([createEnemyTruck(0)], WORLD_GAP);
+    expectNone([createEnemyTruck(0, true)], WORLD_GAP);
+  });
+
   it('on a convoy truck, whole and knocked out (F5.8)', async () => {
     const { createTruck, createTruckWreck } = await import('../src/scene-assets/escort-truck.scene-asset.js');
     expectNone([createTruck(0)], WORLD_GAP);

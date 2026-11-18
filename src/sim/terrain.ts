@@ -297,6 +297,15 @@ export const LANE_WALLS: readonly Obstacle[] = [
 ];
 
 /**
+ * The ambush's wall (F5.10, docs/recon-ambush.md): 30 m of dry stone wall,
+ * 1.5 m high, running east and west 9 m in front of the ambush spot
+ * (src/sim/ambush.ts AMBUSH), 240 m south of the column's road. A tank
+ * halted behind it shows the column only its turret over it. Added after
+ * the random obstacles, so those stay where they stood.
+ */
+export const AMBUSH_WALL: Obstacle = block('wall', -160, -569, 15, 0.35, 0, 1.5);
+
+/**
  * The obstacles in one tile, tile-local, the same on every page and in
  * every realm. Random ones keep off the start field and both roads'
  * corridors. Those that would stand on the biathlon course's field (F5.3a)
@@ -324,7 +333,7 @@ export const OBSTACLES: readonly Obstacle[] = (() => {
   place(ROCKS_PER_TILE, () => rock(spot(), spot(), 0.8 + random() * 1.4));
   place(WALLS_PER_TILE, () => block('wall', spot(), spot(), 4 + random() * 8, 0.35, random() * Math.PI, 1.0 + random() * 0.6));
   place(HOUSES_PER_TILE, () => block('house', spot(), spot(), 2.5 + random() * 2, 3 + random() * 2.5, random() * Math.PI, 2.6 + random() * 1));
-  return [...list.filter((o) => outsideCourseField(o.x, o.z) > o.r + COURSE_CLEAR && firingLaneOffset(o.x, o.z) > o.r + LANE_CLEAR), ...LANE_WALLS, ...BYPASS_WALLS];
+  return [...list.filter((o) => outsideCourseField(o.x, o.z) > o.r + COURSE_CLEAR && firingLaneOffset(o.x, o.z) > o.r + LANE_CLEAR), ...LANE_WALLS, ...BYPASS_WALLS, AMBUSH_WALL];
 })();
 
 /**
