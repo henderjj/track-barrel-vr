@@ -20,6 +20,11 @@ export interface EnemyTankRoute {
   points: readonly (readonly [number, number])[];
   meetZ: number;
   meetD: number;
+  /**
+   * Driven once, not there and back (F5.9's attackers): the tank halts at
+   * the last point and stays there, and has then reached its objective.
+   */
+  oneWay?: boolean;
 }
 
 /**
@@ -34,6 +39,24 @@ export interface EnemyTankRoute {
 export const ENEMY_TANKS: readonly EnemyTankRoute[] = [
   { name: 'Tank A', points: [[330, -380], [140, -380]], meetZ: -230, meetD: 80 },
   { name: 'Tank B', points: [[-310, -305], [-190, -395]], meetZ: -300, meetD: 40 },
+];
+
+/**
+ * The attackers of "Hold the hill" (F5.9, docs/hold-the-hill.md): four
+ * tanks that drive once from the cross road's copy north of the hill
+ * (world z -800) to the foot of its forward slope, where they have taken
+ * it. The first two come straight down from the north; the second two
+ * come along the road from the east and the west and turn in at the
+ * hill's flanks. Each keeps clear of the field's rocks, walls and houses
+ * and of the mud bypass's walls (test/hill.test.ts). World coordinates,
+ * the hill's copy north of the start (src/sim/terrain.ts, HOLD_HILL);
+ * meetZ and meetD aren't used (they have no Meet button).
+ */
+export const HILL_TANKS: readonly EnemyTankRoute[] = [
+  { name: 'Tank C', points: [[160, -800], [150, -700], [165, -575]], meetZ: 0, meetD: 0, oneWay: true },
+  { name: 'Tank D', points: [[235, -800], [230, -700], [215, -578]], meetZ: 0, meetD: 0, oneWay: true },
+  { name: 'Tank E', points: [[400, -800], [300, -800], [275, -690], [245, -580]], meetZ: 0, meetD: 0, oneWay: true },
+  { name: 'Tank F', points: [[40, -800], [100, -740], [125, -680], [130, -584]], meetZ: 0, meetD: 0, oneWay: true },
 ];
 
 /** The tanks' numbers. */
@@ -74,8 +97,9 @@ export function routeLength(r: EnemyTankRoute): number {
   return n;
 }
 
-/** How far along a route there and back a tank has gone, wrapped into [0, 2 × its length). */
+/** How far along a route there and back a tank has gone, wrapped into [0, 2 × its length); a one-way route's held within [0, its length]. */
 export function wrapRoute(r: EnemyTankRoute, d: number): number {
+  if (r.oneWay) return Math.max(0, Math.min(routeLength(r), d));
   const loop = 2 * routeLength(r);
   return loop > 0 ? ((d % loop) + loop) % loop : 0;
 }
@@ -87,7 +111,7 @@ export function wrapRoute(r: EnemyTankRoute, d: number): number {
 export function routePose(r: EnemyTankRoute, d: number, out: RoutePose): RoutePose {
   const length = routeLength(r);
   let along = wrapRoute(r, d);
-  const back = along > length;
+  const back = !r.oneWay && along > length;
   if (back) along = 2 * length - along;
   let k = 1;
   let ax = r.points[0][0];

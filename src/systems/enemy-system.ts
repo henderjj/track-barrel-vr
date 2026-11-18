@@ -23,6 +23,7 @@ import {
   noEnemies,
   parseShared,
   parseShot,
+  routeOf,
   sharedGroupOn,
   sharedOf,
   type SightCheck,
@@ -128,6 +129,36 @@ export function bringTanks(): void {
 /** Host: the enemy holds its fire (the scenario is over) or fights on. */
 export function holdEnemyFire(hold: boolean): void {
   if (active) active.holdFire = hold;
+}
+
+/**
+ * Host: a fight that brings its enemies in one by one (F5.9's hill): every
+ * enemy stopped and the counts afresh, with `seed`; bringEnemy() then
+ * brings each.
+ */
+export function beginAttack(seed: number): void {
+  if (!netLink.isHost || !active) return;
+  active.battery.begin(seed);
+  active.holdFire = false;
+  active.restarted();
+}
+
+/** Host: enemy `i` comes in, fresh (a tank at its route's start). */
+export function bringEnemy(i: number): void {
+  if (!netLink.isHost || !active) return;
+  active.battery.enter(i);
+  active.restarted();
+}
+
+/** Host: tank `i` has driven its one-way route to its end (F5.9). */
+export function enemyArrived(i: number): boolean {
+  return active?.battery.arrived(i) ?? false;
+}
+
+/** Host: what of the tank enemy `i` saw at its last look (F5.9 counts the time hull down). */
+export function enemyView(i: number): TankView {
+  const g = active?.battery.guns[i];
+  return g?.present && g.alive ? g.view : 'none';
 }
 
 /** One line for the menu, for the guns or the tanks. */
@@ -327,6 +358,7 @@ export class EnemySystem extends createSystem({}) {
         this.wrecks.push(add(createEnemyGun(i, true)));
       } else {
         const { hull, turret } = createEnemyTank(i - FIRST_TANK);
+        // The hill's attackers (F5.9) are tanks too, on routes of their own.
         hull.rotation.order = 'YXZ';
         hull.visible = false;
         hull.frustumCulled = false;
@@ -504,10 +536,13 @@ export class EnemySystem extends createSystem({}) {
   private applyShared(s: EnemyShared): void {
     const was = this.shared;
     if (s.on && !was.on) this.seen.length = 0;
-    for (const group of ['guns', 'tanks'] as const) {
+    for (const group of ['guns', 'tanks', 'hill'] as const) {
       const before = sharedGroupOn(was, group);
       const now = sharedGroupOn(s, group);
-      if (now && !before) this.note(group === 'guns' ? 'Enemy guns ahead: watch for their flashes' : 'Enemy tanks about: watch for them moving', [group === 'guns' ? 'guns-ahead' : 'tanks-about']);
+      if (now && !before) {
+        const text = group === 'guns' ? 'Enemy guns ahead: watch for their flashes' : group === 'hill' ? 'Enemy tanks coming from the north' : 'Enemy tanks about: watch for them moving';
+        this.note(text, [group === 'guns' ? 'guns-ahead' : 'tanks-about']);
+      }
       if (!now || !before) continue;
       let knocked = false;
       let left = 0;
@@ -671,7 +706,8 @@ export class EnemySystem extends createSystem({}) {
   private driveTanks(dt: number, paused: boolean): void {
     const tank = tankState();
     for (let i = FIRST_TANK; i < ENEMY_COUNT; i++) {
-      const route = ENEMY_TANKS[i - FIRST_TANK];
+      const route = routeOf(i);
+      if (!route) continue;
       if (netLink.isHost) this.along[i] = this.battery.guns[i].d;
       else if (!paused && this.moving(i)) this.along[i] = wrapRoute(route, this.along[i] + ENEMY_TANK.speed * dt);
       if (this.faceOff(i)) continue;
@@ -723,7 +759,8 @@ export class EnemySystem extends createSystem({}) {
         continue;
       }
       // A tank faces along its route (its model's +Z), tilted to the ground under it; its turret turns on the crew's tank while it halts for it.
-      routePose(ENEMY_TANKS[i - FIRST_TANK], this.along[i], this.pose);
+      const route = routeOf(i);
+      if (route) routePose(route, this.along[i], this.pose);
       const hullYaw = this.pose.heading + Math.PI;
       const fx = Math.sin(hullYaw);
       const fz = Math.cos(hullYaw);

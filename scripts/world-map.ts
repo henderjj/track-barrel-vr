@@ -37,9 +37,9 @@ import {
 } from '../src/sim/course.js';
 import { COURSE_SIGNS } from '../src/sim/course-signs.js';
 import { ENEMY_GUNS } from '../src/sim/enemy-guns.js';
-import { ENEMY_TANKS } from '../src/sim/enemy-tanks.js';
+import { ENEMY_TANKS, HILL_TANKS } from '../src/sim/enemy-tanks.js';
 import { SCENARIO } from '../src/sim/combat.js';
-import { FIRING_LANES, groundHeight, HILL, LANE_WALLS, laneDirection, OBSTACLES, TILE } from '../src/sim/terrain.js';
+import { FIRING_LANES, groundHeight, HILL, HOLD_HILL, LANE_WALLS, laneDirection, OBSTACLES, TILE } from '../src/sim/terrain.js';
 
 /** The window the map shows, world m: a tile and a bit, placed so the range, the course and the lanes each read whole. */
 export const MAP_WINDOW = { west: -360, east: 660, north: -740, south: 100 } as const;
@@ -227,6 +227,20 @@ function overlay(): string {
     }
   });
 
+  // Hold the hill (F5.9): the crest, the hull-down band behind it, and the four attackers' routes to the foot of its forward slope.
+  {
+    const h = HOLD_HILL;
+    out.push(`<line x1="${h.west}" y1="${h.crest}" x2="${h.east}" y2="${h.crest}" stroke="#6b4a1f" stroke-width="2.4"/>`);
+    out.push(`<rect x="${h.west}" y="${h.crest + 22}" width="${h.east - h.west}" height="8" fill="#e0b84a" opacity="0.45"/>`);
+    out.push(label(h.east + 8, h.crest + 4, 'Hold hill crest', { size: 10, color: '#4f3613' }));
+    HILL_TANKS.forEach((t) => {
+      const pts = t.points.map(([x, z]) => `${f1(x)},${f1(z)}`).join(' ');
+      out.push(`<polyline points="${pts}" fill="none" stroke="#e0662b" stroke-width="2" stroke-dasharray="5 4"/>`);
+      const [ex, ez] = t.points[t.points.length - 1];
+      out.push(`<circle cx="${f1(ex)}" cy="${f1(ez)}" r="2.6" fill="#e0662b"/>`);
+    });
+  }
+
   // The Battle scenario's objective: the lane level with the 500 m board.
   for (const [x, z, own] of copies(0, SCENARIO.objectiveZ)) {
     if (!own) continue;
@@ -273,6 +287,9 @@ function legend(): string {
     ['<circle cx="9" cy="-1" r="4" fill="#d7262b"/>', 'Enemy anti-tank guns'],
     ['<line x1="0" y1="-1" x2="18" y2="-1" stroke="#d7262b" stroke-width="2.4" stroke-dasharray="8 5"/>', "Enemy tanks' routes"],
     ['<line x1="0" y1="-1" x2="18" y2="-1" stroke="#7a2bb5" stroke-width="2.2"/>', 'Battle objective'],
+    ['<line x1="0" y1="-1" x2="18" y2="-1" stroke="#6b4a1f" stroke-width="2.4"/>', 'Hold hill crest'],
+    ['<rect x="0" y="-5" width="18" height="8" fill="#e0b84a" opacity="0.45"/>', 'Hull-down band behind it'],
+    ['<line x1="0" y1="-1" x2="18" y2="-1" stroke="#e0662b" stroke-width="2" stroke-dasharray="5 4"/>', "Hill attackers' routes"],
     ['<circle cx="9" cy="-1" r="3" fill="#8b8d8f"/>', 'Rocks'],
     ['<rect x="0" y="-3" width="18" height="4" fill="#6f6a62"/>', 'Walls (cover walls darker)'],
     ['<rect x="4" y="-6" width="10" height="9" fill="#a0583a"/>', 'Houses'],

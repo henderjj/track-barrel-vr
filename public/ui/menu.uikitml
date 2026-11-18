@@ -306,6 +306,7 @@
       <Button id="tab-practice" class="tab" size="sm" variant="secondary">Practice</Button>
       <Button id="tab-combat" class="tab" size="sm" variant="secondary">Combat</Button>
       <Button id="tab-battle" class="tab" size="sm" variant="secondary">Battle</Button>
+      <Button id="tab-missions" class="tab" size="sm" variant="secondary">Missions</Button>
       <Button id="tab-sights" class="tab" size="sm" variant="secondary">Sights</Button>
       <Button id="tab-rigs" class="tab" size="sm" variant="secondary">Test rigs</Button>
     </div>
@@ -866,6 +867,19 @@
           </div>
           <div id="menu-battle-status" class="hint">Advance to contact: off</div>
           <div id="menu-tune-status" class="hint">Recommended tuning</div>
+        </div>
+      </div>
+      <div id="page-missions" class="page" style="display: none">
+        <div class="section">
+          <div class="setting">
+            <div class="label">Hold the hill</div>
+            <div class="choices">
+              <Button id="menu-hill-start" class="choice" size="sm" variant="secondary">Start</Button>
+              <Button id="menu-hill-stop" class="choice" size="sm" variant="secondary">Stop</Button>
+              <Button id="menu-hill-hulldown" class="choice" size="sm" variant="secondary">Hull down</Button>
+            </div>
+          </div>
+          <div id="menu-hill-status" class="hint">Hold the hill: off</div>
         </div>
       </div>
       <div id="page-sights" class="page" style="display: none">

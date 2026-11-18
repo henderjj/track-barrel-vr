@@ -19,6 +19,8 @@ import {
 import { FIRST_TANK } from '../sim/enemy-guns.js';
 import { clockLines } from '../sim/range-run.js';
 import { shownScenario } from './combat-system.js';
+import { shownHill } from './hill-system.js';
+import { hillDebrief, hillTasks } from '../sim/hill.js';
 import { shownCourse } from './course-system.js';
 import { damageState } from './damage-system.js';
 import { tankState } from './drive-system.js';
@@ -176,13 +178,15 @@ export class CrewBoardSystem extends createSystem({}) {
   private clock(): number {
     const s = shownScenario();
     if (s.phase !== 'off') return s.time;
+    const hill = shownHill();
+    if (hill.phase !== 'off') return hill.time;
     const r = shownRun();
     if (r.phase !== 'idle') return Math.max(0, r.clock);
     return this.time;
   }
 
   private timed(): boolean {
-    return shownScenario().phase !== 'off' || shownRun().phase !== 'idle';
+    return shownScenario().phase !== 'off' || shownHill().phase !== 'off' || shownRun().phase !== 'idle';
   }
 
   /** The numbers the board depends on, into `now`; whether any differs from last time. */
@@ -209,8 +213,9 @@ export class CrewBoardSystem extends createSystem({}) {
     n[8] = run.phase === 'idle' ? -1 : run.shots * 16 + hits;
     n[9] = course.started ? course.laps * 1000 + course.passed + course.penalties * 100 : -1;
     n[10] = this.fontsReady ? 1 : 0;
+    n[11] = shownHill().v;
     let differs = false;
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i < 12; i++) {
       if (n[i] !== this.seen[i]) {
         differs = true;
         this.seen[i] = n[i];
@@ -242,7 +247,14 @@ export class CrewBoardSystem extends createSystem({}) {
     if (shells) shells.shells.forEach((shell, i) => shell.place === 'rack' && this.rack[shells.kinds[i]]++);
     let drill = '';
     let drillTasks: string[] = [];
-    if (run.phase !== 'idle') {
+    const hill = shownHill();
+    if (hill.phase === 'on') {
+      // Hold the hill (F5.9): where the tank stands, and the tanks knocked out.
+      drill = 'Hold the hill';
+      drillTasks = hillTasks(hill);
+    } else if (hill.phase !== 'off') {
+      drill = hillDebrief(hill)[0];
+    } else if (run.phase !== 'idle') {
       const [heading, time, count] = clockLines(run);
       drill = heading;
       drillTasks = [count, time].filter((t) => t !== '');
