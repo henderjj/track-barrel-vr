@@ -13,6 +13,7 @@ import { CrewStatusSystem } from './systems/crew-status-system.js';
 import { CourseSystem } from './systems/course-system.js';
 import { DriveSystem } from './systems/drive-system.js';
 import { DriverStationSystem } from './systems/driver-station-system.js';
+import { HullDirectionSystem } from './systems/hull-direction-system.js';
 import { FiringLampSystem } from './systems/firing-lamp-system.js';
 import { FiringSystem } from './systems/firing-system.js';
 import { FrameRateSystem } from './systems/frame-rate-system.js';
@@ -37,6 +38,7 @@ import { SmokeSystem } from './systems/smoke-system.js';
 import { EnemySystem } from './systems/enemy-system.js';
 import { DamageSystem } from './systems/damage-system.js';
 import { CombatSystem } from './systems/combat-system.js';
+import { EscortSystem } from './systems/escort-system.js';
 import { TankAudioSystem } from './systems/tank-audio-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
 import { TurretDialSystem } from './systems/turret-dial-system.js';
@@ -96,6 +98,8 @@ World.create(
   world.registerSystem(DamageSystem);
   // The combat scenario and the fight's tuning (F3.10): after DamageSystem and EnemySystem, whose state it judges and whose numbers it sets.
   world.registerSystem(CombatSystem);
+  // Escort a convoy (F5.8): after CombatSystem, whose scenario and its own stop each other, and EnemySystem, which fires on its trucks.
+  world.registerSystem(EscortSystem);
   // The range run (F1.11): after FiringSystem, whose decided shots it counts on the host.
   world.registerSystem(RangeRunSystem);
   // The callout card in each seat (F2.6): hangs on the hull and turret, drawn once; nothing per frame.
@@ -124,6 +128,8 @@ World.create(
   world.registerSystem(SightSystem);
   // The driver's periscope (F1.6): its yoke is a kit control, and like the gunsight it renders once everything in its view has moved.
   world.registerSystem(PeriscopeSystem);
+  // The hull direction mark in the gunsight and the gunner's periscope (F2.4): turns it to the turret and periscope as drawn this frame.
+  world.registerSystem(HullDirectionSystem);
   // After NetSystem, which may have joined a crew from the page's link.
   world.registerSystem(StartScreenSystem);
   world.registerSystem(GameMenuSystem);

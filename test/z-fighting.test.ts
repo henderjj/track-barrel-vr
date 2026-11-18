@@ -567,6 +567,12 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     expectNone([createEnemyTankWreck(0)], WORLD_GAP);
   });
 
+  it('on a convoy truck, whole and knocked out (F5.8)', async () => {
+    const { createTruck, createTruckWreck } = await import('../src/scene-assets/escort-truck.scene-asset.js');
+    expectNone([createTruck(0)], WORLD_GAP);
+    expectNone([createTruckWreck(0)], WORLD_GAP);
+  });
+
   it('on the lever test rig, with its tillers upright and at both limits', async () => {
     const { Group } = await import('@iwsdk/core');
     const { LEVER_RIG, TILLER } = await import('../src/sim/lever.js');

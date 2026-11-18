@@ -834,6 +834,70 @@ async function ammoChecks(host, guest, label) {
   await enemyTankChecks(host, guest, label);
   await damageChecks(host, guest, label);
   await combatChecks(host, guest, label);
+  await escortChecks(host, guest, label);
+}
+
+/**
+ * Escort a convoy (F5.8): the guest's Start asks the host, and both pages
+ * run it with the guns in and the four trucks drawn; with the tank up the
+ * road both pages' trucks follow it within a few metres of each other; a
+ * truck the host's gun A knocks out is a wreck on the guest's page too, its
+ * sign naming it; the guest's Stop ends it on both and takes the enemy and
+ * the trucks away.
+ */
+async function escortChecks(host, guest, label) {
+  const escort = (p) => p.page.evaluate(() => window.__escort.state());
+  await guest.page.evaluate(() => window.__escort.start());
+  const on = await waitFor('the convoy on both pages', async () => {
+    const [h, g] = await Promise.all([escort(host), escort(guest)]);
+    const e = await guest.page.evaluate(() => window.__enemy.state());
+    const drawn = await guest.page.evaluate(() => window.__escort.drawn());
+    return h.phase === 'on' && g.phase === 'on' && e.present.slice(0, 3).every(Boolean) && drawn.every((d) => d.visible) ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Missions → Escort a convoy → Start runs the convoy on the host, both pages drawing its trucks with the guns in (${label})`, on !== null,
+    on ? '' : JSON.stringify(await Promise.all([host, guest].map(escort))));
+
+  await host.page.evaluate(() => window.__drive.place(0, -150, 0));
+  const together = await waitFor('the trucks following on both pages', async () => {
+    const [h, g] = await Promise.all([escort(host), escort(guest)]);
+    const apart = Math.max(...h.d.map((d, k) => Math.abs(d - g.d[k])));
+    return h.d[0] > -20 && g.d[0] > -20 && apart < 4 ? { h, g, apart } : null;
+  }, 15000).catch(() => null);
+  check(`The trucks follow the tank up the road on both pages, within a few metres of each other (${label})`, together !== null,
+    together ? `lead ${together.h.d[0].toFixed(1)}/${together.g.d[0].toFixed(1)} m, apart ${together.apart.toFixed(2)} m` : JSON.stringify(await Promise.all([host, guest].map(escort))));
+
+  await host.page.evaluate(() => window.__escort.ambush());
+  await waitFor('the ambush', async () => (await escort(host)).d[0] > 150, 8000).catch(() => null);
+  let lost = null;
+  for (let shot = 0; shot < 12 && !lost; shot++) {
+    await host.page.evaluate(() => window.__escort.fireAt(0, 1));
+    lost = await waitFor('a truck knocked out', async () => {
+      const g = await escort(guest);
+      return g.alive.some((a) => !a) ? g : null;
+    }, 3000).catch(() => null);
+  }
+  const k = lost ? lost.alive.indexOf(false) : -1;
+  // The wreck is drawn on the guest's next frame after the event, so wait for it with the sign.
+  const seen = k >= 0 ? await waitFor("the truck lost on the guest's sign and drawn as a wreck", async () => {
+    const [text, drawn] = await guest.page.evaluate(() => [window.__escort.sign, window.__escort.drawn()]);
+    return /knocked out by Gun A/.test(text) && drawn[k].wreck && drawn[k].visible ? { text, wreck: drawn[k] } : null;
+  }, 5000).catch(async () => {
+    const [text, drawn] = await guest.page.evaluate(() => [window.__escort.sign, window.__escort.drawn()]);
+    return { text, wreck: drawn[k], late: true };
+  }) : null;
+  const sign = seen?.text ?? '';
+  check(`A truck the host's gun A knocks out is a wreck on the guest's page, its sign naming the truck and the gun (${label})`,
+    k >= 0 && !seen.late && /^Truck \d knocked out by Gun A/.test(sign), `truck ${k}, sign "${sign}", drawn ${JSON.stringify(seen?.wreck ?? null)}`);
+
+  await guest.page.evaluate(() => window.__escort.stop());
+  const off = await waitFor('the convoy off on both pages', async () => {
+    const [h, g] = await Promise.all([escort(host), escort(guest)]);
+    const e = await guest.page.evaluate(() => window.__enemy.state());
+    const drawn = await guest.page.evaluate(() => window.__escort.drawn());
+    return h.phase === 'off' && g.phase === 'off' && !e.on && drawn.every((d) => !d.visible) ? g : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Stop ends the convoy on both pages and takes the enemy and the trucks away (${label})`, off !== null);
+  await host.page.evaluate(() => { window.__damage.repair(); window.__drive.place(0, 0, 0); });
 }
 
 /**

@@ -100,7 +100,7 @@
  *
  * CI runs the steps in three parts at once, on three runners: part 1 is
  * steps 0 to 6c and 6r (the biathlon race), part 2 is 6d to 6f (the driver and the turret), 6l
- * (the periscopes) and 6x (the biathlon's driving challenge), part 3 is 6g to 6k and 6m to 6q. Each part ends with step 7. Put a new feature's steps in
+ * (the periscopes) and 6x (the biathlon's driving challenge), part 3 is 6g to 6k, 6m to 6q and 6zb (the convoy escort). Each part ends with step 7. Put a new feature's steps in
  * partOne, partTwo or partThree, whichever is shortest on CI.
  *
  * Usage: npm run test:xr   (starts the dev runtime headless if needed)
@@ -340,8 +340,11 @@ const inPart = (n) => XR_PART === 0 || XR_PART === n;
 let slowestClickFrameMs = 400;
 
 /** Point the right controller's ray at `target` from a little in front of the head, and pull the trigger. */
-async function rayClick(target) {
-  const from = [target[0] + 0.2, target[1] - 0.45, target[2] + 0.55];
+async function rayClick(target, yaw = 0) {
+  // Below, right of and in front of the target, for a panel turned `yaw` (radians, about +Y) from facing +Z.
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  const from = [target[0] + 0.2 * c + 0.55 * s, target[1] - 0.45, target[2] - 0.2 * s + 0.55 * c];
   iwsdk(['xr', 'set-transform'], { device: 'controller-right', position: toOrigin(from) });
   const o = toOrigin(target);
   iwsdk(['xr', 'look-at'], { device: 'controller-right', target: o });
@@ -419,10 +422,17 @@ async function menuClick(id) {
   const tab = MENU_TAB_OF.get(id);
   if (tab !== undefined && evalInApp('window.__gameMenu.tab') !== tab) {
     evalInApp(`window.__gameMenu.showTab('${tab}')`);
-    // The page lays out on the next frames, which can be slow with the menu open.
-    await sleep(600);
+    // The page lays out on the next frames, which can be slow with the menu open
+    // (a slow runner draws a frame every 600 ms or more).
+    await sleep(Math.max(600, 3 * slowestFrameMs()));
   }
-  await rayClick(elementPosition('menu-panel', id));
+  await rayClick(elementPosition('menu-panel', id), panelYaw('menu-panel'));
+}
+
+/** Which way scene panel `panel` faces, radians about +Y from +Z: the menu opens wherever the player looks (a gunner turned with the turret). */
+function panelYaw(panel) {
+  return evalInApp(`(() => { const w = window.__debug.world; const o = w.getSceneObject('${panel}'); o.updateWorldMatrix(true, false); `
+    + `const e = o.matrixWorld.elements; return Math.atan2(e[8], e[10]); })()`);
 }
 
 /** Ray-touch the menu's element `id` (a volume slider's track) `fraction` of the way from its left end to its right. */
@@ -3586,6 +3596,96 @@ async function partTwo() {
 
   // 6za. The commander's voice.
   await theCommander();
+
+  // 6zb. The hull direction mark in the gunner's sights (F2.4).
+  await theHullDirection();
+}
+
+/**
+ * 6zb. The hull direction mark in the gunner's sights (F2.4): Sights → Hull
+ *      outline → Turret to 3 puts the player at the gunsight and the
+ *      turret turns itself to 3 o'clock, the mark's hull turning the other
+ *      way; there, it shows the hull's nose at 9 o'clock (screenshot through
+ *      the sight); the Hull in sights setting hides it and shows it again;
+ *      the gunner's periscope turned 90° left of the gun with the turret at
+ *      3 o'clock looks straight up the hull: nose at 12, gun to the right
+ *      (screenshot); Forward brings the turret back and the nose to 12.
+ */
+async function theHullDirection() {
+  const marks = () => evalInApp('window.__hullDirection.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp('(window.__turret.set(null), window.__turret.forward(), window.__periscope.gunner.turn(0), true)');
+  await sleep(300);
+  const ahead = marks();
+  check('With the turret forward both gunner\'s lenses show the hull nose up',
+    ahead.shown && ahead.lenses.sight?.noseHour === 12 && ahead.lenses.periscope?.noseHour === 12 && Math.abs(ahead.lenses.sight.hullDeg) < 0.5,
+    JSON.stringify(ahead.lenses));
+  await menuButtonPress();
+  await menuClick('menu-hull-3');
+  const turning = await waitFor('the turret turning by itself', () => { const s = marks(); return s.traversing && s.turretDeg < -5 && s; }, 8000).catch(() => marks());
+  const sign = evalInApp('window.__turret.sign');
+  check("Sights → Hull outline → Turret to 3 turns the turret by itself, the mark's hull turning the other way with it",
+    turning.traversing && Math.abs(turning.lenses.sight.hullDeg + turning.turretDeg) < 1 && sign.startsWith('Turret to 3'),
+    `turret ${turning.turretDeg.toFixed(1)}°, hull on the mark ${turning.lenses.sight.hullDeg.toFixed(1)}°, sign "${sign}"`);
+  const there = await waitFor("the turret at 3 o'clock", () => { const s = marks(); return !s.traversing && Math.abs(s.turretDeg + 90) < 0.1 && s; }, 20000).catch(() => marks());
+  const seat = evalInApp('window.__seats.mine');
+  check("At 3 o'clock the gunsight's mark shows the hull's nose at 9 o'clock, the gun up",
+    seat === 'gunner' && there.lenses.sight.noseHour === 9 && Math.abs(there.lenses.sight.hullDeg - 90) < 0.5 && Math.abs(there.lenses.sight.gunDeg) < 0.01,
+    `seat ${seat}, turret ${there.turretDeg.toFixed(2)}°, ${JSON.stringify(there.lenses.sight)}`);
+
+  // Lean in to the sight and look through it.
+  const lens = evalInApp('window.__sight.lens()');
+  const along = (d) => lens.at.map((v, i) => v + lens.facing[i] * d);
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(along(0.06)) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toRig(along(-20)) });
+  const open = await waitFor('the sight open', () => { const s = marks(); return s.lenses.sight.open && s; }, 10000).catch(() => marks());
+  await sleep(500);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-hull-direction-sight.png'], {});
+  check('Leaning in to the gunsight opens it with the mark shown', open.lenses.sight.open && open.lenses.sight.shown, JSON.stringify(open.lenses.sight));
+
+  // The setting hides it in both lenses, and shows it again. Back from the
+  // eyepiece first: an open sight draws twice and loses menu clicks on a slow runner.
+  const leaveTheLenses = async () => {
+    iwsdk(['xr', 'set-device-state'], {});
+    evalInApp('(window.__seats.reseat(), true)');
+    await waitFor('the lenses shut', () => { const s = marks(); return !s.lenses.sight.open && !s.lenses.periscope.open; }, 6000).catch(() => null);
+    await sleep(300);
+  };
+  await leaveTheLenses();
+  await menuButtonPress();
+  await menuClick('row-hullmark-1');
+  const hidden = await waitFor('the mark hidden', () => { const s = marks(); return !s.shown && !s.lenses.sight.shown && !s.lenses.periscope.shown && s; }, 4000).catch(() => marks());
+  await menuClick('row-hullmark-0');
+  const shownAgain = await waitFor('the mark shown', () => { const s = marks(); return s.shown && s.lenses.sight.shown && s.lenses.periscope.shown && s; }, 4000).catch(() => marks());
+  await menuButtonPress();
+  check('Sights → Hull in sights → Off hides the mark in both lenses, On shows it again',
+    !hidden.shown && !hidden.lenses.sight.shown && !hidden.lenses.periscope.shown && shownAgain.lenses.sight.shown && shownAgain.lenses.periscope.shown,
+    `off: ${hidden.lenses.sight.shown}/${hidden.lenses.periscope.shown}, on: ${shownAgain.lenses.sight.shown}/${shownAgain.lenses.periscope.shown}`);
+
+  // The gunner's periscope turned 90° left of the gun, which points to 3 o'clock: it looks straight up the hull.
+  evalInApp('(window.__periscope.gunner.turn(90), true)');
+  const scoped = await waitFor('the gunner\'s periscope turned', () => { const s = marks(); return Math.abs(s.lenses.periscope.gunDeg + 90) < 0.5 && s; }, 4000).catch(() => marks());
+  check("The gunner's periscope turned 90° left of the gun at 3 o'clock shows the nose at 12 and the gun to the right",
+    scoped.lenses.periscope.noseHour === 12 && Math.abs(scoped.lenses.periscope.hullDeg) < 0.5 && Math.abs(scoped.lenses.periscope.gunDeg + 90) < 0.5,
+    JSON.stringify(scoped.lenses.periscope));
+  const pane = evalInApp('window.__periscope.gunner.lens()');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(pane.at.map((v, i) => v + pane.facing[i] * 0.06)) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toRig(pane.at.map((v, i) => v - pane.facing[i] * 20)) });
+  const periscopeOpen = await waitFor('the gunner\'s periscope open', () => marks().lenses.periscope.open, 10000).catch(() => false);
+  await sleep(500);
+  if (periscopeOpen) iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-hull-direction-periscope.png'], {});
+
+  await leaveTheLenses();
+  await menuButtonPress();
+  await menuClick('menu-hull-forward');
+  await menuButtonPress();
+  const home = await waitFor('the turret forward', () => { const s = marks(); return Math.abs(s.turretDeg) < 0.1 && s; }, 8000).catch(() => marks());
+  check('Sights → Hull outline → Forward brings the turret back and the gunsight\'s mark to nose up',
+    home.lenses.sight.noseHour === 12 && Math.abs(home.lenses.sight.hullDeg) < 0.5,
+    `turret ${home.turretDeg.toFixed(2)}°, ${JSON.stringify(home.lenses.sight)}`);
+  evalInApp("(window.__periscope.gunner.turn(0), window.__seats.ask('driver'), true)");
+  await waitFor("the driver's seat", () => evalInApp('window.__seats.mine') === 'driver', 5000).catch(() => null);
+  await sleep(300);
 }
 
 /**
@@ -3975,6 +4075,100 @@ async function partThree() {
 
   // 6q. The biathlon course (F5.3a).
   await theBiathlonCourse();
+
+  // 6zb. Escort a convoy (F5.8).
+  await theConvoyEscort();
+}
+
+/**
+ * 6zb. Escort a convoy (F5.8, docs/escort.md): Missions → Escort a convoy
+ *      → Start puts the tank at the start with the guns in, four trucks
+ *      waiting on the road behind it and the briefing on the sign; driven
+ *      up the road, the trucks follow; Ambush puts the tank where gun A
+ *      sees the convoy closed up behind it, and a truck gun A hits is
+ *      knocked out (drawn as a wreck on the verge, the sign naming it and
+ *      the gun) while the tank takes no hit; with the tank past the 600 m
+ *      marker the trucks drive in and the convoy is through, the debrief on
+ *      the sign and the enemy holding its fire; Stop takes it all away.
+ */
+async function theConvoyEscort() {
+  const escort = () => evalInApp('window.__escort.state()');
+  const enemy = () => evalInApp('window.__enemy.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp("(window.__damage.repair(), window.__seats.ask('driver'), true)");
+  await menuButtonPress();
+  await menuClick('menu-escort-start');
+  // On a slow runner the Missions page may not have laid out for the first click: click again.
+  if (await waitFor('the convoy on', () => escort().phase === 'on', 3000).catch(() => false) === false) {
+    console.log('      (Start not taken at the first click: clicking again)');
+    if (!evalInApp('window.__gameMenu.open')) await menuButtonPress();
+    await menuClick('menu-escort-start');
+  }
+  const started = await waitFor('the convoy on, the guns in', () => {
+    const s = escort();
+    const e = enemy();
+    const t = evalInApp('window.__drive.state()');
+    const drawn = evalInApp('window.__escort.drawn()');
+    return s.phase === 'on' && e.present.slice(0, 3).every(Boolean) && Math.hypot(t.x, t.z) < 1 && drawn.every((d) => d.visible && !d.wreck && d.z > 40) && s;
+  }, 10000).catch(() => escort());
+  const briefing = await waitFor('the briefing on the sign', () => /^Escort a convoy/.test(evalInApp('window.__escort.sign')) && evalInApp('window.__escort.sign'), 5000)
+    .catch(() => evalInApp('window.__escort.sign'));
+  check('Missions → Escort a convoy → Start: the tank at the start with the guns in, four trucks waiting behind it, and the briefing on the sign',
+    started.phase === 'on' && started.alive.every(Boolean) && /^Escort a convoy: four trucks to the 600 m marker/.test(briefing),
+    `phase ${started.phase}, trucks ${started.d.map((d) => d.toFixed(0)).join('/')}, sign "${briefing}"`);
+
+  // Up the road, the trucks follow.
+  evalInApp('(window.__drive.place(0, -150, 0), true)');
+  const following = await waitFor('the trucks to follow', () => { const s = escort(); return s.d[0] > -30 && s.speed[0] > 0.5 && s; }, 12000).catch(() => escort());
+  check('With the tank up the road, the trucks follow it', following.d[0] > -30 && following.speed[0] > 0.5,
+    `lead at ${following.d[0].toFixed(1)} m, ${following.speed[0].toFixed(1)} m/s`);
+
+  // The ambush: gun A on the trucks.
+  await menuButtonPress();
+  await menuClick('menu-escort-ambush');
+  const ambush = await waitFor('the convoy closed up behind the tank 210 m up the road', () => {
+    const s = escort();
+    const t = evalInApp('window.__drive.state()');
+    return s.phase === 'on' && Math.abs(t.z + 210) < 1 && Math.abs(s.d[0] - 160) < 3 && enemy().guns[0].convoySpot >= 1 && s;
+  }, 10000).catch(() => escort());
+  check('Missions → Escort a convoy → Ambush: the tank 210 m up the road, the convoy closed up behind it, gun A laid on it',
+    ambush.phase === 'on' && Math.abs(ambush.d[0] - 160) < 3 && enemy().guns[0].convoySpot >= 1, `trucks ${ambush.d.map((d) => d.toFixed(0)).join('/')}, gun A ${JSON.stringify(enemy().guns[0])}`);
+  // Gun A fires on the trucks until one is hit (each shot its layer corrects).
+  let lost = null;
+  for (let shot = 0; shot < 12 && !lost; shot++) {
+    evalInApp('(window.__escort.fireAt(0, 1), true)');
+    lost = await waitFor('a truck knocked out', () => { const s = escort(); return s.alive.some((a) => !a) && s; }, 1500).catch(() => null);
+  }
+  const k = lost ? lost.alive.indexOf(false) : -1;
+  const sign = await waitFor('the truck lost on the sign', () => /knocked out by Gun A/.test(evalInApp('window.__escort.sign')) && evalInApp('window.__escort.sign'), 4000)
+    .catch(() => evalInApp('window.__escort.sign'));
+  const drawn = evalInApp('window.__escort.drawn()');
+  check('A truck gun A hits is knocked out: drawn as a wreck on the verge, the sign naming it and the gun, and no hit on the tank',
+    k >= 0 && drawn[k].wreck && drawn[k].x > 5 && /^Truck \d knocked out by Gun A/.test(sign) && evalInApp('window.__damage.state().hits') === 0 && enemy().shots >= 0,
+    `lost ${k}, drawn ${JSON.stringify(drawn[k] ?? null)}, sign "${sign}", tank hits ${evalInApp('window.__damage.state().hits')}`);
+
+  // Past the 600 m marker: the trucks drive in, and the convoy is through.
+  evalInApp('(window.__drive.place(0, -700, 0), window.__escort.closeUp(700), true)');
+  const won = await waitFor('the convoy through', () => { const s = escort(); return s.phase === 'won' && s; }, 40000).catch(() => escort());
+  const debrief = await waitFor('the debrief on the sign', () => /^Convoy through/.test(evalInApp('window.__escort.sign')) && evalInApp('window.__escort.sign'), 5000)
+    .catch(() => evalInApp('window.__escort.sign'));
+  const shots = enemy().shots;
+  await sleep(3000);
+  check('Past the 600 m marker the trucks drive in: the convoy is through, the debrief on the sign, and the enemy holds its fire',
+    won.phase === 'won' && won.released && /^Convoy through in \d+:\d\d: [234] of 4 trucks\. \d of \d enemies out/.test(debrief) && enemy().shots === shots,
+    `phase ${won.phase}, trucks ${won.d.map((d) => d.toFixed(0)).join('/')}, sign "${debrief}", "${evalInApp("window.__gameMenu.text('menu-escort-status')")}"`);
+
+  // The trucks through, seen from the road behind them (screenshot: the convoy and the wreck on the verge).
+  evalInApp('(window.__drive.place(0, -560, 0), true)');
+  await sleep(1500);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-escort-through.png'], {});
+
+  await menuButtonPress();
+  await menuClick('menu-escort-stop');
+  const stopped = await waitFor('the convoy and the enemy gone', () => { const e = enemy(); const s = escort(); return !e.on && s.phase === 'off' && evalInApp('window.__escort.drawn()').every((d) => !d.visible) && s; }, 5000).catch(() => escort());
+  check('Missions → Escort a convoy → Stop takes the convoy and the enemy away', stopped.phase === 'off' && !enemy().on, `phase ${stopped.phase}, enemy on ${enemy().on}`);
+  await menuButtonPress();
+  evalInApp('(window.__damage.repair(), window.__drive.place(0, 0, 0), true)');
 }
 
 /**

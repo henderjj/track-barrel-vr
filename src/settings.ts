@@ -129,6 +129,12 @@ export interface Settings {
    */
   card: boolean;
   /**
+   * The hull direction mark in the gunsight and the gunner's periscope
+   * (F2.4, src/sim/hull-direction.ts): shown (the default) or hidden. The
+   * game menu's Sights tab changes it at once.
+   */
+  hullmark: boolean;
+  /**
    * Pop-ups (F6.5, docs/crew-board.md): news of the fight and the drills
    * (hits, enemies firing, a thrown track) goes on the crew board in each
    * seat; with this on it also floats in front of the player as it used to.
@@ -183,6 +189,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cabin: 0.5,
   lamps: 1,
   card: true,
+  hullmark: true,
   popups: false,
   boardRanges: true,
   scatter: true,
@@ -247,6 +254,7 @@ export function parseSettings(search: string): Settings {
     cabin: num(params, 'cabin', d.cabin, 0.1, 8),
     lamps: num(params, 'lamps', d.lamps, 0, 4),
     card: bool(params, 'card', d.card),
+    hullmark: bool(params, 'hullmark', d.hullmark),
     popups: bool(params, 'popups', d.popups),
     boardRanges: bool(params, 'boardranges', d.boardRanges),
     scatter: bool(params, 'scatter', d.scatter),
