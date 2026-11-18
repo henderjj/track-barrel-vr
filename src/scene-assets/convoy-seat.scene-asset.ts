@@ -2,6 +2,7 @@ import { BoxGeometry, CylinderGeometry, Mesh, MeshStandardMaterial } from '@iwsd
 import { SEATS } from '../sim/cabin.js';
 import { CONVOY_GRIP, CONVOY_GRIP_OFFSET, CONVOY_MOVE, SEAT_LEVER_BRACKET, SEAT_LEVER_FROM_CUSHION } from '../sim/convoy-seat.js';
 import { litInside } from './cabin-light.js';
+import { interiorFinish } from './finish.js';
 import { beam, mergeParts, type Part } from './lowpoly.js';
 
 const LEATHER = 0x5a3d26;
@@ -9,10 +10,30 @@ const STEEL = 0x3c3d3f;
 const STEEL_LIGHT = 0x55595e;
 const RUBBER = 0x1c1c1c;
 
-const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }), { finish: true });
 
 /** The name of the driver's seat's moving part (SeatSystem's convoy position moves it up and back by CONVOY_MOVE). */
 export const DRIVER_SEAT_NAME = 'Driver Seat';
+
+/**
+ * A crewman's seat in its frame, its cushion's top's middle at (x, top, z),
+ * the front towards -Z: a leather cushion with a rolled front edge on a
+ * steel pan, and a padded backrest on a steel back plate held up on two
+ * stays from the pan. Shared by the driver's seat and the cabin's others.
+ */
+export function seatShellParts(x: number, top: number, z: number): Part[] {
+  const parts: Part[] = [
+    { geometry: new BoxGeometry(0.42, 0.07, 0.38), color: LEATHER, position: [x, top - 0.035, z + 0.01] },
+    { geometry: new CylinderGeometry(0.035, 0.035, 0.42, 10, 1), color: LEATHER, position: [x, top - 0.035, z - 0.18], rotation: [0, 0, Math.PI / 2] },
+    { geometry: new BoxGeometry(0.45, 0.025, 0.43), color: STEEL, position: [x, top - 0.0825, z] },
+    { geometry: new BoxGeometry(0.4, 0.4, 0.06), color: LEATHER, position: [x, top + 0.26, z + 0.235] },
+    { geometry: new BoxGeometry(0.42, 0.43, 0.014), color: STEEL, position: [x, top + 0.255, z + 0.272] },
+  ];
+  // The backrest's padding in two rolls across, standing proud of it.
+  for (const dy of [0.12, 0.38]) parts.push({ geometry: new CylinderGeometry(0.03, 0.03, 0.38, 10, 1), color: LEATHER, position: [x, top + dy, z + 0.215], rotation: [0, 0, Math.PI / 2] });
+  for (const side of [-1, 1]) parts.push(beam([x + side * 0.17, top - 0.09, z + 0.18], [x + side * 0.17, top + 0.1, z + 0.282], 0.012, STEEL, 6));
+  return parts;
+}
 
 /** The way the seat rides up its column, a unit vector (hull space): up and back to the convoy position. */
 const RISE = (() => {
@@ -51,8 +72,7 @@ export function createDriverSeat(): Mesh {
   const c = columnTop();
   const reach = RISE.length + 0.05;
   const parts: Part[] = [
-    { geometry: new BoxGeometry(0.44, 0.08, 0.42), color: LEATHER, position: [x, top - 0.04, z] },
-    { geometry: new BoxGeometry(0.44, 0.5, 0.07), color: LEATHER, position: [x, top + 0.25 - 0.02, z + 0.245] },
+    ...seatShellParts(x, top, z),
     beam(c, [c[0] - RISE.x * reach, c[1] - RISE.y * reach, c[2] - RISE.z * reach], 0.024, STEEL_LIGHT, 8),
   ];
   // The seat lever's bracket, out from the cushion's side, and the hinge it turns on, across the seat.
@@ -60,7 +80,7 @@ export function createDriverSeat(): Mesh {
   const [px, py, pz] = [x + SEAT_LEVER_FROM_CUSHION[0], top + SEAT_LEVER_FROM_CUSHION[1], z + SEAT_LEVER_FROM_CUSHION[2]];
   parts.push({ geometry: new BoxGeometry(b.to - b.from, b.height, b.depth), color: STEEL, position: [x + (b.from + b.to) / 2, py, pz] });
   parts.push({ geometry: new CylinderGeometry(0.016, 0.016, 0.045, 8, 1), color: STEEL_LIGHT, position: [px, py, pz], rotation: [0, 0, Math.PI / 2] });
-  const mesh = new Mesh(mergeParts(parts), material);
+  const mesh = new Mesh(mergeParts(parts, interiorFinish), material);
   mesh.name = DRIVER_SEAT_NAME;
   return mesh;
 }
@@ -82,7 +102,7 @@ export function createConvoyGrip(): Mesh {
     { geometry: new CylinderGeometry(CONVOY_GRIP.radius, CONVOY_GRIP.radius, g, 8, 1), color: RUBBER, position: [o[0], o[1] - g / 2, o[2]] },
     { geometry: new CylinderGeometry(CONVOY_GRIP.radius + 0.004, CONVOY_GRIP.radius + 0.006, 0.014, 8, 1), color: STEEL, position: [o[0], o[1] + 0.004, o[2]] },
   ];
-  const mesh = new Mesh(mergeParts(parts), material);
+  const mesh = new Mesh(mergeParts(parts, interiorFinish), material);
   mesh.name = 'Convoy Grip';
   return mesh;
 }

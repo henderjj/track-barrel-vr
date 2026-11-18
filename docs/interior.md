@@ -113,9 +113,40 @@ Nothing new goes over the network: the layout is the same numbers on both pages,
 
 `window.__interior` gives `state()` (now with the look and which lids are drawn open), `setLighting(on)` (to compare with the sky's light everywhere, as before) and `light(point, normal)`.
 
+## The fifth pass: the missing parts, shapes and finishes (2026-11-18)
+
+John's note (2026-11-17): make sure every major part of the compartment is there, the gearbox and the loader's parts among them, and work on the shapes and materials of the interior and the controls. Taken from TM 9-754's figures 9 and 13 again. Nothing anyone holds moved: every handle, wheel, knob and lever is where it was. Sizes and places are in [`src/sim/interior-fittings.ts`](../src/sim/interior-fittings.ts); the model is [`src/scene-assets/interior-fittings.ts`](../src/scene-assets/interior-fittings.ts), merged into the hull's, turret's and gun's meshes, so there are no new draw calls.
+
+What was added:
+
+- **The drive train in the driver's compartment** (figure 9): the transmission's case under the gear lever is now a casting with chamfered shoulders, a bolted split flange behind the lever, cooling ribs and a filler cap, instead of a plain box; the differential's ribbed cover stands against the nose plate between the steering levers, as the ribbed casting in the photograph; a steering brake drum each side of it with its adjusting hole's cover; the final drive breathers rising from the drums to the pipe across the nose; and the propeller shaft's tunnel along the floor back under the basket to the engine's bulkhead. The old final drive box is gone.
+- **The driver's pedals and foot plate**: the clutch under the left steering lever, the accelerator under the right, on a diamond plate. They stand still: the game's clutch and accelerator stay on the levers and the trigger ([gearbox.md](gearbox.md)).
+- **Ammunition in the hull** either side of the basket: on the right an open rack of 24 rounds lying across the hull, their brass bases and primers towards the basket; on the left an armoured bin with its lid, hinges, latch and handles. Both stay outside the basket's sweep (88.5 cm from the ring's middle).
+- **The loader's side of the gun**: the two recoil cylinders over the breech, their pistons' rods on the breech running back into them as it recoils; the recoil guard, a cage of bars behind the breech on its left, clear of the breech lever and of the casings' fall into the bin; and the coaxial machine gun on the cradle's right with its back plate, spade grip, cocking handle and ammunition box, between the breech and the elevating arc.
+- **The traverse gear** (figure 13): its gearbox behind the traverse crank and its motor lying along its right, below the gunner's line of sight to the crew board and above the turret's foot plate.
+- **Smaller fittings**: the turret lock's red handwheel by the ring at the gunner's right knee, the basket's sheet skirt round its back half, the pistol port in the turret's left wall, the interphone box on the right wall, and the radio as an SCR-508's two cases with dial windows, knobs, switches, handles and a headset on a hook.
+
+Shapes: all three seats have a rolled front edge on a steel pan and a backrest padded in two rolls on a steel back plate; the levers' rods taper into a ferrule under ridged rubber handles; the wheels' rims are rounder, their spokes flat, their hubs nutted and their knobs rounded at the end.
+
+**Finishes.** Every part inside used to be the same flat matte. Now each colour has a finish ([`src/scene-assets/finish.ts`](../src/scene-assets/finish.ts)): paint a dull satin, cast housings a little duller, steel a metal sheen, the breech block and the pistons' rods bright steel, brass and copper shiny, rubber and leather a little glossy, wood matte. It is a per-vertex attribute (gloss and metalness) that `litInside(material, { finish: true })` reads in the shader, so it costs no draw calls or textures, and it takes the interior's light as everything else does. One finish per colour, so two faces that the z-fighting test lets share a plane (one colour) never shine differently.
+
+Cost: the hull 13,064 → 17,916 triangles, the turret 6,298 → 8,134, the gun 868 → 1,480 (about 7,300 more in all, well inside the 300k budget), and no new meshes or draw calls.
+
+Tests: `test/interior-fittings.test.ts` keeps each new part clear of the controls beside it (the steering levers, the gear lever, the crank's hand, the breech lever, the casings' fall, the elevating arc), the hull's racks outside the basket's sweep, the traverse motor out of the gunner's view of their board and over the foot plate, and the finishes in range. `test/z-fighting.test.ts` checks them in every pose as before; its "on the range" check (8 mm, for things seen from 5 m on) now leaves out faces inside the crew compartment, which are only seen from inside and keep the 3 mm cabin rule. `test/interior.test.ts`'s head boxes still clear everything by 9 cm (the interphone box was moved back for it).
+
 ## Headset check
 
-On a Quest 3 after the deploy, with the cache cleared, seated. Steps 1 to 4 are for the fourth pass; the third and second passes' follow.
+On a Quest 3 after the deploy, with the cache cleared, seated.
+
+The fifth pass (the missing parts, shapes and finishes):
+
+1. Practice → Sit in → Driver. Look down between the steering levers: the transmission's ribbed case under the gear lever, the differential's ribbed cover against the nose with a brake drum each side and the breather pipe across, the pedals under the levers. Work every lever, the gear lever through all its gears and the parking brake: nothing new is in a hand's way.
+2. Look back over your right shoulder into the turret basket: the propeller shaft's tunnel along the floor, the rack of rounds by the right wall and the armoured bin by the left.
+3. Practice → Sit in → Gunner. The recoil cylinders over the breech and the cage on its left, the machine gun on its right, the traverse motor low on the crank's right. Read the crew board on the front wall: the motor must not cover any of it. Load and fire a few rounds: the rods slide into the cylinders, the casings still drop into the bin, and the breech lever and the crank turn clear of everything.
+4. Look at the steel, brass and rubber under the dome lamp: say whether the metal's sheen reads as metal or looks wrong (too shiny, too dark), and whether anything flickers.
+5. Perf HUD (X): the fps in both seats.
+
+Steps 1 to 4 below are for the fourth pass; the third and second passes' follow.
 
 1. Driver's seat: lean slowly forward into the slit, then left to the wall, then stand up. Nothing fades until your eyes are about to touch the brow pad, the wall or the roof, and then the whole view goes black, edges and all, within 4 cm.
 2. Gunner's seat: lean right towards the turret's wall and forward to the gunsight. The wall fades the view just before you touch it; the sight opens as your eye reaches the eyecup and the fade starts only past it.

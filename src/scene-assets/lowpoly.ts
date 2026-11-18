@@ -25,7 +25,19 @@ export interface Part {
   position?: readonly [number, number, number];
   rotation?: readonly [number, number, number];
   scale?: readonly [number, number, number];
+  /** How it takes the light (`Finish`); otherwise `mergeParts`' `finishOf` its colour, or flat matte paint. */
+  finish?: Finish;
 }
+
+/**
+ * How a surface takes the light, per vertex, for a material given
+ * `litInside(material, { finish: true })` (src/scene-assets/cabin-light.ts):
+ * its gloss (taken off the material's roughness of 1) and its metalness,
+ * each 0 to 1. [0, 0] is the flat matte paint every part had before.
+ */
+export type Finish = readonly [gloss: number, metal: number];
+/** The flat matte paint every part had before finishes. */
+export const MATTE: Finish = [0, 0];
 
 const tmpMatrix = new Matrix4();
 const tmpQuat = new Quaternion();
@@ -37,10 +49,15 @@ const centroid = new Vector3();
 
 /**
  * Merge parts into one non-indexed geometry with flat normals and a `color`
- * attribute. Use with a material that has `vertexColors: true`.
+ * attribute. Use with a material that has `vertexColors: true`. With
+ * `finishOf` (a finish for each colour, or undefined for matte) it also
+ * writes a `finish` attribute (gloss, metal) from each part's `finish` or
+ * its triangles' colours, for a material lit with finishes; a mesh drawn
+ * with such a material must always have it.
  */
-export function mergeParts(parts: Part[]): BufferGeometry {
+export function mergeParts(parts: Part[], finishOf?: (color: number) => Finish | undefined): BufferGeometry {
   const prepared: BufferGeometry[] = [];
+  const finishes: Float32Array[] = [];
   let vertexCount = 0;
   for (const part of parts) {
     const g = part.geometry.index ? part.geometry.toNonIndexed() : part.geometry.clone();
@@ -51,7 +68,10 @@ export function mergeParts(parts: Part[]): BufferGeometry {
     tmpMatrix.compose(tmpPos, tmpQuat, tmpScale);
     g.applyMatrix4(tmpMatrix);
     const pos = g.getAttribute('position');
+    const finish = finishOf ? new Float32Array(pos.count * 2) : undefined;
+    if (finish) finishes.push(finish);
     if (part.color === 'own') {
+      if (finish && part.finish) for (let i = 0; i < pos.count; i++) finish.set(part.finish, i * 2);
       prepared.push(g);
       vertexCount += pos.count;
       continue;
@@ -71,6 +91,10 @@ export function mergeParts(parts: Part[]): BufferGeometry {
         hex = part.color(tri, centroid);
       }
       tmpColor.setHex(hex);
+      if (finish) {
+        const f = part.finish ?? finishOf!(hex) ?? MATTE;
+        for (let k = 0; k < 3; k++) finish.set(f, (tri * 3 + k) * 2);
+      }
       for (let k = 0; k < 3; k++) {
         colors[(tri * 3 + k) * 3] = tmpColor.r;
         colors[(tri * 3 + k) * 3 + 1] = tmpColor.g;
@@ -96,6 +120,15 @@ export function mergeParts(parts: Part[]): BufferGeometry {
   const merged = new BufferGeometry();
   merged.setAttribute('position', new BufferAttribute(positions, 3));
   merged.setAttribute('color', new BufferAttribute(colors, 3));
+  if (finishOf) {
+    const all = new Float32Array(vertexCount * 2);
+    let at = 0;
+    for (const f of finishes) {
+      all.set(f, at);
+      at += f.length;
+    }
+    merged.setAttribute('finish', new BufferAttribute(all, 2));
+  }
   merged.computeVertexNormals();
   merged.computeBoundingBox();
   merged.computeBoundingSphere();

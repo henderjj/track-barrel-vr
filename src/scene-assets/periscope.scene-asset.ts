@@ -17,6 +17,7 @@ import {
   WINDOW_PROUD,
 } from "../sim/periscope.js";
 import { litInside } from "./cabin-light.js";
+import { interiorFinish } from "./finish.js";
 
 /**
  * A crew periscope (F1.6, F1.19, docs/periscope.md), in periscope space:
@@ -46,6 +47,7 @@ const material = litInside(
     roughness: 1,
     metalness: 0,
   }),
+  { finish: true },
 );
 
 /** The rubber surround round the window: how wide its bars are and how far they stand out from the box's back face, m. */
@@ -197,7 +199,7 @@ export function createPeriscopeBody(s: PeriscopeSpec): Mesh {
       position: [0, roof - COLLAR.below / 2 + 0.0025, 0],
     },
   ];
-  const mesh = new Mesh(mergeParts(parts), material);
+  const mesh = new Mesh(mergeParts(parts, interiorFinish), material);
   mesh.name = `Periscope Body ${s.id}`;
   return mesh;
 }
@@ -249,7 +251,7 @@ export function createPeriscopeTurning(s: PeriscopeSpec): Mesh {
       position: [0, headMid + 0.005, -HEAD_SIZE.depth / 2 - 0.002],
     },
   ];
-  const mesh = new Mesh(mergeParts(parts), material);
+  const mesh = new Mesh(mergeParts(parts, interiorFinish), material);
   mesh.name = `Periscope Turning ${s.id}`;
   return mesh;
 }

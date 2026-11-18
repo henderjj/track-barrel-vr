@@ -74,11 +74,35 @@ const f = (v: number) => v.toFixed(4);
 const VERTEX_PARS = /* glsl */ `
 varying vec3 vCabinWorld;
 varying vec3 vCabinNormal;
+#ifdef CABIN_FINISH
+attribute vec2 finish;
+varying vec2 vCabinFinish;
+#endif
 `;
 // After skinning, so a skinned glove is lit where it is drawn.
 const VERTEX = /* glsl */ `
 vCabinWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
 vCabinNormal = mat3(modelMatrix) * objectNormal;
+#ifdef CABIN_FINISH
+vCabinFinish = finish;
+#endif
+`;
+
+// Each vertex's finish (src/scene-assets/finish.ts): gloss off the material's roughness, and its metalness.
+const FINISH_PARS = /* glsl */ `
+#ifdef CABIN_FINISH
+varying vec2 vCabinFinish;
+#endif
+`;
+const ROUGHNESS = /* glsl */ `
+#ifdef CABIN_FINISH
+roughnessFactor = clamp(roughnessFactor - vCabinFinish.x, 0.05, 1.0);
+#endif
+`;
+const METALNESS = /* glsl */ `
+#ifdef CABIN_FINISH
+metalnessFactor = max(metalnessFactor, vCabinFinish.y);
+#endif
 `;
 
 const FRAGMENT_PARS = /* glsl */ `
@@ -130,18 +154,28 @@ if (cabinOn > 0.5 && cabinInside(vCabinWorld)) {
 }
 `;
 
-/** Light `material` (a MeshStandardMaterial) as inside the tank where it is inside the tank. Returns it. */
-export function litInside<M extends Material>(material: M): M {
+/**
+ * Light `material` (a MeshStandardMaterial) as inside the tank where it is
+ * inside the tank. With `finish`, each vertex's gloss and metalness come
+ * from its geometry's `finish` attribute (mergeParts with a `finishOf`,
+ * src/scene-assets/finish.ts), which every mesh drawn with it must have.
+ * Returns it.
+ */
+export function litInside<M extends Material>(material: M, options: { finish?: boolean } = {}): M {
   if (!(material instanceof MeshStandardMaterial)) return material;
+  const finish = options.finish === true;
+  if (finish) (material as { defines?: Record<string, unknown> }).defines = { ...(material as { defines?: Record<string, unknown> }).defines, CABIN_FINISH: '' };
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, interiorUniforms);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${VERTEX_PARS}`)
       .replace('#include <fog_vertex>', `#include <fog_vertex>\n${VERTEX}`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${FRAGMENT_PARS}`)
+      .replace('#include <common>', `#include <common>\n${FRAGMENT_PARS}\n${FINISH_PARS}`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${ROUGHNESS}`)
+      .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>\n${METALNESS}`)
       .replace('#include <aomap_fragment>', `${FRAGMENT}\n#include <aomap_fragment>`);
   };
-  material.customProgramCacheKey = () => 'cabin-light';
+  material.customProgramCacheKey = () => (finish ? 'cabin-light-finish' : 'cabin-light');
   return material;
 }
