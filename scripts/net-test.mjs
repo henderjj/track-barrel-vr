@@ -469,6 +469,9 @@ async function driveChecks(host, guest, label) {
     started ? `${started.h.rpm.toFixed(0)} rpm on the host, ${started.g.rpm.toFixed(0)} drawn by the guest` : JSON.stringify(await tank(host)));
   // F1.18: the guest driver's parking brake reaches the host: the tank stays put and the host's lamp lights.
   await guest.page.evaluate(() => window.__drive.set({ left: 1, right: 1, parkingBrake: true }));
+  // Wait for the lamp, not a time: at 150 ms and 400 ms frames the guest's packet can take more than 1.5 s to light it.
+  await waitFor('the host\'s parking brake lamp', async () => (await host.page.evaluate(() => window.__driverStation.engine().lamps.brake)) || null, 8000)
+    .catch(() => null);
   await new Promise((r) => setTimeout(r, 1500));
   const held = { t: await tank(host), lamp: await host.page.evaluate(() => window.__driverStation.engine().lamps.brake) };
   check(`The guest driver's parking brake holds the host's tank against the tillers, the host's lamp lit (${label})`,
@@ -742,7 +745,7 @@ async function firingChecks(host, guest, label) {
   await guest.page.evaluate(() => window.__loading.setTestHand('right', null));
   const now = loaded ?? { h: await drill(host), g: await drill(guest) };
   check(`The gunner loads a shell and the driver sees the breech loaded and closed (${label})`, loaded !== null,
-    `gunner: loaded ${now.g.loaded}, board "${now.g.board.join(' | ')}"; driver draws loaded ${now.h.loaded}, breech shell ${now.h.breechShell}, lever ${now.h.lever.toFixed(2)}, ${now.h.received} loading packets`);
+    `gunner: loaded ${now.g.loaded}, lever ${now.g.lever.toFixed(2)}, board "${now.g.board.join(' | ')}"; driver draws loaded ${now.h.loaded}, breech shell ${now.h.breechShell}, lever ${now.h.lever.toFixed(2)}, ${now.h.received} loading packets`);
 
   // Lay the gun on the 100 m target and fire.
   const before = await Promise.all([host, guest].map((p) => p.page.evaluate(() => ({ shots: window.__firing.records().length, hits: window.__firing.hits()[0], casings: window.__loading.state().casings }))));
@@ -860,11 +863,13 @@ async function escortChecks(host, guest, label) {
     on ? '' : JSON.stringify(await Promise.all([host, guest].map(escort))));
 
   await host.page.evaluate(() => window.__drive.place(0, -150, 0));
+  // The convoy's clock moves on at most a frame's worth (0.25 s) a frame: at 400 ms a frame the lead truck needs
+  // more than 15 s to close up, so the wait allows 40.
   const together = await waitFor('the trucks following on both pages', async () => {
     const [h, g] = await Promise.all([escort(host), escort(guest)]);
     const apart = Math.max(...h.d.map((d, k) => Math.abs(d - g.d[k])));
     return h.d[0] > -20 && g.d[0] > -20 && apart < 4 ? { h, g, apart } : null;
-  }, 15000).catch(() => null);
+  }, 40000).catch(() => null);
   check(`The trucks follow the tank up the road on both pages, within a few metres of each other (${label})`, together !== null,
     together ? `lead ${together.h.d[0].toFixed(1)}/${together.g.d[0].toFixed(1)} m, apart ${together.apart.toFixed(2)} m` : JSON.stringify(await Promise.all([host, guest].map(escort))));
 
