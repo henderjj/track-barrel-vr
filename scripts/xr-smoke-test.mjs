@@ -365,8 +365,21 @@ async function rayClick(target, yaw = 0) {
     console.log(`      (ray clicks: frames up to ${Math.round(frameMs)} ms, so the trigger is held ${Math.round(holdMs)} ms)`);
   }
   await sleep(settleMs);
-  iwsdk(['xr', 'select'], { device: 'controller-right', duration: holdMs / 1000 });
+  iwsdk(['xr', 'select'], { device: 'controller-right', duration: emulatorSeconds(holdMs, frameMs) });
   await sleep(holdMs + settleMs);
+}
+
+/**
+ * The emulator's own clock moves on by a frame's time, but by no more than
+ * 100 ms a frame (IWER as bundled by @iwsdk/vite-plugin-dev 1.1.0). A hold
+ * of `wallMs` on a page drawing a frame every `frameMs` is then this many of
+ * the emulator's seconds: at 600 ms a frame a 1.5 s hold is 250 ms of its time.
+ * Asked for 1.5 s instead, it held for 15 frames, 9 s, past the ray's 5 s click
+ * window, and every ray click was lost.
+ */
+function emulatorSeconds(wallMs, frameMs) {
+  const EMULATOR_FRAME_CAP_MS = 100;
+  return (wallMs * Math.min(1, EMULATOR_FRAME_CAP_MS / Math.max(frameMs, 1))) / 1000;
 }
 
 /**
