@@ -1884,7 +1884,9 @@ async function theRangeRun() {
       const v = ${read};
       if (v.r.phase === 'running' && v.r.clock < 0) { window.__countdownSeen = JSON.parse(JSON.stringify(v)); clearInterval(id); }
     }, 20);
-    setTimeout(() => clearInterval(id), 20000);
+    // Long enough to outlast the ray click: on a runner drawing a frame a second or slower, aiming and holding the
+    // trigger can take more than 20 s, and a watch stopped by then misses the countdown.
+    setTimeout(() => clearInterval(id), 120000);
     return true;
   })()`);
   await menuClick('menu-run-start');
