@@ -340,8 +340,11 @@ const inPart = (n) => XR_PART === 0 || XR_PART === n;
 let slowestClickFrameMs = 400;
 
 /** Point the right controller's ray at `target` from a little in front of the head, and pull the trigger. */
-async function rayClick(target) {
-  const from = [target[0] + 0.2, target[1] - 0.45, target[2] + 0.55];
+async function rayClick(target, yaw = 0) {
+  // Below, right of and in front of the target, for a panel turned `yaw` (radians, about +Y) from facing +Z.
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  const from = [target[0] + 0.2 * c + 0.55 * s, target[1] - 0.45, target[2] - 0.2 * s + 0.55 * c];
   iwsdk(['xr', 'set-transform'], { device: 'controller-right', position: toOrigin(from) });
   const o = toOrigin(target);
   iwsdk(['xr', 'look-at'], { device: 'controller-right', target: o });
@@ -422,7 +425,13 @@ async function menuClick(id) {
     // The page lays out on the next frames, which can be slow with the menu open.
     await sleep(600);
   }
-  await rayClick(elementPosition('menu-panel', id));
+  await rayClick(elementPosition('menu-panel', id), panelYaw('menu-panel'));
+}
+
+/** Which way scene panel `panel` faces, radians about +Y from +Z: the menu opens wherever the player looks (a gunner turned with the turret). */
+function panelYaw(panel) {
+  return evalInApp(`(() => { const w = window.__debug.world; const o = w.getSceneObject('${panel}'); o.updateWorldMatrix(true, false); `
+    + `const e = o.matrixWorld.elements; return Math.atan2(e[8], e[10]); })()`);
 }
 
 /** Ray-touch the menu's element `id` (a volume slider's track) `fraction` of the way from its left end to its right. */
@@ -3581,6 +3590,96 @@ async function partTwo() {
 
   // 6za. The commander's voice.
   await theCommander();
+
+  // 6zb. The hull direction mark in the gunner's sights (F2.4).
+  await theHullDirection();
+}
+
+/**
+ * 6zb. The hull direction mark in the gunner's sights (F2.4): Sights → Hull
+ *      outline → Turret to 3 puts the player at the gunsight and the
+ *      turret turns itself to 3 o'clock, the mark's hull turning the other
+ *      way; there, it shows the hull's nose at 9 o'clock (screenshot through
+ *      the sight); the Hull in sights setting hides it and shows it again;
+ *      the gunner's periscope turned 90° left of the gun with the turret at
+ *      3 o'clock looks straight up the hull: nose at 12, gun to the right
+ *      (screenshot); Forward brings the turret back and the nose to 12.
+ */
+async function theHullDirection() {
+  const marks = () => evalInApp('window.__hullDirection.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp('(window.__turret.set(null), window.__turret.forward(), window.__periscope.gunner.turn(0), true)');
+  await sleep(300);
+  const ahead = marks();
+  check('With the turret forward both gunner\'s lenses show the hull nose up',
+    ahead.shown && ahead.lenses.sight?.noseHour === 12 && ahead.lenses.periscope?.noseHour === 12 && Math.abs(ahead.lenses.sight.hullDeg) < 0.5,
+    JSON.stringify(ahead.lenses));
+  await menuButtonPress();
+  await menuClick('menu-hull-3');
+  const turning = await waitFor('the turret turning by itself', () => { const s = marks(); return s.traversing && s.turretDeg < -5 && s; }, 8000).catch(() => marks());
+  const sign = evalInApp('window.__turret.sign');
+  check("Sights → Hull outline → Turret to 3 turns the turret by itself, the mark's hull turning the other way with it",
+    turning.traversing && Math.abs(turning.lenses.sight.hullDeg + turning.turretDeg) < 1 && sign.startsWith('Turret to 3'),
+    `turret ${turning.turretDeg.toFixed(1)}°, hull on the mark ${turning.lenses.sight.hullDeg.toFixed(1)}°, sign "${sign}"`);
+  const there = await waitFor("the turret at 3 o'clock", () => { const s = marks(); return !s.traversing && Math.abs(s.turretDeg + 90) < 0.1 && s; }, 20000).catch(() => marks());
+  const seat = evalInApp('window.__seats.mine');
+  check("At 3 o'clock the gunsight's mark shows the hull's nose at 9 o'clock, the gun up",
+    seat === 'gunner' && there.lenses.sight.noseHour === 9 && Math.abs(there.lenses.sight.hullDeg - 90) < 0.5 && Math.abs(there.lenses.sight.gunDeg) < 0.01,
+    `seat ${seat}, turret ${there.turretDeg.toFixed(2)}°, ${JSON.stringify(there.lenses.sight)}`);
+
+  // Lean in to the sight and look through it.
+  const lens = evalInApp('window.__sight.lens()');
+  const along = (d) => lens.at.map((v, i) => v + lens.facing[i] * d);
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(along(0.06)) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toRig(along(-20)) });
+  const open = await waitFor('the sight open', () => { const s = marks(); return s.lenses.sight.open && s; }, 10000).catch(() => marks());
+  await sleep(500);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-hull-direction-sight.png'], {});
+  check('Leaning in to the gunsight opens it with the mark shown', open.lenses.sight.open && open.lenses.sight.shown, JSON.stringify(open.lenses.sight));
+
+  // The setting hides it in both lenses, and shows it again. Back from the
+  // eyepiece first: an open sight draws twice and loses menu clicks on a slow runner.
+  const leaveTheLenses = async () => {
+    iwsdk(['xr', 'set-device-state'], {});
+    evalInApp('(window.__seats.reseat(), true)');
+    await waitFor('the lenses shut', () => { const s = marks(); return !s.lenses.sight.open && !s.lenses.periscope.open; }, 6000).catch(() => null);
+    await sleep(300);
+  };
+  await leaveTheLenses();
+  await menuButtonPress();
+  await menuClick('row-hullmark-1');
+  const hidden = await waitFor('the mark hidden', () => { const s = marks(); return !s.shown && !s.lenses.sight.shown && !s.lenses.periscope.shown && s; }, 4000).catch(() => marks());
+  await menuClick('row-hullmark-0');
+  const shownAgain = await waitFor('the mark shown', () => { const s = marks(); return s.shown && s.lenses.sight.shown && s.lenses.periscope.shown && s; }, 4000).catch(() => marks());
+  await menuButtonPress();
+  check('Sights → Hull in sights → Off hides the mark in both lenses, On shows it again',
+    !hidden.shown && !hidden.lenses.sight.shown && !hidden.lenses.periscope.shown && shownAgain.lenses.sight.shown && shownAgain.lenses.periscope.shown,
+    `off: ${hidden.lenses.sight.shown}/${hidden.lenses.periscope.shown}, on: ${shownAgain.lenses.sight.shown}/${shownAgain.lenses.periscope.shown}`);
+
+  // The gunner's periscope turned 90° left of the gun, which points to 3 o'clock: it looks straight up the hull.
+  evalInApp('(window.__periscope.gunner.turn(90), true)');
+  const scoped = await waitFor('the gunner\'s periscope turned', () => { const s = marks(); return Math.abs(s.lenses.periscope.gunDeg + 90) < 0.5 && s; }, 4000).catch(() => marks());
+  check("The gunner's periscope turned 90° left of the gun at 3 o'clock shows the nose at 12 and the gun to the right",
+    scoped.lenses.periscope.noseHour === 12 && Math.abs(scoped.lenses.periscope.hullDeg) < 0.5 && Math.abs(scoped.lenses.periscope.gunDeg + 90) < 0.5,
+    JSON.stringify(scoped.lenses.periscope));
+  const pane = evalInApp('window.__periscope.gunner.lens()');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(pane.at.map((v, i) => v + pane.facing[i] * 0.06)) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toRig(pane.at.map((v, i) => v - pane.facing[i] * 20)) });
+  const periscopeOpen = await waitFor('the gunner\'s periscope open', () => marks().lenses.periscope.open, 10000).catch(() => false);
+  await sleep(500);
+  if (periscopeOpen) iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-hull-direction-periscope.png'], {});
+
+  await leaveTheLenses();
+  await menuButtonPress();
+  await menuClick('menu-hull-forward');
+  await menuButtonPress();
+  const home = await waitFor('the turret forward', () => { const s = marks(); return Math.abs(s.turretDeg) < 0.1 && s; }, 8000).catch(() => marks());
+  check('Sights → Hull outline → Forward brings the turret back and the gunsight\'s mark to nose up',
+    home.lenses.sight.noseHour === 12 && Math.abs(home.lenses.sight.hullDeg) < 0.5,
+    `turret ${home.turretDeg.toFixed(2)}°, ${JSON.stringify(home.lenses.sight)}`);
+  evalInApp("(window.__periscope.gunner.turn(0), window.__seats.ask('driver'), true)");
+  await waitFor("the driver's seat", () => evalInApp('window.__seats.mine') === 'driver', 5000).catch(() => null);
+  await sleep(300);
 }
 
 /**

@@ -13,6 +13,7 @@ import { CrewStatusSystem } from './systems/crew-status-system.js';
 import { CourseSystem } from './systems/course-system.js';
 import { DriveSystem } from './systems/drive-system.js';
 import { DriverStationSystem } from './systems/driver-station-system.js';
+import { HullDirectionSystem } from './systems/hull-direction-system.js';
 import { FiringLampSystem } from './systems/firing-lamp-system.js';
 import { FiringSystem } from './systems/firing-system.js';
 import { FrameRateSystem } from './systems/frame-rate-system.js';
@@ -124,6 +125,8 @@ World.create(
   world.registerSystem(SightSystem);
   // The driver's periscope (F1.6): its yoke is a kit control, and like the gunsight it renders once everything in its view has moved.
   world.registerSystem(PeriscopeSystem);
+  // The hull direction mark in the gunsight and the gunner's periscope (F2.4): turns it to the turret and periscope as drawn this frame.
+  world.registerSystem(HullDirectionSystem);
   // After NetSystem, which may have joined a crew from the page's link.
   world.registerSystem(StartScreenSystem);
   world.registerSystem(GameMenuSystem);
