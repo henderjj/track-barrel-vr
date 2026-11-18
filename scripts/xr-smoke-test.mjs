@@ -100,7 +100,7 @@
  *
  * CI runs the steps in three parts at once, on three runners: part 1 is
  * steps 0 to 6c and 6r (the biathlon race), part 2 is 6d to 6f (the driver and the turret), 6l
- * (the periscopes) and 6x (the biathlon's driving challenge), part 3 is 6g to 6k, 6m to 6q, 6zb (the convoy escort) and 6zc (hold the hill). Each part ends with step 7. Put a new feature's steps in
+ * (the periscopes) and 6x (the biathlon's driving challenge), part 3 is 6g to 6k, 6m to 6q, 6zb (the convoy escort), 6zc (the missions: recon and ambush) and 6zd (hold the hill). Each part ends with step 7. Put a new feature's steps in
  * partOne, partTwo or partThree, whichever is shortest on CI.
  *
  * Usage: npm run test:xr   (starts the dev runtime headless if needed)
@@ -4074,7 +4074,10 @@ async function partThree() {
   // 6zb. Escort a convoy (F5.8).
   await theConvoyEscort();
 
-  // 6zc. Hold the hill (F5.9).
+  // 6zc. The missions: recon unseen and ambush a column (F5.10).
+  await theMissions();
+
+  // 6zd. Hold the hill (F5.9).
   await holdTheHill();
 }
 
@@ -4169,7 +4172,7 @@ async function theConvoyEscort() {
 }
 
 /**
- * 6zc. Hold the hill (F5.9, docs/hold-the-hill.md): Missions → Hold the
+ * 6zd. Hold the hill (F5.9, docs/hold-the-hill.md): Missions → Hold the
  *      hill → Start puts the tank on the hill's reverse slope, mended,
  *      with nothing in yet and the briefing on the sign; Hull down parks it
  *      behind the crest, and halted there the commander's call says only
@@ -4244,6 +4247,114 @@ async function holdTheHill() {
   check('Missions → Hold the hill → Stop takes the enemy away', !stopped.on && hill().phase === 'off', `on ${stopped.on}, phase ${hill().phase}`);
   if (evalInApp('window.__gameMenu.open')) await menuButtonPress();
   evalInApp('(window.__damage.repair(), window.__drive.place(0, 0, 0), true)');
+}
+
+/**
+ * 6zc. The missions (F5.10, docs/recon-ambush.md). Missions → Recon unseen →
+ *      Start puts the tank at the start with the guns and the tanks in (not
+ *      the column) and the briefing on the sign; halted 100 m up the lane
+ *      with the gun laid on gun A, behind the first wall, gun A is reported
+ *      (the sign says so); parked in the open where gun B sees it whole, it
+ *      is spotted: the recon is lost, the debrief names the gun and the
+ *      enemy holds its fire. Ambush a column → Start puts the tank behind
+ *      the ambush wall with the column in and the briefing; the column
+ *      moved up the road is drawn there, the lead seeing only the turret
+ *      over the wall (screenshot from the gunner's sight line); three
+ *      knocked out and the last got away wins, the debrief on the sign.
+ *      Stop takes the column away.
+ */
+/** Open the game menu in front of the player now: closed first if an earlier step left it open somewhere else. */
+async function menuFreshOpen() {
+  if (evalInApp('window.__gameMenu.open')) await menuButtonPress();
+  await menuButtonPress();
+}
+
+async function theMissions() {
+  const recon = () => evalInApp('window.__recon.state()');
+  const ambush = () => evalInApp('window.__ambush.state()');
+  const enemy = () => evalInApp('window.__enemy.state()');
+  const tank = () => evalInApp('window.__drive.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp('(window.__damage.repair(), true)');
+
+  await menuFreshOpen();
+  await menuClick('menu-recon-start');
+  const started = await waitFor('the recon on, the guns and tanks in', () => {
+    const r = recon();
+    const e = enemy();
+    const t = tank();
+    return r.phase === 'on' && e.present.slice(0, 5).every(Boolean) && !e.present.slice(5).some(Boolean) && Math.hypot(t.x, t.z) < 1 && r;
+  }, 10000).catch(() => recon());
+  const briefing = await waitFor('the recon briefing', () => /^Recon: find the enemy/.test(evalInApp('window.__recon.sign')) && evalInApp('window.__recon.sign'), 5000)
+    .catch(() => evalInApp('window.__recon.sign'));
+  check('Missions → Recon unseen → Start: the tank at the start, the guns and tanks in (not the column), and the briefing on the sign',
+    started.phase === 'on' && /^Recon: find the enemy without being seen/.test(briefing),
+    `phase ${started.phase}, present ${enemy().present.join('/')}, sign "${briefing}"`);
+
+  // 100 m up the lane, behind the first wall's line, gun A shows only over cover: lay the gun on it (59° left).
+  evalInApp('(window.__drive.place(0, -100, 0), window.__turret.aim(59, 0), true)');
+  const reported = await waitFor('gun A reported', () => { const r = recon(); return r.reported[0] && r; }, 15000).catch(() => recon());
+  const note = await waitFor('the report on the sign', () => /^Reported: /.test(evalInApp('window.__recon.sign')) && evalInApp('window.__recon.sign'), 5000)
+    .catch(() => evalInApp('window.__recon.sign'));
+  check('Halted with the gun laid on gun A for 3 s, it is reported, the sign saying so, still unseen',
+    reported.reported[0] && reported.phase === 'on' && /^Reported: (Gun|Tank) [ABC], \d+ m/.test(note),
+    `reported ${reported.reported.join('/')}, phase ${reported.phase}, laid ${JSON.stringify(evalInApp('window.__recon.laid()'))}, sign "${note}"`);
+
+  // In the open where gun B sees the whole tank: spotted within seconds.
+  evalInApp('(window.__drive.place(0, -300, 0), true)');
+  const lost = await waitFor('the recon lost', () => { const r = recon(); return r.phase === 'lost' && r; }, 20000).catch(() => recon());
+  const debrief = await waitFor('the recon debrief', () => /^Spotted by/.test(evalInApp('window.__recon.sign')) && evalInApp('window.__recon.sign'), 5000)
+    .catch(() => evalInApp('window.__recon.sign'));
+  const shots = enemy().shots;
+  await sleep(4000);
+  check('Parked in the open, an enemy spots the tank: the recon is lost, the debrief names it, and the enemy holds its fire',
+    lost.phase === 'lost' && lost.spottedBy >= 0 && /^Spotted by (Gun|Tank) [ABC] at \d+:\d\d\. [1-5] of 5 reported/.test(debrief) && enemy().shots === shots,
+    `phase ${lost.phase}, sign "${debrief}", shots ${shots} → ${enemy().shots}`);
+
+  // The ambush.
+  await menuFreshOpen();
+  await menuClick('menu-ambush-start');
+  const waiting = await waitFor('the ambush on, the column in, the tank behind the wall', () => {
+    const a = ambush();
+    const e = enemy();
+    const t = tank();
+    return a.phase === 'on' && e.present.slice(5).every(Boolean) && !e.present[0] && Math.hypot(t.x + 160, t.z + 560) < 1 && a;
+  }, 10000).catch(() => ambush());
+  const brief = await waitFor('the ambush briefing', () => /^Ambush: a column/.test(evalInApp('window.__ambush.sign')) && evalInApp('window.__ambush.sign'), 5000)
+    .catch(() => evalInApp('window.__ambush.sign'));
+  check('Missions → Ambush a column → Start: the tank behind the ambush wall, the column in, and the briefing on the sign',
+    waiting.phase === 'on' && /^Ambush: a column is coming/.test(brief), `phase ${waiting.phase}, tank ${JSON.stringify([tank().x, tank().z])}, sign "${brief}"`);
+
+  // The column up the road, the lead 340 m along (north-east of the tank, about 300 m off): drawn there, seeing only the turret.
+  evalInApp('(window.__enemy.placeColumn(340), window.__turret.aim(-13, 0), true)');
+  const inView = await waitFor('the column drawn on the road, the lead seeing the turret', () => {
+    const e = enemy();
+    const lead = e.guns[5];
+    return lead.drawn && e.guns[6].drawn && lead.view === 'turret' && e;
+  }, 10000).catch(() => enemy());
+  await sleep(1500);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-ambush-column.png'], {});
+  check('The column drawn on the road ahead, the lead tank seeing only the turret over the wall (hull down)',
+    inView.guns[5].drawn && inView.guns[6].drawn && inView.guns[5].view === 'turret',
+    `drawn ${inView.guns.slice(5).map((g) => g.drawn).join('/')}, lead view ${inView.guns[5].view}, along ${inView.guns[5].along}`);
+
+  // Three knocked out, the last away off the road's end: won.
+  evalInApp('(window.__enemy.kill(5), window.__enemy.kill(6), window.__enemy.kill(7), true)');
+  await sleep(1000);
+  evalInApp('(window.__enemy.placeColumn(1200), true)');
+  const won = await waitFor('the ambush won', () => { const a = ambush(); return a.phase === 'won' && a; }, 10000).catch(() => ambush());
+  const end = await waitFor('the ambush debrief', () => /^Ambush won/.test(evalInApp('window.__ambush.sign')) && evalInApp('window.__ambush.sign'), 5000)
+    .catch(() => evalInApp('window.__ambush.sign'));
+  check('Three of the column knocked out and the last got away: the ambush is won, the debrief on the sign',
+    won.phase === 'won' && /^Ambush won: 3 of 4 knocked out\. 1 tank and 2 lorries out, 1 got away/.test(end),
+    `phase ${won.phase}, sign "${end}", "${evalInApp("window.__gameMenu.text('menu-ambush-status')")}"`);
+
+  await menuFreshOpen();
+  await menuClick('menu-ambush-stop');
+  const stopped = await waitFor('the column gone', () => { const e = enemy(); return !e.on && ambush().phase === 'off' && e; }, 5000).catch(() => enemy());
+  check('Missions → Ambush a column → Stop takes the column away', !stopped.on && ambush().phase === 'off', `on ${stopped.on}, phase ${ambush().phase}`);
+  if (evalInApp('window.__gameMenu.open')) await menuButtonPress();
+  evalInApp('(window.__damage.repair(), window.__turret.aim(0, 0), window.__drive.place(0, 0, 0), true)');
 }
 
 /**

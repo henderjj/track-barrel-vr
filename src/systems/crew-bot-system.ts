@@ -5,7 +5,10 @@ import { AMMO, type AmmoKind } from '../sim/ammo.js';
 import { aimAt, COURSE_TARGET_FIRST, ENEMY_TARGET_FIRST, syncCourseFaces, TARGET_NAMES, targetFaces } from '../sim/ballistics.js';
 import { aimBoard, BOARD_FIRST, lineClosed, lineFor } from '../sim/biathlon.js';
 import { boxAt, LINE_ACROSS } from '../sim/course.js';
-import { FIRST_TANK } from '../sim/enemy-guns.js';
+import { FIRST_COLUMN, FIRST_TANK, isColumn, isTank } from '../sim/enemy-guns.js';
+import { columnPose, onRoad } from '../sim/column.js';
+import { RECON_ENEMIES } from '../sim/recon.js';
+import { wrapTile } from '../sim/terrain.js';
 import { RANGE_TARGETS } from '../sim/range.js';
 import { hullToSeat, SEATS, seatToHull, type SeatId } from '../sim/cabin.js';
 import { NECK_BASE, NOD_SHARE } from '../sim/seated-body.js';
@@ -54,7 +57,8 @@ import { firingLampLit } from './firing-lamp-system.js';
 import { handUse } from './grip-system.js';
 import { loadedRound, loadingShown, scriptLoadingHand } from './loading-system.js';
 import { raceLineNow, shownRun } from './range-run-system.js';
-import { enemyRevealed, enemyShared } from './enemy-system.js';
+import { enemyAlong, enemyRevealed, enemyShared } from './enemy-system.js';
+import { shownAmbush, shownRecon } from './missions-system.js';
 import { findControl, type ScriptedHand, scriptedHands } from './mechanism-system.js';
 import { FLAG_LEFT_TRACKED, FLAG_RIGHT_TRACKED, netLink } from './net-system.js';
 import { ride } from './ride-system.js';
@@ -86,6 +90,8 @@ const GRAB_TIMEOUT = 0.6;
 const WHEEL_SPEED = 6;
 /** Laid this long before it fires, s; the trigger is held this long, s. */
 const LAID_FOR = 0.3;
+/** In an ambush (F5.10) it opens fire once the lead vehicle is this close, m: the column well into the trap. */
+const AMBUSH_OPEN = 300;
 const TRIGGER_FOR = 0.25;
 /** It waits this long for a shot's result before loading again, s. */
 const RESULT_WAIT = 5;
@@ -686,11 +692,12 @@ export class CrewBotSystem extends createSystem({}) {
     const halted = Math.abs(tank.speed) < FIRE_SPEED && Math.abs(tank.yawRate) < 0.01;
     this.laidFor = laid && halted ? this.laidFor + dt : 0;
     this.movingFor = laid && !halted ? this.movingFor + dt : 0;
-    if (this.movingFor > HALT_ASK_AFTER && this.fireAtWill && this.time - this.haltAskedAt > HALT_ASK_EVERY) {
+    const fire = this.fireAtWill && !this.missionHold();
+    if (this.movingFor > HALT_ASK_AFTER && fire && this.time - this.haltAskedAt > HALT_ASK_EVERY) {
       this.haltAskedAt = this.time;
       sendCrewCall('halt');
     }
-    if (this.laidFor > LAID_FOR && this.fireAtWill && handUse.right === TWIST) {
+    if (this.laidFor > LAID_FOR && fire && handUse.right === TWIST) {
       this.shotBefore = lastShot();
       this.triggerFor = TRIGGER_FOR;
       right.trigger = 1;
@@ -707,10 +714,15 @@ export class CrewBotSystem extends createSystem({}) {
   private enemyTarget(x: number, z: number): number {
     const enemy = enemyShared();
     if (!enemy.on) return -1;
+    // Recon unseen (F5.10): it lays on each enemy not yet reported, guns too, to report it, and holds its fire (missionHold).
+    const recon = shownRecon();
+    const reconOn = recon.phase === 'on';
     for (let i = 0; i < this.faces.length; i++) {
       const j = i - ENEMY_TARGET_FIRST;
       const tank = j >= FIRST_TANK;
-      this.foeSkip[i] = j < 0 || j >= enemy.alive.length || !enemy.present[j] || !enemy.alive[j] || (!tank && !enemyRevealed(j));
+      this.foeSkip[i] = j < 0 || j >= enemy.alive.length || !enemy.present[j] || !enemy.alive[j]
+        || (reconOn ? j >= RECON_ENEMIES || recon.reported[j] : !tank && !enemyRevealed(j))
+        || (isColumn(j) && !onRoad(enemyAlong(j)));
       if (tank && !this.foeSkip[i]) {
         const live = liveFace(i);
         if (live) Object.assign(this.faces[i], live);
@@ -719,10 +731,27 @@ export class CrewBotSystem extends createSystem({}) {
     return chooseTarget(x, z, this.faces, this.foeSkip, sightLimit());
   }
 
-  /** The round for the enemy it engages: AP for a tank's armour, HE for a gun. */
+  /** The round for the enemy it engages: AP for a tank's armour, HE for a gun or a lorry. */
   private foeRound(): AmmoKind {
-    return this.foe - ENEMY_TARGET_FIRST >= FIRST_TANK ? 'ap' : 'he';
+    return isTank(this.foe - ENEMY_TARGET_FIRST) ? 'ap' : 'he';
   }
+
+  /**
+   * Whether a mission holds its fire (F5.10): on a recon always (a shot
+   * gives the tank away); in an ambush until it is sprung or the lead
+   * vehicle is within AMBUSH_OPEN m, so the whole column is in the trap.
+   */
+  private missionHold(): boolean {
+    if (shownRecon().phase === 'on') return true;
+    const ambush = shownAmbush();
+    if (ambush.phase !== 'on' || ambush.sprungAt >= 0 || enemyShared().sprung) return false;
+    const d = enemyAlong(FIRST_COLUMN);
+    if (!onRoad(d)) return true;
+    const t = tankState();
+    columnPose(d, 0, this.leadPose);
+    return Math.hypot(wrapTile(this.leadPose.x - t.x), wrapTile(this.leadPose.z - t.z)) > AMBUSH_OPEN;
+  }
+  private readonly leadPose = { x: 0, z: 0, heading: 0 };
 
   /** The right hand's loading: plan a move from how the breech stands, go to its start, play it; true once loaded. */
   private load(dt: number): boolean {

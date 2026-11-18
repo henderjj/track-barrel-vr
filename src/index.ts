@@ -39,6 +39,7 @@ import { EnemySystem } from './systems/enemy-system.js';
 import { DamageSystem } from './systems/damage-system.js';
 import { CombatSystem } from './systems/combat-system.js';
 import { EscortSystem } from './systems/escort-system.js';
+import { MissionsSystem } from './systems/missions-system.js';
 import { HillSystem } from './systems/hill-system.js';
 import { TankAudioSystem } from './systems/tank-audio-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
@@ -101,6 +102,8 @@ World.create(
   world.registerSystem(CombatSystem);
   // Escort a convoy (F5.8): after CombatSystem, whose scenario and its own stop each other, and EnemySystem, which fires on its trucks.
   world.registerSystem(EscortSystem);
+  // The F5.10 missions, recon unseen and ambush a column: after CombatSystem, which a mission stops, and DamageSystem and EnemySystem, whose state they judge.
+  world.registerSystem(MissionsSystem);
   // Hold the hill (F5.9): after CombatSystem, which it stops on starting (and stops for); it judges the same state.
   world.registerSystem(HillSystem);
   // The range run (F1.11): after FiringSystem, whose decided shots it counts on the host.

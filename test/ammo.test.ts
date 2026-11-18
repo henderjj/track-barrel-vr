@@ -139,8 +139,8 @@ describe('ammunition (F3.1)', () => {
     expect(distanceToFace([f.x, f.y, f.z], f)).toBeCloseTo(0, 6);
     // Straight out in front of its middle by 3 m.
     expect(distanceToFace([f.x + Math.sin(f.yaw) * 3, f.y, f.z + Math.cos(f.yaw) * 3], f)).toBeCloseTo(3, 6);
-    // Soft: the range's gun, and the three enemy guns (F3.2).
-    expect(softTargets().filter(Boolean).length).toBe(4);
+    // Soft: the range's gun, the three enemy guns (F3.2) and the ambush column's two lorries (F5.10).
+    expect(softTargets().filter(Boolean).length).toBe(6);
     expect(softTargets().length).toBe(targetFaces().length);
   });
 

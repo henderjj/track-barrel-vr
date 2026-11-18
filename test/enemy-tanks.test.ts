@@ -23,6 +23,7 @@ import {
   EnemyBattery,
   type EnemyShot,
   enemyName,
+  FIRST_COLUMN,
   FIRST_HILL,
   FIRST_TANK,
   groundBlocks,
@@ -183,8 +184,8 @@ describe('enemy tanks on fixed routes (F3.3)', () => {
     b.fire(0, onLane(ENEMY_GUNS[0].meetZ));
     b.hits = 1;
     b.start(undefined, 'tanks');
-    // Every gun and tank; the hill's attackers (F5.9) only come with their scenario.
-    expect(b.alive()).toBe(FIRST_HILL);
+    // Every gun and tank; the ambush's column (F5.10) and the hill's attackers (F5.9) only come with their scenarios.
+    expect(b.alive()).toBe(FIRST_COLUMN);
     expect(b.alive('tanks')).toBe(2);
     expect(b.groupOn('hill')).toBe(false);
     // Starting the tanks with the guns running keeps the count.
@@ -225,8 +226,8 @@ describe('enemy tanks on fixed routes (F3.3)', () => {
     const armoured = armouredTargets();
     expect(soft[ENEMY_TARGET_FIRST + TANK_A]).toBe(false);
     expect(armoured[ENEMY_TARGET_FIRST + TANK_A]).toBe(true);
-    // These two and the hill's four attackers (F5.9).
-    expect(armoured.filter(Boolean)).toHaveLength(ENEMY_COUNT - FIRST_TANK);
+    // These two, the ambush column's two tanks (F5.10) and the hill's four attackers (F5.9).
+    expect(armoured.filter(Boolean)).toHaveLength(4 + ENEMY_COUNT - FIRST_HILL);
     expect(armoured[ENEMY_TARGET_FIRST]).toBe(false);
 
     // The crew parked where Meet A puts it, tank A halted at its meeting place, its face square to the crew.
@@ -262,7 +263,7 @@ describe('enemy tanks on fixed routes (F3.3)', () => {
     b.start();
     b.kill(TANK_B);
     const s = sharedOf(b, noEnemies());
-    expect(s.present).toEqual(Array.from({ length: ENEMY_COUNT }, (_, i) => i < FIRST_HILL));
+    expect(s.present).toEqual(Array.from({ length: ENEMY_COUNT }, (_, i) => i < FIRST_COLUMN));
     expect(s.d[TANK_A]).toBe(77.5);
     const back = parseShared(JSON.parse(JSON.stringify({ t: 'enemy', ...s })));
     expect(back).toEqual(s);

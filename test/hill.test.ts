@@ -1,3 +1,4 @@
+import { COLUMN_VEHICLES } from '../src/sim/column.js';
 import { describe, expect, it } from 'vitest';
 import { armouredTargets, ENEMY_TARGET_FIRST, TARGET_NAMES, targetFaces } from '../src/sim/ballistics.js';
 import { INSTANT_SPOTTING } from '../src/sim/combat.js';
@@ -116,8 +117,8 @@ describe('hold the hill (F5.9): hull down', () => {
 });
 
 describe('hold the hill (F5.9): the attackers', () => {
-  it('are four tanks after the guns and the two patrolling tanks, armoured targets for the shells', () => {
-    expect(FIRST_HILL).toBe(ENEMY_GUNS.length + ENEMY_TANKS.length);
+  it('are four tanks after the guns, the two patrolling tanks and the ambush\'s column, armoured targets for the shells', () => {
+    expect(FIRST_HILL).toBe(ENEMY_GUNS.length + ENEMY_TANKS.length + COLUMN_VEHICLES.length);
     expect(ENEMY_COUNT).toBe(FIRST_HILL + HILL_TANKS.length);
     expect(HILL_TANKS).toHaveLength(4);
     const armoured = armouredTargets();
