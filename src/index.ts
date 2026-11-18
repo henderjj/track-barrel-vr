@@ -40,6 +40,7 @@ import { DamageSystem } from './systems/damage-system.js';
 import { CombatSystem } from './systems/combat-system.js';
 import { EscortSystem } from './systems/escort-system.js';
 import { MissionsSystem } from './systems/missions-system.js';
+import { HillSystem } from './systems/hill-system.js';
 import { TankAudioSystem } from './systems/tank-audio-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
 import { TurretDialSystem } from './systems/turret-dial-system.js';
@@ -103,6 +104,8 @@ World.create(
   world.registerSystem(EscortSystem);
   // The F5.10 missions, recon unseen and ambush a column: after CombatSystem, which a mission stops, and DamageSystem and EnemySystem, whose state they judge.
   world.registerSystem(MissionsSystem);
+  // Hold the hill (F5.9): after CombatSystem, which it stops on starting (and stops for); it judges the same state.
+  world.registerSystem(HillSystem);
   // The range run (F1.11): after FiringSystem, whose decided shots it counts on the host.
   world.registerSystem(RangeRunSystem);
   // The callout card in each seat (F2.6): hangs on the hull and turret, drawn once; nothing per frame.

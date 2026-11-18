@@ -5,7 +5,7 @@ import { AMMO, type AmmoKind } from '../sim/ammo.js';
 import { aimAt, COURSE_TARGET_FIRST, ENEMY_TARGET_FIRST, syncCourseFaces, TARGET_NAMES, targetFaces } from '../sim/ballistics.js';
 import { aimBoard, BOARD_FIRST, lineClosed, lineFor } from '../sim/biathlon.js';
 import { boxAt, LINE_ACROSS } from '../sim/course.js';
-import { FIRST_COLUMN, FIRST_TANK, isTank } from '../sim/enemy-guns.js';
+import { FIRST_COLUMN, FIRST_TANK, isColumn, isTank } from '../sim/enemy-guns.js';
 import { columnPose, onRoad } from '../sim/column.js';
 import { RECON_ENEMIES } from '../sim/recon.js';
 import { wrapTile } from '../sim/terrain.js';
@@ -722,7 +722,7 @@ export class CrewBotSystem extends createSystem({}) {
       const tank = j >= FIRST_TANK;
       this.foeSkip[i] = j < 0 || j >= enemy.alive.length || !enemy.present[j] || !enemy.alive[j]
         || (reconOn ? j >= RECON_ENEMIES || recon.reported[j] : !tank && !enemyRevealed(j))
-        || (j >= FIRST_COLUMN && !onRoad(enemyAlong(j)));
+        || (isColumn(j) && !onRoad(enemyAlong(j)));
       if (tank && !this.foeSkip[i]) {
         const live = liveFace(i);
         if (live) Object.assign(this.faces[i], live);

@@ -22,6 +22,8 @@ import { clockLines } from '../sim/range-run.js';
 import { shownScenario } from './combat-system.js';
 import { shownEscort } from './escort-system.js';
 import { convoyToGo, escortBoard } from '../sim/escort.js';
+import { shownHill } from './hill-system.js';
+import { hillDebrief, hillTasks } from '../sim/hill.js';
 import { shownCourse } from './course-system.js';
 import { damageState } from './damage-system.js';
 import { tankState } from './drive-system.js';
@@ -184,13 +186,15 @@ export class CrewBoardSystem extends createSystem({}) {
     // A mission (F5.10), running or just over.
     if (shownRecon().phase !== 'off') return shownRecon().time;
     if (shownAmbush().phase !== 'off') return shownAmbush().time;
+    const hill = shownHill();
+    if (hill.phase !== 'off') return hill.time;
     const r = shownRun();
     if (r.phase !== 'idle') return Math.max(0, r.clock);
     return this.time;
   }
 
   private timed(): boolean {
-    return shownScenario().phase !== 'off' || shownEscort().phase !== 'off' || shownRun().phase !== 'idle' || shownRecon().phase !== 'off' || shownAmbush().phase !== 'off';
+    return shownScenario().phase !== 'off' || shownEscort().phase !== 'off' || shownHill().phase !== 'off' || shownRun().phase !== 'idle' || shownRecon().phase !== 'off' || shownAmbush().phase !== 'off';
   }
 
   /** The numbers the board depends on, into `now`; whether any differs from last time. */
@@ -224,8 +228,10 @@ export class CrewBoardSystem extends createSystem({}) {
     // The F5.10 missions.
     n[13] = shownRecon().v * 4 + PHASES.indexOf(shownRecon().phase);
     n[14] = shownAmbush().v * 4 + PHASES.indexOf(shownAmbush().phase);
+    // Hold the hill (F5.9).
+    n[15] = shownHill().v;
     let differs = false;
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 16; i++) {
       if (n[i] !== this.seen[i]) {
         differs = true;
         this.seen[i] = n[i];
@@ -261,6 +267,7 @@ export class CrewBoardSystem extends createSystem({}) {
     let drillTasks: string[] = [];
     const escort = shownEscort();
     const mission = missionBoard();
+    const hill = shownHill();
     if (escort.phase !== 'off') {
       const board = escortBoard(escort);
       drill = board.objective;
@@ -268,6 +275,12 @@ export class CrewBoardSystem extends createSystem({}) {
     } else if (mission) {
       drill = mission.drill;
       drillTasks = mission.tasks.map((t) => t.text);
+    } else if (hill.phase === 'on') {
+      // Hold the hill (F5.9): where the tank stands, and the tanks knocked out.
+      drill = 'Hold the hill';
+      drillTasks = hillTasks(hill);
+    } else if (hill.phase !== 'off') {
+      drill = hillDebrief(hill)[0];
     } else if (run.phase !== 'idle') {
       const [heading, time, count] = clockLines(run);
       drill = heading;

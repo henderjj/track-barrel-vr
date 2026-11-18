@@ -13,7 +13,7 @@ import type { HitFace, Vec3 } from './ballistics.js';
 import { type CombatTuning, DEFAULT_TUNING, SPOTTING, spotRate, type TankView } from './combat.js';
 import { DAMAGE, type DamageHit, parseHit } from './damage.js';
 import { COLUMN_TRUCK, COLUMN_VEHICLES, columnPose, columnStart, onRoad, stepColumn } from './column.js';
-import { ENEMY_TANK, ENEMY_TANKS, type EnemyTankRoute, type RoutePose, routePose, wrapRoute } from './enemy-tanks.js';
+import { ENEMY_TANK, ENEMY_TANKS, type EnemyTankRoute, HILL_TANKS, type RoutePose, routeLength, routePose, wrapRoute } from './enemy-tanks.js';
 import { TRUCK } from './escort.js';
 import { rng } from './random.js';
 import { groundHeight, OBSTACLES, wrapTile } from './terrain.js';
@@ -92,21 +92,29 @@ export const ENEMY_GUN = {
 /**
  * Every enemy the battery runs: the three guns first, then the tanks
  * (F3.3, src/sim/enemy-tanks.ts), then the column's four vehicles (F5.10,
- * src/sim/column.ts). An enemy's index here is its index in the battery,
- * in shots, and (after ENEMY_TARGET_FIRST) among the shells' targets.
+ * src/sim/column.ts), then the hill's four attackers (F5.9, tanks on
+ * one-way routes). An enemy's index here is its index in the battery, in
+ * shots, and (after ENEMY_TARGET_FIRST) among the shells' targets.
  */
-export const ENEMY_COUNT = ENEMY_GUNS.length + ENEMY_TANKS.length + COLUMN_VEHICLES.length;
 /** Where the tanks start among the enemies. */
 export const FIRST_TANK = ENEMY_GUNS.length;
 /** Where the column starts among the enemies (F5.10). */
 export const FIRST_COLUMN = FIRST_TANK + ENEMY_TANKS.length;
+/** Where the hill's attackers start among the enemies (F5.9). */
+export const FIRST_HILL = FIRST_COLUMN + COLUMN_VEHICLES.length;
+export const ENEMY_COUNT = FIRST_HILL + HILL_TANKS.length;
 
-/** The kinds of enemy, started and stopped apart: Combat → Enemy guns, Combat → Enemy tanks, and the ambush's column (F5.10). */
-export type EnemyGroup = 'guns' | 'tanks' | 'column';
+/** The kinds of enemy, started and stopped apart: Combat → Enemy guns, Combat → Enemy tanks, the ambush's column (F5.10) and the hill's attackers (F5.9). */
+export type EnemyGroup = 'guns' | 'tanks' | 'column' | 'hill';
 
 /** Which group enemy `i` is in. */
 export function groupOf(i: number): EnemyGroup {
-  return i >= FIRST_COLUMN ? 'column' : i >= FIRST_TANK ? 'tanks' : 'guns';
+  return i >= FIRST_HILL ? 'hill' : i >= FIRST_COLUMN ? 'column' : i >= FIRST_TANK ? 'tanks' : 'guns';
+}
+
+/** Whether enemy `i` is one of the ambush's column (F5.10), driving the road rather than a route. */
+export function isColumn(i: number): boolean {
+  return i >= FIRST_COLUMN && i < FIRST_HILL;
 }
 
 /** Whether enemy `i` drives (a patrolling tank or a column vehicle), rather than standing dug in. */
@@ -116,11 +124,12 @@ export function drives(i: number): boolean {
 
 /** Whether enemy `i` is a tank (armoured, with a turret): a patrolling tank or one of the column's. */
 export function isTank(i: number): boolean {
-  return i >= FIRST_COLUMN ? COLUMN_VEHICLES[i - FIRST_COLUMN]?.kind === 'tank' : i >= FIRST_TANK;
+  return isColumn(i) ? COLUMN_VEHICLES[i - FIRST_COLUMN]?.kind === 'tank' : i >= FIRST_TANK;
 }
 
-/** The route enemy `i` drives, or null for a gun. */
+/** The route enemy `i` drives (a patrolling tank's, or a hill attacker's one-way route), or null for a gun or a column vehicle. */
 export function routeOf(i: number): EnemyTankRoute | null {
+  if (i >= FIRST_HILL) return HILL_TANKS[i - FIRST_HILL] ?? null;
   if (i >= FIRST_COLUMN) return null;
   return i >= FIRST_TANK ? (ENEMY_TANKS[i - FIRST_TANK] ?? null) : null;
 }
@@ -132,7 +141,7 @@ export function routeOf(i: number): EnemyTankRoute | null {
  * along the road.
  */
 export function enemyPose(i: number, d: number, off: number, out: RoutePose): RoutePose {
-  if (i >= FIRST_COLUMN) return columnPose(d, off, out);
+  if (isColumn(i)) return columnPose(d, off, out);
   const route = routeOf(i);
   if (route) return routePose(route, d, out);
   out.x = ENEMY_GUNS[i]?.x ?? 0;
@@ -143,8 +152,8 @@ export function enemyPose(i: number, d: number, off: number, out: RoutePose): Ro
 
 /** Enemy `i`'s name: "Gun A", "Tank B", "Lorry 1". */
 export function enemyName(i: number): string {
-  if (i >= FIRST_COLUMN) return COLUMN_VEHICLES[i - FIRST_COLUMN]?.name ?? '';
-  return i >= FIRST_TANK ? (ENEMY_TANKS[i - FIRST_TANK]?.name ?? '') : (ENEMY_GUNS[i]?.name ?? '');
+  if (isColumn(i)) return COLUMN_VEHICLES[i - FIRST_COLUMN]?.name ?? '';
+  return i >= FIRST_TANK ? (routeOf(i)?.name ?? '') : (ENEMY_GUNS[i]?.name ?? '');
 }
 
 /** How an enemy looks, lays and fires: a gun's numbers, or a tank's. */
@@ -182,7 +191,7 @@ const TRUCK_SPEC: EnemySpec = {
 
 /** Enemy `i`'s numbers. */
 export function specOf(i: number): EnemySpec {
-  if (i >= FIRST_COLUMN && !isTank(i)) return TRUCK_SPEC;
+  if (isColumn(i) && !isTank(i)) return TRUCK_SPEC;
   return i >= FIRST_TANK ? TANK_SPEC : ENEMY_GUN;
 }
 
@@ -287,6 +296,11 @@ export function enemyTankFaces(): HitFace[] {
 /** The column's vehicles as faces for the shells (F5.10), at the road's start (EnemySystem moves them each frame). */
 export function enemyColumnFaces(): HitFace[] {
   return COLUMN_VEHICLES.map((_, k) => tankFace(FIRST_COLUMN + k, 0, 0, 0, 0, { x: 0, y: 0, z: 0, halfWidth: 0, halfHeight: 0, yaw: 0 }));
+}
+
+/** The hill's attackers as faces for the shells (F5.9), at their routes' starts (EnemySystem turns them each frame). */
+export function enemyHillFaces(): HitFace[] {
+  return HILL_TANKS.map((_, k) => tankFace(FIRST_HILL + k, 0, 0, 0, 0, { x: 0, y: 0, z: 0, halfWidth: 0, halfHeight: 0, yaw: 0 }));
 }
 
 /** The ground blocks the line from a to b (world space): it stands above the line anywhere along it, sampled every `step` m. */
@@ -627,9 +641,41 @@ export class EnemyBattery {
   /** Put tank `i` (an enemy index) `d` m along its route (Combat → Meet). */
   placeTank(i: number, d: number): void {
     const g = this.guns[i];
-    if (groupOf(i) !== 'tanks' || !g) return;
-    g.d = wrapRoute(ENEMY_TANKS[i - FIRST_TANK], d);
+    const route = routeOf(i);
+    if (!route || !g) return;
+    g.d = wrapRoute(route, d);
     this.version++;
+  }
+
+  /**
+   * A fight that brings its enemies in one by one (F5.9): every enemy
+   * stopped, the dice reseeded, and the hits and shots counted afresh.
+   * enter() then brings each.
+   */
+  begin(seed: number): void {
+    this.stop();
+    this.random = rng(seed);
+    this.hits = 0;
+    this.shotsFired = 0;
+    this.truckShots = 0;
+    this.truckHits = 0;
+    this.crewFiredAgo = Infinity;
+    this.version++;
+  }
+
+  /** Bring enemy `i` in, fresh (a tank at its route's start), whatever else is there. */
+  enter(i: number): void {
+    if (!this.guns[i]) return;
+    this.guns[i] = EnemyBattery.freshGun();
+    this.guns[i].present = true;
+    this.version++;
+  }
+
+  /** Tank `i` has driven its one-way route to its end (F5.9: an attacker on the hill). */
+  arrived(i: number): boolean {
+    const route = routeOf(i);
+    const g = this.guns[i];
+    return !!route?.oneWay && !!g?.present && g.alive && g.d >= routeLength(route) - 0.01;
   }
 
   /** The crew fired (F3.10): for a while its flash makes the tank quick to spot. */
@@ -687,7 +733,7 @@ export class EnemyBattery {
   viewOf(i: number, tank: Readonly<TankTarget>, clear: SightCheck, top: number = TANK_SILHOUETTE.height): TankView {
     const g = this.guns[i];
     // A column vehicle not yet on the road, or away off its end, sees nothing (F5.10).
-    if (i >= FIRST_COLUMN && !onRoad(g.d)) return 'none';
+    if (isColumn(i) && !onRoad(g.d)) return 'none';
     const m = muzzleNear(i, tank.x, tank.z, this.muzzle, g.d, g.off);
     if (Math.hypot(tank.x - m[0], tank.z - m[2]) > specOf(i).spotRange) return 'none';
     const open = (to: Vec3) => !groundBlocks(m, to) && !obstaclesBlock(m, to) && clear(m, to);
@@ -772,13 +818,15 @@ export class EnemyBattery {
       }
       if (trucks) this.watchConvoy(i, g, spec, dt, trucks, alert);
       else g.convoyTracking = false;
-      if (groupOf(i) === 'tanks') {
-        const moving = !g.tracking && !g.convoyTracking && !g.held;
+      const route = routeOf(i);
+      if (route) {
+        // A one-way route's end is where it halts for good (F5.9).
+        const moving = !g.tracking && !g.convoyTracking && !g.held && !(route.oneWay && g.d >= routeLength(route) - 0.01);
         if (moving !== g.moving) {
           g.moving = moving;
           this.version++;
         }
-        if (moving) g.d = wrapRoute(ENEMY_TANKS[i - FIRST_TANK], g.d + ENEMY_TANK.speed * dt);
+        if (moving) g.d = wrapRoute(route, g.d + ENEMY_TANK.speed * dt);
       }
       if (!g.tracking && !g.convoyTracking) continue;
       g.ready -= dt;
@@ -802,7 +850,7 @@ export class EnemyBattery {
    */
   private stepColumn(dt: number): void {
     if (!this.groupOn('column')) return;
-    for (let i = FIRST_COLUMN; i < this.guns.length; i++) if (this.guns[i].alive && this.guns[i].tracking) this.spring();
+    for (let i = FIRST_COLUMN; i < FIRST_HILL; i++) if (this.guns[i].alive && this.guns[i].tracking) this.spring();
     const list = this.column;
     list.length = 0;
     for (let i = FIRST_COLUMN; i < FIRST_COLUMN + COLUMN_VEHICLES.length; i++) list.push(this.guns[i]);

@@ -836,6 +836,7 @@ async function ammoChecks(host, guest, label) {
   await combatChecks(host, guest, label);
   await escortChecks(host, guest, label);
   await missionChecks(host, guest, label);
+  await hillChecks(host, guest, label);
 }
 
 /**
@@ -930,7 +931,7 @@ async function missionChecks(host, guest, label) {
   const on = await waitFor('the ambush on both pages', async () => {
     const [h, g] = await Promise.all([ambush(host), ambush(guest)]);
     const e = await enemy(guest);
-    return h.phase === 'on' && g.phase === 'on' && e.present.slice(5).every(Boolean) ? g : null;
+    return h.phase === 'on' && g.phase === 'on' && e.present.slice(5, 9).every(Boolean) ? g : null;
   }, 8000).catch(() => null);
   check(`The guest's Ambush a column → Start runs it on the host, the column in on both pages (${label})`, on !== null,
     on ? '' : JSON.stringify(await Promise.all([host, guest].map(ambush))));
@@ -957,6 +958,50 @@ async function missionChecks(host, guest, label) {
     return h.phase === 'off' && g.phase === 'off' && !(await enemy(guest)).on ? g : null;
   }, 8000).catch(() => null);
   check(`The guest's Stop ends the ambush on both pages and takes the column away (${label})`, off !== null);
+}
+
+/**
+ * Hold the hill (F5.9): the guest's Start asks the host, and both pages
+ * show it running with the tank on the hill; the host's first wave reaches
+ * the guest's page, drawn there; the attackers knocked out bring the
+ * second wave and then the win on both pages; the guest's Stop ends it on
+ * both and takes the enemy away.
+ */
+async function hillChecks(host, guest, label) {
+  const hill = (p) => p.page.evaluate(() => window.__hill.state());
+  const attackers = (p) => p.page.evaluate(() => window.__enemy.state().guns.map((g, i) => ({ ...g, i })).filter((g) => g.group === 'hill'));
+  await guest.page.evaluate(() => window.__hill.start());
+  const on = await waitFor('the hill on both pages', async () => {
+    const [h, g] = await Promise.all([hill(host), hill(guest)]);
+    const t = await guest.page.evaluate(() => window.__drive.state());
+    return h.phase === 'on' && g.phase === 'on' && Math.abs(t.x - 192) < 2 ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Missions → Hold the hill → Start runs it on the host, both pages showing it with the tank on the hill (${label})`, on !== null,
+    on ? '' : JSON.stringify(await Promise.all([host, guest].map(hill))));
+
+  await host.page.evaluate(() => window.__hill.state().wave === 0 && window.__hill.nextWave());
+  const first = await waitFor('the first wave on the guest', async () => {
+    const [g, a] = await Promise.all([hill(guest), attackers(guest)]);
+    return g.wave === 1 && a[0].present && a[1].present && a[0].drawn && a[1].drawn ? a : null;
+  }, 8000).catch(() => null);
+  check(`The host's first wave reaches the guest's page, both tanks drawn there (${label})`, first !== null);
+
+  for (const g of await attackers(host)) await host.page.evaluate((i) => window.__enemy.kill(i), g.i);
+  await waitFor('the second wave', async () => (await hill(host)).wave === 2, 8000).catch(() => null);
+  for (const g of await attackers(host)) await host.page.evaluate((i) => window.__enemy.kill(i), g.i);
+  const won = await waitFor('the hill held on both pages', async () => {
+    const [h, g] = await Promise.all([hill(host), hill(guest)]);
+    return h.phase === 'won' && g.phase === 'won' && g.killed === 4 ? g : null;
+  }, 8000).catch(() => null);
+  check(`Knocking all four out holds the hill on both pages (${label})`, won !== null, won ? '' : JSON.stringify(await Promise.all([host, guest].map(hill))));
+
+  await guest.page.evaluate(() => window.__hill.stop());
+  const off = await waitFor('the hill off on both pages', async () => {
+    const [h, g] = await Promise.all([hill(host), hill(guest)]);
+    const e = await guest.page.evaluate(() => window.__enemy.state());
+    return h.phase === 'off' && g.phase === 'off' && !e.on ? g : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Stop ends the hill on both pages and takes the enemy away (${label})`, off !== null);
   await host.page.evaluate(() => { window.__damage.repair(); window.__drive.place(0, 0, 0); });
 }
 

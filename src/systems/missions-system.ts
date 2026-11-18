@@ -16,7 +16,7 @@ import {
   parseAmbush,
 } from '../sim/ambush.js';
 import { gotAway } from '../sim/column.js';
-import { type EnemyGroup, FIRST_COLUMN, gunNear, type SightCheck } from '../sim/enemy-guns.js';
+import { type EnemyGroup, FIRST_COLUMN, gunNear, isColumn, type SightCheck } from '../sim/enemy-guns.js';
 import {
   inReportView,
   noRecon,
@@ -42,6 +42,7 @@ import { damageState, repairTank } from './damage-system.js';
 import { placeTank, resetTank, tankState } from './drive-system.js';
 import { enemyAlong, enemyShared, enemyShotsFired, enemySpots, enemyTracking, holdEnemyFire, startMission } from './enemy-system.js';
 import { decidedListeners } from './firing-system.js';
+import { shownHill, stopHill } from './hill-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { setAmmoRack } from './loading-system.js';
 import { netLink } from './net-system.js';
@@ -214,6 +215,7 @@ export class MissionsSystem extends createSystem({}) {
     if (!netLink.isHost) return;
     if (shownScenario().phase === 'on') stopScenario();
     if (shownEscort().phase === 'on') stopEscort();
+    if (shownHill().phase !== 'off') stopHill();
     const other = mission === 'recon' ? this.ambush : this.recon;
     other.stop();
     repairTank();
@@ -310,9 +312,9 @@ export class MissionsSystem extends createSystem({}) {
     this.drawSign(delta);
   }
 
-  /** Advance to contact or the convoy escort (F5.8) is on: only one fight at a time, so a mission gives way. */
+  /** Advance to contact, the convoy escort (F5.8) or hold the hill (F5.9) is on: only one fight at a time, so a mission gives way. */
   private otherFight(): boolean {
-    return shownScenario().phase === 'on' || shownEscort().phase === 'on';
+    return shownScenario().phase === 'on' || shownEscort().phase === 'on' || shownHill().phase === 'on';
   }
 
   /** Host: judge the recon: what the gun is on, how close the enemy is to spotting the tank, and whether one has. */
@@ -370,7 +372,7 @@ export class MissionsSystem extends createSystem({}) {
       out: this.columnOut,
       away: this.columnAway,
       sprung: shared.sprung,
-      spotted: enemyTracking() >= FIRST_COLUMN,
+      spotted: isColumn(enemyTracking()),
       shots: enemyShotsFired(),
       hits: d.hits,
       through: d.through,

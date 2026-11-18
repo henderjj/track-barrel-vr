@@ -901,6 +901,15 @@
           </div>
           <div id="menu-recon-status" class="hint">Recon unseen: off</div>
           <div id="menu-ambush-status" class="hint">Ambush a column: off</div>
+          <div class="setting">
+            <div class="label">Hold the hill</div>
+            <div class="choices">
+              <Button id="menu-hill-start" class="choice" size="sm" variant="secondary">Start</Button>
+              <Button id="menu-hill-stop" class="choice" size="sm" variant="secondary">Stop</Button>
+              <Button id="menu-hill-hulldown" class="choice" size="sm" variant="secondary">Hull down</Button>
+            </div>
+          </div>
+          <div id="menu-hill-status" class="hint">Hold the hill: off</div>
         </div>
       </div>
       <div id="page-sights" class="page" style="display: none">

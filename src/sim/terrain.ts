@@ -153,7 +153,48 @@ export function roughness(x: number, z: number): number {
   const cross = smooth((Math.abs(wz) - CROSS_HALF) / CROSS_BLEND);
   const course = smooth(outsideCourseField(x, z) / COURSE_FIELD.blend);
   const lanes = smooth(outsideFiringLanes(x, z) / FIRING_LANES[0].blend);
-  return field * lane * cross * course * lanes;
+  const hill = smooth(outsideHoldHill(x, z) / HOLD_HILL.blend);
+  return field * lane * cross * course * lanes * hill;
+}
+
+/**
+ * The hill the "Hold the hill" scenario is fought from (F5.9,
+ * docs/hold-the-hill.md): a long ridge east of the range road beyond the
+ * 500 m board, its crest running east and west at z = `crest` (world; the
+ * copy in the tile round the start), full height `height` m from x = `west`
+ * to `east` and gone `fade` m beyond each end. Its forward slope falls to
+ * the north (towards the enemy, -z) over `ahead` m, its reverse slope to
+ * the south over `behind` m, each a smoothstep, so the top is rounded and
+ * the reverse slope gentle (about 4° where a tank halts hull down, 25 to
+ * 35 m behind the crest). The rolling waves are smoothed away over it and
+ * `blend` m round it, so the crest is one clean line and the hull-down band
+ * is the same all along it. Clear of the range's lane, tank A's route (36 m
+ * south of the reverse slope's foot), the firing lanes and the course.
+ * Numbers that fold the ground are multiples of CELL.
+ */
+export const HOLD_HILL = { crest: -496, west: 128, east: 256, fade: 48, height: 6, ahead: 64, behind: 80, blend: 32 } as const;
+
+/** How far (x, z) is outside the hold hill's footprint (its slopes and fading ends), m (0 on it). */
+export function outsideHoldHill(x: number, z: number): number {
+  const h = HOLD_HILL;
+  const wx = wrapTile(x);
+  const dz = wrapTile(z - h.crest);
+  const ox = Math.max(0, h.west - h.fade - wx, wx - h.east - h.fade);
+  const oz = Math.max(0, -dz - h.ahead, dz - h.behind);
+  return Math.hypot(ox, oz);
+}
+
+/** The hold hill's height at (x, z) (any copy), m: added to the ground's at its corners. */
+export function holdHillRelief(x: number, z: number): number {
+  const h = HOLD_HILL;
+  const dz = wrapTile(z - h.crest);
+  // North of the crest (-z) is the forward slope.
+  const u = dz < 0 ? -dz / h.ahead : dz / h.behind;
+  if (u >= 1) return 0;
+  const along = plateau(wrapTile(x), h.west, h.east, h.fade);
+  if (along <= 0) return 0;
+  const t = 1 - u;
+  return h.height * t * t * (3 - 2 * t) * along;
 }
 
 /** The height field's sample at grid corner (ix, iz), m. Periodic over TILE. */
@@ -165,7 +206,7 @@ export function cornerHeight(ix: number, iz: number): number {
   for (const [a, kx, kz] of WAVES) {
     h += a * Math.sin(w * (kx * x + kz * z));
   }
-  return h * roughness(x, z) + courseRelief(x, z);
+  return h * roughness(x, z) + courseRelief(x, z) + holdHillRelief(x, z);
 }
 
 /**
@@ -279,6 +320,8 @@ const HOUSES_PER_TILE = 8;
 
 /** Obstacles keep this far clear of the course's field, m, beyond their own size. */
 const COURSE_CLEAR = 4;
+/** Obstacles keep this far clear of the hold hill's slopes (F5.9), m, beyond their own size: nothing on it blocks the crew's gun or hides an attacker at its foot. */
+const HILL_CLEAR = 4;
 /** Nothing stands within this of a firing lane's middle line, m: the outer boards stand 6 m off it, so 8 m clear of them. */
 const LANE_CLEAR = 14;
 
@@ -309,7 +352,7 @@ export const AMBUSH_WALL: Obstacle = block('wall', -160, -569, 15, 0.35, 0, 1.5)
  * The obstacles in one tile, tile-local, the same on every page and in
  * every realm. Random ones keep off the start field and both roads'
  * corridors. Those that would stand on the biathlon course's field (F5.3a)
- * are taken out afterwards, rather than kept out while placing, so every
+ * or the hold hill (F5.9) are taken out afterwards, rather than kept out while placing, so every
  * other obstacle stays exactly where it stood before the course.
  */
 export const OBSTACLES: readonly Obstacle[] = (() => {
@@ -333,7 +376,12 @@ export const OBSTACLES: readonly Obstacle[] = (() => {
   place(ROCKS_PER_TILE, () => rock(spot(), spot(), 0.8 + random() * 1.4));
   place(WALLS_PER_TILE, () => block('wall', spot(), spot(), 4 + random() * 8, 0.35, random() * Math.PI, 1.0 + random() * 0.6));
   place(HOUSES_PER_TILE, () => block('house', spot(), spot(), 2.5 + random() * 2, 3 + random() * 2.5, random() * Math.PI, 2.6 + random() * 1));
-  return [...list.filter((o) => outsideCourseField(o.x, o.z) > o.r + COURSE_CLEAR && firingLaneOffset(o.x, o.z) > o.r + LANE_CLEAR), ...LANE_WALLS, ...BYPASS_WALLS, AMBUSH_WALL];
+  return [
+    ...list.filter((o) => outsideCourseField(o.x, o.z) > o.r + COURSE_CLEAR && firingLaneOffset(o.x, o.z) > o.r + LANE_CLEAR && outsideHoldHill(o.x, o.z) > o.r + HILL_CLEAR),
+    ...LANE_WALLS,
+    ...BYPASS_WALLS,
+    AMBUSH_WALL,
+  ];
 })();
 
 /**

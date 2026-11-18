@@ -9,6 +9,7 @@ import {
   type Obstacle,
   obstacleDistance,
   OBSTACLES,
+  outsideHoldHill,
   roughness,
   TILE,
   wrapTile,
@@ -34,7 +35,8 @@ describe('terrain (F1.4)', () => {
     for (const x of [-100, -250, 333]) for (const z of [-15, 0, 15.5]) expect(groundHeight(x, z)).toBe(0);
     expect(CROSS_HALF).toBeGreaterThan(CELL);
     let max = 0;
-    for (let x = 60; x < 400; x += 7) for (let z = 0; z < 400; z += 11) max = Math.max(max, Math.abs(groundHeight(x, z)));
+    // Off the hold hill (F5.9), whose 6 m ridge stands in this quarter.
+    for (let x = 60; x < 400; x += 7) for (let z = 0; z < 400; z += 11) if (outsideHoldHill(x, z) > 0) max = Math.max(max, Math.abs(groundHeight(x, z)));
     expect(max).toBeGreaterThan(0.8);
     expect(max).toBeLessThan(2.5);
     expect(roughness(200, 200)).toBe(1);

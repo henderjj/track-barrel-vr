@@ -14,6 +14,7 @@ import { damageStatus, repairTank, TEST_HITS, testHit } from './damage-system.js
 import { enemyStatus, meetGun, meetTank, startEnemies } from './enemy-system.js';
 import { escortAmbush, escortStatus, shownEscort, startEscort, stopEscort } from './escort-system.js';
 import { resetCombatTuning, scenarioStatus, setCombatTune, shownScenario, startScenario, stopScenario, tuningStatus } from './combat-system.js';
+import { hillStatus, hullDownPractice, shownHill, startHill, stopHill } from './hill-system.js';
 import { TUNE_ROWS } from '../sim/combat.js';
 import { ambushStatus, reconStatus, shownAmbush, shownRecon, startMissionRun, stopMissionRun } from './missions-system.js';
 import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-system.js';
@@ -544,6 +545,21 @@ export class GameMenuSystem extends createSystem({}) {
       stopEscort();
       this.render();
     });
+    // The Missions tab (F5.9): Start and Hull down close the menu, to drive or look over the crest; Stop leaves it open.
+    ui.on('menu-hill-start', () => {
+      this.setOpen(false);
+      stopRide();
+      startHill();
+    });
+    ui.on('menu-hill-stop', () => {
+      stopHill();
+      this.render();
+    });
+    ui.on('menu-hill-hulldown', () => {
+      this.setOpen(false);
+      stopRide();
+      hullDownPractice();
+    });
     for (const row of TUNE_ROWS) {
       row.options.forEach(([value], i) => {
         ui.on(`menu-tune-${row.key.toLowerCase()}-${i}`, () => {
@@ -690,6 +706,7 @@ export class GameMenuSystem extends createSystem({}) {
       this.ui?.setText('menu-tanks-status', enemyStatus('tanks'));
       this.ui?.setText('menu-damage-status', damageStatus());
       this.ui?.setText('menu-battle-status', scenarioStatus());
+      this.ui?.setText('menu-hill-status', hillStatus());
       this.ui?.setText('menu-tune-status', tuningStatus());
       this.ui?.setText('menu-escort-status', escortStatus());
       this.renderTuning();
@@ -788,6 +805,8 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-damage-status', damageStatus());
     ui.setText('menu-battle-status', scenarioStatus());
     ui.setText('menu-battle-start', shownScenario().phase === 'on' ? 'Restart' : 'Start');
+    ui.setText('menu-hill-status', hillStatus());
+    ui.setText('menu-hill-start', shownHill().phase === 'on' ? 'Restart' : 'Start');
     ui.setText('menu-tune-status', tuningStatus());
     ui.setText('menu-escort-status', escortStatus());
     ui.setText('menu-escort-start', shownEscort().phase === 'on' ? 'Restart' : 'Start');

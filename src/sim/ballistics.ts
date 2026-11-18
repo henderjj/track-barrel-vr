@@ -17,7 +17,7 @@
 
 import { AMMO, type AmmoKind } from './ammo.js';
 import { boardsVersion, COURSE_BOARD, COURSE_TARGETS, courseBoardMiddle } from './course.js';
-import { ENEMY_COUNT, enemyColumnFaces, enemyGunFaces, enemyName, enemyTankFaces, FIRST_TANK, isTank } from './enemy-guns.js';
+import { ENEMY_COUNT, enemyColumnFaces, enemyGunFaces, enemyHillFaces, enemyName, enemyTankFaces, FIRST_TANK, isTank } from './enemy-guns.js';
 import { RANGE_TARGETS, targetFace } from './range.js';
 import type { TankDrive } from './tank-drive.js';
 import { groundHeight, wrapTile } from './terrain.js';
@@ -466,7 +466,7 @@ export function syncCourseFaces(faces: HitFace[], seen: number): number {
  * list.
  */
 export function targetFaces(): HitFace[] {
-  return [...rangeFaces(), ...courseFaces(), ...[...enemyGunFaces(), ...enemyTankFaces(), ...enemyColumnFaces()].map((f) => ({ ...f, off: true }))];
+  return [...rangeFaces(), ...courseFaces(), ...[...enemyGunFaces(), ...enemyTankFaces(), ...enemyColumnFaces(), ...enemyHillFaces()].map((f) => ({ ...f, off: true }))];
 }
 
 /** Which of targetFaces() are soft, an anti-tank gun's board, an enemy gun or a column's lorry (F5.10): an HE burst within its blast counts on it (F3.1). */

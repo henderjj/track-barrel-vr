@@ -23,11 +23,13 @@ import {
   FIRST_COLUMN,
   FIRST_TANK,
   groupOf,
+  isColumn,
   isTank,
   gunNear,
   noEnemies,
   parseShared,
   parseShot,
+  routeOf,
   sharedGroupOn,
   sharedOf,
   type SightCheck,
@@ -159,6 +161,36 @@ export function bringTanks(): void {
   if (!netLink.isHost || !active) return;
   active.battery.start(undefined, 'tanks');
   active.restarted();
+}
+
+/**
+ * Host: a fight that brings its enemies in one by one (F5.9's hill): every
+ * enemy stopped and the counts afresh, with `seed`; bringEnemy() then
+ * brings each.
+ */
+export function beginAttack(seed: number): void {
+  if (!netLink.isHost || !active) return;
+  active.battery.begin(seed);
+  active.holdFire = false;
+  active.restarted();
+}
+
+/** Host: enemy `i` comes in, fresh (a tank at its route's start). */
+export function bringEnemy(i: number): void {
+  if (!netLink.isHost || !active) return;
+  active.battery.enter(i);
+  active.restarted();
+}
+
+/** Host: tank `i` has driven its one-way route to its end (F5.9). */
+export function enemyArrived(i: number): boolean {
+  return active?.battery.arrived(i) ?? false;
+}
+
+/** Host: what of the tank enemy `i` saw at its last look (F5.9 counts the time hull down). */
+export function enemyView(i: number): TankView {
+  const g = active?.battery.guns[i];
+  return g?.present && g.alive ? g.view : 'none';
 }
 
 /**
@@ -615,11 +647,14 @@ export class EnemySystem extends createSystem({}) {
   private applyShared(s: EnemyShared): void {
     const was = this.shared;
     if (s.on && !was.on) this.seen.length = 0;
-    for (const group of ['guns', 'tanks', 'column'] as const) {
+    for (const group of ['guns', 'tanks', 'column', 'hill'] as const) {
       const before = sharedGroupOn(was, group);
       const now = sharedGroupOn(s, group);
       // The column's coming is the ambush's briefing (AmbushSystem).
-      if (now && !before && group !== 'column') this.note(group === 'guns' ? 'Enemy guns ahead: watch for their flashes' : 'Enemy tanks about: watch for them moving', [group === 'guns' ? 'guns-ahead' : 'tanks-about']);
+      if (now && !before && group !== 'column') {
+        const text = group === 'guns' ? 'Enemy guns ahead: watch for their flashes' : group === 'hill' ? 'Enemy tanks coming from the north' : 'Enemy tanks about: watch for them moving';
+        this.note(text, [group === 'guns' ? 'guns-ahead' : 'tanks-about']);
+      }
       if (!now || !before) continue;
       let knocked = false;
       let left = 0;
@@ -663,7 +698,7 @@ export class EnemySystem extends createSystem({}) {
 
   private faceOff(i: number): boolean {
     // A column vehicle is a target only on the road (F5.10).
-    return !(this.shared.present[i] && this.shared.alive[i]) || (i >= FIRST_COLUMN && !onRoad(this.along[i]));
+    return !(this.shared.present[i] && this.shared.alive[i]) || (isColumn(i) && !onRoad(this.along[i]));
   }
 
   private applyFaces(): void {
@@ -794,12 +829,14 @@ export class EnemySystem extends createSystem({}) {
     const tank = tankState();
     if (!netLink.isHost && !paused) this.driveColumn(dt);
     for (let i = FIRST_TANK; i < ENEMY_COUNT; i++) {
-      const column = i >= FIRST_COLUMN;
+      const column = isColumn(i);
+      // A patrolling tank's route, or a hill attacker's (F5.9).
+      const route = routeOf(i);
       if (netLink.isHost) {
         this.along[i] = this.battery.guns[i].d;
         this.off[i] = this.battery.guns[i].off;
-      } else if (!paused && !column && this.moving(i)) {
-        this.along[i] = wrapRoute(ENEMY_TANKS[i - FIRST_TANK], this.along[i] + ENEMY_TANK.speed * dt);
+      } else if (!paused && route && this.moving(i)) {
+        this.along[i] = wrapRoute(route, this.along[i] + ENEMY_TANK.speed * dt);
       }
       // A column vehicle comes onto the road and leaves it as it drives (F5.10).
       if (column) setFaceOff(ENEMY_TARGET_FIRST + i, this.faceOff(i));
@@ -813,7 +850,7 @@ export class EnemySystem extends createSystem({}) {
 
   /** How fast driving enemy `i` goes as this page has it, m/s. */
   private speedOf(i: number): number {
-    if (i < FIRST_COLUMN) return ENEMY_TANK.speed;
+    if (!isColumn(i)) return ENEMY_TANK.speed;
     const k = i - FIRST_COLUMN;
     this.placeColumn();
     return Math.max(0, columnPace(this.columnPlaces, k, this.shared.sprung, 0));
@@ -856,7 +893,7 @@ export class EnemySystem extends createSystem({}) {
     this.player.head.getWorldPosition(this.eye);
     for (let i = 0; i < ENEMY_COUNT; i++) {
       // A column vehicle not yet on the road, or got away off its end, isn't drawn (F5.10).
-      const present = this.shared.present[i] && (i < FIRST_COLUMN || onRoad(this.along[i]));
+      const present = this.shared.present[i] && (!isColumn(i) || onRoad(this.along[i]));
       const alive = this.shared.alive[i];
       const whole = this.whole[i];
       const wreck = this.wrecks[i];

@@ -22,6 +22,7 @@ import {
   type EnemyShot,
   enemyName,
   FIRST_COLUMN,
+  FIRST_HILL,
   groupOf,
   groundBlocks,
   gunNear,
@@ -62,7 +63,9 @@ function step(list: ColumnState[], seconds: number, sprung = false, dt = 0.05): 
 describe('the enemy column (F5.10)', () => {
   it('is a tank, two lorries and a tank, after the guns and the patrolling tanks among the enemies and the shells\' targets', () => {
     expect(COLUMN_VEHICLES.map((v) => v.kind)).toEqual(['tank', 'truck', 'truck', 'tank']);
-    expect(ENEMY_COUNT).toBe(FIRST_COLUMN + 4);
+    // The hill's attackers (F5.9) come after it.
+    expect(FIRST_HILL).toBe(FIRST_COLUMN + 4);
+    expect(groupOf(FIRST_HILL)).toBe('hill');
     expect(groupOf(LEAD)).toBe('column');
     expect(groupOf(FIRST_COLUMN - 1)).toBe('tanks');
     expect(enemyName(LEAD)).toBe('Lead tank');
@@ -175,7 +178,7 @@ describe('the column in the battery (F5.10)', () => {
     b.start(AMBUSH.seed, 'column');
     expect(b.groupOn('column')).toBe(true);
     expect(b.groupOn('guns')).toBe(false);
-    expect(b.guns.slice(FIRST_COLUMN).map((g) => g.d)).toEqual([0, -30, -60, -90]);
+    expect(b.guns.slice(FIRST_COLUMN, FIRST_HILL).map((g) => g.d)).toEqual([0, -30, -60, -90]);
     expect(b.viewOf(LORRY_1, inAmbush(), seeAll)).toBe('none');
     expect(b.sprung).toBe(false);
   });
@@ -237,7 +240,7 @@ describe('the column in the battery (F5.10)', () => {
   it('fires only from its tanks, the lorries never', () => {
     const b = new EnemyBattery(AMBUSH.seed);
     b.start(AMBUSH.seed, 'column');
-    for (const g of b.guns.slice(FIRST_COLUMN)) g.d = 400;
+    for (const g of b.guns.slice(FIRST_COLUMN, FIRST_HILL)) g.d = 400;
     b.guns[LORRY_1].d = 430;
     for (let k = 0; k < 4; k++) b.guns[FIRST_COLUMN + k].d = 330 + k * 30;
     for (let k = 0; k < 4; k++) b.guns[FIRST_COLUMN + k].spot = 1;
