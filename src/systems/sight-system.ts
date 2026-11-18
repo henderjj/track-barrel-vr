@@ -40,7 +40,9 @@ import {
   TRUE_HALF_FIELD,
 } from '../sim/sight.js';
 import { groundHeight, wrapTile } from '../sim/terrain.js';
+import { markPlace } from '../sim/hull-direction.js';
 import { tankState } from './drive-system.js';
+import { acquireMarkTexture, hullToHour, markLens, releaseMarkTexture } from './hull-direction-system.js';
 import { netLink } from './net-system.js';
 import { createLensMaterial, createScopeTarget, LensPlacer, renderScope, watchLensView } from './scope-lens.js';
 import { seating } from './seating.js';
@@ -118,6 +120,10 @@ export const SIGHT_BUTTONS: readonly PracticeButton[] = [
     label: () => ({ auto: 'Draw: near', always: 'Draw: always', off: 'Draw: off' })[sightStats.mode],
     press: () => active?.setMode(next(DRAW_MODES, sightStats.mode)),
   },
+  // The hull direction mark (F2.4): to the gunsight, and the turret turns itself so the hull's nose swings round the mark.
+  { id: 'menu-hull-3', label: () => 'Turret to 3', press: () => hullToHour(3), closes: true },
+  { id: 'menu-hull-7', label: () => 'Turret to 7', press: () => hullToHour(7), closes: true },
+  { id: 'menu-hull-forward', label: () => 'Forward', press: () => turretForward() },
   { id: 'menu-sight-size', label: () => `${sightStats.size} px`, press: () => active?.setSize(next(SIGHT_SIZES, sightStats.size)) },
   {
     id: 'menu-sight-eye',
@@ -198,13 +204,17 @@ export class SightSystem extends createSystem({}) {
 
     this.target = createScopeTarget(sightStats.size, sightStats.size);
     this.reticle = createReticle();
+    const field = { magnification: MAGNIFICATION, halfFieldX: TRUE_HALF_FIELD, halfFieldY: TRUE_HALF_FIELD, stop: 'round' } as const;
+    // The hull direction mark (F2.4) in the view's lower left: HullDirectionSystem turns it.
     this.material = createLensMaterial(this.target, {
-      magnification: MAGNIFICATION,
-      halfFieldX: TRUE_HALF_FIELD,
-      halfFieldY: TRUE_HALF_FIELD,
+      ...field,
       reticle: this.reticle,
-      stop: 'round',
+      mark: { texture: acquireMarkTexture(), place: markPlace(field) },
     });
+    this.cleanupFuncs.push(
+      markLens('sight', { material: this.material, fromGun: () => 0, open: () => sightStats.open, goTo: () => this.goTo() }),
+      releaseMarkTexture,
+    );
     this.lens = new Mesh(createSightLensGeometry(), this.material);
     this.lens.name = 'Sight Lens';
     watchLensView(this.lens, this.material);

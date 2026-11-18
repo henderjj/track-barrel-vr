@@ -13,6 +13,7 @@ import type { HitFace, Vec3 } from './ballistics.js';
 import { type CombatTuning, DEFAULT_TUNING, SPOTTING, spotRate, type TankView } from './combat.js';
 import { DAMAGE, type DamageHit, parseHit } from './damage.js';
 import { ENEMY_TANK, ENEMY_TANKS, type EnemyTankRoute, HILL_TANKS, type RoutePose, routeLength, routePose, wrapRoute } from './enemy-tanks.js';
+import { TRUCK } from './escort.js';
 import { rng } from './random.js';
 import { groundHeight, OBSTACLES, wrapTile } from './terrain.js';
 import { clockHour } from './turret-dial.js';
@@ -386,6 +387,22 @@ export interface TankTarget {
   speed: number;
 }
 
+/**
+ * A truck of the convoy as the enemy sees it (F5.8, src/sim/escort.ts): where
+ * it is, which way it drives and how fast, and whether it still runs.
+ */
+export interface TruckTarget extends TankTarget {
+  alive: boolean;
+}
+
+/**
+ * Whether enemy `i` goes for the convoy's trucks before the crew's tank
+ * (F5.8): the guns are dug in for the convoy; the tanks hunt the escort.
+ */
+export function prefersConvoy(i: number): boolean {
+  return groupOf(i) === 'guns';
+}
+
 /** One enemy's state, a gun's or a tank's. */
 export interface EnemyGunState {
   /** Its group is started: it is there (drawn, and among the shells' targets while alive). */
@@ -414,6 +431,17 @@ export interface EnemyGunState {
   moving: boolean;
   /** A tank held where it is (tests). */
   held: boolean;
+  /**
+   * The convoy (F5.8), spotted and lost as the tank is: the nearest running
+   * truck it sees (-1 none), how far it has got to spotting the convoy,
+   * whether it has the convoy, and how long all of it has been out of sight.
+   */
+  truck: number;
+  convoySpot: number;
+  convoyTracking: boolean;
+  convoyBlind: number;
+  /** What its last shot was laid on: -1 the tank, a truck's index, or -2 nothing yet (its layer corrects only on the same target). */
+  laidOn: number;
 }
 
 /** A shot a gun fired: from its muzzle to where the shell went (world space), whether it hit the tank, and how long it flies, s. */
@@ -428,6 +456,8 @@ export interface EnemyShot {
   range: number;
   /** A hit: where it struck and what it did (F3.4), decided by the host as it fires. */
   damage?: DamageHit;
+  /** Fired at the convoy (F5.8): which truck; its hit knocks that truck out, not the tank. */
+  truck?: number;
 }
 
 /** What a gun's eyes check besides range and the ground: the smoke (the battery is engine-free, so the caller says). */
@@ -451,6 +481,9 @@ export class EnemyBattery {
   /** Hits the tank has taken, and shots fired at it, since it was started. */
   hits = 0;
   shotsFired = 0;
+  /** Shots fired at the convoy's trucks, and hits on them (F5.8). */
+  truckShots = 0;
+  truckHits = 0;
   /** The fight's tuning (F3.10, src/sim/combat.ts): spotting, aim, reactions, the tank's size. */
   tuning: CombatTuning = { ...DEFAULT_TUNING };
   /** Since the crew last fired, s (F3.10): its flash gives the tank away. */
@@ -470,7 +503,27 @@ export class EnemyBattery {
   }
 
   private static freshGun(): EnemyGunState {
-    return { present: false, alive: true, sees: false, view: 'none', spot: 0, tracking: false, ready: 0, blind: 0, shots: 0, look: 0, revealed: false, d: 0, moving: true, held: false };
+    return {
+      present: false,
+      alive: true,
+      sees: false,
+      view: 'none',
+      spot: 0,
+      tracking: false,
+      ready: 0,
+      blind: 0,
+      shots: 0,
+      look: 0,
+      revealed: false,
+      d: 0,
+      moving: true,
+      held: false,
+      truck: -1,
+      convoySpot: 0,
+      convoyTracking: false,
+      convoyBlind: 0,
+      laidOn: -2,
+    };
   }
 
   /** Any group is started. */
@@ -493,6 +546,8 @@ export class EnemyBattery {
     if (!this.on) {
       this.hits = 0;
       this.shotsFired = 0;
+      this.truckShots = 0;
+      this.truckHits = 0;
       this.crewFiredAgo = Infinity;
     }
     for (let i = 0; i < this.guns.length; i++) {
@@ -533,6 +588,8 @@ export class EnemyBattery {
     this.random = rng(seed);
     this.hits = 0;
     this.shotsFired = 0;
+    this.truckShots = 0;
+    this.truckHits = 0;
     this.crewFiredAgo = Infinity;
     this.version++;
   }
@@ -595,7 +652,7 @@ export class EnemyBattery {
    * clear line to its hull (all of it), or only to its turret's top (hull
    * down behind a crest or a wall), or neither.
    */
-  viewOf(i: number, tank: Readonly<TankTarget>, clear: SightCheck): TankView {
+  viewOf(i: number, tank: Readonly<TankTarget>, clear: SightCheck, top: number = TANK_SILHOUETTE.height): TankView {
     const m = muzzleNear(i, tank.x, tank.z, this.muzzle, this.guns[i].d);
     if (Math.hypot(tank.x - m[0], tank.z - m[2]) > specOf(i).spotRange) return 'none';
     const open = (to: Vec3) => !groundBlocks(m, to) && !obstaclesBlock(m, to) && clear(m, to);
@@ -603,11 +660,30 @@ export class EnemyBattery {
     this.hull[1] = tank.ground + HULL_SIGHT;
     this.hull[2] = tank.z;
     if (open(this.hull)) return 'full';
-    // Its eye on the tank's turret top, a little under it.
+    // Its eye on the tank's turret top (a truck's tilt, F5.8), a little under it.
     this.eye[0] = tank.x;
-    this.eye[1] = tank.ground + TANK_SILHOUETTE.height - 0.3;
+    this.eye[1] = tank.ground + top - 0.3;
     this.eye[2] = tank.z;
     return open(this.eye) ? 'turret' : 'none';
+  }
+
+  /**
+   * The nearest running truck enemy `i` sees now (F5.8), or -1: within its
+   * spot range, with a clear line to some of it, as viewOf judges the tank.
+   */
+  truckInView(i: number, trucks: readonly Readonly<TruckTarget>[], clear: SightCheck): number {
+    let best = -1;
+    let bestRange = Infinity;
+    for (let k = 0; k < trucks.length; k++) {
+      const t = trucks[k];
+      if (!t.alive) continue;
+      gunNear(i, t.x, t.z, this.at, this.guns[i].d);
+      const range = Math.hypot(t.x - this.at[0], t.z - this.at[1]);
+      if (range >= bestRange || this.viewOf(i, t, clear, TRUCK.height) === 'none') continue;
+      best = k;
+      bestRange = range;
+    }
+    return best;
   }
 
   /**
@@ -617,10 +693,10 @@ export class EnemyBattery {
    * route while it hasn't the tank, and halts while it has. Shots fired go
    * into `out` (cleared first); returns how many.
    */
-  step(dt: number, tank: Readonly<TankTarget>, clear: SightCheck, out: EnemyShot[]): number {
+  step(dt: number, tank: Readonly<TankTarget>, clear: SightCheck, out: EnemyShot[], trucks?: readonly Readonly<TruckTarget>[]): number {
     out.length = 0;
     this.crewFiredAgo += dt;
-    const alert = this.shotsFired > 0;
+    const alert = this.shotsFired + this.truckShots > 0;
     for (let i = 0; i < this.guns.length; i++) {
       const g = this.guns[i];
       if (!g.present || !g.alive) continue;
@@ -631,6 +707,8 @@ export class EnemyBattery {
         if (g.look <= 0) g.look = spec.lookEvery;
         g.view = this.viewOf(i, tank, clear);
         g.sees = g.view !== 'none';
+        // The convoy (F5.8): the nearest truck in its sight.
+        g.truck = trucks ? this.truckInView(i, trucks, clear) : -1;
       }
       // Spotting (F3.10): seeing it builds up to spotting it; out of sight, that fades.
       if (g.sees && g.spot < 1) {
@@ -657,23 +735,83 @@ export class EnemyBattery {
         g.blind += dt;
         if (g.blind >= spec.loseAfter) g.tracking = false;
       }
+      if (trucks) this.watchConvoy(i, g, spec, dt, trucks, alert);
+      else g.convoyTracking = false;
       const route = routeOf(i);
       if (route) {
         // A one-way route's end is where it halts for good (F5.9).
-        const moving = !g.tracking && !g.held && !(route.oneWay && g.d >= routeLength(route) - 0.01);
+        const moving = !g.tracking && !g.convoyTracking && !g.held && !(route.oneWay && g.d >= routeLength(route) - 0.01);
         if (moving !== g.moving) {
           g.moving = moving;
           this.version++;
         }
         if (moving) g.d = wrapRoute(route, g.d + ENEMY_TANK.speed * dt);
       }
-      if (!g.tracking) continue;
+      if (!g.tracking && !g.convoyTracking) continue;
       g.ready -= dt;
-      if (g.ready > 0 || !g.sees) continue;
-      out.push(this.fire(i, tank));
+      if (g.ready > 0) continue;
+      // A gun fires on a truck it sees before the tank; a tank on the tank before a truck (F5.8).
+      const onTank = g.tracking && g.sees;
+      const onTruck = g.convoyTracking && g.truck >= 0 && trucks !== undefined;
+      if (onTruck && (!onTank || prefersConvoy(i))) out.push(this.fireAtTruck(i, trucks[g.truck], g.truck));
+      else if (onTank) out.push(this.fire(i, tank));
+      else continue;
       g.ready = spec.reload * this.tuning.react;
     }
     return out.length;
+  }
+
+  /**
+   * Enemy `i` spots, takes and loses the convoy (F5.8) as it does the tank:
+   * seeing a truck builds up to spotting the convoy at the same rates (the
+   * trucks never fire); once spotted it lays on it, taking layFirst if it
+   * had nothing laid or goes for the convoy first; out of sight loseAfter,
+   * it loses it.
+   */
+  private watchConvoy(i: number, g: EnemyGunState, spec: EnemySpec, dt: number, trucks: readonly Readonly<TruckTarget>[], alert: boolean): void {
+    const k = g.truck;
+    if (k >= 0 && !trucks[k]?.alive) g.truck = -1;
+    if (g.truck >= 0 && g.convoySpot < 1) {
+      const t = trucks[g.truck];
+      const s = this.situation;
+      gunNear(i, t.x, t.z, this.at, g.d);
+      s.range = Math.hypot(t.x - this.at[0], t.z - this.at[1]);
+      s.view = 'full';
+      s.moving = Math.abs(t.speed) > SPOTTING.movingSpeed;
+      s.fired = false;
+      s.alert = alert;
+      s.driving = i >= FIRST_TANK && g.moving;
+      g.convoySpot = Math.min(1, g.convoySpot + spotRate(s, this.tuning.spot) * dt);
+    } else if (g.truck < 0) {
+      g.convoySpot = Math.max(0, g.convoySpot - SPOTTING.forget * dt);
+    }
+    if (g.truck >= 0 && g.convoySpot >= 1) {
+      g.convoyBlind = 0;
+      if (!g.convoyTracking) {
+        g.convoyTracking = true;
+        const lay = spec.layFirst * this.tuning.react;
+        if (!g.tracking) g.ready = lay;
+        else if (prefersConvoy(i)) g.ready = Math.max(g.ready, lay);
+      }
+    } else if (g.convoyTracking) {
+      g.convoyBlind += dt;
+      if (g.convoyBlind >= spec.loseAfter) g.convoyTracking = false;
+    }
+  }
+
+  /** Enemy `i` fires at truck `k` of the convoy now (F5.8; the tests call it too): where the shell goes and whether it hits. */
+  fireAtTruck(i: number, truck: Readonly<TruckTarget>, k: number): EnemyShot {
+    const g = this.guns[i];
+    if (g.laidOn !== k) g.shots = 0;
+    g.laidOn = k;
+    const shot = resolveShot(i, truck, g.shots, this.random, g.d, { aim: this.tuning.aim, truck: true });
+    shot.truck = k;
+    g.shots++;
+    g.revealed = true;
+    this.truckShots++;
+    if (shot.hit) this.truckHits++;
+    this.version++;
+    return shot;
   }
 
   /**
@@ -683,6 +821,9 @@ export class EnemyBattery {
    */
   fire(i: number, tank: Readonly<TankTarget>, view: TankView = this.guns[i].view): EnemyShot {
     const g = this.guns[i];
+    // Shifting from a truck to the tank, the layer starts afresh (F5.8).
+    if (g.laidOn >= 0) g.shots = 0;
+    g.laidOn = -1;
     const shot = resolveShot(i, tank, g.shots, this.random, g.d, { aim: this.tuning.aim, box: this.tuning.box, view });
     g.shots++;
     g.revealed = true;
@@ -708,6 +849,8 @@ export interface ShotOptions {
   aim?: number;
   box?: number;
   view?: TankView;
+  /** The target is one of the convoy's trucks (F5.8): a plain box TRUCK's size, no turret, seen whole. */
+  truck?: boolean;
 }
 
 /**
@@ -722,8 +865,9 @@ export interface ShotOptions {
  * it strikes the cover short.
  */
 export function resolveShot(i: number, tank: Readonly<TankTarget>, shots: number, random: () => number, along = 0, opts: ShotOptions = {}): EnemyShot {
-  const box = opts.box ?? 1;
-  const turretOnly = opts.view === 'turret';
+  const truck = opts.truck === true;
+  const box = truck ? 1 : (opts.box ?? 1);
+  const turretOnly = !truck && opts.view === 'turret';
   const spec = specOf(i);
   const from = muzzleNear(i, tank.x, tank.z, [0, 0, 0], along);
   const dx0 = tank.x - from[0];
@@ -750,10 +894,13 @@ export function resolveShot(i: number, tank: Readonly<TankTarget>, shots: number
   const up = normal(random) * spread;
   // The tank as the gun sees it, `box` times its size: the hull's half width (its front, its side or between), the turret's, and their tops.
   const rel = Math.atan2(-Math.sin(tank.heading), -Math.cos(tank.heading)) - Math.atan2(ux, uz);
-  const half = 0.5 * box * (Math.abs(Math.cos(rel)) * TANK_SILHOUETTE.width + Math.abs(Math.sin(rel)) * TANK_SILHOUETTE.length);
-  const turretHalf = 0.5 * box * TANK_SILHOUETTE.turret;
-  const hullTop = box * DAMAGE.hullTop;
-  const top = box * TANK_SILHOUETTE.height;
+  const width = truck ? TRUCK.width : TANK_SILHOUETTE.width;
+  const length = truck ? TRUCK.length : TANK_SILHOUETTE.length;
+  const half = 0.5 * box * (Math.abs(Math.cos(rel)) * width + Math.abs(Math.sin(rel)) * length);
+  const turretHalf = truck ? 0 : 0.5 * box * TANK_SILHOUETTE.turret;
+  // A truck is one box to its tilt's top: its "hull" is all of it.
+  const top = box * (truck ? TRUCK.height : TANK_SILHOUETTE.height);
+  const hullTop = truck ? top : box * DAMAGE.hullTop;
   // Where it struck, up from the ground: aimed at the middle of what it sees.
   const h = (turretOnly ? (hullTop + top) / 2 : top / 2) + up;
   const onTurret = h > hullTop && h <= top && Math.abs(across) <= turretHalf;
@@ -875,7 +1022,8 @@ export function parseShot(raw: unknown): EnemyShot | null {
     flight: Math.max(0, Math.min(5, e.flight)),
     clock: typeof e.clock === 'number' ? e.clock : 12,
     range: typeof e.range === 'number' ? e.range : 0,
-    damage: e.hit ? (parseHit(e.damage) ?? undefined) : undefined,
+    damage: e.hit && typeof e.truck !== 'number' ? (parseHit(e.damage) ?? undefined) : undefined,
+    truck: typeof e.truck === 'number' && Number.isInteger(e.truck) && e.truck >= 0 ? e.truck : undefined,
   };
 }
 

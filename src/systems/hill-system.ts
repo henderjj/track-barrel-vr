@@ -23,6 +23,7 @@ import { wrapTile } from '../sim/terrain.js';
 import { shownScenario, stopScenario } from './combat-system.js';
 import { damageState, repairTank } from './damage-system.js';
 import { placeTank, resetTank, tankState } from './drive-system.js';
+import { shownEscort, stopEscort } from './escort-system.js';
 import { beginAttack, bringEnemy, enemyArrived, enemyShared, enemyShotsFired, enemySpotted, enemyView, holdEnemyFire, startBattle } from './enemy-system.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { setAmmoRack } from './loading-system.js';
@@ -173,6 +174,8 @@ export class HillSystem extends createSystem({}) {
     if (!netLink.isHost) return;
     // The advance to contact gives way, its debrief too (the board shows one fight's).
     if (shownScenario().phase !== 'off') stopScenario();
+    // So does the convoy escort (F5.8): both are fights with the one battery.
+    if (shownEscort().phase !== 'off') stopEscort();
     repairTank();
     resetTank('warm');
     placeTank(HILL.startX, HILL.startZ, 0);
@@ -266,8 +269,8 @@ export class HillSystem extends createSystem({}) {
     const snap = this.run.snap;
     if (snap.phase === 'on' && !paused) {
       const shared = enemyShared();
-      // Another fight started over this one (the advance to contact, a Combat start): it ends quietly.
-      if (shownScenario().phase === 'on' || (snap.wave > 0 && !HILL.waves.flat().some((k) => shared.present[hillEnemy(k)]))) {
+      // Another fight started over this one (the advance to contact, the convoy escort, a Combat start): it ends quietly.
+      if (shownScenario().phase === 'on' || shownEscort().phase === 'on' || (snap.wave > 0 && !HILL.waves.flat().some((k) => shared.present[hillEnemy(k)]))) {
         this.run.stop();
         this.publish();
         console.info('[Hill] stopped: another fight began');

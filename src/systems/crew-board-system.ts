@@ -19,6 +19,8 @@ import {
 import { FIRST_TANK } from '../sim/enemy-guns.js';
 import { clockLines } from '../sim/range-run.js';
 import { shownScenario } from './combat-system.js';
+import { shownEscort } from './escort-system.js';
+import { convoyToGo, escortBoard } from '../sim/escort.js';
 import { shownHill } from './hill-system.js';
 import { hillDebrief, hillTasks } from '../sim/hill.js';
 import { shownCourse } from './course-system.js';
@@ -178,6 +180,8 @@ export class CrewBoardSystem extends createSystem({}) {
   private clock(): number {
     const s = shownScenario();
     if (s.phase !== 'off') return s.time;
+    const escort = shownEscort();
+    if (escort.phase !== 'off') return escort.time;
     const hill = shownHill();
     if (hill.phase !== 'off') return hill.time;
     const r = shownRun();
@@ -186,7 +190,7 @@ export class CrewBoardSystem extends createSystem({}) {
   }
 
   private timed(): boolean {
-    return shownScenario().phase !== 'off' || shownHill().phase !== 'off' || shownRun().phase !== 'idle';
+    return shownScenario().phase !== 'off' || shownEscort().phase !== 'off' || shownHill().phase !== 'off' || shownRun().phase !== 'idle';
   }
 
   /** The numbers the board depends on, into `now`; whether any differs from last time. */
@@ -213,9 +217,14 @@ export class CrewBoardSystem extends createSystem({}) {
     n[8] = run.phase === 'idle' ? -1 : run.shots * 16 + hits;
     n[9] = course.started ? course.laps * 1000 + course.passed + course.penalties * 100 : -1;
     n[10] = this.fontsReady ? 1 : 0;
-    n[11] = shownHill().v;
+    // The convoy (F5.8): its state, and how far the lead truck has to go.
+    const escort = shownEscort();
+    n[11] = escort.phase === 'off' ? -1 : escort.v * 4 + PHASES.indexOf(escort.phase);
+    n[12] = escort.phase === 'on' ? convoyToGo(escort) : -1;
+    // Hold the hill (F5.9).
+    n[13] = shownHill().v;
     let differs = false;
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 14; i++) {
       if (n[i] !== this.seen[i]) {
         differs = true;
         this.seen[i] = n[i];
@@ -247,8 +256,13 @@ export class CrewBoardSystem extends createSystem({}) {
     if (shells) shells.shells.forEach((shell, i) => shell.place === 'rack' && this.rack[shells.kinds[i]]++);
     let drill = '';
     let drillTasks: string[] = [];
+    const escort = shownEscort();
     const hill = shownHill();
-    if (hill.phase === 'on') {
+    if (escort.phase !== 'off') {
+      const board = escortBoard(escort);
+      drill = board.objective;
+      drillTasks = board.tasks.map((t) => t.text);
+    } else if (hill.phase === 'on') {
       // Hold the hill (F5.9): where the tank stands, and the tanks knocked out.
       drill = 'Hold the hill';
       drillTasks = hillTasks(hill);
