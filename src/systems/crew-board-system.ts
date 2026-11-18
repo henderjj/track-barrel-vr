@@ -20,6 +20,8 @@ import { FIRST_TANK, groupOf } from '../sim/enemy-guns.js';
 import { missionBoard, shownAmbush, shownRecon } from './missions-system.js';
 import { clockLines } from '../sim/range-run.js';
 import { shownScenario } from './combat-system.js';
+import { shownEscort } from './escort-system.js';
+import { convoyToGo, escortBoard } from '../sim/escort.js';
 import { shownCourse } from './course-system.js';
 import { damageState } from './damage-system.js';
 import { tankState } from './drive-system.js';
@@ -177,6 +179,8 @@ export class CrewBoardSystem extends createSystem({}) {
   private clock(): number {
     const s = shownScenario();
     if (s.phase !== 'off') return s.time;
+    const escort = shownEscort();
+    if (escort.phase !== 'off') return escort.time;
     // A mission (F5.10), running or just over.
     if (shownRecon().phase !== 'off') return shownRecon().time;
     if (shownAmbush().phase !== 'off') return shownAmbush().time;
@@ -186,7 +190,7 @@ export class CrewBoardSystem extends createSystem({}) {
   }
 
   private timed(): boolean {
-    return shownScenario().phase !== 'off' || shownRun().phase !== 'idle' || shownRecon().phase !== 'off' || shownAmbush().phase !== 'off';
+    return shownScenario().phase !== 'off' || shownEscort().phase !== 'off' || shownRun().phase !== 'idle' || shownRecon().phase !== 'off' || shownAmbush().phase !== 'off';
   }
 
   /** The numbers the board depends on, into `now`; whether any differs from last time. */
@@ -213,11 +217,15 @@ export class CrewBoardSystem extends createSystem({}) {
     n[8] = run.phase === 'idle' ? -1 : run.shots * 16 + hits;
     n[9] = course.started ? course.laps * 1000 + course.passed + course.penalties * 100 : -1;
     n[10] = this.fontsReady ? 1 : 0;
+    // The convoy (F5.8): its state, and how far the lead truck has to go.
+    const escort = shownEscort();
+    n[11] = escort.phase === 'off' ? -1 : escort.v * 4 + PHASES.indexOf(escort.phase);
+    n[12] = escort.phase === 'on' ? convoyToGo(escort) : -1;
     // The F5.10 missions.
-    n[11] = shownRecon().v * 4 + PHASES.indexOf(shownRecon().phase);
-    n[12] = shownAmbush().v * 4 + PHASES.indexOf(shownAmbush().phase);
+    n[13] = shownRecon().v * 4 + PHASES.indexOf(shownRecon().phase);
+    n[14] = shownAmbush().v * 4 + PHASES.indexOf(shownAmbush().phase);
     let differs = false;
-    for (let i = 0; i < 13; i++) {
+    for (let i = 0; i < 15; i++) {
       if (n[i] !== this.seen[i]) {
         differs = true;
         this.seen[i] = n[i];
@@ -251,8 +259,13 @@ export class CrewBoardSystem extends createSystem({}) {
     if (shells) shells.shells.forEach((shell, i) => shell.place === 'rack' && this.rack[shells.kinds[i]]++);
     let drill = '';
     let drillTasks: string[] = [];
+    const escort = shownEscort();
     const mission = missionBoard();
-    if (mission) {
+    if (escort.phase !== 'off') {
+      const board = escortBoard(escort);
+      drill = board.objective;
+      drillTasks = board.tasks.map((t) => t.text);
+    } else if (mission) {
       drill = mission.drill;
       drillTasks = mission.tasks.map((t) => t.text);
     } else if (run.phase !== 'idle') {

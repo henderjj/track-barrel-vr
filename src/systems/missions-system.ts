@@ -37,6 +37,7 @@ import {
 import { groundHeight, wrapTile } from '../sim/terrain.js';
 import { crewLog } from '../sim/crew-board.js';
 import { shownScenario, stopScenario } from './combat-system.js';
+import { shownEscort, stopEscort } from './escort-system.js';
 import { damageState, repairTank } from './damage-system.js';
 import { placeTank, resetTank, tankState } from './drive-system.js';
 import { enemyAlong, enemyShared, enemyShotsFired, enemySpots, enemyTracking, holdEnemyFire, startMission } from './enemy-system.js';
@@ -212,6 +213,7 @@ export class MissionsSystem extends createSystem({}) {
   startRun(mission: Mission): void {
     if (!netLink.isHost) return;
     if (shownScenario().phase === 'on') stopScenario();
+    if (shownEscort().phase === 'on') stopEscort();
     const other = mission === 'recon' ? this.ambush : this.recon;
     other.stop();
     repairTank();
@@ -308,12 +310,17 @@ export class MissionsSystem extends createSystem({}) {
     this.drawSign(delta);
   }
 
+  /** Advance to contact or the convoy escort (F5.8) is on: only one fight at a time, so a mission gives way. */
+  private otherFight(): boolean {
+    return shownScenario().phase === 'on' || shownEscort().phase === 'on';
+  }
+
   /** Host: judge the recon: what the gun is on, how close the enemy is to spotting the tank, and whether one has. */
   private hostRecon(dt: number): void {
     if (this.recon.snap.phase !== 'on') return;
     const shared = enemyShared();
-    if (!shared.present[0] && !shared.present[RECON_ENEMIES - 1]) {
-      // Its enemy was taken away from under it (another scenario started).
+    if (this.otherFight() || (!shared.present[0] && !shared.present[RECON_ENEMIES - 1])) {
+      // Another fight started (Advance to contact, the convoy), or its enemy was taken away from under it.
       this.recon.stop();
       this.publish();
       return;
@@ -346,7 +353,7 @@ export class MissionsSystem extends createSystem({}) {
   private hostAmbush(dt: number): void {
     if (this.ambush.snap.phase !== 'on') return;
     const shared = enemyShared();
-    if (!shared.present[FIRST_COLUMN]) {
+    if (this.otherFight() || !shared.present[FIRST_COLUMN]) {
       this.ambush.stop();
       this.publish();
       return;

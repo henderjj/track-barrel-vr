@@ -12,6 +12,7 @@ import { PanelUi } from './panel-ui.js';
 import { driveStatus, heatStatus, resetTank, setEngineHeat, startDriving } from './drive-system.js';
 import { damageStatus, repairTank, TEST_HITS, testHit } from './damage-system.js';
 import { enemyStatus, meetGun, meetTank, startEnemies } from './enemy-system.js';
+import { escortAmbush, escortStatus, shownEscort, startEscort, stopEscort } from './escort-system.js';
 import { resetCombatTuning, scenarioStatus, setCombatTune, shownScenario, startScenario, stopScenario, tuningStatus } from './combat-system.js';
 import { TUNE_ROWS } from '../sim/combat.js';
 import { ambushStatus, reconStatus, shownAmbush, shownRecon, startMissionRun, stopMissionRun } from './missions-system.js';
@@ -528,6 +529,21 @@ export class GameMenuSystem extends createSystem({}) {
       stopScenario();
       this.render();
     });
+    // The Missions tab (F5.8): Start and Ambush close the menu, to fight; the status line sits below the buttons.
+    ui.on('menu-escort-start', () => {
+      this.setOpen(false);
+      stopRide();
+      startEscort();
+    });
+    ui.on('menu-escort-ambush', () => {
+      this.setOpen(false);
+      stopRide();
+      escortAmbush();
+    });
+    ui.on('menu-escort-stop', () => {
+      stopEscort();
+      this.render();
+    });
     for (const row of TUNE_ROWS) {
       row.options.forEach(([value], i) => {
         ui.on(`menu-tune-${row.key.toLowerCase()}-${i}`, () => {
@@ -675,6 +691,7 @@ export class GameMenuSystem extends createSystem({}) {
       this.ui?.setText('menu-damage-status', damageStatus());
       this.ui?.setText('menu-battle-status', scenarioStatus());
       this.ui?.setText('menu-tune-status', tuningStatus());
+      this.ui?.setText('menu-escort-status', escortStatus());
       this.renderTuning();
       this.ui?.setText('menu-recon-status', reconStatus());
       this.ui?.setText('menu-ambush-status', ambushStatus());
@@ -772,6 +789,8 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-battle-status', scenarioStatus());
     ui.setText('menu-battle-start', shownScenario().phase === 'on' ? 'Restart' : 'Start');
     ui.setText('menu-tune-status', tuningStatus());
+    ui.setText('menu-escort-status', escortStatus());
+    ui.setText('menu-escort-start', shownEscort().phase === 'on' ? 'Restart' : 'Start');
     this.renderTuning();
     ui.setText('menu-recon-status', reconStatus());
     ui.setText('menu-recon-start', shownRecon().phase === 'on' ? 'Restart' : 'Start');

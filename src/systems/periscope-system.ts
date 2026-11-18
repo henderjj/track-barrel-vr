@@ -47,6 +47,8 @@ import {
   PITCH,
 } from '../sim/periscope.js';
 import { angleDelta } from '../sim/turret.js';
+import { markPlace } from '../sim/hull-direction.js';
+import { acquireMarkTexture, markLens, releaseMarkTexture } from './hull-direction-system.js';
 import { HoldKind } from './hand-lock.js';
 import { addControl } from './mechanism-system.js';
 import { netLink } from './net-system.js';
@@ -186,6 +188,9 @@ class Scope {
   shownAngle = Number.NaN;
   /** "Go to it" is waiting for the seat system to sit the player in this seat (the placement count it waits to pass), or -1. */
   approachAfter = -1;
+  /** Whether it shows the hull direction mark (F2.4: the gunner's), and the call that stops it. */
+  private readonly marked: boolean;
+  private readonly unmark: (() => void) | null;
 
   constructor(readonly spec: PeriscopeSpec) {
     this.stats = periscopeStats[spec.id];
@@ -206,13 +211,15 @@ class Scope {
     this.mount.add(this.crankMount);
 
     this.target = createScopeTarget(PICTURE_WIDTH, PICTURE_HEIGHT);
+    const field = { magnification: PERISCOPE_POWER, halfFieldX: HALF_FIELD_X, halfFieldY: HALF_FIELD_Y, stop: 'rectangle' } as const;
+    // The gunner's shows the hull direction mark (F2.4) in its lower left, as the gunsight does: HullDirectionSystem turns it.
+    this.marked = spec.id === 'gunner';
     this.material = createLensMaterial(this.target, {
-      magnification: PERISCOPE_POWER,
-      halfFieldX: HALF_FIELD_X,
-      halfFieldY: HALF_FIELD_Y,
+      ...field,
       reticle: null,
-      stop: 'rectangle',
+      mark: this.marked ? { texture: acquireMarkTexture(), place: markPlace(field) } : null,
     });
+    this.unmark = this.marked ? markLens('periscope', { material: this.material, fromGun: () => this.angle, open: () => this.stats.open }) : null;
     this.lens = new Mesh(createPeriscopeWindowGeometry(), this.material);
     this.lens.name = `Periscope Window ${spec.id}`;
     this.lens.position.set(...lensInPeriscope(spec));
@@ -238,6 +245,8 @@ class Scope {
   }
 
   dispose(): void {
+    this.unmark?.();
+    if (this.marked) releaseMarkTexture();
     this.target.dispose();
     this.material.dispose();
     this.lens.geometry.dispose();

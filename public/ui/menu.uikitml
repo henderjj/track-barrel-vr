@@ -46,8 +46,11 @@
     Battle (F3.10): start or stop the combat scenario, Advance to contact,
     and tune the fight: the enemy's spotting, accuracy and reactions, the
     tank's hit box and armour, and how many hits through knock it out.
-    Missions (Phase 5): start or stop each scenario, one row each: Recon
-    unseen and Ambush a column (F5.10); their status lines below them.
+    Missions: escort a convoy of four trucks up the range road past the
+    guns and tanks, or jump to gun A's ambush of it (F5.8); the Battle
+    tab's tuning holds for it.
+    Recon unseen and Ambush a column (F5.10), one row each, their status
+    lines below them.
     Sights: go to the gunsight, lay the
     gun on a target's range mark, the sight's render choices; go to the
     driver's or the gunner's periscope, turn both ahead, their power. Test rigs: ride the tank (spike
@@ -372,7 +375,7 @@
       <div id="page-you" class="page">
         <div class="section">
           <div class="setting">
-            <div class="label">Coat colour</div>
+            <div class="label">Scarf colour</div>
             <div class="swatches">
               <div id="coat-0" class="swatch"><div id="coat-0-dot" class="dot"></div></div>
               <div id="coat-1" class="swatch"><div id="coat-1-dot" class="dot"></div></div>
@@ -874,6 +877,15 @@
       <div id="page-missions" class="page" style="display: none">
         <div class="section">
           <div class="setting">
+            <div class="label">Escort a convoy</div>
+            <div class="choices">
+              <Button id="menu-escort-start" class="choice" size="sm" variant="secondary">Start</Button>
+              <Button id="menu-escort-ambush" class="choice" size="sm" variant="secondary">Ambush</Button>
+              <Button id="menu-escort-stop" class="choice" size="sm" variant="secondary">Stop</Button>
+            </div>
+          </div>
+          <div id="menu-escort-status" class="hint">Escort a convoy: off</div>
+          <div class="setting">
             <div class="label">Recon unseen</div>
             <div class="choices">
               <Button id="menu-recon-start" class="choice" size="sm" variant="secondary">Start</Button>
@@ -909,6 +921,23 @@
             </div>
           </div>
           <div id="menu-sight-status" class="hint">Lean in to the eyepiece to look</div>
+          <div class="setting">
+            <div class="label">Hull outline</div>
+            <div class="choices">
+              <Button id="menu-hull-3" class="choice" size="sm" variant="secondary">Turret to 3</Button>
+              <Button id="menu-hull-7" class="choice" size="sm" variant="secondary">Turret to 7</Button>
+              <Button id="menu-hull-forward" class="choice" size="sm" variant="secondary">Forward</Button>
+            </div>
+          </div>
+          <div id="row-hullmark" class="setting">
+            <div id="row-hullmark-label" class="label">Setting</div>
+            <div id="row-hullmark-choices" class="choices">
+              <Button id="row-hullmark-0" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-hullmark-1" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-hullmark-2" class="choice" size="sm" variant="secondary">Choice</Button>
+              <Button id="row-hullmark-3" class="choice" size="sm" variant="secondary">Choice</Button>
+            </div>
+          </div>
           <div class="setting">
             <div class="label">Sight render</div>
             <div class="choices">
