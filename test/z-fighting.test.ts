@@ -1,6 +1,5 @@
-import { type BufferGeometry, Euler, Group, Mesh, MeshLambertMaterial, type Object3D, type Vector3 } from '@iwsdk/core';
+import { BufferAttribute, BufferGeometry, Group, Mesh, MeshLambertMaterial, type Object3D, type Vector3 } from '@iwsdk/core';
 import { describe, expect, it } from 'vitest';
-import * as avatar from '../src/scene-assets/avatar.scene-asset.js';
 import * as cabin from '../src/scene-assets/cabin.scene-asset.js';
 import * as ride from '../src/scene-assets/ride.scene-asset.js';
 import * as loading from '../src/scene-assets/loading.scene-asset.js';
@@ -21,9 +20,8 @@ import { markerParts, targetParts } from '../src/scene-assets/range.scene-asset.
 import { MARKER_RANGES, RANGE_TARGETS } from '../src/sim/range.js';
 import * as sight from '../src/scene-assets/sight.scene-asset.js';
 import { createTerrain } from '../src/scene-assets/terrain.scene-asset.js';
-import { GROUND_Y, hipPoint, SEATS } from '../src/sim/cabin.js';
+import { GROUND_Y } from '../src/sim/cabin.js';
 import { insideCabin } from '../src/sim/interior.js';
-import { createSeatedBody, solveSeatedBody } from '../src/sim/seated-body.js';
 import { TURRET } from '../src/sim/cabin.js';
 import { EYEPIECE } from '../src/sim/gunsight.js';
 import {
@@ -41,6 +39,7 @@ import * as leverRig from '../src/scene-assets/lever-rig.scene-asset.js';
 import * as mechanism from '../src/scene-assets/mechanism.scene-asset.js';
 import * as bench from '../src/sim/mechanism-bench.js';
 import { coplanarOverlaps, describeOverlaps, trianglesOf } from './support/coplanar.js';
+import { readGlb } from './support/glb.js';
 
 /**
  * Z-fighting: two differently coloured faces facing the same way, in (nearly)
@@ -629,42 +628,35 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
-  it('on the crew', () => {
-    for (const index of [0, 1]) {
-      expectNone([avatar.createAvatarHead(index)], CABIN_GAP);
-      expectNone([avatar.createAvatarTorso(index)], CABIN_GAP);
-      expectNone([avatar.createAvatarNeck(index)], CABIN_GAP);
-      expectNone([avatar.createAvatarLegs(index, 0.63)], CABIN_GAP);
+  it('on the crewman\'s beret, badge and headset, and on his head under them (F6.3b)', () => {
+    // The model is skinned and textured; only the headgear is vertex-coloured. Check it, and it against the head's
+    // skin, in the model as made (the headgear is drawn rigidly with the head).
+    const glb = readGlb('public/models/crewman/crewman.glb');
+    const gear = glb.meshes.find((m) => m.name === 'Headgear')!;
+    const bodyMesh = glb.meshes.find((m) => m.name === 'SuperHero_Male')!;
+    const skin = glb.json.skins![glb.json.nodes.find((n) => n.name === 'SuperHero_Male')!.skin!];
+    const headJoint = skin.joints.findIndex((j) => glb.json.nodes[j].name === 'Head');
+    const gearGeometry = new BufferGeometry();
+    gearGeometry.setAttribute('position', new BufferAttribute(gear.attributes.POSITION as Float32Array, 3));
+    gearGeometry.setAttribute('color', new BufferAttribute(gear.attributes.COLOR_0 as Float32Array, gear.sizes.COLOR_0));
+    const pos = bodyMesh.attributes.POSITION as Float32Array;
+    const joints = bodyMesh.attributes.JOINTS_0;
+    const weights = bodyMesh.attributes.WEIGHTS_0 as Float32Array;
+    const onHead = (v: number) => {
+      let best = 0;
+      for (let k = 1; k < 4; k++) if (weights[v * 4 + k] > weights[v * 4 + best]) best = k;
+      return joints[v * 4 + best] === headJoint;
+    };
+    const head: number[] = [];
+    const index = bodyMesh.indices!;
+    for (let t = 0; t < index.length; t += 3) {
+      if (![0, 1, 2].every((k) => onHead(index[t + k]))) continue;
+      for (let k = 0; k < 3; k++) head.push(pos[index[t + k] * 3], pos[index[t + k] * 3 + 1], pos[index[t + k] * 3 + 2]);
     }
-  });
-
-  it('on a seated crewmate, sitting up, leaning and looking round (F1.1b)', () => {
-    const seat = SEATS.driver;
-    const hip = hipPoint(seat, [0, 0, 0]);
-    // [lean of the head from the eye point (m), yaw, pitch, roll (rad)]
-    const poses: [[number, number, number], number, number, number][] = [
-      [[0, 0, 0], 0, 0, 0],
-      [[0, -0.06, -0.2], 0, -0.25, 0],
-      [[0, 0, 0], 1.2, -0.1, 0],
-      [[0.2, -0.04, 0], 0, 0, -0.2],
-      [[-0.2, -0.04, 0], -0.6, 0, 0.2],
-      [[0, 0.15, 0], 0, 0, 0],
-      [[0, -0.15, 0], 0, 0.3, 0],
-    ];
-    for (const [lean, yaw, pitch, roll] of poses) {
-      const head = avatar.createAvatarHead(0);
-      const torso = avatar.createAvatarTorso(0);
-      const neck = avatar.createAvatarNeck(0);
-      const legs = avatar.createAvatarLegs(0, hip[1] - seat.floorY);
-      head.position.set(seat.eye[0] + lean[0], seat.eye[1] + lean[1], seat.eye[2] + lean[2]);
-      head.quaternion.setFromEuler(new Euler(pitch, yaw, roll, 'YXZ'));
-      legs.position.set(...hip);
-      const q = head.quaternion;
-      const body = solveSeatedBody(head.position.toArray(), [q.x, q.y, q.z, q.w], hip, 0, 0, createSeatedBody());
-      avatar.poseCrewBody(torso, neck, body, 0);
-      for (const o of [head, torso, neck, legs]) o.updateMatrixWorld(true);
-      expectNone([head, torso, neck, legs], CABIN_GAP);
-    }
+    expect(head.length / 9).toBeGreaterThan(500);
+    const headGeometry = new BufferGeometry();
+    headGeometry.setAttribute('position', new BufferAttribute(new Float32Array(head), 3));
+    expectNone([mesh(gearGeometry, 'headgear'), new Mesh(headGeometry, new MeshLambertMaterial({ color: 0xe0b48f }))], CABIN_GAP);
   });
 
   it('in the riding spike\'s hull and turret, open and closed, with the turret turned', () => {
