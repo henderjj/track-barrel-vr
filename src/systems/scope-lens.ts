@@ -15,6 +15,7 @@ import {
   type WebGLRenderer,
 } from '@iwsdk/core';
 import type { GpuTimer } from '../perf/gpu-timer.js';
+import { MARK_LAYERS, type MarkPlace } from '../sim/hull-direction.js';
 import { HALF_IPD, lensSetback, sightOpen } from '../sim/sight.js';
 
 /**
@@ -37,6 +38,12 @@ export interface LensOptions {
   reticle: Texture | null;
   /** The field stop's shape: round (a gunsight's) or a rectangle (a periscope's window). */
   stop: 'round' | 'rectangle';
+  /**
+   * The hull direction mark (F2.4, src/sim/hull-direction.ts) drawn over the
+   * picture, or none: its texture (MARK_LAYERS square layers side by side)
+   * and where it sits. Turn it with `setMarkTurn`, hide it with `showMark`.
+   */
+  mark?: { texture: Texture; place: MarkPlace } | null;
 }
 
 /** A render target for a lens's picture, `width` × `height` texels, with 4× multisampling. */
@@ -50,6 +57,26 @@ export function createScopeTarget(width: number, height: number): WebGLRenderTar
 /** Change a lens's magnification (its picture's true field stays). */
 export function setLensMagnification(material: ShaderMaterial, magnification: number): void {
   material.uniforms.uMagnification.value = magnification;
+}
+
+/**
+ * Turn the hull direction mark's drawings (F2.4): the hull by `hull` and the
+ * gun by `gun`, radians anticlockwise (src/sim/hull-direction.ts, hullTurn
+ * and gunTurn). No allocation: call it every frame.
+ */
+export function setMarkTurn(material: ShaderMaterial, hull: number, gun: number): void {
+  (material.uniforms.uMarkTurn.value as Vector2).set(hull, gun);
+}
+
+/** Show or hide the hull direction mark (the Hull outline setting). */
+export function showMark(material: ShaderMaterial, shown: boolean): void {
+  material.uniforms.uMarkShown.value = shown ? 1 : 0;
+}
+
+/** The hull direction mark's turns as the shader draws them (hull, gun), radians, and whether it is shown: for the tests. */
+export function markDrawn(material: ShaderMaterial): { hull: number; gun: number; shown: boolean } {
+  const turn = material.uniforms.uMarkTurn.value as Vector2;
+  return { hull: turn.x, gun: turn.y, shown: material.uniforms.uMarkShown.value > 0.5 };
 }
 
 /**
@@ -186,13 +213,17 @@ export function renderScope(
 /**
  * The lens: shows the camera's picture as an image at infinity
  * (src/sim/sight.ts, fieldPoint, does the same sums), the reticle over it,
- * a soft field stop at the edge, and dark glass while it is closed or for
- * an eye it isn't shown to.
+ * the hull direction mark if it has one, a soft field stop at the edge, and
+ * dark glass while it is closed or for an eye it isn't shown to.
  */
 export function createLensMaterial(target: WebGLRenderTarget, options: LensOptions): ShaderMaterial {
+  const mark = options.mark ?? null;
+  const defines: Record<string, number> = {};
+  if (options.reticle) defines.RETICLE = 1;
+  if (mark) defines.HULL_MARK = 1;
   return new ShaderMaterial({
     name: 'ScopeLens',
-    defines: options.reticle ? { RETICLE: 1 } : {},
+    defines,
     uniforms: {
       uScene: { value: target.texture },
       uReticle: { value: options.reticle },
@@ -203,6 +234,11 @@ export function createLensMaterial(target: WebGLRenderTarget, options: LensOptio
       uOpen: { value: 0 },
       uEyes: { value: 3 },
       uView: { value: -1 },
+      uMark: { value: mark?.texture ?? null },
+      uMarkAt: { value: new Vector2(mark?.place.at[0] ?? 0, mark?.place.at[1] ?? 0) },
+      uMarkRadius: { value: mark?.place.radius ?? 1 },
+      uMarkTurn: { value: new Vector2() },
+      uMarkShown: { value: mark ? 1 : 0 },
     },
     vertexShader: /* glsl */ `
       uniform mat4 uWorldToLens;
@@ -224,7 +260,19 @@ export function createLensMaterial(target: WebGLRenderTarget, options: LensOptio
       uniform float uOpen;
       uniform int uEyes;
       uniform int uView;
+      uniform sampler2D uMark;
+      uniform vec2 uMarkAt;
+      uniform float uMarkRadius;
+      uniform vec2 uMarkTurn;
+      uniform float uMarkShown;
       varying vec3 vRay;
+      // The hull direction mark's square for a layer at mark point q, drawn turned anticlockwise by turn (src/sim/hull-direction.ts, markUv).
+      vec2 markUv(vec2 q, float turn, float layer) {
+        float c = cos(turn);
+        float s = sin(turn);
+        vec2 r = vec2(q.x * c + q.y * s, -q.x * s + q.y * c);
+        return vec2((r.x * 0.5 + 0.5 + layer) / ${MARK_LAYERS.toFixed(1)}, r.y * 0.5 + 0.5);
+      }
       void main() {
         vec3 d = normalize(vRay);
         float apparent = acos(clamp(-d.z, -1.0, 1.0));
@@ -239,7 +287,18 @@ export function createLensMaterial(target: WebGLRenderTarget, options: LensOptio
           float ink = 0.0;
         #endif
         float edge = uRect > 0.5 ? max(abs(p.x), abs(p.y)) : length(p);
-        vec3 picture = mix(scene, vec3(0.01), ink) * smoothstep(1.0, 0.94, edge);
+        vec3 inked = mix(scene, vec3(0.01), ink);
+        #ifdef HULL_MARK
+          // Mark space: its middle at the origin, 1 at its edge, round in the eye (src/sim/hull-direction.ts, fieldToMark).
+          vec2 q = (p - uMarkAt) * uTanHalf / uMarkRadius;
+          float inMark = (1.0 - smoothstep(0.97, 1.0, length(q))) * uMarkShown;
+          vec4 face = texture2D(uMark, markUv(q, 0.0, 0.0));
+          vec4 hull = texture2D(uMark, markUv(q, uMarkTurn.x, 1.0));
+          vec4 gun = texture2D(uMark, markUv(q, uMarkTurn.y, 2.0));
+          vec3 mark = mix(mix(face.rgb, hull.rgb, hull.a), gun.rgb, gun.a);
+          inked = mix(inked, mark, max(face.a, max(hull.a, gun.a)) * inMark);
+        #endif
+        vec3 picture = inked * smoothstep(1.0, 0.94, edge);
         #ifdef VIEW_ID
           int view = int(VIEW_ID);
         #else
