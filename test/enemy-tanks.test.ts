@@ -23,6 +23,7 @@ import {
   EnemyBattery,
   type EnemyShot,
   enemyName,
+  FIRST_COLUMN,
   FIRST_TANK,
   groundBlocks,
   noEnemies,
@@ -182,7 +183,8 @@ describe('enemy tanks on fixed routes (F3.3)', () => {
     b.fire(0, onLane(ENEMY_GUNS[0].meetZ));
     b.hits = 1;
     b.start(undefined, 'tanks');
-    expect(b.alive()).toBe(ENEMY_COUNT);
+    // Every enemy but the ambush's column (F5.10).
+    expect(b.alive()).toBe(FIRST_COLUMN);
     expect(b.alive('tanks')).toBe(2);
     // Starting the tanks with the guns running keeps the count.
     expect(b.shotsFired).toBe(1);
@@ -222,7 +224,8 @@ describe('enemy tanks on fixed routes (F3.3)', () => {
     const armoured = armouredTargets();
     expect(soft[ENEMY_TARGET_FIRST + TANK_A]).toBe(false);
     expect(armoured[ENEMY_TARGET_FIRST + TANK_A]).toBe(true);
-    expect(armoured.filter(Boolean)).toHaveLength(2);
+    // These two and the ambush column's two tanks (F5.10).
+    expect(armoured.filter(Boolean)).toHaveLength(4);
     expect(armoured[ENEMY_TARGET_FIRST]).toBe(false);
 
     // The crew parked where Meet A puts it, tank A halted at its meeting place, its face square to the crew.
@@ -258,15 +261,15 @@ describe('enemy tanks on fixed routes (F3.3)', () => {
     b.start();
     b.kill(TANK_B);
     const s = sharedOf(b, noEnemies());
-    expect(s.present).toEqual(Array.from({ length: ENEMY_COUNT }, () => true));
+    expect(s.present).toEqual(Array.from({ length: ENEMY_COUNT }, (_, i) => i < FIRST_COLUMN));
     expect(s.d[TANK_A]).toBe(77.5);
     const back = parseShared(JSON.parse(JSON.stringify({ t: 'enemy', ...s })));
     expect(back).toEqual(s);
     // From a build before F3.3: the guns only, there while on.
     const old = parseShared({ on: true, alive: [true, false, true], hits: 2, shots: 5, v: 9 });
-    expect(old?.present).toEqual([true, true, true, false, false]);
-    expect(old?.alive).toEqual([true, false, true, true, true]);
-    expect(old?.d).toEqual([0, 0, 0, 0, 0]);
+    expect(old?.present).toEqual(Array.from({ length: ENEMY_COUNT }, (_, i) => i < FIRST_TANK));
+    expect(old?.alive).toEqual(Array.from({ length: ENEMY_COUNT }, (_, i) => i !== 1));
+    expect(old?.d).toEqual(Array.from({ length: ENEMY_COUNT }, () => 0));
   });
 
   it('says how the fight with the tanks stands', () => {

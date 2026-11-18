@@ -834,6 +834,67 @@ async function ammoChecks(host, guest, label) {
   await enemyTankChecks(host, guest, label);
   await damageChecks(host, guest, label);
   await combatChecks(host, guest, label);
+  await missionChecks(host, guest, label);
+}
+
+/**
+ * The missions (F5.10): the guest's Recon unseen → Start runs it on the
+ * host with the guns and tanks in, both pages showing it, and its Stop ends
+ * it; the guest's Ambush a column → Start puts the host's column on both
+ * pages; the host's column moved up the road is drawn within a few metres
+ * of it on the guest's page; a lorry the host knocks out shows as out in
+ * both pages' ambush; the guest's Stop ends it and takes the column away.
+ */
+async function missionChecks(host, guest, label) {
+  const recon = (p) => p.page.evaluate(() => window.__recon.state());
+  const ambush = (p) => p.page.evaluate(() => window.__ambush.state());
+  const enemy = (p) => p.page.evaluate(() => window.__enemy.state());
+  await guest.page.evaluate(() => window.__recon.start());
+  const reconOn = await waitFor('the recon on both pages', async () => {
+    const [h, g] = await Promise.all([recon(host), recon(guest)]);
+    const e = await enemy(guest);
+    return h.phase === 'on' && g.phase === 'on' && e.present.slice(0, 5).every(Boolean) ? g : null;
+  }, 8000).catch(() => null);
+  await guest.page.evaluate(() => window.__recon.stop());
+  const reconOff = await waitFor('the recon off on both pages', async () => {
+    const [h, g] = await Promise.all([recon(host), recon(guest)]);
+    return h.phase === 'off' && g.phase === 'off' && !(await enemy(guest)).on ? g : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Recon unseen → Start runs it on the host with the guns and tanks in on both pages, and its Stop ends it (${label})`,
+    reconOn !== null && reconOff !== null, JSON.stringify(await Promise.all([host, guest].map(recon))));
+
+  await guest.page.evaluate(() => window.__ambush.start());
+  const on = await waitFor('the ambush on both pages', async () => {
+    const [h, g] = await Promise.all([ambush(host), ambush(guest)]);
+    const e = await enemy(guest);
+    return h.phase === 'on' && g.phase === 'on' && e.present.slice(5).every(Boolean) ? g : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Ambush a column → Start runs it on the host, the column in on both pages (${label})`, on !== null,
+    on ? '' : JSON.stringify(await Promise.all([host, guest].map(ambush))));
+
+  await host.page.evaluate(() => window.__enemy.placeColumn(340));
+  const near = await waitFor('the column drawn where the host has it', async () => {
+    const [h, g] = await Promise.all([enemy(host), enemy(guest)]);
+    const apart = Math.hypot(h.guns[5].x - g.guns[5].x, h.guns[5].z - g.guns[5].z);
+    return g.guns[5].drawn && apart < 6 ? { apart, h: h.guns[5], g: g.guns[5] } : null;
+  }, 8000).catch(() => null);
+  check(`The host's column up the road is drawn within a few metres of it on the guest's page (${label})`, near !== null,
+    near ? `${near.apart.toFixed(1)} m apart` : JSON.stringify((await Promise.all([host, guest].map(enemy))).map((e) => e.guns[5])));
+
+  await host.page.evaluate(() => window.__enemy.kill(6));
+  const out = await waitFor('the lorry out on both pages', async () => {
+    const [h, g] = await Promise.all([ambush(host), ambush(guest)]);
+    return h.out[1] && g.out[1] ? g : null;
+  }, 8000).catch(() => null);
+  check(`A lorry knocked out shows in both pages' ambush (${label})`, out !== null);
+
+  await guest.page.evaluate(() => window.__ambush.stop());
+  const off = await waitFor('the ambush off on both pages', async () => {
+    const [h, g] = await Promise.all([ambush(host), ambush(guest)]);
+    return h.phase === 'off' && g.phase === 'off' && !(await enemy(guest)).on ? g : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Stop ends the ambush on both pages and takes the column away (${label})`, off !== null);
+  await host.page.evaluate(() => { window.__damage.repair(); window.__drive.place(0, 0, 0); });
 }
 
 /**

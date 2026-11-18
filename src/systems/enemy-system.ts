@@ -2,6 +2,8 @@ import { createSystem, type Mesh, Vector3, VisibilityState } from '@iwsdk/core';
 import { crewPresence } from '../net/crew-presence.js';
 import { createEnemyGun, MUZZLE } from '../scene-assets/enemy-gun.scene-asset.js';
 import { createEnemyTank, createEnemyTankWreck, TANK_MUZZLE, TURRET_RING } from '../scene-assets/enemy-tank.scene-asset.js';
+import { createEnemyTruck } from '../scene-assets/enemy-truck.scene-asset.js';
+import { type ColumnPlace, columnPace, columnStart, COLUMN_VEHICLES, easeOff, onRoad } from '../sim/column.js';
 import { createBurst, createMuzzleFlash, createTracer } from '../scene-assets/loading.scene-asset.js';
 import { AMMO, smokeBlocks } from '../sim/ammo.js';
 import { ENEMY_TARGET_FIRST, type HitFace, type Vec3 } from '../sim/ballistics.js';
@@ -17,8 +19,11 @@ import {
   enemyNoteLines,
   type EnemyShared,
   type EnemyShot,
+  enemyPose,
+  FIRST_COLUMN,
   FIRST_TANK,
   groupOf,
+  isTank,
   gunNear,
   noEnemies,
   parseShared,
@@ -30,7 +35,7 @@ import {
   tankFace,
   type TankTarget,
 } from '../sim/enemy-guns.js';
-import { ENEMY_TANK, ENEMY_TANKS, type RoutePose, routePose, wrapRoute } from '../sim/enemy-tanks.js';
+import { ENEMY_TANK, ENEMY_TANKS, type RoutePose, wrapRoute } from '../sim/enemy-tanks.js';
 import { type CombatTuning, type TankView } from '../sim/combat.js';
 import { groundHeight, wrapTile } from '../sim/terrain.js';
 import { type DamageHit, resolveDamage, type TankPose } from '../sim/damage.js';
@@ -125,6 +130,38 @@ export function bringTanks(): void {
   active.restarted();
 }
 
+/**
+ * Host: a mission's battery (F5.10): every enemy stopped, then each of
+ * `groups` started afresh, the first with `seed`. Nothing given stops them all.
+ */
+export function startMission(groups: readonly EnemyGroup[], seed?: number): void {
+  if (!netLink.isHost || !active) return;
+  active.battery.stop();
+  active.holdFire = false;
+  groups.forEach((g, k) => active?.battery.start(k === 0 ? seed : undefined, g));
+  active.restarted();
+}
+
+/** Host: each enemy's spotting of the tank, 0 to 1, into `out` (F5.10's recon). */
+export function enemySpots(out: number[]): number[] {
+  const guns = active?.battery.guns;
+  out.length = 0;
+  if (guns) for (const g of guns) out.push(g.present && g.alive ? g.spot : 0);
+  return out;
+}
+
+/** Host: the first enemy there and alive that has the tank spotted (laying on it or laid), or -1. */
+export function enemyTracking(): number {
+  const guns = active?.battery.guns ?? [];
+  for (let i = 0; i < guns.length; i++) if (guns[i].present && guns[i].alive && guns[i].tracking) return i;
+  return -1;
+}
+
+/** Enemy `i`'s distance along its way as this page draws it, m (a tank's route, a column vehicle's road). */
+export function enemyAlong(i: number): number {
+  return active?.drawnAlong(i) ?? 0;
+}
+
 /** Host: the enemy holds its fire (the scenario is over) or fights on. */
 export function holdEnemyFire(hold: boolean): void {
   if (active) active.holdFire = hold;
@@ -210,6 +247,8 @@ interface EnemyDebug {
       ready: number;
       drawn: boolean;
       along: number;
+      /** A column vehicle's way off the road, m (F5.10). */
+      off: number;
       moving: boolean;
       /** Where this page draws it, tile-local, and its turret's turn on the hull (tanks), rad. */
       x: number;
@@ -230,6 +269,8 @@ interface EnemyDebug {
   hold(i: number, held: boolean): void;
   /** Host: put tank `i` (an enemy index) `d` m along its route. */
   place(i: number, d: number): void;
+  /** Host: put the column's lead `d` m along its road, the rest at their gaps behind it (F5.10). */
+  placeColumn(d: number): void;
   /** The shots this page has seen, oldest first. */
   shots(): EnemyShot[];
   meet(i: number): void;
@@ -262,6 +303,10 @@ export class EnemySystem extends createSystem({}) {
   readonly revealed: boolean[] = Array.from({ length: ENEMY_COUNT }, () => false);
   /** How far along its route each tank is as this page draws it, m. */
   private along: number[] = Array.from({ length: ENEMY_COUNT }, () => 0);
+  /** Each column vehicle's way off the road as drawn, m (F5.10). */
+  private off: number[] = Array.from({ length: ENEMY_COUNT }, () => 0);
+  /** The column as the guest drives it on between the host's messages (F5.10). */
+  private columnPlaces: ColumnPlace[] = COLUMN_VEHICLES.map(() => ({ present: false, alive: true, d: 0, moving: false, pass: false }));
   /** Each tank's turret's turn on its hull as drawn, rad. */
   private turretYaw: number[] = Array.from({ length: ENEMY_COUNT }, () => 0);
   /** Where each is drawn, tile-local (tests). */
@@ -325,6 +370,15 @@ export class EnemySystem extends createSystem({}) {
         this.whole.push(add(createEnemyGun(i)));
         this.turrets.push(null);
         this.wrecks.push(add(createEnemyGun(i, true)));
+      } else if (!isTank(i)) {
+        // A column lorry (F5.10): one mesh, no turret.
+        const lorry = add(createEnemyTruck(i - FIRST_COLUMN));
+        lorry.rotation.order = 'YXZ';
+        this.whole.push(lorry);
+        this.turrets.push(null);
+        const wreck = add(createEnemyTruck(i - FIRST_COLUMN, true));
+        wreck.rotation.order = 'YXZ';
+        this.wrecks.push(wreck);
       } else {
         const { hull, turret } = createEnemyTank(i - FIRST_TANK);
         hull.rotation.order = 'YXZ';
@@ -363,7 +417,7 @@ export class EnemySystem extends createSystem({}) {
     netLink.events.set('enemy-ask', (e) => {
       if (!netLink.isHost) return;
       const ask = e as { on?: unknown; group?: unknown; meet?: unknown; spot?: unknown };
-      const group: EnemyGroup = ask.group === 'tanks' ? 'tanks' : 'guns';
+      const group: EnemyGroup = ask.group === 'tanks' || ask.group === 'column' ? ask.group : 'guns';
       if (typeof ask.meet === 'number' && ENEMY_TANKS[ask.meet]) this.meet(ask.meet);
       else if (typeof ask.on === 'boolean') this.setOn(ask.on, group);
       if (typeof ask.spot === 'number') this.battery.spotNow(ask.spot);
@@ -409,6 +463,7 @@ export class EnemySystem extends createSystem({}) {
           ready: self.battery.guns[i].ready,
           drawn: self.whole[i].visible || self.wrecks[i].visible,
           along: self.along[i],
+          off: self.off[i],
           moving: self.moving(i),
           x: self.drawnAt[i][0],
           z: self.drawnAt[i][1],
@@ -449,6 +504,17 @@ export class EnemySystem extends createSystem({}) {
         self.battery.placeTank(i, d);
         self.afterChange();
       },
+      placeColumn: (d) => {
+        if (!netLink.isHost) return;
+        for (let k = 0; k < COLUMN_VEHICLES.length; k++) {
+          const g = self.battery.guns[FIRST_COLUMN + k];
+          g.d = d + columnStart(k);
+          g.pass = false;
+          g.off = 0;
+        }
+        self.battery.version++;
+        self.afterChange();
+      },
       shots: () => self.seen.map((s) => ({ ...s, from: [...s.from] as Vec3, to: [...s.to] as Vec3 })),
       meet: (i) => meetGun(i),
       meetTank: (j) => meetTank(j),
@@ -460,6 +526,11 @@ export class EnemySystem extends createSystem({}) {
       },
       tuning: () => ({ ...self.battery.tuning }),
     };
+  }
+
+  /** How far along its way enemy `i` is as drawn, m. */
+  drawnAlong(i: number): number {
+    return this.along[i] ?? 0;
   }
 
   /** Host: the battery was started or stopped from outside (the scenario): show it, and forget kills on the way. */
@@ -504,10 +575,11 @@ export class EnemySystem extends createSystem({}) {
   private applyShared(s: EnemyShared): void {
     const was = this.shared;
     if (s.on && !was.on) this.seen.length = 0;
-    for (const group of ['guns', 'tanks'] as const) {
+    for (const group of ['guns', 'tanks', 'column'] as const) {
       const before = sharedGroupOn(was, group);
       const now = sharedGroupOn(s, group);
-      if (now && !before) this.note(group === 'guns' ? 'Enemy guns ahead: watch for their flashes' : 'Enemy tanks about: watch for them moving', [group === 'guns' ? 'guns-ahead' : 'tanks-about']);
+      // The column's coming is the ambush's briefing (AmbushSystem).
+      if (now && !before && group !== 'column') this.note(group === 'guns' ? 'Enemy guns ahead: watch for their flashes' : 'Enemy tanks about: watch for them moving', [group === 'guns' ? 'guns-ahead' : 'tanks-about']);
       if (!now || !before) continue;
       let knocked = false;
       let left = 0;
@@ -517,18 +589,23 @@ export class EnemySystem extends createSystem({}) {
         count++;
         if (s.alive[i]) left++;
         if (was.present[i] && was.alive[i] && !s.alive[i]) {
-          this.note(`${enemyName(i)} knocked out`, [group === 'guns' ? 'gun-out' : 'tank-out']);
+          this.note(`${enemyName(i)} knocked out`, group === 'guns' ? ['gun-out'] : isTank(i) ? ['tank-out'] : undefined);
           knocked = true;
         }
       }
-      if (knocked && left === 0) {
+      if (knocked && left === 0 && group === 'column') {
+        this.note('The whole column knocked out', ['won-all']);
+      } else if (knocked && left === 0) {
         this.note(group === 'guns' ? `All ${count} guns knocked out` : count === 2 ? 'Both tanks knocked out' : `All ${count} tanks knocked out`, [
           group === 'guns' ? 'all-guns-out' : 'all-tanks-out',
         ]);
       }
     }
     for (let i = 0; i < ENEMY_COUNT; i++) {
-      if (s.present[i] && !was.present[i]) this.revealed[i] = false;
+      if (s.present[i] && !was.present[i]) {
+        this.revealed[i] = false;
+        this.off[i] = 0;
+      }
       if (!netLink.isHost) this.along[i] = s.d[i];
     }
     was.on = s.on;
@@ -536,6 +613,8 @@ export class EnemySystem extends createSystem({}) {
     was.alive = [...s.alive];
     was.d = [...s.d];
     was.moving = [...s.moving];
+    was.pass = [...s.pass];
+    was.sprung = s.sprung;
     was.hits = s.hits;
     was.shots = s.shots;
     was.v = s.v;
@@ -543,7 +622,8 @@ export class EnemySystem extends createSystem({}) {
   }
 
   private faceOff(i: number): boolean {
-    return !(this.shared.present[i] && this.shared.alive[i]);
+    // A column vehicle is a target only on the road (F5.10).
+    return !(this.shared.present[i] && this.shared.alive[i]) || (i >= FIRST_COLUMN && !onRoad(this.along[i]));
   }
 
   private applyFaces(): void {
@@ -622,7 +702,7 @@ export class EnemySystem extends createSystem({}) {
   /** The commander's fire order on enemy `gun` from the tank and turret as they are now. */
   private fireOrder(gun: number): string[] {
     const t = tankState();
-    return fireOrder(enemyBearing(gun, t.x, t.z, t.heading, turretState().yaw, this.along[gun], this.orderBearing), groupOf(gun) === 'tanks');
+    return fireOrder(enemyBearing(gun, t.x, t.z, t.heading, turretState().yaw, this.along[gun], this.orderBearing), isTank(gun));
   }
 
   update(delta: number): void {
@@ -670,15 +750,58 @@ export class EnemySystem extends createSystem({}) {
    */
   private driveTanks(dt: number, paused: boolean): void {
     const tank = tankState();
+    if (!netLink.isHost && !paused) this.driveColumn(dt);
     for (let i = FIRST_TANK; i < ENEMY_COUNT; i++) {
-      const route = ENEMY_TANKS[i - FIRST_TANK];
-      if (netLink.isHost) this.along[i] = this.battery.guns[i].d;
-      else if (!paused && this.moving(i)) this.along[i] = wrapRoute(route, this.along[i] + ENEMY_TANK.speed * dt);
+      const column = i >= FIRST_COLUMN;
+      if (netLink.isHost) {
+        this.along[i] = this.battery.guns[i].d;
+        this.off[i] = this.battery.guns[i].off;
+      } else if (!paused && !column && this.moving(i)) {
+        this.along[i] = wrapRoute(ENEMY_TANKS[i - FIRST_TANK], this.along[i] + ENEMY_TANK.speed * dt);
+      }
+      // A column vehicle comes onto the road and leaves it as it drives (F5.10).
+      if (column) setFaceOff(ENEMY_TARGET_FIRST + i, this.faceOff(i));
       if (this.faceOff(i)) continue;
-      gunNear(i, tank.x, tank.z, this.at, this.along[i]);
+      gunNear(i, tank.x, tank.z, this.at, this.along[i], this.off[i]);
       const flight = Math.hypot(this.at[0] - tank.x, this.at[1] - tank.z) / AMMO.ap.speed;
-      const ahead = this.moving(i) ? ENEMY_TANK.speed * flight : 0;
-      setFacePose(ENEMY_TARGET_FIRST + i, tankFace(i, this.along[i], ahead, wrapTile(tank.x), wrapTile(tank.z), this.face));
+      const ahead = this.moving(i) ? this.speedOf(i) * flight : 0;
+      setFacePose(ENEMY_TARGET_FIRST + i, tankFace(i, this.along[i], ahead, wrapTile(tank.x), wrapTile(tank.z), this.face, this.off[i]));
+    }
+  }
+
+  /** How fast driving enemy `i` goes as this page has it, m/s. */
+  private speedOf(i: number): number {
+    if (i < FIRST_COLUMN) return ENEMY_TANK.speed;
+    const k = i - FIRST_COLUMN;
+    this.placeColumn();
+    return Math.max(0, columnPace(this.columnPlaces, k, this.shared.sprung, 0));
+  }
+
+  /** The column's places as this page has them, for its pace. */
+  private placeColumn(): void {
+    for (let k = 0; k < this.columnPlaces.length; k++) {
+      const i = FIRST_COLUMN + k;
+      const p = this.columnPlaces[k];
+      p.present = this.shared.present[i];
+      p.alive = this.shared.alive[i];
+      p.d = this.along[i];
+      p.moving = this.moving(i);
+      p.pass = this.shared.pass[i];
+    }
+  }
+
+  /** A guest's column between the host's messages (F5.10): each vehicle the host has driving on at its pace, easing off the road to pass. */
+  private driveColumn(dt: number): void {
+    this.placeColumn();
+    for (let k = 0; k < this.columnPlaces.length; k++) {
+      const i = FIRST_COLUMN + k;
+      if (!this.shared.present[i]) continue;
+      if (this.moving(i)) {
+        const pace = columnPace(this.columnPlaces, k, this.shared.sprung, dt);
+        if (pace > 0) this.along[i] += pace * dt;
+        this.columnPlaces[k].d = this.along[i];
+      }
+      this.off[i] = easeOff(this.off[i], this.shared.pass[i], dt);
     }
   }
 
@@ -690,7 +813,8 @@ export class EnemySystem extends createSystem({}) {
     const offZ = tank.z - wrapTile(tank.z);
     this.player.head.getWorldPosition(this.eye);
     for (let i = 0; i < ENEMY_COUNT; i++) {
-      const present = this.shared.present[i];
+      // A column vehicle not yet on the road, or got away off its end, isn't drawn (F5.10).
+      const present = this.shared.present[i] && (i < FIRST_COLUMN || onRoad(this.along[i]));
       const alive = this.shared.alive[i];
       const whole = this.whole[i];
       const wreck = this.wrecks[i];
@@ -703,7 +827,7 @@ export class EnemySystem extends createSystem({}) {
         dust.visible = false;
         continue;
       }
-      const [x, z] = gunNear(i, tank.x, tank.z, this.at, this.along[i]);
+      const [x, z] = gunNear(i, tank.x, tank.z, this.at, this.along[i], this.off[i]);
       this.drawnAt[i][0] = wrapTile(x);
       this.drawnAt[i][1] = wrapTile(z);
       const y = groundHeight(x, z);
@@ -723,7 +847,7 @@ export class EnemySystem extends createSystem({}) {
         continue;
       }
       // A tank faces along its route (its model's +Z), tilted to the ground under it; its turret turns on the crew's tank while it halts for it.
-      routePose(ENEMY_TANKS[i - FIRST_TANK], this.along[i], this.pose);
+      enemyPose(i, this.along[i], this.off[i], this.pose);
       const hullYaw = this.pose.heading + Math.PI;
       const fx = Math.sin(hullYaw);
       const fz = Math.cos(hullYaw);

@@ -132,7 +132,7 @@ The indicators the crew read most, and a game mode that needs no enemies, so the
 | F5.7 | Randomised targets, routes and weather | Planned | F1.7 | | Each random part gets a URL switch to turn it off in tests |
 | F5.8 | Scenario: escort a convoy | Planned | F3.3 | | |
 | F5.9 | Scenario: hold a hill hull-down | Planned | F3.3 | | |
-| F5.10 | Scenarios: recon unseen, ambush a column | Planned | F3.3 | | |
+| F5.10 | Scenarios: recon unseen, ambush a column | Headset check | F3.3 | | [recon-ambush.md](recon-ambush.md): Missions → Recon unseen (report the three guns and two tanks by laying the gun on each for 3 s, back to the start unspotted) and Ambush a column (hull down behind a new wall, a tank, two lorries and a tank cross 240 m off; knock out three); the column is the battery's 'column' group (5–8, targets 14–17); `recon`/`ambush` events, no packet |
 | F5.11 | Night and fog conditions | Planned | F5.7 | | Retint lights, fog and sky; no new lights |
 
 ## Phase 6: Polish

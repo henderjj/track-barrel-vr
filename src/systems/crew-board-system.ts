@@ -16,7 +16,8 @@ import {
   type EnemyCount,
   toGo,
 } from '../sim/crew-board.js';
-import { FIRST_TANK } from '../sim/enemy-guns.js';
+import { FIRST_TANK, groupOf } from '../sim/enemy-guns.js';
+import { missionBoard, shownAmbush, shownRecon } from './missions-system.js';
 import { clockLines } from '../sim/range-run.js';
 import { shownScenario } from './combat-system.js';
 import { shownCourse } from './course-system.js';
@@ -176,13 +177,16 @@ export class CrewBoardSystem extends createSystem({}) {
   private clock(): number {
     const s = shownScenario();
     if (s.phase !== 'off') return s.time;
+    // A mission (F5.10), running or just over.
+    if (shownRecon().phase !== 'off') return shownRecon().time;
+    if (shownAmbush().phase !== 'off') return shownAmbush().time;
     const r = shownRun();
     if (r.phase !== 'idle') return Math.max(0, r.clock);
     return this.time;
   }
 
   private timed(): boolean {
-    return shownScenario().phase !== 'off' || shownRun().phase !== 'idle';
+    return shownScenario().phase !== 'off' || shownRun().phase !== 'idle' || shownRecon().phase !== 'off' || shownAmbush().phase !== 'off';
   }
 
   /** The numbers the board depends on, into `now`; whether any differs from last time. */
@@ -209,8 +213,11 @@ export class CrewBoardSystem extends createSystem({}) {
     n[8] = run.phase === 'idle' ? -1 : run.shots * 16 + hits;
     n[9] = course.started ? course.laps * 1000 + course.passed + course.penalties * 100 : -1;
     n[10] = this.fontsReady ? 1 : 0;
+    // The F5.10 missions.
+    n[11] = shownRecon().v * 4 + PHASES.indexOf(shownRecon().phase);
+    n[12] = shownAmbush().v * 4 + PHASES.indexOf(shownAmbush().phase);
     let differs = false;
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i < 13; i++) {
       if (n[i] !== this.seen[i]) {
         differs = true;
         this.seen[i] = n[i];
@@ -232,6 +239,8 @@ export class CrewBoardSystem extends createSystem({}) {
     this.tanks.in = false;
     e.present.forEach((present, i) => {
       if (!present) return;
+      // The ambush's column (F5.10) has its own lines.
+      if (groupOf(i) === 'column') return;
       const c = i < FIRST_TANK ? this.guns : this.tanks;
       c.total++;
       c.in = true;
@@ -242,7 +251,11 @@ export class CrewBoardSystem extends createSystem({}) {
     if (shells) shells.shells.forEach((shell, i) => shell.place === 'rack' && this.rack[shells.kinds[i]]++);
     let drill = '';
     let drillTasks: string[] = [];
-    if (run.phase !== 'idle') {
+    const mission = missionBoard();
+    if (mission) {
+      drill = mission.drill;
+      drillTasks = mission.tasks.map((t) => t.text);
+    } else if (run.phase !== 'idle') {
       const [heading, time, count] = clockLines(run);
       drill = heading;
       drillTasks = [count, time].filter((t) => t !== '');

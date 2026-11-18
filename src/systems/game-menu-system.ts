@@ -14,6 +14,7 @@ import { damageStatus, repairTank, TEST_HITS, testHit } from './damage-system.js
 import { enemyStatus, meetGun, meetTank, startEnemies } from './enemy-system.js';
 import { resetCombatTuning, scenarioStatus, setCombatTune, shownScenario, startScenario, stopScenario, tuningStatus } from './combat-system.js';
 import { TUNE_ROWS } from '../sim/combat.js';
+import { ambushStatus, reconStatus, shownAmbush, shownRecon, startMissionRun, stopMissionRun } from './missions-system.js';
 import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-system.js';
 import { goUpTheRange, rangeStatus } from './range-system.js';
 import { practiseLine, raceStatus, readyAtLine, readyToFire, runStatus, shownRun, startRace, startRun, stopRun } from './range-run-system.js';
@@ -539,6 +540,18 @@ export class GameMenuSystem extends createSystem({}) {
       resetCombatTuning();
       this.render();
     });
+    // The Missions tab (F5.10): Start closes the menu, to play; Stop leaves it open. Status lines below every button, as Battle's.
+    for (const mission of ['recon', 'ambush'] as const) {
+      ui.on(`menu-${mission}-start`, () => {
+        this.setOpen(false);
+        stopRide();
+        startMissionRun(mission);
+      });
+      ui.on(`menu-${mission}-stop`, () => {
+        stopMissionRun(mission);
+        this.render();
+      });
+    }
     ui.on('menu-loading', () => {
       this.setOpen(false);
       startLoading();
@@ -663,6 +676,8 @@ export class GameMenuSystem extends createSystem({}) {
       this.ui?.setText('menu-battle-status', scenarioStatus());
       this.ui?.setText('menu-tune-status', tuningStatus());
       this.renderTuning();
+      this.ui?.setText('menu-recon-status', reconStatus());
+      this.ui?.setText('menu-ambush-status', ambushStatus());
       this.ui?.setText('menu-run-status', runStatus());
       this.ui?.setText('menu-course-status', courseStatus());
       this.ui?.setText('menu-race-status', raceStatus());
@@ -758,6 +773,10 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-battle-start', shownScenario().phase === 'on' ? 'Restart' : 'Start');
     ui.setText('menu-tune-status', tuningStatus());
     this.renderTuning();
+    ui.setText('menu-recon-status', reconStatus());
+    ui.setText('menu-recon-start', shownRecon().phase === 'on' ? 'Restart' : 'Start');
+    ui.setText('menu-ambush-status', ambushStatus());
+    ui.setText('menu-ambush-start', shownAmbush().phase === 'on' ? 'Restart' : 'Start');
     ui.setText('menu-run-status', runStatus());
     const run = shownRun();
     ui.setText('menu-run-start', run.phase === 'running' && run.mode === 'range' ? 'Restart' : 'Start');
