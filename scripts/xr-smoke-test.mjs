@@ -2395,10 +2395,15 @@ async function tankSounds() {
     Object.keys(played).every((id) => played[id] > heard0[id]) && line.length > 0,
     `${Object.keys(played).filter((id) => played[id] > heard0[id]).join(', ')}; "${line}"`);
 
-  // Run through: the tour takes the engine up out of gear within a few seconds; pressed again, it stops.
+  // Run through: the tour takes the engine up out of gear within a few seconds; pressed again, it stops. The rev
+  // standing still lasts about 3 s of the tour's wall clock, which a slow runner's ray click (up to 3 s held) and
+  // polls through the CLI can step right over, so the page itself keeps the highest standing reading it sees.
+  evalInApp('(window.__tourPeak = null, window.__tourTimer = setInterval(() => { const a = window.__audio.state(); '
+    + 'if (a.tour && a.rumble < 0.01 && !(window.__tourPeak && window.__tourPeak.engineHz >= a.engineHz)) window.__tourPeak = a; }, 50), true)');
   await menuClick('menu-audio-tour');
-  const touring = await waitFor('the tour to rev the engine', () => { const a = audio(); return a.tour && a.engineHz > 100 && a; }, 12000)
-    .catch(() => audio());
+  const touring = await waitFor('the tour to rev the engine', () => { const a = evalInApp('window.__tourPeak'); return a && a.engineHz > 100 && a; }, 12000)
+    .catch(() => evalInApp('window.__tourPeak') ?? audio());
+  evalInApp('(clearInterval(window.__tourTimer), true)');
   const tourLine = evalInApp("window.__gameMenu.text('menu-audio-status')");
   await menuClick('menu-audio-tour');
   const toured = await waitFor('the tour to stop', () => { const a = audio(); return !a.tour && a.engineHz < 60 && a; }, 8000).catch(() => audio());
@@ -3708,10 +3713,14 @@ async function theCrewBoard() {
     driverSees.length > 0.45 && driverSees.length < 1 && driverSees.cos > 0.7 && gunnerSees.length > 0.45 && gunnerSees.length < 1 && gunnerSees.cos > 0.7 && faces.draws > 0,
     `driver's ${driverSees.length.toFixed(2)} m away (cos ${driverSees.cos.toFixed(2)}), gunner's ${gunnerSees.length.toFixed(2)} m (cos ${gunnerSees.cos.toFixed(2)}), drawn ${faces.draws} times`);
 
+  // The hit's call is posted on the frame its sign goes up, after the zone is already hatched; wait for a call newer
+  // than any before the hit, or an earlier step's last call (a scenario's debrief) passes for it on a slow frame.
+  const callBefore = evalInApp('(() => { const c = window.__crewBoard.calls(); return c.length ? c[c.length - 1].id : 0; })()');
   evalInApp('(window.__damage.test("engine"), true)');
   const hit = await waitFor('the hit on the board', () => {
     const t = evalInApp('window.__crewBoard.text()');
-    return t.zones.engine && t.calls.length > 0 && evalInApp('window.__crewBoard.key()').includes(t.calls[0].text) ? t : null;
+    const newest = evalInApp('(() => { const c = window.__crewBoard.calls(); return c.length ? c[c.length - 1].id : 0; })()');
+    return t.zones.engine && newest > callBefore && t.calls.length > 0 && evalInApp('window.__crewBoard.key()').includes(t.calls[0].text) ? t : null;
   }, 8000).catch(() => null);
   const sign = () => evalInApp("(() => { const s = window.__debug.world.scene.getObjectByName('Damage Sign'); return { text: window.__damage.sign, drawn: s ? s.visible : null }; })()");
   const quiet = sign();

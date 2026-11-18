@@ -3,6 +3,7 @@ import { beam, mergeParts, type Part } from './lowpoly.js';
 import type { ButtonSpec, LeverSpec, PullSpec, ToggleSpec, TwistSpec, Vec3, WheelSpec, YokeSpec } from '../sim/mechanism.js';
 import { BENCH, BEZEL, type BenchMount, MOUNTS, mountToBench, TWIST } from '../sim/mechanism-bench.js';
 import { litInside } from './cabin-light.js';
+import { interiorFinish } from './finish.js';
 
 /**
  * The mechanism kit's models (F1.3, docs/mechanisms.md): one moving part per
@@ -30,7 +31,7 @@ const RIM_TUBE = 0.011;
 /** The screen sits this far in front of its frame's face, m. */
 export const SCREEN_GAP = 0.006;
 
-const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }), { finish: true });
 
 const ALONG_Z: readonly [number, number, number] = [Math.PI / 2, 0, 0];
 const ALONG_X: readonly [number, number, number] = [0, 0, Math.PI / 2];
@@ -41,15 +42,30 @@ function named(geometry: ReturnType<typeof mergeParts>, name: string): Mesh {
   return mesh;
 }
 
-/** A lever standing upright with its pivot at the origin: a steel rod and a rubber handle, the rod ending inside the handle, and a knob on top. */
+/**
+ * A lever standing upright with its pivot at the origin: a steel rod tapering
+ * up from a boss at the pivot, a ferrule where it goes into the handle, a
+ * rubber handle with finger ridges, and a cap on top.
+ */
 export function createLever(spec: LeverSpec): Mesh {
   const handleStart = spec.length - spec.gripLength;
-  return named(mergeParts([
-    beam([0, -0.03, 0], [0, handleStart + 0.02, 0], ROD_RADIUS, STEEL, 6),
-    { geometry: new CylinderGeometry(GRIP_RADIUS, GRIP_RADIUS, spec.gripLength, 8, 1), color: RUBBER, position: [0, handleStart + spec.gripLength / 2, 0] },
-    // Wider than the handle so their faces don't meet.
-    { geometry: new CylinderGeometry(GRIP_RADIUS + 0.004, GRIP_RADIUS + 0.006, 0.014, 8, 1), color: STEEL, position: [0, spec.length + 0.004, 0] },
-  ]), 'Lever');
+  // The rod ends inside the ferrule.
+  const rodLength = handleStart + 0.036;
+  const parts: Part[] = [
+    { geometry: new CylinderGeometry(ROD_RADIUS * 0.8, ROD_RADIUS * 1.15, rodLength, 8, 1), color: STEEL, position: [0, -0.03 + rodLength / 2, 0] },
+    // The ferrule, wider than both the rod and the handle.
+    { geometry: new CylinderGeometry(GRIP_RADIUS + 0.003, GRIP_RADIUS + 0.003, 0.016, 10, 1), color: STEEL, position: [0, handleStart + 0.004, 0] },
+    // The handle starts at the ferrule's top, so its faces never sit just inside the ferrule's.
+    { geometry: new CylinderGeometry(GRIP_RADIUS, GRIP_RADIUS, spec.gripLength - 0.012, 10, 1), color: RUBBER, position: [0, handleStart + 0.012 + (spec.gripLength - 0.012) / 2, 0] },
+    // A cap a little wider than the handle so their faces don't meet (the convoy grips clamp over it).
+    { geometry: new CylinderGeometry(GRIP_RADIUS + 0.004, GRIP_RADIUS + 0.006, 0.014, 10, 1), color: STEEL, position: [0, spec.length + 0.004, 0] },
+  ];
+  // Finger ridges round the handle, standing 2.5 mm proud.
+  for (let i = 1; i <= 3; i++) {
+    const y = handleStart + (i * spec.gripLength) / 4.4;
+    parts.push({ geometry: new CylinderGeometry(GRIP_RADIUS + 0.0025, GRIP_RADIUS + 0.0025, 0.006, 10, 1), color: RUBBER, position: [0, y, 0] });
+  }
+  return named(mergeParts(parts, interiorFinish), 'Lever');
 }
 
 /**
@@ -61,18 +77,26 @@ export function createLever(spec: LeverSpec): Mesh {
 export function createWheel(spec: WheelSpec): Mesh {
   const r = spec.radius;
   const parts: Part[] = [
-    { geometry: new TorusGeometry(r, RIM_TUBE, 6, 18), color: STEEL_DARK },
-    { geometry: new CylinderGeometry(0.022, 0.022, 0.04, 8, 1), color: STEEL, rotation: ALONG_Z },
+    { geometry: new TorusGeometry(r, RIM_TUBE, 8, 24), color: STEEL_DARK },
+    { geometry: new CylinderGeometry(0.024, 0.024, 0.04, 10, 1), color: STEEL, rotation: ALONG_Z },
+    // The nut on the hub's face.
+    { geometry: new CylinderGeometry(0.012, 0.012, 0.012, 6, 1), color: STEEL_DARK, position: [0, 0, 0.024], rotation: ALONG_Z },
   ];
+  // Three flat spokes, wider at the hub; one marked so the wheel's turn shows.
   for (let i = 0; i < 3; i++) {
     const a = (i * 2 * Math.PI) / 3;
-    const out = [-(r - 0.004) * Math.sin(a), (r - 0.004) * Math.cos(a), 0];
-    parts.push(beam([-0.012 * Math.sin(a), 0.012 * Math.cos(a), 0], out, 0.007, i === 0 ? MARK : STEEL, 5));
+    const length = r - 0.02;
+    const mid = 0.02 + length / 2;
+    const spoke = new CylinderGeometry(0.005, 0.009, length, 4, 1);
+    spoke.scale(1.6, 1, 0.7);
+    parts.push({ geometry: spoke, color: i === 0 ? MARK : STEEL, position: [-mid * Math.sin(a), mid * Math.cos(a), 0], rotation: [0, 0, a] });
   }
   if (spec.grip === 'crank') {
     // The knob: rubber on a steel pin that starts inside the rim.
     parts.push({ geometry: new CylinderGeometry(0.008, 0.008, 0.02, 6, 1), color: STEEL, position: [0, r, 0.004], rotation: ALONG_Z });
-    parts.push({ geometry: new CylinderGeometry(0.015, 0.015, spec.knobLength - 0.01, 8, 1), color: RUBBER, position: [0, r, 0.01 + (spec.knobLength - 0.01) / 2], rotation: ALONG_Z });
+    parts.push({ geometry: new CylinderGeometry(0.015, 0.0135, spec.knobLength - 0.01, 10, 1), color: RUBBER, position: [0, r, 0.01 + (spec.knobLength - 0.01) / 2], rotation: ALONG_Z });
+    // The knob's rounded end.
+    parts.push({ geometry: new CylinderGeometry(0.008, 0.0135, 0.006, 10, 1), color: RUBBER, position: [0, r, 0.01 + spec.knobLength - 0.01 + 0.003], rotation: ALONG_Z });
     if (spec.trigger) {
       // The trigger bar along the knob's outer side, 4 mm off the rubber, on a stem from the pin.
       const along = spec.knobLength - 0.01;
@@ -80,7 +104,7 @@ export function createWheel(spec: WheelSpec): Mesh {
       parts.push({ geometry: new BoxGeometry(0.01, 0.02, 0.008), color: STEEL_DARK, position: [0, r + 0.015, 0.004] });
     }
   }
-  return named(mergeParts(parts), spec.grip === 'crank' ? 'Crank' : 'Handwheel');
+  return named(mergeParts(parts, interiorFinish), spec.grip === 'crank' ? 'Crank' : 'Handwheel');
 }
 
 /**
@@ -95,7 +119,7 @@ export function createTwistGrip(spec: TwistSpec): Mesh {
     { geometry: new CylinderGeometry(GRIP_RADIUS, GRIP_RADIUS, spec.length + 0.004, 8, 1), color: RUBBER, position: [0, spec.base + spec.length / 2 - 0.002, 0] },
     { geometry: new BoxGeometry(0.012, 0.028, 0.015), color: STEEL_DARK, position: [0, top - 0.03, -GRIP_RADIUS - 0.004] },
     { geometry: new BoxGeometry(0.008, 0.008, 0.03), color: MARK, position: [0, top + 0.002, -0.012] },
-  ]), 'Twist Grip');
+  ], interiorFinish), 'Twist Grip');
 }
 
 /** The pedestal a twist grip stands on, its top 3 mm under the grip's flange. */
@@ -126,7 +150,7 @@ export function createYoke(spec: YokeSpec): Mesh {
       position: [s * (spec.outer + 0.004), 0, 0] as const,
       rotation: ALONG_X,
     })),
-  ]), 'Yoke');
+  ], interiorFinish), 'Yoke');
 }
 
 /**
@@ -136,8 +160,8 @@ export function createYoke(spec: YokeSpec): Mesh {
 export function createButtonCap(spec: ButtonSpec, color: number): Mesh {
   const geometry = mergeParts([
     { geometry: new CylinderGeometry(spec.radius, spec.radius, 0.014, 10, 1), color, position: [0, 0, -0.007], rotation: ALONG_Z },
-  ]);
-  const mesh = new Mesh(geometry, litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 })));
+  ], interiorFinish);
+  const mesh = new Mesh(geometry, litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }), { finish: true }));
   mesh.name = 'Button Cap';
   return mesh;
 }
@@ -148,7 +172,7 @@ export const TOGGLE_NUT = { radius: 0.008, proud: 0.004 } as const;
 /** A toggle switch's nut, fixed on the face at the origin (toggle space, +Z out of the face). */
 export function createToggleNut(): Mesh {
   const mesh = new Mesh(
-    mergeParts([{ geometry: new CylinderGeometry(TOGGLE_NUT.radius, TOGGLE_NUT.radius, TOGGLE_NUT.proud, 6, 1), color: STEEL, position: [0, 0, TOGGLE_NUT.proud / 2], rotation: ALONG_Z }]),
+    mergeParts([{ geometry: new CylinderGeometry(TOGGLE_NUT.radius, TOGGLE_NUT.radius, TOGGLE_NUT.proud, 6, 1), color: STEEL, position: [0, 0, TOGGLE_NUT.proud / 2], rotation: ALONG_Z }], interiorFinish),
     material,
   );
   mesh.name = 'Toggle Nut';
@@ -165,8 +189,8 @@ export function createToggleBat(spec: ToggleSpec, color: number): Mesh {
   const geometry = mergeParts([
     { geometry: new CylinderGeometry(spec.radius * 0.7, spec.radius, spec.length - knob, 8, 1), color: STEEL, position: [0, 0, (spec.length - knob) / 2], rotation: ALONG_Z },
     { geometry: new CylinderGeometry(knob, knob, knob * 2, 8, 1), color, position: [0, 0, spec.length - knob], rotation: ALONG_Z },
-  ]);
-  const mesh = new Mesh(geometry, litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 })));
+  ], interiorFinish);
+  const mesh = new Mesh(geometry, litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }), { finish: true }));
   mesh.name = 'Toggle Bat';
   return mesh;
 }
@@ -190,9 +214,8 @@ export function createPullKnob(spec: PullSpec, color: number): Mesh {
       : [
           { geometry: new CylinderGeometry(radius, radius * 0.9, depth, 10, 1), color, position: [0, 0, depth / 2], rotation: ALONG_Z },
           { geometry: new CylinderGeometry(0.003, 0.003, travel, 6, 1), color: STEEL, position: [0, 0, -travel / 2], rotation: ALONG_Z },
-        ],
-  );
-  const mesh = new Mesh(geometry, litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 })));
+        ], interiorFinish);
+  const mesh = new Mesh(geometry, litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }), { finish: true }));
   mesh.name = 'Pull Knob';
   return mesh;
 }
@@ -250,6 +273,6 @@ export function createBench(): Mesh {
     const x = s * (board.width / 2 - 0.01);
     parts.push(beam([x, -0.01, top.z - top.depth / 2 + 0.03], [x, fy - board.height * 0.3, fz - 0.005], 0.01, STEEL, 5));
   }
-  return named(mergeParts(parts), 'Mechanism Bench');
+  return named(mergeParts(parts, interiorFinish), 'Mechanism Bench');
 }
 

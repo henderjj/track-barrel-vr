@@ -22,6 +22,7 @@ import { MARKER_RANGES, RANGE_TARGETS } from '../src/sim/range.js';
 import * as sight from '../src/scene-assets/sight.scene-asset.js';
 import { createTerrain } from '../src/scene-assets/terrain.scene-asset.js';
 import { GROUND_Y, hipPoint, SEATS } from '../src/sim/cabin.js';
+import { insideCabin } from '../src/sim/interior.js';
 import { createSeatedBody, solveSeatedBody } from '../src/sim/seated-body.js';
 import { TURRET } from '../src/sim/cabin.js';
 import { EYEPIECE } from '../src/sim/gunsight.js';
@@ -407,7 +408,8 @@ describe('no faces that flicker through each other (z-fighting)', () => {
   };
 
   it('on the range: the ground with its roads, targets, markers, the biathlon course, rocks, walls and houses, and the tank parked on it', () => {
-    expectNone([ground(), cabin.createHull()], WORLD_GAP);
+    // Faces inside the crew compartment are only seen from inside it, from 0.3 to 3 m: the cabin's 3 mm rule (above) holds for them.
+    expectNone([ground(), cabin.createHull()], WORLD_GAP, (at) => insideCabin([at.x, at.y, at.z], 0));
   });
 
   it("on each of the test range's targets and markers on their own (F1.7)", () => {

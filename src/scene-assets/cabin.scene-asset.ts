@@ -13,10 +13,9 @@ import {
   Vector2,
   type Vector3,
 } from '@iwsdk/core';
-import { createDriverSeat, driverSeatBaseParts } from './convoy-seat.scene-asset.js';
+import { createDriverSeat, driverSeatBaseParts, seatShellParts } from './convoy-seat.scene-asset.js';
 import { driverStationParts } from './driver-station.scene-asset.js';
 import { beam, mergeParts, type Part } from './lowpoly.js';
-import { GEARBOX } from '../sim/driver-station.js';
 import {
   DRIVER_HATCH_ROUND,
   GLACIS,
@@ -37,6 +36,8 @@ import { driverClockParts, gunnerClockParts } from './range-run.scene-asset.js';
 import { turretDialParts } from './turret-dial.scene-asset.js';
 import { firingLampParts, lampRepeaterParts } from './firing-lamp.scene-asset.js';
 import { litInside } from './cabin-light.js';
+import { interiorFinish } from './finish.js';
+import { cradleFittingParts, driveTrainParts, hullAmmoParts, recoilRodParts, turretFittingParts } from './interior-fittings.js';
 
 /**
  * The tank, seen from inside: the hull with the driver's seat, and the
@@ -152,9 +153,8 @@ const TURRET_FOOT = { lift: 0.01, thickness: 0.04, hole: TURRET_RING.radius + TU
 function seatParts(cushion: Vec3, floorY: number): Part[] {
   const [x, top, z] = cushion;
   return [
-    box([0.44, 0.08, 0.42], [x, top - 0.04, z], LEATHER),
-    box([0.44, 0.5, 0.07], [x, top + 0.25 - 0.02, z + 0.245], LEATHER),
-    box([0.06, top - 0.08 - floorY + 0.01, 0.06], [x, (top - 0.08 + floorY) / 2, z + 0.05], STEEL),
+    ...seatShellParts(x, top, z),
+    box([0.06, top - 0.095 - floorY + 0.01, 0.06], [x, (top - 0.095 + floorY) / 2, z + 0.05], STEEL),
   ];
 }
 
@@ -305,8 +305,8 @@ function hullParts(): Part[] {
   // The driver's place: seat, the gearbox's hump beside their legs, and the station's fixed parts (F1.5).
   // The driver's seat rises to the convoy position (docs/convoy-seat.md): here its sleeve; the seat is its own mesh.
   parts.push(...driverSeatBaseParts());
-  const g = GEARBOX;
-  parts.push(box([g.x1 - g.x0, g.top, g.z1 - g.z0], [(g.x0 + g.x1) / 2, g.top / 2, (g.z0 + g.z1) / 2], PAINT_DARK));
+  // The transmission under the gear lever, the differential and brakes in the nose, the propeller shaft and the pedals.
+  parts.push(...driveTrainParts());
   parts.push(...driverStationParts());
   // The range run's clock on the hood's face, left of the slit (F1.11).
   parts.push(...driverClockParts());
@@ -349,14 +349,6 @@ function lampHousing(at: Vec3, roofY: number): Part[] {
 function hullDetailParts(): Part[] {
   const parts: Part[] = [];
   const w = HULL.halfWidth;
-  // The final drive's housing: in front of the gear lever's furthest reach, ribbed on top.
-  const g = GEARBOX;
-  const housing = { z0: HULL.front - 0.01, z1: -2.24, top: 0.7 };
-  parts.push(box([g.x1 - g.x0 + 0.04, housing.top, housing.z1 - housing.z0], [(g.x0 + g.x1) / 2, housing.top / 2, (housing.z0 + housing.z1) / 2], PAINT_DARK));
-  for (let i = 0; i < 4; i++) {
-    const z = housing.z0 + 0.03 + i * 0.04;
-    parts.push(box([g.x1 - g.x0 + 0.01, 0.02, 0.015], [(g.x0 + g.x1) / 2, housing.top + 0.005, z], STEEL));
-  }
   // The assistant driver's seat, the driver's mirrored.
   const [cx, cy, cz] = SEATS.driver.cushion;
   parts.push(...seatParts([-cx, cy, cz], SEATS.driver.floorY));
@@ -391,6 +383,8 @@ function hullDetailParts(): Part[] {
     parts.push(beam([side * (w - 0.03), HULL.roof - 0.08, GLACIS.face + 0.02], [side * (w - 0.03), HULL.roof - 0.08, HULL.rear - 0.02], 0.012, STEEL, 6));
     for (let z = -1.6; z < HULL.rear; z += 0.7) parts.push(box([0.05, 0.02, 0.02], [side * (w - 0.02), HULL.roof - 0.08, z], STEEL));
   }
+  // The ammunition racks either side of the turret basket.
+  parts.push(...hullAmmoParts());
   // The dome lamp's housing.
   for (const lamp of DOME_LAMPS) if (lamp.frame === 'hull') parts.push(...lampHousing(lamp.at, HULL.roof));
   return parts;
@@ -402,21 +396,46 @@ function frontAtGlacis(y: number): number {
   return HULL.front + ((y - noseTop) / (hoodBottom - noseTop)) * (face - HULL.front);
 }
 
-/** The turret's bustle: the radio set on a shelf against the rear wall, its dials towards the crew, and the dome lamp's housing; turret space. */
+/**
+ * The turret's bustle: the radio set on a shelf against the rear wall, as an
+ * SCR-508's two cases side by side, the transmitter on the left and the
+ * receivers on the right, their dial windows, tuning knobs, switches and
+ * handles towards the crew, a headset hung on the right; and the dome
+ * lamp's housing; turret space.
+ */
 function turretDetailParts(): Part[] {
   const parts: Part[] = [];
   const back = TURRET.rear - HULL.wall + 0.01;
-  const radio = { width: 0.56, height: 0.32, depth: 0.26, y: GUN.y + 0.13 };
-  const front = back - radio.depth;
-  parts.push(box([radio.width, radio.height, radio.depth], [0, radio.y, back - radio.depth / 2], RADIO));
-  parts.push(box([radio.width + 0.1, 0.03, radio.depth + 0.04], [0, radio.y - radio.height / 2 - 0.015, back - radio.depth / 2 - 0.01], STEEL));
-  // Its dials and knobs, standing proud of the front.
-  for (let i = 0; i < 3; i++) {
-    const knob = new CylinderGeometry(0.025, 0.025, 0.03, 10, 1);
-    knob.rotateX(Math.PI / 2);
-    parts.push({ geometry: knob, color: RUBBER, position: [-0.17 + i * 0.17, radio.y - 0.06, front - 0.015] });
+  const shelfY = GUN.y - 0.03;
+  const depth = 0.26;
+  parts.push(box([0.66, 0.03, depth + 0.04], [0, shelfY - 0.015, back - depth / 2 - 0.01], STEEL));
+  // The shelf's brackets down the wall.
+  for (const x of [-0.28, 0.28]) parts.push(box([0.03, 0.12, 0.03], [x, shelfY - 0.09, back - 0.025], STEEL));
+  const knob = (x: number, y: number, z: number, r: number) => parts.push({ geometry: new CylinderGeometry(r, r * 0.9, 0.026, 10, 1), color: RUBBER, position: [x, y, z - 0.013], rotation: [Math.PI / 2, 0, 0] });
+  for (const unit of [
+    { x: -0.15, width: 0.3, height: 0.32, knobs: 3, switches: 3 },
+    { x: 0.17, width: 0.26, height: 0.27, knobs: 2, switches: 0 },
+  ]) {
+    const y = shelfY + unit.height / 2;
+    const front = back - depth;
+    parts.push(box([unit.width, unit.height, depth], [unit.x, y, back - depth / 2], RADIO));
+    // A rim round its front panel, standing proud.
+    parts.push(box([unit.width + 0.012, unit.height - 0.03, 0.012], [unit.x, y, front + 0.002], RADIO));
+    // The dial's window and its frame.
+    parts.push(box([unit.width - 0.09, 0.075, 0.008], [unit.x, y + unit.height / 2 - 0.07, front - 0.008], STEEL));
+    parts.push(box([unit.width - 0.11, 0.055, 0.008], [unit.x, y + unit.height / 2 - 0.07, front - 0.012], IVORY));
+    for (let i = 0; i < unit.knobs; i++) knob(unit.x - unit.width / 2 + ((i + 0.5) / unit.knobs) * unit.width, y - 0.04, front - 0.004, 0.022);
+    for (let i = 0; i < unit.switches; i++) parts.push(box([0.012, 0.03, 0.02], [unit.x - 0.08 + i * 0.08, y - 0.11, front - 0.012], STEEL_LIGHT));
+    // Carrying handles at each side of the panel.
+    for (const side of [-1, 1]) parts.push(box([0.014, 0.12, 0.03], [unit.x + side * (unit.width / 2 - 0.02), y + 0.02, front - 0.02], STEEL_LIGHT));
   }
-  parts.push(box([0.4, 0.09, 0.01], [0, radio.y + 0.07, front - 0.004], IVORY));
+  // The headset on a hook right of the receivers: a band and two ear cups.
+  const hook: Vec3 = [0.36, shelfY + 0.22, back - 0.06];
+  parts.push(box([0.02, 0.02, 0.06], [hook[0], hook[1], hook[2] + 0.02], STEEL));
+  const band = new TorusGeometry(0.08, 0.008, 4, 12, Math.PI);
+  band.rotateY(Math.PI / 2);
+  parts.push({ geometry: band, color: RUBBER, position: [hook[0], hook[1] - 0.08, hook[2]] });
+  for (const dz of [-0.08, 0.08]) parts.push({ geometry: new CylinderGeometry(0.035, 0.035, 0.03, 10, 1), color: LEATHER, position: [hook[0], hook[1] - 0.09, hook[2] + dz], rotation: [Math.PI / 2, 0, 0] });
   for (const lamp of DOME_LAMPS) if (lamp.frame === 'turret') parts.push(...lampHousing(lamp.at, TURRET.roof));
   return parts;
 }
@@ -491,9 +510,9 @@ function createHatchLids(hatch: 'driver' | 'gunner'): Mesh[] {
     shut.translate(h.x, underside + height / 2, h.z);
   }
   const names = HATCH_LID_NAMES[hatch];
-  const opened = new Mesh(mergeParts(open), material);
+  const opened = new Mesh(mergeParts(open, interiorFinish), material);
   opened.name = names.open;
-  const closed = new Mesh(mergeParts([{ geometry: shut, color: (_tri, c) => (c.y < underside + 0.005 ? IVORY : PAINT_DARK) }]), material);
+  const closed = new Mesh(mergeParts([{ geometry: shut, color: (_tri, c) => (c.y < underside + 0.005 ? IVORY : PAINT_DARK) }], interiorFinish), material);
   closed.name = names.closed;
   closed.visible = false;
   return [opened, closed];
@@ -567,6 +586,8 @@ function turretParts(): Part[] {
   parts.push(...lampRepeaterParts());
   // The radio in the turret's bustle and the dome lamp's housing (docs/interior.md).
   parts.push(...turretDetailParts());
+  // The traverse gearbox and motor, the turret lock, the basket's skirt, the pistol port and the interphone box.
+  parts.push(...turretFittingParts());
   return parts;
 }
 
@@ -606,7 +627,7 @@ function stationParts(): Part[] {
  * (gunRecoilParts), and the gunsight hangs on it (F1.9).
  */
 function gunParts(): Part[] {
-  return [...mantletParts(), ...elevatingArcParts()];
+  return [...mantletParts(), ...elevatingArcParts(), ...cradleFittingParts()];
 }
 
 /**
@@ -671,19 +692,21 @@ function gunRecoilParts(): Part[] {
   // The chamber's far end, dark, so the mouth reads as a hole: 3 cm ahead of the breech, clear of a rammed shell's driving band.
   parts.push(box([2 * hole, 2 * hole, 0.01], [0, 0, front - 0.03], RUBBER));
   parts.push(...breechFittings(w));
+  // The recoil pistons' rods, back into their cylinders on the cradle.
+  parts.push(...recoilRodParts());
   return parts;
 }
 
-const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }), { finish: true });
 
 /** The name of the hull's outside's mesh: the tracks and running gear, the nose's cover, the hoods, lights, the engine deck and the rear (docs/exterior.md). */
 export const HULL_OUTSIDE_NAME = 'Hull Outside';
 
 /** The hull, with everything fixed to it, in one mesh, and what stands on its outside in another. */
 export function createHull(): Mesh {
-  const mesh = new Mesh(mergeParts(hullParts()), material);
+  const mesh = new Mesh(mergeParts(hullParts(), interiorFinish), material);
   mesh.name = 'Hull';
-  const outside = new Mesh(mergeParts(hullOutsideParts()), material);
+  const outside = new Mesh(mergeParts(hullOutsideParts(), interiorFinish), material);
   outside.name = HULL_OUTSIDE_NAME;
   mesh.add(outside, createLampLenses('hull'), ...createHatchLids('driver'), createDriverSeat());
   return mesh;
@@ -696,9 +719,9 @@ export function createHull(): Mesh {
  * back along +Z when it fires (LoadingSystem).
  */
 export function createGun(): Mesh {
-  const mesh = new Mesh(mergeParts(gunParts()), material);
+  const mesh = new Mesh(mergeParts(gunParts(), interiorFinish), material);
   mesh.name = 'Gun';
-  const recoil = new Mesh(mergeParts(gunRecoilParts()), material);
+  const recoil = new Mesh(mergeParts(gunRecoilParts(), interiorFinish), material);
   recoil.name = 'Gun Recoil';
   mesh.add(recoil);
   return mesh;
@@ -706,7 +729,7 @@ export function createGun(): Mesh {
 
 /** The turret and its basket in one mesh, in turret space (the gun apart): place it at the ring's centre, (0, 0, TURRET.z). */
 export function createTurret(): Mesh {
-  const mesh = new Mesh(mergeParts(turretParts()), material);
+  const mesh = new Mesh(mergeParts(turretParts(), interiorFinish), material);
   mesh.name = 'Turret';
   mesh.add(createLampLenses('turret'), ...createHatchLids('gunner'));
   return mesh;
