@@ -369,7 +369,7 @@
       <div id="page-you" class="page">
         <div class="section">
           <div class="setting">
-            <div class="label">Coat colour</div>
+            <div class="label">Scarf colour</div>
             <div class="swatches">
               <div id="coat-0" class="swatch"><div id="coat-0-dot" class="dot"></div></div>
               <div id="coat-1" class="swatch"><div id="coat-1-dot" class="dot"></div></div>
