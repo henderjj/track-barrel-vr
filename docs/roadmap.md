@@ -131,7 +131,7 @@ The indicators the crew read most, and a game mode that needs no enemies, so the
 | F5.6 | After-action replay with both views side by side | Planned | F5.5 | | |
 | F5.7 | Randomised targets, routes and weather | Planned | F1.7 | | Each random part gets a URL switch to turn it off in tests |
 | F5.8 | Scenario: escort a convoy | Planned | F3.3 | | |
-| F5.9 | Scenario: hold a hill hull-down | Planned | F3.3 | | |
+| F5.9 | Scenario: hold a hill hull-down | Building | F3.3 | | [hold-the-hill.md](hold-the-hill.md): a 6 m ridge beyond the 500 m board, hull down 22 to 30 m behind its crest; Missions → Hold the hill (Start, Stop, Hull down); four enemy tanks in two waves on one-way routes (battery group `hill`); the commander tells the driver when the tank is hull down; won with all four out, lost knocked out or overrun; `hill`/`hill-ask` events |
 | F5.10 | Scenarios: recon unseen, ambush a column | Planned | F3.3 | | |
 | F5.11 | Night and fog conditions | Planned | F5.7 | | Retint lights, fog and sky; no new lights |
 

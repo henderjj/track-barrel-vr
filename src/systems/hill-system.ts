@@ -76,6 +76,8 @@ interface HillDebug {
   start(): void;
   stop(): void;
   hullDown(): void;
+  /** Host: the run's clock on to the next wave's time (tests: the emulator's frames are slow). */
+  nextWave(): void;
   /** Where the tank stands as the commander would judge it now (host). */
   view(): HoldView;
   readonly sign: string;
@@ -154,6 +156,11 @@ export class HillSystem extends createSystem({}) {
       start: () => startHill(),
       stop: () => stopHill(),
       hullDown: () => hullDownPractice(),
+      nextWave: () => {
+        const s = self.run.snap;
+        if (!netLink.isHost || s.phase !== 'on') return;
+        s.time = Math.max(s.time, s.wave === 0 ? HILL.firstWave : HILL.secondWave);
+      },
       view: () => self.judge(),
       get sign() {
         return self.sign.visible ? self.signText : '';

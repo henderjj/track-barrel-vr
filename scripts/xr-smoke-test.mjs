@@ -3970,6 +3970,85 @@ async function partThree() {
 
   // 6q. The biathlon course (F5.3a).
   await theBiathlonCourse();
+
+  // 6zb. Hold the hill (F5.9).
+  await holdTheHill();
+}
+
+/**
+ * 6zb. Hold the hill (F5.9, docs/hold-the-hill.md): Missions → Hold the
+ *      hill → Start puts the tank on the hill's reverse slope, mended,
+ *      with nothing in yet and the briefing on the sign; Hull down parks it
+ *      behind the crest, and halted there the commander's call says only
+ *      the turret shows (screenshot from the gunner's sight line over the
+ *      crest); the first wave comes (two tanks, seeing only the turret);
+ *      knocking them out brings the second at once, and knocking those out
+ *      wins, the debrief on the sign. Restarted, an attacker at the end of
+ *      its route takes the hill. Stop takes the enemy away.
+ */
+async function holdTheHill() {
+  const hill = () => evalInApp('window.__hill.state()');
+  const enemy = () => evalInApp('window.__enemy.state()');
+  const attackers = () => enemy().guns.map((g, i) => ({ ...g, i })).filter((g) => g.group === 'hill');
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp("(window.__damage.repair(), window.__seats.ask('gunner'), true)");
+  await menuButtonPress();
+  await menuClick('menu-hill-start');
+  const started = await waitFor('the hill on, nothing in yet', () => {
+    const h = hill();
+    const t = evalInApp('window.__drive.state()');
+    return h.phase === 'on' && h.wave === 0 && attackers().every((g) => !g.present) && Math.abs(t.x - 192) < 1 && Math.abs(t.z + 432) < 1 && h;
+  }, 10000).catch(() => hill());
+  const briefing = await waitFor('the briefing on the sign', () => /^Hold the hill/.test(evalInApp('window.__hill.sign')) && evalInApp('window.__hill.sign'), 5000)
+    .catch(() => evalInApp('window.__hill.sign'));
+  check('Missions → Hold the hill → Start: the tank on the reverse slope with nothing in yet, and the briefing on the sign',
+    started.phase === 'on' && started.wave === 0 && /^Hold the hill: take up a hull-down position/.test(briefing),
+    `phase ${started.phase}, wave ${started.wave}, tank ${JSON.stringify(evalInApp('window.__drive.state()')).slice(0, 60)}, sign "${briefing}"`);
+
+  await menuButtonPress();
+  await menuClick('menu-hill-hulldown');
+  const placed = await waitFor('the tank hull down', () => { const h = hill(); return h.view === 'hull-down' && h; }, 10000).catch(() => hill());
+  check('Missions → Hull down: halted behind the crest, the commander says only the turret shows', placed.view === 'hull-down' && evalInApp('window.__hill.view()') === 'hull-down',
+    `view ${placed.view}, now ${evalInApp('window.__hill.view()')}`);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-hold-the-hill-hull-down.png'], {});
+
+  // The first wave may have come already while the slow page took its screenshot.
+  evalInApp('(window.__hill.state().wave === 0 && window.__hill.nextWave(), true)');
+  const first = await waitFor('the first wave in', () => { const a = attackers(); return a[0].present && a[1].present && !a[2].present && a.slice(0, 2).every((g) => g.view === 'turret') && a; }, 10000).catch(() => attackers());
+  check('The first wave comes: two tanks, each seeing only the turret over the crest',
+    first[0].present && first[1].present && !first[2].present && first[0].view === 'turret' && first[1].view === 'turret' && hill().wave === 1,
+    first.map((g) => `${g.name} ${g.present ? g.view : 'out'}`).join(', '));
+
+  for (const g of first.slice(0, 2)) evalInApp(`(window.__enemy.kill(${g.i}), true)`);
+  const second = await waitFor('the second wave in', () => { const h = hill(); const a = attackers(); return h.wave === 2 && a[2].present && a[3].present && h; }, 8000).catch(() => hill());
+  check('Knocking the first wave out brings the second at once', second.wave === 2 && second.killed === 2, `wave ${second.wave}, killed ${second.killed}`);
+  for (const g of attackers().slice(2)) evalInApp(`(window.__enemy.kill(${g.i}), true)`);
+  const won = await waitFor('the hill held', () => { const h = hill(); return h.phase === 'won' && h; }, 8000).catch(() => hill());
+  const debrief = await waitFor('the debrief on the sign', () => /^Hill held/.test(evalInApp('window.__hill.sign')) && evalInApp('window.__hill.sign'), 5000)
+    .catch(() => evalInApp('window.__hill.sign'));
+  check('All four knocked out: the hill is held, the debrief on the sign',
+    won.phase === 'won' && /^Hill held: all 4 tanks knocked out in \d+:\d\d\. 4 of 4 tanks out/.test(debrief),
+    `phase ${won.phase}, sign "${debrief}"`);
+
+  // Again, and an attacker gets to the foot of the hill.
+  evalInApp('(window.__hill.start(), true)');
+  await waitFor('restarted', () => hill().phase === 'on', 8000).catch(() => null);
+  evalInApp('(window.__hill.nextWave(), true)');
+  const c = await waitFor('the first wave in again', () => { const a = attackers(); return a[0].present && a[0].alive && a[0]; }, 8000).catch(() => attackers()[0]);
+  evalInApp(`(window.__enemy.place(${c.i}, 10000), true)`);
+  const lost = await waitFor('the hill taken', () => { const h = hill(); return h.phase === 'lost' && h; }, 8000).catch(() => hill());
+  check('An attacker at the foot of the hill takes it', lost.phase === 'lost' && lost.loss === 'overrun' && /^The enemy took the hill/.test(evalInApp('window.__hill.sign')),
+    `phase ${lost.phase}, loss ${lost.loss}, sign "${evalInApp('window.__hill.sign')}"`);
+
+  await menuButtonPress();
+  await sleep(600);
+  const line = await waitFor("the menu's line", () => /^The enemy took the hill/.test(evalInApp("window.__gameMenu.text('menu-hill-status')")), 5000).catch(() => false);
+  check("The Missions tab's line gives the debrief", line !== false, `"${evalInApp("window.__gameMenu.text('menu-hill-status')")}"`);
+  await menuClick('menu-hill-stop');
+  const stopped = await waitFor('the enemy gone', () => { const e = enemy(); return !e.on && hill().phase === 'off' && e; }, 5000).catch(() => enemy());
+  check('Missions → Hold the hill → Stop takes the enemy away', !stopped.on && hill().phase === 'off', `on ${stopped.on}, phase ${hill().phase}`);
+  await menuButtonPress();
+  evalInApp('(window.__damage.repair(), window.__drive.place(0, 0, 0), true)');
 }
 
 /**
