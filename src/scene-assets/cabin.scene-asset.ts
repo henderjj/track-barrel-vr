@@ -31,7 +31,7 @@ import { hullOutsideParts, mantletParts, turretShellParts } from './exterior.sce
 import { ELEVATING_GEAR, MANTLET_DEPTH, mountToTurret, POWER_GRIP, STATION, type StationMount, TRUNNION } from '../sim/turret.js';
 import { DOME_LAMPS } from '../sim/interior.js';
 import { LID_ASIDE } from '../sim/convoy-seat.js';
-import { binParts, boardParts, BREECH_HOLE, breechFittings, rackParts } from './loading.scene-asset.js';
+import { binParts, boardParts, BREECH_BORE, BREECH_CHAMFER, breechFittings, rackParts } from './loading.scene-asset.js';
 import { driverClockParts, gunnerClockParts } from './range-run.scene-asset.js';
 import { turretDialParts } from './turret-dial.scene-asset.js';
 import { firingLampParts, lampRepeaterParts } from './firing-lamp.scene-asset.js';
@@ -659,10 +659,13 @@ function elevatingArcParts(): Part[] {
   return parts;
 }
 
+/** The barrel's and muzzle brake's sides. */
+const BARREL_SIDES = 24;
+
 /**
  * What recoils when the gun fires (F1.10), gun space with the gun in
  * battery: the barrel and muzzle brake outside the front plate, and the
- * breech beside the gunner, with a square mouth at its back that a shell
+ * breech beside the gunner, with a round mouth at its back that a shell
  * goes into, the guides its block slides in and the lever's axle.
  */
 function gunRecoilParts(): Part[] {
@@ -670,27 +673,45 @@ function gunRecoilParts(): Part[] {
   const z0 = TRUNNION.z;
   const parts: Part[] = [];
   // Thicker at the mantlet end (+Z once turned).
-  const barrel = new CylinderGeometry(GUN.barrelRadius * 1.15, GUN.barrelRadius, GUN.barrelLength, 10, 1);
+  // Round: 24 sides, so its flat-shaded facets don't show as flats along it.
+  const barrel = new CylinderGeometry(GUN.barrelRadius * 1.15, GUN.barrelRadius, GUN.barrelLength, BARREL_SIDES, 1);
   barrel.rotateX(Math.PI / 2);
   const muzzle = TURRET.front - MANTLET_DEPTH - GUN.barrelLength - z0;
   parts.push({ geometry: barrel, color: PAINT_DARK, position: [0, 0, muzzle + GUN.barrelLength / 2 + 0.02] });
-  const brake = new CylinderGeometry(0.09, 0.09, 0.26, 10, 1);
+  const brake = new CylinderGeometry(0.09, 0.09, 0.26, BARREL_SIDES, 1);
   brake.rotateX(Math.PI / 2);
   parts.push({ geometry: brake, color: PAINT_DARK, position: [0, 0, muzzle + 0.12] });
-  // The breech: four bars round the square mouth, the whole way through.
+  // The breech ring: a square block with its edges chamfered, bored through round for the chamber, the bore's mouth
+  // chamfered too so a shell's nose finds it (the M3 gun's breech ring is square outside, its chamber round).
   const front = TURRET.front + t - z0;
   const back = GUN.breechBack - z0;
   const length = back - front;
-  const mid = (front + back) / 2;
   const w = GUN.breechHalfWidth;
   const h = GUN.breechHalfHeight;
-  const hole = BREECH_HOLE;
-  parts.push(box([2 * w, h - hole, length], [0, (h + hole) / 2, mid], STEEL));
-  parts.push(box([2 * w, h - hole, length], [0, -(h + hole) / 2, mid], STEEL));
-  parts.push(box([w - hole, 2 * hole, length], [-(w + hole) / 2, 0, mid], STEEL));
-  parts.push(box([w - hole, 2 * hole, length], [(w + hole) / 2, 0, mid], STEEL));
+  const c = BREECH_CHAMFER;
+  const ring = new Shape();
+  ring.moveTo(-(w - c), -(h - c));
+  ring.lineTo(w - c, -(h - c));
+  ring.lineTo(w - c, h - c);
+  ring.lineTo(-(w - c), h - c);
+  ring.closePath();
+  // The bevel grows the block out by `c` and closes the bore in by `c` along its length, so the bore is BREECH_BORE
+  // and the mouth at each end `c` wider.
+  const bore = new Path();
+  bore.absarc(0, 0, BREECH_BORE + c, 0, Math.PI * 2, true);
+  ring.holes.push(bore);
+  const breech = new ExtrudeGeometry(ring, {
+    depth: length - 2 * c,
+    bevelEnabled: true,
+    bevelThickness: c,
+    bevelSize: c,
+    bevelSegments: 1,
+    curveSegments: BARREL_SIDES,
+  });
+  parts.push({ geometry: breech, color: STEEL, position: [0, 0, front + c] });
+  const hole = BREECH_BORE;
   // The chamber's far end, dark, so the mouth reads as a hole: 3 cm ahead of the breech, clear of a rammed shell's driving band.
-  parts.push(box([2 * hole, 2 * hole, 0.01], [0, 0, front - 0.03], RUBBER));
+  parts.push(box([2 * hole + 0.02, 2 * hole + 0.02, 0.01], [0, 0, front - 0.03], RUBBER));
   parts.push(...breechFittings(w));
   // The recoil pistons' rods, back into their cylinders on the cradle.
   parts.push(...recoilRodParts());
