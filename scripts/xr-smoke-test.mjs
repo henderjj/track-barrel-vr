@@ -419,8 +419,9 @@ async function menuClick(id) {
   const tab = MENU_TAB_OF.get(id);
   if (tab !== undefined && evalInApp('window.__gameMenu.tab') !== tab) {
     evalInApp(`window.__gameMenu.showTab('${tab}')`);
-    // The page lays out on the next frames, which can be slow with the menu open.
-    await sleep(600);
+    // The page lays out on the next frames, which can be slow with the menu open
+    // (a slow runner draws a frame every 600 ms or more).
+    await sleep(Math.max(600, 3 * slowestFrameMs()));
   }
   await rayClick(elementPosition('menu-panel', id));
 }
@@ -3993,6 +3994,12 @@ async function theConvoyEscort() {
   evalInApp("(window.__damage.repair(), window.__seats.ask('driver'), true)");
   await menuButtonPress();
   await menuClick('menu-escort-start');
+  // On a slow runner the Missions page may not have laid out for the first click: click again.
+  if (await waitFor('the convoy on', () => escort().phase === 'on', 3000).catch(() => false) === false) {
+    console.log('      (Start not taken at the first click: clicking again)');
+    if (!evalInApp('window.__gameMenu.open')) await menuButtonPress();
+    await menuClick('menu-escort-start');
+  }
   const started = await waitFor('the convoy on, the guns in', () => {
     const s = escort();
     const e = enemy();
