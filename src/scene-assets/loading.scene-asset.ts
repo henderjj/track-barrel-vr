@@ -39,8 +39,13 @@ const BOARD_BACK = 0x2b2622;
 
 const [, MY, MZ] = BREECH_MOUTH;
 
-/** The breech's square opening at the back, half its side, m (the gun's model cuts it: src/scene-assets/cabin.scene-asset.ts). */
-export const BREECH_HOLE = 0.06;
+/**
+ * The breech's round bore, m: the chamber a shell goes into (its rim is
+ * 48 mm), and the chamfer round its mouth and the block's edges (the gun's
+ * model cuts it: src/scene-assets/cabin.scene-asset.ts).
+ */
+export const BREECH_BORE = 0.054;
+export const BREECH_CHAMFER = 0.012;
 
 /** The breech block, gun space: a plate that slides up across the mouth, just behind it (+Z), m. */
 export const BLOCK = { width: 0.2, height: 0.14, depth: 0.04, gap: 0.006 } as const;
