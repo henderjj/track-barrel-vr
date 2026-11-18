@@ -3990,9 +3990,11 @@ async function holdTheHill() {
   const hill = () => evalInApp('window.__hill.state()');
   const enemy = () => evalInApp('window.__enemy.state()');
   const attackers = () => enemy().guns.map((g, i) => ({ ...g, i })).filter((g) => g.group === 'hill');
+  // The step before may leave the menu open or closed: open it only if it is shut.
+  const openMenu = async () => { if (!evalInApp('window.__gameMenu.open')) await menuButtonPress(); };
   iwsdk(['xr', 'set-device-state'], {});
   evalInApp("(window.__damage.repair(), window.__seats.ask('gunner'), true)");
-  await menuButtonPress();
+  await openMenu();
   await menuClick('menu-hill-start');
   const started = await waitFor('the hill on, nothing in yet', () => {
     const h = hill();
@@ -4005,7 +4007,7 @@ async function holdTheHill() {
     started.phase === 'on' && started.wave === 0 && /^Hold the hill: take up a hull-down position/.test(briefing),
     `phase ${started.phase}, wave ${started.wave}, tank ${JSON.stringify(evalInApp('window.__drive.state()')).slice(0, 60)}, sign "${briefing}"`);
 
-  await menuButtonPress();
+  await openMenu();
   await menuClick('menu-hill-hulldown');
   const placed = await waitFor('the tank hull down', () => { const h = hill(); return h.view === 'hull-down' && h; }, 10000).catch(() => hill());
   check('Missions → Hull down: halted behind the crest, the commander says only the turret shows', placed.view === 'hull-down' && evalInApp('window.__hill.view()') === 'hull-down',
@@ -4040,14 +4042,14 @@ async function holdTheHill() {
   check('An attacker at the foot of the hill takes it', lost.phase === 'lost' && lost.loss === 'overrun' && /^The enemy took the hill/.test(evalInApp('window.__hill.sign')),
     `phase ${lost.phase}, loss ${lost.loss}, sign "${evalInApp('window.__hill.sign')}"`);
 
-  await menuButtonPress();
+  await openMenu();
   await sleep(600);
   const line = await waitFor("the menu's line", () => /^The enemy took the hill/.test(evalInApp("window.__gameMenu.text('menu-hill-status')")), 5000).catch(() => false);
   check("The Missions tab's line gives the debrief", line !== false, `"${evalInApp("window.__gameMenu.text('menu-hill-status')")}"`);
   await menuClick('menu-hill-stop');
   const stopped = await waitFor('the enemy gone', () => { const e = enemy(); return !e.on && hill().phase === 'off' && e; }, 5000).catch(() => enemy());
   check('Missions → Hold the hill → Stop takes the enemy away', !stopped.on && hill().phase === 'off', `on ${stopped.on}, phase ${hill().phase}`);
-  await menuButtonPress();
+  if (evalInApp('window.__gameMenu.open')) await menuButtonPress();
   evalInApp('(window.__damage.repair(), window.__drive.place(0, 0, 0), true)');
 }
 
