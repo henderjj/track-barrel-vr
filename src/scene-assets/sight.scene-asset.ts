@@ -4,6 +4,7 @@ import { TURRET } from '../sim/cabin.js';
 import { EYEPIECE, HOOD, KNUCKLE, MANTLET_FACE, OBJECTIVE } from '../sim/gunsight.js';
 import { LENS_RADIUS } from '../sim/sight.js';
 import { litInside } from './cabin-light.js';
+import { interiorFinish } from './finish.js';
 
 /**
  * The gunsight (F1.9, docs/gunsight.md), an articulated sight in two
@@ -30,7 +31,7 @@ const RISER = { width: 0.07, depth: 0.06, back: 0.01 } as const;
 /** The roof bracket's post, this far in front of the lens, m (ahead of the gunner's forehead and outside the hatch). */
 const BRACKET_Z = -0.25;
 
-const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }), { finish: true });
 
 /**
  * The eyepiece half, in sight space (the lens's middle at the origin,
@@ -62,7 +63,7 @@ export function createSightEyepiece(): Mesh {
     // Eyecup: the lens's edge is hidden inside its ring.
     { geometry: new TorusGeometry(LENS_RADIUS + 0.008, 0.009, 6, 16), color: RUBBER, position: [0, 0, 0.004] },
   ];
-  const mesh = new Mesh(mergeParts(parts), material);
+  const mesh = new Mesh(mergeParts(parts, interiorFinish), material);
   mesh.name = 'Sight Eyepiece';
   return mesh;
 }
@@ -83,7 +84,7 @@ export function createSightHead(): Mesh {
     { geometry: new BoxGeometry(HOOD.width, HOOD.height, HOOD.depth), color: STEEL_DARK, position: [OBJECTIVE[0], OBJECTIVE[1], (back + front) / 2] },
     { geometry: glass, color: GLASS, position: [OBJECTIVE[0], OBJECTIVE[1], OBJECTIVE[2]] },
   ];
-  const mesh = new Mesh(mergeParts(parts), material);
+  const mesh = new Mesh(mergeParts(parts, interiorFinish), material);
   mesh.name = 'Sight Head';
   return mesh;
 }

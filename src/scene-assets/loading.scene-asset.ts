@@ -14,6 +14,7 @@ import {
   SHELL_RADIUS,
 } from '../sim/loading.js';
 import { litInside } from './cabin-light.js';
+import { interiorFinish } from './finish.js';
 
 /**
  * Loading and firing's models (F1.10, docs/loading-firing.md): the ready
@@ -154,7 +155,7 @@ export function breechFittings(halfWidth: number): Part[] {
   ];
 }
 
-const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }), { finish: true });
 
 /** Each round's shell geometry, built once (F3.1): LoadingSystem swaps a shell's geometry when its slot's round changes. */
 const shellGeometries = new Map<AmmoKind, BufferGeometry>();
@@ -180,7 +181,7 @@ export function shellGeometry(kind: AmmoKind): BufferGeometry {
     tubeZ(0.045, 0, 0, caseFront - 0.01, caseFront - 0.025, COPPER, 10),
     tubeZ(0.044, 0, 0, -0.165, -0.195, band, 10),
     { geometry: new ConeGeometry(0.04, h - 0.21, 10, 1), color: body, position: [0, 0, -(h + 0.21) / 2], rotation: ALONG_Z },
-  ]);
+  ], interiorFinish);
   shellGeometries.set(kind, geometry);
   return geometry;
 }
@@ -201,7 +202,7 @@ export function createCasing(i: number): Mesh {
     tubeZ(0.01, 0, 0, h + 0.004, h - 0.004, PRIMER, 6),
     // The open mouth, dark, standing 4 mm proud of the brass so the two never share a plane.
     tubeZ(SHELL_RADIUS - 0.006, 0, 0, -h + 0.01, -h - 0.004, BIN_DARK, 10),
-  ]);
+  ], interiorFinish);
   const mesh = new Mesh(geometry, material);
   mesh.name = `Casing ${i + 1}`;
   return mesh;
@@ -214,7 +215,7 @@ export function createBreechBlock(): Mesh {
       box([BLOCK.width, BLOCK.height, BLOCK.depth], [0, 0, 0], BLOCK_STEEL),
       // A grip ridge across its back, standing proud.
       box([BLOCK.width - 0.04, 0.02, 0.01], [0, -0.03, BLOCK.depth / 2 + 0.004], STEEL_DARK),
-    ]),
+    ], interiorFinish),
     material,
   );
   mesh.name = 'Breech Block';
@@ -238,7 +239,7 @@ export function createBreechLever(): Mesh {
         position: [LEVER_HANDLE_X, LEVER_LENGTH, 0],
         rotation: ALONG_X,
       },
-    ]),
+    ], interiorFinish),
     material,
   );
   mesh.name = 'Breech Lever';

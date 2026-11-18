@@ -117,8 +117,16 @@ export const drive = {
 const SEND_HZ = 45;
 /** Longest step the simulation takes in one go, s; a slow frame takes several. */
 const MAX_STEP = 1 / 60;
-/** A guest driver's controls older than this are treated as let go, ms. */
+/**
+ * A guest driver's controls older than this are treated as let go, ms, or
+ * than CONTROLS_STALE_GAPS of the gaps between their packets if their page
+ * draws slower than that (a packet goes once a frame): else a held starter
+ * or tiller would let go between two packets and catch again on the next.
+ * At most CONTROLS_STALE_MAX_MS, so a guest who has gone still lets go.
+ */
 const CONTROLS_STALE_MS = 500;
+const CONTROLS_STALE_GAPS = 3;
+const CONTROLS_STALE_MAX_MS = 2000;
 /** How long a sign stays up, s. */
 const SIGN_SECONDS = 6;
 
@@ -378,6 +386,8 @@ export class DriveSystem extends createSystem({}) {
   readonly shownControls = createControls();
   private remoteControls = createControls();
   private remoteAt = Number.NEGATIVE_INFINITY;
+  /** The usual gap between the guest driver's packets, ms (a running average). */
+  private remoteGap = 0;
   private remoteSeq = -1;
   private override: Partial<DriverControls> | null = null;
   /** The clutch pedal as it was when the menu or the start screen came up: it stays there until they go. */
@@ -819,7 +829,8 @@ export class DriveSystem extends createSystem({}) {
     const driver = this.driver();
     if (driver === 'crew') {
       source = this.remoteControls;
-      if (performance.now() - this.remoteAt > CONTROLS_STALE_MS) {
+      const stale = Math.min(CONTROLS_STALE_MAX_MS, Math.max(CONTROLS_STALE_MS, CONTROLS_STALE_GAPS * this.remoteGap));
+      if (performance.now() - this.remoteAt > stale) {
         source.left = 0;
         source.right = 0;
         source.accel = 0;
@@ -898,7 +909,10 @@ export class DriveSystem extends createSystem({}) {
     this.received++;
     if (this.remoteSeq >= 0 && !seqNewer(this.header.seq, this.remoteSeq)) return;
     this.remoteSeq = this.header.seq;
-    this.remoteAt = performance.now();
+    const now = performance.now();
+    const gap = now - this.remoteAt;
+    if (gap < CONTROLS_STALE_MAX_MS) this.remoteGap = this.remoteGap === 0 ? gap : this.remoteGap * 0.8 + gap * 0.2;
+    this.remoteAt = now;
   }
 
   /** The ground goes where the tank's inverse pose puts it, less whole tiles. */

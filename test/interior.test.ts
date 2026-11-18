@@ -303,7 +303,8 @@ describe("the head boxes against the cabin's meshes (John's headset check, 2026-
         }
       }
     }
-  });
+    // Thousands of rays against every triangle of the cabin (the fifth pass added about 7,000): give it time on a slow runner.
+  }, 30_000);
 
   it('starts the fade only as the eyes come up to a wall, the hood or the roof, not before', () => {
     // Straight out from the eye point to each edge with something there, the eyes are then about EYE_CLEARANCE from it.
