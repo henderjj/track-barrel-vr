@@ -27,7 +27,7 @@ The logic is engine-free in [`src/sim/recon.ts`](../src/sim/recon.ts), [`src/sim
 
 Both:
 
-- Starting one stops the other and the Battle tab's Advance to contact (they share the enemy battery). **Stop** takes the enemy away.
+- Starting one stops the other, the Battle tab's Advance to contact and Escort a convoy (F5.8): they share the enemy battery. Starting either of those ends a mission. **Stop** takes the enemy away.
 - The result stays as a line under the Missions tab's buttons, and the orders board (F6.5) shows the mission's tasks while it runs.
 
 ## Numbers
@@ -74,7 +74,7 @@ On a recon it lays on each enemy not yet reported, guns included, to report it, 
 - [`test/recon-ambush.test.ts`](../test/recon-ambush.test.ts): the column's road, pace, gaps, passing and getting away; the column in the battery (sprung by the first shot, hull down at the wall, time to wait, only tanks fire, shared state); the ambush and the recon runs, their lines, events and boards; a gun can be reported from the lane long before it spots the tank.
 - `test/enemy-tanks.test.ts`, `test/ammo.test.ts`: the column's targets, soft and armoured.
 - `test/z-fighting.test.ts`: the lorry, whole and wrecked.
-- XR smoke test step 6zb (part 3): start a recon, report an enemy with the `__recon` hooks, be spotted; start an ambush, see the column, spring it and see it react.
+- XR smoke test step 6zc (part 3): start a recon, report an enemy with the `__recon` hooks, be spotted; start an ambush, see the column, spring it and see it react.
 - Net test (`missionChecks`): the guest starts each mission, sees the host's run and the column move, and stops it.
 
 ## Headset check
