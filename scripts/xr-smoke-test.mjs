@@ -2385,10 +2385,15 @@ async function tankSounds() {
     Object.keys(played).every((id) => played[id] > heard0[id]) && line.length > 0,
     `${Object.keys(played).filter((id) => played[id] > heard0[id]).join(', ')}; "${line}"`);
 
-  // Run through: the tour takes the engine up out of gear within a few seconds; pressed again, it stops.
+  // Run through: the tour takes the engine up out of gear within a few seconds; pressed again, it stops. The rev
+  // standing still lasts about 3 s of the tour's wall clock, which a slow runner's ray click (up to 3 s held) and
+  // polls through the CLI can step right over, so the page itself keeps the highest standing reading it sees.
+  evalInApp('(window.__tourPeak = null, window.__tourTimer = setInterval(() => { const a = window.__audio.state(); '
+    + 'if (a.tour && a.rumble < 0.01 && !(window.__tourPeak && window.__tourPeak.engineHz >= a.engineHz)) window.__tourPeak = a; }, 50), true)');
   await menuClick('menu-audio-tour');
-  const touring = await waitFor('the tour to rev the engine', () => { const a = audio(); return a.tour && a.engineHz > 100 && a; }, 12000)
-    .catch(() => audio());
+  const touring = await waitFor('the tour to rev the engine', () => { const a = evalInApp('window.__tourPeak'); return a && a.engineHz > 100 && a; }, 12000)
+    .catch(() => evalInApp('window.__tourPeak') ?? audio());
+  evalInApp('(clearInterval(window.__tourTimer), true)');
   const tourLine = evalInApp("window.__gameMenu.text('menu-audio-status')");
   await menuClick('menu-audio-tour');
   const toured = await waitFor('the tour to stop', () => { const a = audio(); return !a.tour && a.engineHz < 60 && a; }, 8000).catch(() => audio());
