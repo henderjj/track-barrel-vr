@@ -23,7 +23,7 @@ In a crew the crew page says what is happening (joining, waiting, connecting, fu
 How it should look and work (each rule fixed something a headset playtest found hard):
 
 - **See every choice, pick it in one press.** A controller ray is less precise than a mouse. Every setting with up to four choices shows them all as a row of buttons with the one in effect filled in. No drop-down lists: they need two accurate presses and open over the rows below.
-- **Show things as what they are.** Coat colours are round swatches with a ring round the one you wear. No hover styles: under an XR ray a hover outline stays on everything the ray touched.
+- **Show things as what they are.** Crew colours are round swatches with a ring round the one you wear. No hover styles: under an XR ray a hover outline stays on everything the ray touched.
 - **Numbers step.** Eye height is **−** and **+** in 5 cm steps, up to 15 cm either side of the seat's eye point, with an **Eye point** button.
 - **Changes apply at once and are kept** in the browser. Settings that need a reload stay on the page's Start-up settings.
 - **Far enough to take in at a glance:** 1.3 m in front, 0.2 m below eye level.
@@ -32,7 +32,7 @@ How it should look and work (each rule fixed something a headset playtest found 
 | Tab | What it holds |
 | --- | --- |
 | Crew (only in a crew) | The crew's state, My microphone, Crewmate's voice, and Calls to the other seat ([crewmate.md](crewmate.md)) |
-| You | Coat colour, Playing, Eye height, Seat, Calibration |
+| You | Scarf colour, Playing, Eye height, Seat, Calibration |
 | Comfort | Vignette, Bumps, I feel queasy, the play-test stats ([comfort-stats.md](comfort-stats.md)) |
 | Sound and view | The other live settings: tank sounds, the cabin's look, the callout card, perf HUD, frame rate, fog, foveation |
 | Tank | Driving (its state and the gear lever), the range's state, and Riding while on spike S2's ride |
@@ -46,7 +46,7 @@ Some of the rows:
 | --- | --- | --- |
 | Crew (only in a crew) | My microphone | On, Muted |
 | Crew | Crewmate's voice | On, Muted (for you only) |
-| You | Coat colour | Eight swatches |
+| You | Scarf colour | Eight swatches (the neckerchief, shoulder titles and cuffs since F6.3) |
 | You | Playing | Standing, Seated (the default): either way your eyes land on the seat's eye point; changing it calibrates again |
 | You | Eye height | − and + in 5 cm steps from the seat's eye point, Eye point |
 | You | Seat | Back in my seat (eyes back at the seat's eye point, facing forward); Swap seats (in a crew it asks your crewmate, or agrees to their ask: [seat-choice.md](seat-choice.md)) |
