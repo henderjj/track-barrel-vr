@@ -29,6 +29,7 @@ import {
   specOf,
   tankFace,
   type TankTarget,
+  type TruckTarget,
 } from '../sim/enemy-guns.js';
 import { ENEMY_TANK, ENEMY_TANKS, type RoutePose, routePose, wrapRoute } from '../sim/enemy-tanks.js';
 import { type CombatTuning, type TankView } from '../sim/combat.js';
@@ -93,6 +94,36 @@ export function enemyRevealed(i: number): boolean {
 /** Host: the fight's tuning (F3.10, set by CombatSystem): spotting, aim, reactions, the tank's size, and its armour's toughness. */
 export function setBatteryTuning(t: Readonly<CombatTuning>): void {
   if (active) Object.assign(active.battery.tuning, t);
+}
+
+/** Host: the convoy's trucks the enemy may fire on (F5.8, EscortSystem keeps them where the trucks are), or null for none. */
+export function setConvoyTargets(trucks: readonly Readonly<TruckTarget>[] | null): void {
+  if (active) active.convoy = trucks;
+}
+
+/** Host: enemy `i` has the convoy spotted already (F5.8: Missions → Escort a convoy → Ambush). */
+export function spotConvoyNow(i: number): void {
+  const g = active?.battery.guns[i];
+  if (g) g.convoySpot = 1;
+}
+
+/** Host: the enemy's shots at the convoy's trucks since the battery started (F5.8). */
+export function enemyTruckShots(): number {
+  return active?.battery.truckShots ?? 0;
+}
+
+/**
+ * Told on each page as an enemy shell that hit a truck of the convoy gets
+ * there (F5.8): the truck and the enemy. The host's EscortSystem knocks the
+ * truck out.
+ */
+export const truckStruckListeners = new Set<(truck: number, gun: number) => void>();
+
+/** Host: enemy `i` fires at truck `k` of the convoy now, seeing it or not (tests). */
+export function fireOnTruckNow(i: number, k: number): void {
+  const trucks = active?.convoy;
+  if (!netLink.isHost || !active || !trucks?.[k] || !active.battery.guns[i]?.present || !active.battery.guns[i].alive) return;
+  active.sendShot(active.battery.fireAtTruck(i, trucks[k], k));
 }
 
 /** Host: some enemy has the tank spotted (F3.10). */
@@ -207,6 +238,10 @@ interface EnemyDebug {
       view: TankView;
       spot: number;
       tracking: boolean;
+      /** The convoy (F5.8): the truck it sees (-1 none), how far it has got to spotting the convoy, and whether it has it. */
+      truck: number;
+      convoySpot: number;
+      convoyTracking: boolean;
       ready: number;
       drawn: boolean;
       along: number;
@@ -280,6 +315,8 @@ export class EnemySystem extends createSystem({}) {
   private sentVersion = -1;
   /** Host: the enemy holds its fire (the combat scenario is over, F3.10). */
   holdFire = false;
+  /** Host: the convoy's trucks (F5.8), or null when there is no convoy. */
+  convoy: readonly Readonly<TruckTarget>[] | null = null;
   private sentAt = 0;
   private wasConnected = false;
   private sign!: FloatingSign;
@@ -406,6 +443,9 @@ export class EnemySystem extends createSystem({}) {
           view: self.battery.guns[i].view,
           spot: self.battery.guns[i].spot,
           tracking: self.battery.guns[i].tracking,
+          truck: self.battery.guns[i].truck,
+          convoySpot: self.battery.guns[i].convoySpot,
+          convoyTracking: self.battery.guns[i].convoyTracking,
           ready: self.battery.guns[i].ready,
           drawn: self.whole[i].visible || self.wrecks[i].visible,
           along: self.along[i],
@@ -429,7 +469,7 @@ export class EnemySystem extends createSystem({}) {
       fireNow: (i) => {
         if (!netLink.isHost || !self.battery.guns[i]?.present || !self.battery.guns[i].alive) return;
         self.tankTarget();
-        self.send(self.battery.fire(i, self.target, 'full'));
+        self.sendShot(self.battery.fire(i, self.target, 'full'));
         self.afterChange();
       },
       kill: (i) => {
@@ -568,9 +608,9 @@ export class EnemySystem extends createSystem({}) {
     return this.target;
   }
 
-  /** Host: an enemy fired; what a hit will do (F3.4), shown here and told to the guest. */
-  private send(shot: EnemyShot): void {
-    if (shot.hit) shot.damage = this.hitDamage(shot);
+  /** Host: an enemy fired; what a hit on the tank will do (F3.4), shown here and told to the guest. */
+  sendShot(shot: EnemyShot): void {
+    if (shot.hit && shot.truck === undefined) shot.damage = this.hitDamage(shot);
     this.show(shot);
     if (netLink.connected) {
       const event = { t: 'enemy-shot', ...shot, from: [...shot.from], to: [...shot.to] };
@@ -601,8 +641,10 @@ export class EnemySystem extends createSystem({}) {
     slot.shot = shot;
     slot.firedAt = this.time;
     slot.struck = false;
-    if (first && !shot.hit) this.noteEnemy(shot.gun, false);
-    console.info(`[Enemy] ${enemyName(shot.gun)} fired from ${Math.round(shot.range)} m: ${shot.hit ? 'hit' : 'miss'}`);
+    // A shot at the convoy (F5.8) gives the gun away too; a truck hit is the convoy's note, not ours.
+    if (first && (!shot.hit || shot.truck !== undefined)) this.noteEnemy(shot.gun, false);
+    const at = shot.truck === undefined ? '' : ` at truck ${shot.truck + 1}`;
+    console.info(`[Enemy] ${enemyName(shot.gun)} fired${at} from ${Math.round(shot.range)} m: ${shot.hit ? 'hit' : 'miss'}`);
   }
 
   private note(text: string, say?: VoiceCue): void {
@@ -639,8 +681,8 @@ export class EnemySystem extends createSystem({}) {
   private host(dt: number, paused: boolean): void {
     // Knocked out (F3.4), the tank is out of the fight: the enemies hold their fire.
     if (!paused && this.battery.on && !damageState().out && !this.holdFire) {
-      this.battery.step(dt, this.tankTarget(), this.clear, this.fired);
-      for (const shot of this.fired) this.send(shot);
+      this.battery.step(dt, this.tankTarget(), this.clear, this.fired, this.convoy ?? undefined);
+      for (const shot of this.fired) this.sendShot(shot);
     }
     for (let k = this.pendingKills.length - 1; k >= 0; k--) {
       const p = this.pendingKills[k];
@@ -800,7 +842,9 @@ export class EnemySystem extends createSystem({}) {
     slot.tracer.visible = false;
     if (!slot.struck) {
       slot.struck = true;
-      if (shot.hit) {
+      if (shot.hit && shot.truck !== undefined) {
+        for (const listener of truckStruckListeners) listener(shot.truck, shot.gun);
+      } else if (shot.hit) {
         playTankSound('bump');
         // The host takes the hit's damage as the shell gets there (F3.4).
         if (netLink.isHost && shot.damage) takeHit(shot.damage);

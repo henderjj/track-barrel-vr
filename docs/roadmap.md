@@ -130,7 +130,7 @@ The indicators the crew read most, and a game mode that needs no enemies, so the
 | F5.5 | Ghost replay of the crew's best run | Planned | F5.3b | | |
 | F5.6 | After-action replay with both views side by side | Planned | F5.5 | | |
 | F5.7 | Randomised targets, routes and weather | Planned | F1.7 | | Each random part gets a URL switch to turn it off in tests |
-| F5.8 | Scenario: escort a convoy | Planned | F3.3 | | |
+| F5.8 | Scenario: escort a convoy | Headset check | F3.3 | | [escort.md](escort.md): Missions → Escort a convoy; four trucks follow the tank 50 m behind up the range road to the 600 m marker past the guns and, later, the tanks; the guns fire on a truck they see before the tank, the tanks on the escort; one hit knocks a truck out; won with at least two through, lost with fewer or the tank out; Ambush jumps to gun A laid on the convoy; `escort`/`escort-ask` events, `enemy-shot` gains `truck`; no packet or HoldKind |
 | F5.9 | Scenario: hold a hill hull-down | Planned | F3.3 | | |
 | F5.10 | Scenarios: recon unseen, ambush a column | Planned | F3.3 | | |
 | F5.11 | Night and fog conditions | Planned | F5.7 | | Retint lights, fog and sky; no new lights |
