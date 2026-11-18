@@ -364,7 +364,7 @@ async function seatChecks(host, guest, label, hostSeat = 'driver') {
   const seats = () => Promise.all([host, guest].map((p) => p.page.evaluate(() => ({
     mine: window.__seats.mine,
     crew: window.__seats.crew,
-    legs: window.__debug.world.scene.getObjectByName('Crew 2 Legs')?.position.toArray(),
+    legs: window.__debug.world.scene.getObjectByName('Crew 2 Body')?.position.toArray(),
   }))));
   const legsAt = (s, seat) => s.legs !== undefined && Math.hypot(...s.legs.map((v, i) => v - HIPS[seat][i])) < 0.01;
   const seated = (hostSeat, guestSeat) => waitFor(`the host in the ${hostSeat}'s seat and the guest in the ${guestSeat}'s`, async () => {
@@ -408,7 +408,7 @@ async function seatChecks(host, guest, label, hostSeat = 'driver') {
   const raisedOnGunner = () => gunner.page.evaluate(() => ({
     crew: window.__convoy.state().crew,
     lid: window.__interior.state().lids.driver,
-    legs: window.__debug.world.scene.getObjectByName('Crew 2 Legs')?.position.toArray(),
+    legs: window.__debug.world.scene.getObjectByName('Crew 2 Body')?.position.toArray(),
   }));
   for (const up of [true, false]) {
     await driver.page.evaluate((u) => window.__convoy.headOut(u), up);
@@ -1690,7 +1690,7 @@ async function botChecks(browser) {
       mine: window.__seats.mine,
       eye: window.__seats.eye(window.__seats.crew),
       head: window.__debug.world.scene.getObjectByName('Crew 2 Head')?.position.toArray(),
-      legs: window.__debug.world.scene.getObjectByName('Crew 2 Legs')?.position.toArray(),
+      legs: window.__debug.world.scene.getObjectByName('Crew 2 Body')?.position.toArray(),
     }));
     return { ...onBot, ...onMine };
   };
@@ -2012,7 +2012,7 @@ async function main() {
         fingers.index > -0.3 && fingers.middle < -1.3,
       `left ${JSON.stringify(fingers.left)}, right ${JSON.stringify(fingers.right)}, drawn index bend ${fingers.index?.toFixed(2)}, middle ${fingers.middle?.toFixed(2)} rad`);
     const visible = await b.page.evaluate(() =>
-      ['Crew 2 Head', 'Crew 2 Torso', 'Crew 2 Neck', 'Crew 2 Legs', 'Crew 2 Left Hand', 'Crew 2 Right Hand'].every(
+      ['Crew 2 Head', 'Crew 2 Body', 'Crew 2 Left Hand', 'Crew 2 Right Hand'].every(
         (name) => window.__debug.world.scene.getObjectByName(name)?.visible,
       ),
     );

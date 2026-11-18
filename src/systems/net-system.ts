@@ -1,4 +1,4 @@
-import { type BufferGeometry, createSystem, Euler, InputComponent, Mesh, Object3D, Quaternion, Vector3, VisibilityState } from '@iwsdk/core';
+import { AssetManager, createSystem, Euler, InputComponent, Object3D, Quaternion, Vector3, VisibilityState } from '@iwsdk/core';
 import { crewControls } from '../net/crew-controls.js';
 import { LobbyUi } from '../net/lobby-ui.js';
 import { normaliseRoomCode } from '../net/lobby-protocol.js';
@@ -6,17 +6,8 @@ import { NetSession, type SessionState } from '../net/net-session.js';
 import { createAvatarPose, decodePose, encodePose, type AvatarPose, type PoseHeader, type PoseSample, POSE_PACKET_BYTES, seqNewer } from '../net/pose-codec.js';
 import { copyAvatar, copyPose, PoseBuffer } from '../net/pose-buffer.js';
 import { Voice } from '../net/voice.js';
-import {
-  createAvatarHand,
-  createAvatarHead,
-  createAvatarLegs,
-  createAvatarNeck,
-  avatarTorsoGeometry,
-  crewCoat,
-  createAvatarTorso,
-  CREW_COLORS,
-  poseCrewBody,
-} from '../scene-assets/avatar.scene-asset.js';
+import { createAvatarHand, crewCoat, CREW_COLORS } from '../scene-assets/avatar.scene-asset.js';
+import { Crewman } from '../scene-assets/crewman.js';
 import type { PosedHand } from '../scene-assets/hand.scene-asset.js';
 import { hipPoint, SEATS, seatToHull } from '../sim/cabin.js';
 import { seatAs } from '../sim/convoy-seat.js';
@@ -248,10 +239,12 @@ export class NetSystem extends createSystem({}) {
   private crewAway = false;
   private sentAway: boolean | null = null;
   private lastTransit = Number.NaN;
-  private head!: Mesh;
-  private torso!: Mesh;
-  private legs!: Mesh;
-  private neck!: Mesh;
+  /** The crewmate, drawn as the textured crewman (F6.3b). */
+  private crewman!: Crewman;
+  private crewEye = new Vector3();
+  private crewTurn = new Quaternion();
+  private cuffAt = new Vector3();
+  private cuffOpens = new Vector3();
   /** The crewmate's torso and neck as last drawn (F1.1b). */
   private body = createSeatedBody();
   private headAt: [number, number, number] = [0, 0, 0];
@@ -359,7 +352,7 @@ export class NetSystem extends createSystem({}) {
         pivot: [...this.body.pivot],
         stretch: this.body.stretch,
         twist: this.body.twist,
-        neck: this.neck.scale.y,
+        neck: Math.hypot(this.body.neckTo[0] - this.body.neckFrom[0], this.body.neckTo[1] - this.body.neckFrom[1], this.body.neckTo[2] - this.body.neckFrom[2]),
       }),
       get color() { return self.color; },
       get remoteColor() { return self.remoteColor; },
@@ -559,11 +552,7 @@ export class NetSystem extends createSystem({}) {
   /** Dress the crewmate in coat colour `index`. */
   private recolorRemote(index: number): void {
     this.remoteColor = index;
-    const swap = (mesh: Mesh, geometry: BufferGeometry) => {
-      mesh.geometry.dispose();
-      mesh.geometry = geometry;
-    };
-    swap(this.torso, avatarTorsoGeometry(index));
+    this.crewman.setColor(crewCoat(index));
     this.leftHand.setCoat(crewCoat(index));
     this.rightHand.setCoat(crewCoat(index));
   }
@@ -589,16 +578,17 @@ export class NetSystem extends createSystem({}) {
   private createRemoteAvatar(): void {
     // Until the crewmate says which coat colour they picked.
     const index = this.remoteColor;
-    this.head = createAvatarHead(index);
-    this.torso = createAvatarTorso(index);
-    this.neck = createAvatarNeck(index);
-    const seat = SEATS.driver;
-    this.legs = createAvatarLegs(index, hipPoint(seat, this.hip)[1] - seat.floorY);
+    // The crewman model is loaded before the systems start (src/assets.ts); there is only one crewmate, so its
+    // skeleton is used as loaded rather than cloned.
+    const model = AssetManager.getGLTF('crewman', { shared: true });
+    const mask = AssetManager.getTexture('crewman-crew-mask');
+    if (!model || !mask) throw new Error('the crewman model is not loaded');
+    this.crewman = new Crewman(model.scene, mask, crewCoat(index), index);
     this.leftHand = createAvatarHand(index, 'left');
     this.rightHand = createAvatarHand(index, 'right');
-    for (const mesh of [this.head, this.torso, this.neck, this.legs, this.leftHand.mesh, this.rightHand.mesh]) {
-      mesh.visible = false;
-      this.world.createTransformEntity(mesh);
+    for (const object of [this.crewman.head, this.crewman.body, this.leftHand.mesh, this.rightHand.mesh]) {
+      object.visible = false;
+      this.world.createTransformEntity(object);
     }
   }
 
@@ -645,7 +635,7 @@ export class NetSystem extends createSystem({}) {
     netLink.clockSynced = netLink.connected && session.clock.stats.samples > 0;
     this.updatePresence(session.state, performance.now());
     if (session.state !== 'connected') {
-      if (this.head.visible) {
+      if (this.crewman.head.visible) {
         this.setRemoteVisible(false, 0);
       }
       return;
@@ -768,14 +758,12 @@ export class NetSystem extends createSystem({}) {
 
   private applyRemote(dt: number): void {
     const r = this.remote;
-    setFromPose(this.head, r.head);
-    // Legs sit in the crewmate's seat, facing its way: the driver's raised in the convoy position (docs/convoy-seat.md).
+    setFromPose(this.crewman.head, r.head);
+    // The body sits in the crewmate's seat, facing its way: the driver's raised in the convoy position (docs/convoy-seat.md).
     const seat = seatAs(seating.crew, seating.crewConvoy);
     const seatYaw = seat.frame === 'turret' ? seating.turretYaw : 0;
     seatToHull(seat, seating.turretYaw, hipPoint(seat, this.hip), this.hip);
-    this.legs.position.set(this.hip[0], this.hip[1], this.hip[2]);
-    this.legs.rotation.set(0, seatYaw, 0);
-    // The torso pivots at the hips towards the head, and the neck joins them (F1.1b).
+    // The spine leans from the hips towards the head, and the neck joins them (F1.1b).
     const h = this.headAt;
     h[0] = r.head.px;
     h[1] = r.head.py;
@@ -785,8 +773,10 @@ export class NetSystem extends createSystem({}) {
     q[1] = r.head.qy;
     q[2] = r.head.qz;
     q[3] = r.head.qw;
-    solveSeatedBody(h, q, this.hip, seatYaw, this.torso.visible ? dt : 0, this.body);
-    poseCrewBody(this.torso, this.neck, this.body, seatYaw);
+    solveSeatedBody(h, q, this.hip, seatYaw, this.crewman.body.visible ? dt : 0, this.body);
+    this.crewEye.set(h[0], h[1], h[2]);
+    this.crewTurn.set(q[0], q[1], q[2], q[3]);
+    this.crewman.pose(this.hip, CREW_HIP_HEIGHT, seatYaw, this.crewEye, this.crewTurn, this.body);
     setFromPose(this.leftHand.mesh, r.left);
     setFromPose(this.rightHand.mesh, r.right);
     // Their fingers are posed, and hands locked to what they hold, in lockCrewHands.
@@ -815,13 +805,24 @@ export class NetSystem extends createSystem({}) {
       this.crewLocks[side].update(dt, kind, this.tmpPos, this.tmpQuat, hand.mesh.position, hand.mesh.quaternion, curls);
       hand.pose(curls);
     }
+    // The arms reach into the gauntlets where they were drawn (F6.3b), or rest on the thighs.
+    if (this.crewman.body.visible) {
+      this.reachInto(this.leftHand);
+      this.reachInto(this.rightHand);
+    }
+  }
+
+  private reachInto(hand: PosedHand): void {
+    if (hand.mesh.visible) {
+      hand.cuff(this.cuffAt, this.cuffOpens);
+      this.crewman.reach(hand.side, this.cuffAt, this.cuffOpens);
+    } else {
+      this.crewman.reach(hand.side, null, null);
+    }
   }
 
   private setRemoteVisible(visible: boolean, flags: number): void {
-    this.head.visible = visible;
-    this.torso.visible = visible;
-    this.neck.visible = visible;
-    this.legs.visible = visible;
+    this.crewman.setVisible(visible);
     this.leftHand.mesh.visible = visible && (flags & FLAG_LEFT_TRACKED) !== 0;
     this.rightHand.mesh.visible = visible && (flags & FLAG_RIGHT_TRACKED) !== 0;
   }
@@ -843,6 +844,9 @@ function readWorldPose(object: Object3D, out: PoseSample, pos: Vector3, quat: Qu
   out.px = pos.x; out.py = pos.y; out.pz = pos.z;
   out.qx = quat.x; out.qy = quat.y; out.qz = quat.z; out.qw = quat.w;
 }
+
+/** The crewman's hips over the floor: the driver's seat's, in either seat, as the legs were drawn before (F1.1b). */
+const CREW_HIP_HEIGHT = hipPoint(SEATS.driver, [0, 0, 0])[1] - SEATS.driver.floorY;
 
 function setFromPose(object: Object3D, p: PoseSample): void {
   object.position.set(p.px, p.py, p.pz);

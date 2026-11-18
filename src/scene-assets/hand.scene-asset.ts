@@ -91,6 +91,13 @@ const WRIST_IN_GRIP = new Matrix4().fromArray([
   0.04728994518518448, 0.03910332918167114, 0.07807964831590652, 1,
 ]);
 const MIRROR_X = new Matrix4().makeScale(-1, 1, 1);
+/**
+ * Where a forearm drawn into the gauntlet ends, inside the cuff, and the
+ * way the cuff opens (towards the elbow), in a right hand's grip space: for
+ * the textured crewman's arms (F6.3b, docs/crew-avatars.md).
+ */
+const CUFF_POINT = new Vector3(0, -0.005, 0.035).applyMatrix4(WRIST_IN_GRIP);
+const CUFF_DIR = new Vector3(0, 0, 1).transformDirection(WRIST_IN_GRIP);
 
 /**
  * The closed fist in a right hand's grip space, for drawing it round a
@@ -375,6 +382,17 @@ export class PosedHand {
   fistCentre(out: Vector3): Vector3 {
     out.set(FIST_CENTRE[0] * (this.side === 'left' ? -1 : 1), FIST_CENTRE[1], FIST_CENTRE[2]);
     return out.applyQuaternion(this.mesh.quaternion).add(this.mesh.position);
+  }
+
+  /**
+   * Where the forearm meets the hand inside the cuff (`point`), and the way
+   * the cuff opens towards the elbow (`dir`, a unit vector), in the mesh's
+   * parent's space.
+   */
+  cuff(point: Vector3, dir: Vector3): void {
+    const mirror = this.side === 'left' ? -1 : 1;
+    point.set(CUFF_POINT.x * mirror, CUFF_POINT.y, CUFF_POINT.z).applyQuaternion(this.mesh.quaternion).add(this.mesh.position);
+    dir.set(CUFF_DIR.x * mirror, CUFF_DIR.y, CUFF_DIR.z).applyQuaternion(this.mesh.quaternion);
   }
 
   /** Where a bone is, in the mesh's space, for tests. */
