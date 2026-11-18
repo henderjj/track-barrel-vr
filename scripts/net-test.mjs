@@ -877,13 +877,17 @@ async function escortChecks(host, guest, label) {
     }, 3000).catch(() => null);
   }
   const k = lost ? lost.alive.indexOf(false) : -1;
-  const sign = k >= 0 ? await waitFor("the truck lost on the guest's sign", async () => {
-    const text = await guest.page.evaluate(() => window.__escort.sign);
-    return /knocked out by Gun A/.test(text) ? text : null;
-  }, 5000).catch(() => '') : '';
-  const wreck = k >= 0 ? (await guest.page.evaluate(() => window.__escort.drawn()))[k] : null;
+  // The wreck is drawn on the guest's next frame after the event, so wait for it with the sign.
+  const seen = k >= 0 ? await waitFor("the truck lost on the guest's sign and drawn as a wreck", async () => {
+    const [text, drawn] = await guest.page.evaluate(() => [window.__escort.sign, window.__escort.drawn()]);
+    return /knocked out by Gun A/.test(text) && drawn[k].wreck && drawn[k].visible ? { text, wreck: drawn[k] } : null;
+  }, 5000).catch(async () => {
+    const [text, drawn] = await guest.page.evaluate(() => [window.__escort.sign, window.__escort.drawn()]);
+    return { text, wreck: drawn[k], late: true };
+  }) : null;
+  const sign = seen?.text ?? '';
   check(`A truck the host's gun A knocks out is a wreck on the guest's page, its sign naming the truck and the gun (${label})`,
-    k >= 0 && wreck?.wreck === true && /^Truck \d knocked out by Gun A/.test(sign), `truck ${k}, sign "${sign}"`);
+    k >= 0 && !seen.late && /^Truck \d knocked out by Gun A/.test(sign), `truck ${k}, sign "${sign}", drawn ${JSON.stringify(seen?.wreck ?? null)}`);
 
   await guest.page.evaluate(() => window.__escort.stop());
   const off = await waitFor('the convoy off on both pages', async () => {
