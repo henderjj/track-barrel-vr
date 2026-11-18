@@ -4318,7 +4318,7 @@ async function theMissions() {
     const a = ambush();
     const e = enemy();
     const t = tank();
-    return a.phase === 'on' && e.present.slice(5).every(Boolean) && !e.present[0] && Math.hypot(t.x + 160, t.z + 560) < 1 && a;
+    return a.phase === 'on' && e.present.slice(5, 9).every(Boolean) && !e.present[0] && Math.hypot(t.x + 160, t.z + 560) < 1 && a;
   }, 10000).catch(() => ambush());
   const brief = await waitFor('the ambush briefing', () => /^Ambush: a column/.test(evalInApp('window.__ambush.sign')) && evalInApp('window.__ambush.sign'), 5000)
     .catch(() => evalInApp('window.__ambush.sign'));

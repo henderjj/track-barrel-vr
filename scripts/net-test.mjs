@@ -931,7 +931,7 @@ async function missionChecks(host, guest, label) {
   const on = await waitFor('the ambush on both pages', async () => {
     const [h, g] = await Promise.all([ambush(host), ambush(guest)]);
     const e = await enemy(guest);
-    return h.phase === 'on' && g.phase === 'on' && e.present.slice(5).every(Boolean) ? g : null;
+    return h.phase === 'on' && g.phase === 'on' && e.present.slice(5, 9).every(Boolean) ? g : null;
   }, 8000).catch(() => null);
   check(`The guest's Ambush a column → Start runs it on the host, the column in on both pages (${label})`, on !== null,
     on ? '' : JSON.stringify(await Promise.all([host, guest].map(ambush))));
