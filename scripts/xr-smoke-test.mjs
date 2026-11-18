@@ -3713,10 +3713,14 @@ async function theCrewBoard() {
     driverSees.length > 0.45 && driverSees.length < 1 && driverSees.cos > 0.7 && gunnerSees.length > 0.45 && gunnerSees.length < 1 && gunnerSees.cos > 0.7 && faces.draws > 0,
     `driver's ${driverSees.length.toFixed(2)} m away (cos ${driverSees.cos.toFixed(2)}), gunner's ${gunnerSees.length.toFixed(2)} m (cos ${gunnerSees.cos.toFixed(2)}), drawn ${faces.draws} times`);
 
+  // The hit's call is posted on the frame its sign goes up, after the zone is already hatched; wait for a call newer
+  // than any before the hit, or an earlier step's last call (a scenario's debrief) passes for it on a slow frame.
+  const callBefore = evalInApp('(() => { const c = window.__crewBoard.calls(); return c.length ? c[c.length - 1].id : 0; })()');
   evalInApp('(window.__damage.test("engine"), true)');
   const hit = await waitFor('the hit on the board', () => {
     const t = evalInApp('window.__crewBoard.text()');
-    return t.zones.engine && t.calls.length > 0 && evalInApp('window.__crewBoard.key()').includes(t.calls[0].text) ? t : null;
+    const newest = evalInApp('(() => { const c = window.__crewBoard.calls(); return c.length ? c[c.length - 1].id : 0; })()');
+    return t.zones.engine && newest > callBefore && t.calls.length > 0 && evalInApp('window.__crewBoard.key()').includes(t.calls[0].text) ? t : null;
   }, 8000).catch(() => null);
   const sign = () => evalInApp("(() => { const s = window.__debug.world.scene.getObjectByName('Damage Sign'); return { text: window.__damage.sign, drawn: s ? s.visible : null }; })()");
   const quiet = sign();
