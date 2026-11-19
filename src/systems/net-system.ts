@@ -1,4 +1,4 @@
-import { AssetManager, createSystem, Euler, InputComponent, Object3D, Quaternion, Vector3, VisibilityState } from '@iwsdk/core';
+import { createSystem, Euler, InputComponent, Object3D, Quaternion, Vector3, VisibilityState } from '@iwsdk/core';
 import { crewControls } from '../net/crew-controls.js';
 import { LobbyUi } from '../net/lobby-ui.js';
 import { normaliseRoomCode } from '../net/lobby-protocol.js';
@@ -239,7 +239,7 @@ export class NetSystem extends createSystem({}) {
   private crewAway = false;
   private sentAway: boolean | null = null;
   private lastTransit = Number.NaN;
-  /** The crewmate, drawn as the textured crewman (F6.3b). */
+  /** The crewmate, drawn as the low-poly crewman (F6.3c). */
   private crewman!: Crewman;
   private crewEye = new Vector3();
   private crewTurn = new Quaternion();
@@ -578,12 +578,7 @@ export class NetSystem extends createSystem({}) {
   private createRemoteAvatar(): void {
     // Until the crewmate says which coat colour they picked.
     const index = this.remoteColor;
-    // The crewman model is loaded before the systems start (src/assets.ts); there is only one crewmate, so its
-    // skeleton is used as loaded rather than cloned.
-    const model = AssetManager.getGLTF('crewman', { shared: true });
-    const mask = AssetManager.getTexture('crewman-crew-mask');
-    if (!model || !mask) throw new Error('the crewman model is not loaded');
-    this.crewman = new Crewman(model.scene, mask, crewCoat(index), index);
+    this.crewman = new Crewman(crewCoat(index), index);
     this.leftHand = createAvatarHand(index, 'left');
     this.rightHand = createAvatarHand(index, 'right');
     for (const object of [this.crewman.head, this.crewman.body, this.leftHand.mesh, this.rightHand.mesh]) {

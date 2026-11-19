@@ -113,8 +113,8 @@ describe('the driver\'s controls (F1.5)', () => {
   });
 
   it('stands the tillers outside the driver\'s knees, and the gear lever on the gearbox\'s hump', () => {
-    // The crewman's drawn shins and boots, by the pedestals, reach 14.4 cm either side of the seat's middle, his knees
-    // drawn in (KNEE_SPLAY in src/scene-assets/crewman.ts, measured from the posed model, F6.3b).
+    // The crewman's drawn shins, anklets and boots, by the pedestals, reach 15.5 cm either side of the seat's middle
+    // (KNEE_SPLAY in src/scene-assets/crewman.ts, measured from the posed model, F6.3c).
     const legOuter = 0.16;
     for (const id of ['tillerLeft', 'tillerRight'] as const) {
       const x = DRIVER_CONTROLS[id].pivot[0];

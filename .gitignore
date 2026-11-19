@@ -5,4 +5,3 @@ artifacts/
 *.log
 .DS_Store
 .wrangler/
-scripts/crewman-bake/source/
