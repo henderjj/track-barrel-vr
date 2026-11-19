@@ -1,72 +1,51 @@
 import {
   type Bone,
-  Color,
   Group,
   Matrix4,
-  type Mesh,
-  type MeshStandardMaterial,
+  Mesh,
+  MeshStandardMaterial,
   type Object3D,
   Quaternion,
-  type SkinnedMesh,
-  type Texture,
+  Skeleton,
+  SkinnedMesh,
   Vector3,
 } from '@iwsdk/core';
 import { litInside } from './cabin-light.js';
+import { createCrewmanBones, CREWMAN_EYES, crewmanGeometry, crewmanHeadgearGeometry } from './crewman.scene-asset.js';
 import { reachArm, type Vec3 } from '../sim/arm-reach.js';
 import type { SeatedBody } from '../sim/seated-body.js';
 
 /**
- * The textured crewman (F6.3b, docs/crew-avatars.md): the crewmate drawn as
- * a skinned human in British Royal Armoured Corps kit, built from
- * Quaternius's Universal Base Characters (CC0), with the uniform painted
- * into its skin texture and a beret, badge and headset fitted to its head
- * (public/models/crewman/, baked by scripts/crewman-bake/).
+ * The crewmate's body (F6.3c, docs/crew-avatars.md): the low-poly crewman
+ * (crewman.scene-asset.ts), a British Royal Armoured Corps tank crewman of
+ * 1944, posed each frame from what the crewmate's page already sends.
  *
- * It takes the same inputs as the low-poly crew before it: the seat's hip
- * point, the head's pose and the seated body that src/sim/seated-body.ts
- * solves from it (F1.1b). The legs sit in the seat; the spine leans from the
- * hips to the neck's base and turns the shoulders; the neck reaches the head,
- * which is turned as the headset is. The arms reach into the gauntlets
- * (`PosedHand`, still drawn at the grip poses and locked onto handles) with
- * two-bone reach (src/sim/arm-reach.ts); the model's own hands are folded
- * away inside the cuffs.
+ * It takes the seat's hip point, the head's pose and the seated body that
+ * src/sim/seated-body.ts solves from it (F1.1b). The legs sit in the seat;
+ * the spine leans from the hips to the neck's base and turns the shoulders;
+ * the neck reaches the head, which is turned as the headset is. The arms
+ * reach into the gauntlets (`PosedHand`, still drawn at the grip poses and
+ * locked onto handles) with two-bone reach (src/sim/arm-reach.ts).
  *
- * The crew colour (the neckerchief) is a tint over a mask, so changing it
- * is a uniform, not a new texture.
+ * The crew colour is the neckerchief's: changing it rebuilds the body's
+ * geometry (a few thousand triangles, only when the colour changes).
  */
 
-/** The model's size: 1.81 m tall as made, drawn 1.72 m, a typical crewman's. */
-export const CREW_SCALE = 0.95;
-/** Between the eyes, in the model as made (facing +Z, feet at y = 0), m. */
-const EYES: readonly [number, number, number] = [0, 1.6986, 0.07];
+/** Between the eyes, in the model as made (facing +Z, hips at the origin), m. */
+const EYES = CREWMAN_EYES;
 /** Hands at rest on the thighs, when a controller isn't tracked, in the body's frame (forward +Z, hips at 0), m. */
-const REST_WRIST: readonly [number, number, number] = [0.19, 0.11, 0.3];
+const REST_WRIST: readonly [number, number, number] = [0.17, 0.12, 0.3];
 /** How far forward of the hips the knees are, m, and how far apart they splay. */
 const KNEE_FORWARD = 0.44;
-const KNEE_SPLAY = -0.04;
+const KNEE_SPLAY = 0;
 /** Least and most the spine stretches to reach the neck's base. */
 const SPINE_STRETCH: readonly [number, number] = [0.8, 1.3];
 
 const Y_HALF_TURN = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI);
 const UP = new Vector3(0, 1, 0);
 
-/** The parts of the crew colour: a mask texture and a tint, spliced into the body's material. */
-function tintedByCrew(material: MeshStandardMaterial, mask: Texture, tint: { value: Color }): void {
-  litInside(material);
-  const inner = material.onBeforeCompile;
-  material.onBeforeCompile = (shader, renderer) => {
-    inner.call(material, shader, renderer);
-    shader.uniforms.crewTint = tint;
-    shader.uniforms.crewMask = { value: mask };
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 crewTint;\nuniform sampler2D crewMask;')
-      // The texture holds the crew colour's shading as mid grey (0.5 is unshaded).
-      .replace(
-        '#include <map_fragment>',
-        '#include <map_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, crewTint * diffuseColor.rgb * 2.0, texture2D(crewMask, vMapUv).r);',
-      );
-  };
-  material.customProgramCacheKey = () => 'cabin-light-crewman';
+function crewMaterial(): MeshStandardMaterial {
+  return litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }), { finish: true });
 }
 
 interface Rest {
@@ -80,8 +59,7 @@ export class Crewman {
   readonly body = new Group();
   /** The beret, badge and headset, drawn at the head's pose (eye centre, facing -Z). */
   readonly head: Mesh;
-  private readonly model: Object3D;
-  private readonly tint = { value: new Color() };
+  private readonly mesh: SkinnedMesh;
   private readonly bones = new Map<string, Bone>();
   private readonly rest: Rest[] = [];
   /** The head bone's turn when the head faces -Z, and the eyes from it then (m). */
@@ -113,58 +91,25 @@ export class Crewman {
   private readonly elbowAt: Vec3 = [0, 0, 0];
   private readonly wristAt: Vec3 = [0, 0, 0];
 
-  /**
-   * Dress the crewman from the loaded model (`scene`, used as it is: make
-   * one per crewmate), with the crew colour's mask texture, in crew colour
-   * `color` (hex), named for crew `index`.
-   */
-  constructor(scene: Object3D, mask: Texture, color: number, index: number) {
-    this.model = scene;
-    this.tint.value.setHex(color);
-    mask.flipY = false;
-    mask.needsUpdate = true;
-    scene.updateMatrixWorld(true);
-    let headgear: Mesh | undefined;
-    scene.traverse((o) => {
-      if ((o as Bone).isBone) this.bones.set(o.name, o as Bone);
-      const mesh = o as SkinnedMesh;
-      if (!mesh.isMesh) return;
-      const material = mesh.material as MeshStandardMaterial;
-      if (mesh.isSkinnedMesh) {
-        mesh.frustumCulled = false;
-        if (material.map && mesh.name !== 'Eyes' && mesh.name !== 'Eyebrows') tintedByCrew(material, mask, this.tint);
-        else litInside(material);
-      } else if (mesh.name === 'Headgear') {
-        headgear = mesh;
-      }
-    });
-    if (!headgear) throw new Error('crewman model has no Headgear');
-    // The headgear, out of the model and into the head's frame: eyes at the origin, facing -Z, at the drawn size.
-    headgear.removeFromParent();
-    headgear.geometry.applyMatrix4(
-      new Matrix4()
-        .makeScale(CREW_SCALE, CREW_SCALE, CREW_SCALE)
-        .multiply(new Matrix4().makeRotationY(Math.PI))
-        .multiply(new Matrix4().makeTranslation(-EYES[0], -EYES[1], -EYES[2]))
-        .multiply(headgear.matrixWorld),
-    );
-    headgear.position.set(0, 0, 0);
-    headgear.quaternion.identity();
-    headgear.scale.set(1, 1, 1);
-    litInside(headgear.material as MeshStandardMaterial);
-    headgear.name = `Crew ${index + 1} Head`;
-    this.head = headgear;
+  /** Dress the crewman in crew colour `color` (hex), named for crew `index`. */
+  constructor(color: number, index: number) {
+    const bones = createCrewmanBones();
+    for (const bone of bones) this.bones.set(bone.name, bone);
+    this.mesh = new SkinnedMesh(crewmanGeometry(color), crewMaterial());
+    this.mesh.add(bones[0]);
+    this.mesh.updateMatrixWorld(true);
+    this.mesh.bind(new Skeleton(bones), new Matrix4());
+    // Posed far from its bind bounds every frame: never culled (it is only drawn near the player anyway).
+    this.mesh.frustumCulled = false;
+
+    // The headgear, in the head's frame: eyes at the origin, facing -Z.
+    const headgear = crewmanHeadgearGeometry();
+    headgear.applyMatrix4(new Matrix4().makeRotationY(Math.PI).multiply(new Matrix4().makeTranslation(-EYES[0], -EYES[1], -EYES[2])));
+    this.head = new Mesh(headgear, crewMaterial());
+    this.head.name = `Crew ${index + 1} Head`;
 
     this.body.name = `Crew ${index + 1} Body`;
-    this.body.add(scene);
-    scene.scale.setScalar(CREW_SCALE);
-    this.body.updateMatrixWorld(true);
-    // Hips on the seat's hip point: the thighs' joints either side of it.
-    this.worldOf('thigh_l', this.a).add(this.worldOf('thigh_r', this.b)).multiplyScalar(0.5);
-    scene.position.sub(this.a);
-    // The model's hands fold away inside the gauntlets' cuffs.
-    this.bone('hand_l').scale.setScalar(0.001);
-    this.bone('hand_r').scale.setScalar(0.001);
+    this.body.add(this.mesh);
     this.body.updateMatrixWorld(true);
     for (const name of ['pelvis', 'spine_01', 'spine_02', 'spine_03', 'neck_01', 'Head', 'upperarm_l', 'lowerarm_l', 'hand_l', 'upperarm_r', 'lowerarm_r', 'hand_r']) {
       const bone = this.bone(name);
@@ -172,7 +117,7 @@ export class Crewman {
     }
     // The head bone's turn and the eyes' place from it, with the body facing -Z.
     this.bone('Head').getWorldQuaternion(this.headTurn).premultiply(Y_HALF_TURN);
-    const eyes = scene.localToWorld(this.a.set(EYES[0], EYES[1], EYES[2]));
+    const eyes = this.mesh.localToWorld(this.a.set(EYES[0], EYES[1], EYES[2]));
     this.eyesFromHead.subVectors(eyes, this.worldOf('Head', this.b)).applyQuaternion(Y_HALF_TURN);
     // The model's left is +X in the body's frame (it faces +Z there).
     this.arms = {
@@ -186,7 +131,8 @@ export class Crewman {
 
   /** Dress the neckerchief in crew colour `color` (hex). */
   setColor(color: number): void {
-    this.tint.value.setHex(color);
+    this.mesh.geometry.dispose();
+    this.mesh.geometry = crewmanGeometry(color);
   }
 
   setVisible(visible: boolean): void {

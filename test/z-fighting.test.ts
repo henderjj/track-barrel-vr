@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Group, Mesh, MeshLambertMaterial, type Object3D, type Vector3 } from '@iwsdk/core';
+import { BufferAttribute, BufferGeometry, Group, Mesh, MeshLambertMaterial, type Object3D, Quaternion, type SkinnedMesh, Vector3 } from '@iwsdk/core';
 import { describe, expect, it } from 'vitest';
 import * as cabin from '../src/scene-assets/cabin.scene-asset.js';
 import * as ride from '../src/scene-assets/ride.scene-asset.js';
@@ -22,6 +22,7 @@ import * as sight from '../src/scene-assets/sight.scene-asset.js';
 import { createTerrain } from '../src/scene-assets/terrain.scene-asset.js';
 import { GROUND_Y } from '../src/sim/cabin.js';
 import { insideCabin } from '../src/sim/interior.js';
+import { hipPoint, SEATS } from '../src/sim/cabin.js';
 import { TURRET } from '../src/sim/cabin.js';
 import { EYEPIECE } from '../src/sim/gunsight.js';
 import {
@@ -39,7 +40,10 @@ import * as leverRig from '../src/scene-assets/lever-rig.scene-asset.js';
 import * as mechanism from '../src/scene-assets/mechanism.scene-asset.js';
 import * as bench from '../src/sim/mechanism-bench.js';
 import { coplanarOverlaps, describeOverlaps, trianglesOf } from './support/coplanar.js';
-import { readGlb } from './support/glb.js';
+import { Crewman } from '../src/scene-assets/crewman.js';
+import { crewmanGeometry, crewmanHeadgearGeometry } from '../src/scene-assets/crewman.scene-asset.js';
+import { CREW_COLORS } from '../src/scene-assets/avatar.scene-asset.js';
+import { createSeatedBody, solveSeatedBody } from '../src/sim/seated-body.js';
 
 /**
  * Z-fighting: two differently coloured faces facing the same way, in (nearly)
@@ -61,6 +65,31 @@ function mesh(geometry: BufferGeometry, name: string): Mesh {
 
 /** Faces flat on a floor at y = 0, facing down into it, can never be seen. */
 const onFloor = (at: Vector3, n: Vector3) => n.y < -0.99 && Math.abs(at.y) < 0.005;
+
+/** A skinned body as drawn: its posed triangles baked into a plain mesh in world space. */
+function posedCopy(root: Object3D): Mesh {
+  root.updateMatrixWorld(true);
+  let out: Mesh | undefined;
+  root.traverse((o) => {
+    const skinned = o as SkinnedMesh;
+    if (!skinned.isSkinnedMesh) return;
+    skinned.skeleton.update();
+    const pos = skinned.geometry.getAttribute('position');
+    const posed = new Float32Array(pos.count * 3);
+    const v = new Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      skinned.getVertexPosition(i, v);
+      v.applyMatrix4(skinned.matrixWorld);
+      posed.set([v.x, v.y, v.z], i * 3);
+    }
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(posed, 3));
+    g.setAttribute('color', skinned.geometry.getAttribute('color'));
+    out = mesh(g, 'crewman (posed)');
+  });
+  if (!out) throw new Error('no skinned mesh');
+  return out;
+}
 
 function expectNone(objects: Object3D[], gap: number, ignore?: (at: Vector3, n: Vector3) => boolean): void {
   const found = coplanarOverlaps(objects.flatMap((o) => trianglesOf(o)), gap, 2e-5, ignore);
@@ -628,35 +657,27 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
-  it('on the crewman\'s beret, badge and headset, and on his head under them (F6.3b)', () => {
-    // The model is skinned and textured; only the headgear is vertex-coloured. Check it, and it against the head's
-    // skin, in the model as made (the headgear is drawn rigidly with the head).
-    const glb = readGlb('public/models/crewman/crewman.glb');
-    const gear = glb.meshes.find((m) => m.name === 'Headgear')!;
-    const bodyMesh = glb.meshes.find((m) => m.name === 'SuperHero_Male')!;
-    const skin = glb.json.skins![glb.json.nodes.find((n) => n.name === 'SuperHero_Male')!.skin!];
-    const headJoint = skin.joints.findIndex((j) => glb.json.nodes[j].name === 'Head');
-    const gearGeometry = new BufferGeometry();
-    gearGeometry.setAttribute('position', new BufferAttribute(gear.attributes.POSITION as Float32Array, 3));
-    gearGeometry.setAttribute('color', new BufferAttribute(gear.attributes.COLOR_0 as Float32Array, gear.sizes.COLOR_0));
-    const pos = bodyMesh.attributes.POSITION as Float32Array;
-    const joints = bodyMesh.attributes.JOINTS_0;
-    const weights = bodyMesh.attributes.WEIGHTS_0 as Float32Array;
-    const onHead = (v: number) => {
-      let best = 0;
-      for (let k = 1; k < 4; k++) if (weights[v * 4 + k] > weights[v * 4 + best]) best = k;
-      return joints[v * 4 + best] === headJoint;
-    };
-    const head: number[] = [];
-    const index = bodyMesh.indices!;
-    for (let t = 0; t < index.length; t += 3) {
-      if (![0, 1, 2].every((k) => onHead(index[t + k]))) continue;
-      for (let k = 0; k < 3; k++) head.push(pos[index[t + k] * 3], pos[index[t + k] * 3 + 1], pos[index[t + k] * 3 + 2]);
+  it('on the low-poly crewman and his headgear, as made and seated with his hands at the controls (F6.3c)', () => {
+    // As made: the headgear is made in the body's space.
+    expectNone([mesh(crewmanGeometry(CREW_COLORS[0]), 'crewman'), mesh(crewmanHeadgearGeometry(), 'headgear')], CABIN_GAP);
+    // Seated as the game draws him: the skinned body baked to its pose, the headgear at the head, an arm resting.
+    const crew = new Crewman(CREW_COLORS[0], 0);
+    const seat = SEATS.gunner;
+    const hip = hipPoint(seat, [0, 0, 0]);
+    for (const [lean, turn] of [
+      [0, 0],
+      [0.12, 0.5],
+    ] as const) {
+      const eye = new Vector3(seat.eye[0], seat.eye[1] - lean * 0.3, seat.eye[2] - lean);
+      const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), turn);
+      const seated = solveSeatedBody(eye.toArray(), [q.x, q.y, q.z, q.w], hip, 0, 0, createSeatedBody());
+      crew.pose(hip, hip[1] - seat.floorY, 0, eye, q, seated);
+      crew.reach('left', new Vector3(hip[0] + 0.2, hip[1] + 0.2, hip[2] - 0.4), new Vector3(0, 0, 1));
+      crew.reach('right', null, null);
+      crew.head.position.copy(eye);
+      crew.head.quaternion.copy(q);
+      expectNone([posedCopy(crew.body), crew.head], CABIN_GAP);
     }
-    expect(head.length / 9).toBeGreaterThan(500);
-    const headGeometry = new BufferGeometry();
-    headGeometry.setAttribute('position', new BufferAttribute(new Float32Array(head), 3));
-    expectNone([mesh(gearGeometry, 'headgear'), new Mesh(headGeometry, new MeshLambertMaterial({ color: 0xe0b48f }))], CABIN_GAP);
   });
 
   it('in the riding spike\'s hull and turret, open and closed, with the turret turned', () => {

@@ -64,7 +64,7 @@ Rendering traps:
 
 Bodies, hands and comfort:
 
-- The player's own body: hands only, no arms. The crewmate is drawn whole as the textured crewman (`src/scene-assets/crewman.ts`, F6.3b), its arms reaching into its gloves; John asked for arms on 2026-11-18, after low-poly arms had never looked right. Pose the gloves from trigger, grip and touch sensors (`src/sim/hand-pose.ts`); lock them onto handles while gripped; let go when the real hand strays 25 cm from the handle.
+- The player's own body: hands only, no arms. The crewmate is drawn whole as the low-poly crewman (`src/scene-assets/crewman.scene-asset.ts`, posed by `src/scene-assets/crewman.ts`, F6.3c), its arms reaching into its gloves; John asked for arms on 2026-11-18, after low-poly arms had never looked right. Pose the gloves from trigger, grip and touch sensors (`src/sim/hand-pose.ts`); lock them onto handles while gripped; let go when the real hand strays 25 cm from the handle.
 - WebXR grip space has its origin at the fist with −Z along the handle towards the thumb: align a held thing to the model's own fist axis (`FIST_AXIS`), not the controller's.
 - Read grip state from `grip` in `src/systems/grip-system.ts`, not the gamepad, so controllers and tracked hands (fist or pinch) both work.
 - Put every control between knee and chest height and check it is reachable seated (eyes raised to 1.27 m, a Sherman crewman's, `SEATED_EYE`); add it to `test/body-height.test.ts`.
