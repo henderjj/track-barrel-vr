@@ -51,19 +51,75 @@ export const BREATHER = { y: 0.77, z: -2.33, radius: 0.02, x0: GEARBOX.x0 - 0.07
 export const PROPELLER_SHAFT = { x: MIDDLE_X, y: 0.11, radius: 0.12, from: GEARBOX.z1 - 0.005, to: HULL.rear + 0.02 } as const;
 
 /**
- * The driver's pedals, as figure 9: the clutch under the left steering
- * lever and the accelerator under the right, each a pad on an arm hinged
- * at the floor. They don't move: the game's clutch and accelerator are on
- * the levers and the trigger (docs/gearbox.md). The perforated foot plate
- * they stand on, in front of the seat.
+ * The driver's pedals. The clutch, under the left steering lever, hangs
+ * from a pivot in a pedal box bolted to the nose plate, as a car's does
+ * (John's notes of 20 November 2026: rising from the floor it tipped, or
+ * swung down unlike any clutch): its arm drops from the pivot and bends
+ * back at a knee to a pad facing the driver, and a push rod from the arm
+ * just under the pivot works the clutch's master cylinder, bolted to the
+ * nose plate in front of it, its fluid reservoir beside it and its line
+ * going down under the foot plate towards the engine's clutch. Pressed, the
+ * pad swings forwards about 14 cm and a little down. The accelerator,
+ * under the right lever, is a pad hinged at its heel on the plate with its
+ * toe up; pressed, its toe goes down. Both pads face the driver, up and
+ * back. They move as the game's clutch and accelerator are worked (the
+ * left and right triggers, docs/gearbox.md), `travel` rad when pressed
+ * fully. Pivots are hull space [y, z]; the clutch's knee and pad are
+ * [y, z] from its pivot, at rest. The perforated foot plate they stand
+ * on, in front of the seat.
  */
 export const PEDALS = {
-  clutch: { x: DRIVER_CONTROLS.tillerLeft.pivot[0] + 0.11, width: 0.09, length: 0.11 },
-  accelerator: { x: DRIVER_CONTROLS.tillerRight.pivot[0] - 0.1, width: 0.065, length: 0.16 },
-  hingeZ: -2.12,
-  padZ: -2.24,
-  padY: 0.17,
+  /** The clutch: its pad `padTilt` rad back from upright; the push rod's clevis `clevis` m down the arm from the pivot. */
+  clutch: {
+    x: DRIVER_CONTROLS.tillerLeft.pivot[0] + 0.11,
+    width: 0.08,
+    length: 0.07,
+    pivot: [0.53, -2.28],
+    knee: [-0.2, 0.0],
+    pad: [-0.33, 0.11],
+    padTilt: 1.0,
+    travel: 0.44,
+    clevis: 0.06,
+  },
+  /** The accelerator: its pad rising `rise` rad from the floor from its heel's hinge, toe forwards. */
+  accelerator: { x: DRIVER_CONTROLS.tillerRight.pivot[0] - 0.1, width: 0.065, length: 0.16, pivot: [0.035, -2.11], rise: 0.56, travel: 0.24 },
+  padThickness: 0.014,
 } as const;
+export type PedalId = 'clutch' | 'accelerator';
+export const PEDAL_IDS: readonly PedalId[] = ['clutch', 'accelerator'];
+
+/**
+ * The clutch's hydraulics on the nose plate: the master cylinder along Z
+ * in line with the push rod (its back end, the rod's way in, at `back`),
+ * the pedal box's cheeks either side of the arm from the plate back past
+ * the pivot, and the fluid reservoir on the plate beside them.
+ */
+export const CLUTCH_MASTER = { radius: 0.022, back: -2.34, rod: 0.006 } as const;
+/** The clutch's push rod: from 1.2 cm behind the clevis's pin forwards, level, this long, so it stays in the master cylinder from let go to pressed. */
+export const CLUTCH_PUSH_ROD = { from: 0.012, length: PEDALS.clutch.pivot[1] - CLUTCH_MASTER.back + 0.005 } as const;
+export const PEDAL_BOX = { cheekGap: 0.026, cheek: 0.006, top: 0.6, bottom: 0.49, back: -2.25 } as const;
+export const CLUTCH_RESERVOIR = { x: 0.075, y: 0.62, radius: 0.022, height: 0.06 } as const;
+
+/** How far a pedal is turned on its pivot when pressed `press` (0 to 1) of the way, rad. */
+export function pedalAngle(id: PedalId, press: number): number {
+  return PEDALS[id].travel * Math.min(1, Math.max(0, press));
+}
+
+/** A pedal's `rotation.x` pressed `press` of the way: the clutch's pad swings forwards (positive), the accelerator's toe down (negative). */
+export function pedalTurn(id: PedalId, press: number): number {
+  return id === 'clutch' ? pedalAngle(id, press) : -pedalAngle(id, press);
+}
+
+/** A point [y, z] from the clutch's pivot as it stands turned `turn` rad (pedalTurn), hull space [y, z], into `out`. */
+export function clutchPoint(p: readonly [number, number], turn: number, out: [number, number]): [number, number] {
+  const c = Math.cos(turn);
+  const s = Math.sin(turn);
+  const [py, pz] = PEDALS.clutch.pivot;
+  out[0] = py + p[0] * c - p[1] * s;
+  out[1] = pz + p[0] * s + p[1] * c;
+  return out;
+}
+
 export const FOOT_PLATE = { x0: -0.79, x1: GEARBOX.x0 - 0.02, z0: HULL.front + 0.02, z1: -2.0, top: 0.016 } as const;
 
 /**

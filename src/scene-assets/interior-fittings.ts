@@ -1,17 +1,23 @@
-import { BoxGeometry, CylinderGeometry, ExtrudeGeometry, LatheGeometry, Shape, TorusGeometry, Vector2 } from '@iwsdk/core';
-import { beam, type Part } from './lowpoly.js';
+import { BoxGeometry, CylinderGeometry, ExtrudeGeometry, LatheGeometry, Mesh, MeshStandardMaterial, Shape, TorusGeometry, Vector2 } from '@iwsdk/core';
+import { beam, mergeParts, type Part } from './lowpoly.js';
+import { litInside } from './cabin-light.js';
 import { GUN, HULL, TURRET } from '../sim/cabin.js';
 import { GEARBOX } from '../sim/driver-station.js';
 import {
   BASKET_SKIRT,
   BRAKE_DRUMS,
   BREATHER,
+  CLUTCH_MASTER,
+  CLUTCH_PUSH_ROD,
+  CLUTCH_RESERVOIR,
   COAX,
   DIFFERENTIAL,
   FOOT_PLATE,
   HULL_BIN,
   HULL_RACK,
+  PEDAL_BOX,
   PEDALS,
+  type PedalId,
   PISTOL_PORT,
   PROPELLER_SHAFT,
   RECOIL_CYLINDERS,
@@ -21,7 +27,7 @@ import {
   TRAVERSE_MOTOR,
   TURRET_LOCK,
 } from '../sim/interior-fittings.js';
-import { INTERIOR_COLORS as C } from './finish.js';
+import { INTERIOR_COLORS as C, interiorFinish } from './finish.js';
 
 /**
  * The crew compartment's fittings nobody works (docs/interior.md, "The rest
@@ -36,8 +42,8 @@ type Vec3 = readonly [number, number, number];
 
 const ALONG_X: Vec3 = [0, 0, Math.PI / 2];
 const ALONG_Z: Vec3 = [Math.PI / 2, 0, 0];
-/** The pedals' pads lean back towards the driver this far from flat, rad. */
-const PAD_TILT = 0.95;
+
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }), { finish: true });
 
 function box(size: Vec3, position: Vec3, color: number, rotation?: Vec3): Part {
   return { geometry: new BoxGeometry(...size), color, position, rotation };
@@ -145,21 +151,43 @@ export function driveTrainParts(): Part[] {
       parts.push(box([0.034, 0.008, 0.01], [x, f.top + 0.002, z], C.steel, [0, turn, 0]));
     }
   }
-  // The pedals: an arm from a hinge on the plate up and forward to a pad tilted back at the driver.
-  for (const pedal of [PEDALS.clutch, PEDALS.accelerator]) {
-    const hinge: Vec3 = [pedal.x, f.top + 0.02, PEDALS.hingeZ];
-    parts.push(cylinder(0.02, pedal.width + 0.02, hinge, C.steel, ALONG_X, 8));
-    parts.push(beam(hinge, [pedal.x, PEDALS.padY - 0.02, PEDALS.padZ + 0.02], 0.012, C.steel, 6));
-    parts.push(box([pedal.width, 0.014, pedal.length], [pedal.x, PEDALS.padY, PEDALS.padZ], C.steel, [-PAD_TILT, 0, 0]));
-    // Grip ribs across the pad, standing 4 mm proud of it.
-    for (const k of [-1, 0, 1]) {
-      const along = (k * pedal.length) / 3.5;
-      // Out along the pad's normal (0, cos, -sin of its tilt) and along it (0, sin, cos).
-      const n = [Math.cos(PAD_TILT), -Math.sin(PAD_TILT)];
-      const a = [Math.sin(PAD_TILT), Math.cos(PAD_TILT)];
-      parts.push(box([pedal.width - 0.012, 0.014, 0.008], [pedal.x, PEDALS.padY + n[0] * 0.005 + a[0] * along, PEDALS.padZ + n[1] * 0.005 + a[1] * along], C.rubber, [-PAD_TILT, 0, 0]));
-    }
+  // The pedals' fixed parts. The clutch's pedal box on the nose plate: a backing plate, two cheeks either side of the
+  // arm with the pivot's pin through them, the master cylinder under them in line with the push rod, its reservoir
+  // beside them with a hose down to it, and the line from it down the nose plate under the foot plate (to the engine's
+  // clutch). Then the accelerator's heel hinge and the rubber stop under its toe (the pedals move: createPedal).
+  const c = PEDALS.clutch;
+  const pb = PEDAL_BOX;
+  const m = CLUTCH_MASTER;
+  const [py, pz] = c.pivot;
+  const front = HULL.front;
+  const bore = py - c.clevis;
+  parts.push(box([0.09, pb.top - (bore - m.radius - 0.02), 0.01], [c.x, (pb.top + bore - m.radius - 0.02) / 2, front + 0.004], C.steel));
+  for (const side of [-1, 1]) {
+    parts.push(box([pb.cheek, pb.top - pb.bottom, pb.back - front - 0.008], [c.x + side * (pb.cheekGap + pb.cheek / 2), (pb.top + pb.bottom) / 2, (front + 0.008 + pb.back) / 2], C.steel));
   }
+  parts.push(cylinder(0.008, 2 * (pb.cheekGap + pb.cheek) + 0.012, [c.x, py, pz], C.steel, ALONG_X, 8));
+  for (const side of [-1, 1]) parts.push(cylinder(0.011, 0.006, [c.x + side * (pb.cheekGap + pb.cheek + 0.006), py, pz], C.steel, ALONG_X, 6));
+  // The master cylinder: its body with a flange on the backing plate, and a boot where the push rod goes in.
+  parts.push(cylinder(m.radius, m.back - front - 0.01, [c.x, bore, (front + 0.009 + m.back) / 2], C.casting, ALONG_Z, 12));
+  parts.push(box([2 * pb.cheekGap - 0.004, 0.07, 0.008], [c.x, bore, front + 0.013], C.casting));
+  parts.push(cylinder(0.012, 0.016, [c.x, bore, m.back + 0.006], C.rubber, ALONG_Z, 8));
+  const r = CLUTCH_RESERVOIR;
+  const rx = c.x + r.x;
+  const rz = front + 0.01 + r.radius + 0.004;
+  parts.push(cylinder(r.radius, r.height, [rx, r.y + r.height / 2, rz], C.casting, undefined, 10));
+  parts.push(cylinder(r.radius * 0.7, 0.012, [rx, r.y + r.height + 0.006, rz], C.steel, undefined, 8));
+  parts.push(box([0.05, 0.016, rz - front - 0.006], [rx, r.y + 0.02, (front + 0.006 + rz) / 2], C.steel));
+  parts.push(beam([rx, r.y + 0.004, rz], [c.x + 0.012, bore + m.radius - 0.004, front + 0.03], 0.005, C.rubber, 6));
+  parts.push(beam([c.x - 0.01, bore - m.radius + 0.004, front + 0.03], [c.x - 0.03, 0.12, front + 0.012], 0.004, C.steel, 6));
+  parts.push(beam([c.x - 0.03, 0.12, front + 0.012], [c.x - 0.03, -0.01, front + 0.012], 0.004, C.steel, 6));
+  const a = PEDALS.accelerator;
+  for (const side of [-1, 1]) {
+    parts.push(box([0.008, a.pivot[0] + 0.012 - f.top, 0.03], [a.x + side * (a.width / 2 + 0.006), (a.pivot[0] + 0.012 + f.top) / 2, a.pivot[1]], C.steel));
+  }
+  parts.push(cylinder(0.006, a.width + 0.024, [a.x, a.pivot[0], a.pivot[1]], C.steel, ALONG_X, 8));
+  const toeDown = a.rise - a.travel;
+  const toe = [a.pivot[0] + Math.sin(toeDown) * a.length * 0.8, a.pivot[1] - Math.cos(toeDown) * a.length * 0.8];
+  parts.push(cylinder(0.014, toe[0] - PEDALS.padThickness / 2 / Math.cos(toeDown) - f.top - 0.004, [a.x, (toe[0] - PEDALS.padThickness / 2 / Math.cos(toeDown) - 0.004 + f.top) / 2, toe[1]], C.rubber, undefined, 8));
   return parts;
 }
 
@@ -322,4 +350,65 @@ export function turretFittingParts(): Part[] {
   parts.push(cylinder(0.016, 0.02, [wall - 0.062, GUN.y + 0.06, 0.62], C.rubber, ALONG_X, 8));
   parts.push(box([0.008, 0.03, 0.05], [wall - 0.058, GUN.y + 0.01, 0.62], C.ivory));
   return parts;
+}
+
+/**
+ * A pedal that moves (src/sim/interior-fittings.ts PEDALS), turning about
+ * X on its pivot at the origin: put it at the pivot and set `rotation.x`
+ * to pedalTurn. The clutch: an arm hanging from its pivot and bending back
+ * at a knee to a ribbed pad facing the driver, with the push rod's clevis
+ * under the pivot (createClutchPushRod). The accelerator: a long ribbed pad rising
+ * forwards from its heel, its face up and back.
+ */
+export function createPedal(id: PedalId): Mesh {
+  const parts: Part[] = [];
+  const t = PEDALS.padThickness;
+  // A pad `length` long and `width` wide with its middle at `at`, facing (0, cos tilt, sin tilt), with grip ribs across it standing 4 mm proud.
+  const pad = (width: number, length: number, at: Vec3, tilt: number): void => {
+    parts.push(box([width, t, length], at, C.steel, [tilt, 0, 0]));
+    const n = [Math.cos(tilt), Math.sin(tilt)];
+    const along = [Math.sin(tilt), -Math.cos(tilt)];
+    for (let k = -2; k <= 2; k++) {
+      const d = (k * length) / 5.5;
+      parts.push(box([width - 0.012, t, 0.008], [at[0], at[1] + n[0] * 0.004 + along[0] * d, at[2] + n[1] * 0.004 + along[1] * d], C.rubber, [tilt, 0, 0]));
+    }
+  };
+  if (id === 'clutch') {
+    const c = PEDALS.clutch;
+    // The arm's boss on the pivot, the arm dropping to its knee and bending back to the pad, meeting the pad's back,
+    // and the push rod's clevis on its front just under the pivot.
+    const n = [Math.cos(c.padTilt), Math.sin(c.padTilt)];
+    parts.push(cylinder(0.016, 2 * PEDAL_BOX.cheekGap - 0.004, [0, 0, 0], C.steel, ALONG_X, 8));
+    parts.push(beam([0, 0, 0], [0, c.knee[0], c.knee[1]], 0.012, C.steel, 6));
+    parts.push(beam([0, c.knee[0], c.knee[1]], [0, c.pad[0] - n[0] * 0.006, c.pad[1] - n[1] * 0.006], 0.011, C.steel, 6));
+    parts.push(cylinder(0.012, 0.012, [0, c.knee[0], c.knee[1]], C.steel, ALONG_X, 8));
+    parts.push(box([0.026, 0.02, 0.022], [0, -c.clevis, -0.012], C.steel));
+    pad(c.width, c.length, [0, c.pad[0] + n[0] * 0.004, c.pad[1] + n[1] * 0.004], c.padTilt);
+  } else {
+    const a = PEDALS.accelerator;
+    // The heel's barrel on the hinge, and the pad rising forwards from it, its face up and back.
+    parts.push(cylinder(0.011, a.width - 0.004, [0, 0, 0], C.steel, ALONG_X, 8));
+    const mid = a.length / 2;
+    pad(a.width, a.length, [0, Math.sin(a.rise) * mid + Math.cos(a.rise) * 0.004, -Math.cos(a.rise) * mid + Math.sin(a.rise) * 0.004], a.rise);
+  }
+  const mesh = new Mesh(mergeParts(parts, interiorFinish), material);
+  mesh.name = id === 'clutch' ? 'Clutch Pedal' : 'Accelerator Pedal';
+  return mesh;
+}
+
+/**
+ * The clutch's push rod, from the clevis on the pedal's arm forwards into
+ * the master cylinder, along -Z from the origin: hang it on the pedal at
+ * the clevis and turn it back by the pedal's turn, so it stays level and
+ * slides in and out of the cylinder as the pedal moves.
+ */
+export function createClutchPushRod(): Mesh {
+  const { from, length } = CLUTCH_PUSH_ROD;
+  const parts: Part[] = [
+    cylinder(CLUTCH_MASTER.rod, length, [0, 0, -from - length / 2], C.bright, ALONG_Z, 6),
+    cylinder(0.008, 0.03, [0, 0, -0.012], C.steel, ALONG_X, 6),
+  ];
+  const mesh = new Mesh(mergeParts(parts, interiorFinish), material);
+  mesh.name = 'Clutch Push Rod';
+  return mesh;
 }

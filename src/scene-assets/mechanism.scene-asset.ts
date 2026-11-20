@@ -22,6 +22,8 @@ const OLIVE_DARK = 0x363c18;
 const FRAME = 0x2b2e2a;
 /** Marks that show which way a part has turned. */
 const MARK = 0xd8b030;
+/** A release worked with a finger (the parking brake's latch): the breech lever's red. */
+const MARK_RED = 0x8a2c22;
 
 /** A handle's radius and a lever's rod's, m. */
 export const GRIP_RADIUS = 0.019;
@@ -65,7 +67,80 @@ export function createLever(spec: LeverSpec): Mesh {
     const y = handleStart + (i * spec.gripLength) / 4.4;
     parts.push({ geometry: new CylinderGeometry(GRIP_RADIUS + 0.0025, GRIP_RADIUS + 0.0025, 0.006, 10, 1), color: RUBBER, position: [0, y, 0] });
   }
+  if (spec.latch) parts.push(...latchLinkParts(spec));
   return named(mergeParts(parts, interiorFinish), 'Lever');
+}
+
+/**
+ * A lever's squeeze latch (LeverSpec.latch, the parking brake's release):
+ * where it hangs, in lever space, from a hinge on the handle's front under
+ * the cap, and how far its bar stands off the handle, m. The bar runs down
+ * the handle's front where the index finger of a hand closed round
+ * `latch.fist` lies (3 cm above the fist's middle, hand-lock.ts), and a rod
+ * runs from it down the lever's front to the ratchet's pawl by the pivot.
+ */
+export const LATCH = {
+  /** The hinge, under the cap and in front of the handle: its height up the lever over `latch.fist`, and its depth in front of the lever's line. */
+  hingeAbove: 0.05,
+  hingeFront: 0.035,
+  /** The bar hangs from the hinge this far down, this thick (front to back) and wide, m. */
+  barLength: 0.042,
+  barThick: 0.009,
+  barWidth: 0.012,
+  /** Squeezed, the bar swings in towards the handle this far, rad (its foot moves about 6 mm). */
+  squeeze: 0.15,
+  /** The pawl, beside the rod near the pivot, and the toothed quadrant it rides on: radius of the pawl's tip from the pivot, m, and the quadrant's side offset. */
+  pawlRadius: 0.075,
+  side: 0.017,
+} as const;
+
+/** The parts of a latch's linkage that move with the lever: the hinge's lugs and pin, the rod down the lever's front and its guides, and the pawl it lifts. */
+function latchLinkParts(spec: LeverSpec): Part[] {
+  const L = LATCH;
+  const hingeY = spec.latch!.fist + L.hingeAbove;
+  const front = -L.hingeFront;
+  const rodTop = hingeY - L.barLength + 0.004;
+  const rodBottom = L.pawlRadius + 0.012;
+  const parts: Part[] = [
+    // Two lugs either side of the bar, from inside the handle out to the hinge, and the pin across them.
+    { geometry: new BoxGeometry(0.004, 0.012, 0.022), color: STEEL_DARK, position: [L.barWidth / 2 + 0.003, hingeY, front + 0.006] },
+    { geometry: new BoxGeometry(0.004, 0.012, 0.022), color: STEEL_DARK, position: [-L.barWidth / 2 - 0.003, hingeY, front + 0.006] },
+    { geometry: new CylinderGeometry(0.0028, 0.0028, L.barWidth + 0.014, 6, 1), color: STEEL, position: [0, hingeY, front], rotation: ALONG_X },
+    // The rod down the lever's front, from behind the bar's foot to the pawl.
+    { geometry: new CylinderGeometry(0.0032, 0.0032, rodTop - rodBottom, 6, 1), color: STEEL, position: [0, (rodTop + rodBottom) / 2, front + 0.002] },
+    // The pawl beside the lever's foot, over the quadrant's teeth, on a plate clamped round the lever from the rod's end.
+    { geometry: new BoxGeometry(L.side + 0.006, 0.006, -front + 0.006), color: STEEL_DARK, position: [(L.side + 0.006) / 2 - 0.003, rodBottom + 0.003, front / 2 + 0.002] },
+    { geometry: new BoxGeometry(0.008, rodBottom + 0.006 - (L.pawlRadius - 0.004), 0.01), color: STEEL_DARK, position: [L.side, (rodBottom + 0.006 + L.pawlRadius - 0.004) / 2, 0] },
+  ];
+  // Guides holding the rod to the lever: one under the handle's ferrule, one half way down.
+  for (const y of [spec.length - spec.gripLength - 0.03, (rodTop + rodBottom) / 2 - 0.04]) {
+    parts.push({ geometry: new BoxGeometry(0.009, 0.008, -front - 0.002), color: STEEL_DARK, position: [0, y, front / 2 - 0.001] });
+  }
+  return parts;
+}
+
+/**
+ * A lever's squeeze latch's bar (LeverSpec.latch), hanging from its hinge
+ * at the origin, lever space but for that: turn it with `rotation.x`
+ * (negative squeezes it in towards the handle, LATCH.squeeze). Put it at
+ * `latchHinge(spec)` on the lever.
+ */
+export function createLeverLatch(): Mesh {
+  const L = LATCH;
+  const parts: Part[] = [
+    { geometry: new BoxGeometry(L.barWidth, L.barLength, L.barThick), color: MARK_RED, position: [0, -L.barLength / 2, -0.001] },
+    // A lip at its foot, curling forwards, that the finger hooks over.
+    { geometry: new BoxGeometry(L.barWidth, 0.006, 0.008), color: MARK_RED, position: [0, -L.barLength + 0.002, -L.barThick / 2 - 0.003] },
+  ];
+  return named(mergeParts(parts, interiorFinish), 'Lever Latch');
+}
+
+/** Where a lever's latch hangs, lever space, into `out`. */
+export function latchHinge(spec: LeverSpec, out: [number, number, number]): [number, number, number] {
+  out[0] = 0;
+  out[1] = (spec.latch?.fist ?? spec.length) + LATCH.hingeAbove;
+  out[2] = -LATCH.hingeFront;
+  return out;
 }
 
 /**

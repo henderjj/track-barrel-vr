@@ -164,8 +164,15 @@ export const SEAT_LEVER: LeverSpec = {
 };
 /** The seat lever's pivot from the cushion's top middle, seat frame, m: on a bracket right of the cushion, beside the right thigh; leaning forward, its grip ends at the cushion's front. */
 export const SEAT_LEVER_FROM_CUSHION: Readonly<Vec3> = [0.26, -0.01, -0.06];
-/** The bracket that holds the seat lever's pivot to the cushion's side, m: from the cushion's side out to the pivot, and its height and depth. */
-export const SEAT_LEVER_BRACKET = { from: 0.22, to: 0.245, height: 0.04, depth: 0.05 } as const;
+/**
+ * The bracket that holds the seat lever to the seat, seat frame from the
+ * cushion's top middle, m: a steel plate `thickness` thick against the seat
+ * pan's right side (from `from` out), a strap along the pan from `strapFront`
+ * to `strapBack` between `strapTop` and `strapBottom` under the cushion's
+ * top, and an arm `armDepth` deep rising from it to `armAbove` over the
+ * lever's pivot; the lever's boss runs from the plate out round its foot.
+ */
+export const SEAT_LEVER_BRACKET = { from: 0.224, thickness: 0.01, strapFront: -0.16, strapBack: 0.08, strapTop: 0.062, strapBottom: 0.1, armDepth: 0.06, armAbove: 0.022 } as const;
 
 /** The seat lever's latch: true once a pull has moved the seat, until it goes back. Returns true on the pull that moves the seat. */
 export function seatLeverPulled(latch: { pulled: boolean }, angle: number): boolean {

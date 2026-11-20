@@ -172,4 +172,21 @@ describe('the parking brake (F1.18)', () => {
     expect(parkingBrakeOf(parkingBrakeAngle(true))).toBe(true);
     expect(parkingBrakeOf(parkingBrakeAngle(false))).toBe(false);
   });
+
+  it('draws a hand on it closed where the index finger finds the release latch, wherever it took hold (20 November 2026)', () => {
+    const lever = new Lever(PARKING_BRAKE);
+    const point: [number, number, number] = [0, 0, 0];
+    const axis: [number, number, number] = [0, 0, 0];
+    for (const deg of [-8, 0, 20, 35]) {
+      lever.angle = deg * DEG;
+      for (const along of [PARKING_BRAKE.length - PARKING_BRAKE.gripLength, PARKING_BRAKE.length]) {
+        lever.lock(-1, [0.02, along * Math.cos(lever.angle), -along * Math.sin(lever.angle)], point, axis);
+        expect(Math.hypot(...point)).toBeCloseTo(PARKING_BRAKE.latch!.fist, 6);
+        expect(axis[1]).toBeCloseTo(Math.cos(lever.angle), 6);
+      }
+    }
+    // On the handle, a hand's width under its top.
+    expect(PARKING_BRAKE.latch!.fist).toBeGreaterThan(PARKING_BRAKE.length - PARKING_BRAKE.gripLength);
+    expect(PARKING_BRAKE.length - PARKING_BRAKE.latch!.fist).toBeGreaterThan(0.05);
+  });
 });

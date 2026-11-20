@@ -1,6 +1,6 @@
 import { createSystem, Matrix4, type Object3D, Quaternion, Vector3 } from '@iwsdk/core';
 import { FIST_AXIS, FIST_CENTRE, INDEX_TIP, indexTip } from '../scene-assets/hand.scene-asset.js';
-import { type HandIndex, type HandInput, MechEvent, type Mechanism, type Vec3 } from '../sim/mechanism.js';
+import { type HandIndex, type HandInput, Lever, MechEvent, type Mechanism, type Vec3 } from '../sim/mechanism.js';
 import { MISS_REACH } from '../sim/play-stats.js';
 import { reportFumble, squeezeNear } from './fumbles.js';
 import { fingerInputs, forcedRelease, grip, handCurls, handUse } from './grip-system.js';
@@ -118,7 +118,7 @@ function pointIn(frame: Object3D, p: Vector3, out: Vec3): Vec3 {
  * usable control of that kind (in practice there is one).
  */
 function resolverFor(kind: number): LockResolver {
-  return (hand, point, axis, side, own) => {
+  return (hand, point, axis, side, own, latch) => {
     const i: HandIndex = side === 'left' ? 0 : 1;
     let best: Entry | null = null;
     let bestDistance = Infinity;
@@ -147,6 +147,10 @@ function resolverFor(kind: number): LockResolver {
     mech.lock(own && mech.held[i] ? i : -1, lockFist, lockPoint, lockAxis);
     point.set(lockPoint[0], lockPoint[1], lockPoint[2]).applyMatrix4(frame.matrixWorld);
     axis.set(lockAxis[0], lockAxis[1], lockAxis[2]).transformDirection(frame.matrixWorld);
+    // A latch on a lever's handle is on its front, the side it leans to: square to the handle, forwards and down.
+    if (mech instanceof Lever && mech.spec.latch && !mech.gripOffset) {
+      latch.set(0, -Math.sin(mech.angle), -Math.cos(mech.angle)).transformDirection(frame.matrixWorld);
+    }
   };
 }
 

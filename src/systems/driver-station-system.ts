@@ -13,7 +13,9 @@ import {
 import { createConvoyGrip } from '../scene-assets/convoy-seat.scene-asset.js';
 import { createGearReadout, createLamp, createNeedle, LAMP_DARK } from '../scene-assets/driver-station.scene-asset.js';
 import { CONVOY_GRIP, CONVOY_GRIP_OFFSET } from '../sim/convoy-seat.js';
-import { createButtonCap, createLever, createPullKnob, createToggleBat, createToggleNut } from '../scene-assets/mechanism.scene-asset.js';
+import { createButtonCap, createLever, createLeverLatch, createPullKnob, createToggleBat, createToggleNut, LATCH, latchHinge } from '../scene-assets/mechanism.scene-asset.js';
+import { createClutchPushRod, createPedal } from '../scene-assets/interior-fittings.js';
+import { PEDAL_IDS, PEDALS, type PedalId, pedalTurn } from '../sim/interior-fittings.js';
 import {
   CAP_PROUD,
   CHOKE_PLATE,
@@ -99,6 +101,10 @@ const STRIP_PX_H = Math.round((STRIP_PX_W * SWITCH_PANEL.height) / SWITCH_PANEL.
 const TOGGLE_FOLLOW = 40;
 /** The crewmate's levers ease to where their packets put them at this rate, 1/s (packets come 45 times a second). */
 const FOLLOW_RATE = 20;
+/** The pedals ease to how far they are pressed at this rate, 1/s (a foot is quick, but the packets come 45 times a second). */
+const PEDAL_RATE = 18;
+/** The parking brake's latch springs in and out at this rate, 1/s. */
+const LATCH_RATE = 30;
 /** While the gears grind, a rough buzz in each hand on a driver's control this often, s. */
 const GRIND_EVERY = 0.08;
 /** The dials' face canvas, px. */
@@ -128,6 +134,9 @@ interface StationDebug {
     /** What the gear indicator shows ('R', 'N', '1' to '5'; '' before the tank is drawn), and whether it is lit red for a grind. */
     readout: string;
     readoutGrinding: boolean;
+    /** How far each pedal is drawn pressed, 0 to 1 (the clutch and accelerator the tank runs on), and the parking brake's latch squeezed. */
+    pedals: Record<PedalId, number>;
+    latch: number;
   };
   /** What each gauge's needle points at, in its dial's units (speed km/h, rpm, coolant °C, oil bar, fuel 0-1, volts). */
   gauges(): Record<Dial['id'], number>;
@@ -213,6 +222,14 @@ export class DriverStationSystem extends createSystem({}) {
   /** The engine ran last frame, and the Engine start setting then: started by a shortcut or changed to the Full procedure, the switches go on. */
   private wasRunning = false;
   private lastStart = engineStart();
+  /** The clutch and accelerator pedals (they follow the controls the tank runs on), and how far each is pressed as drawn, 0 to 1. */
+  private pedals = {} as Record<PedalId, Object3D>;
+  private pedalPress = { clutch: 0, accelerator: 0 } as Record<PedalId, number>;
+  private pushRod!: Object3D;
+  /** The parking brake's release latch on its handle, and how far it is squeezed as drawn, 0 to 1. */
+  private latch!: Object3D;
+  private squeezed = 0;
+  private brakeWas = 0;
 
   init(): void {
     this.root.name = 'Driver Station';
@@ -246,6 +263,22 @@ export class DriverStationSystem extends createSystem({}) {
       }
     }
     this.levers.gear.angle = GEAR_ANGLES[drive.gear];
+    // The parking brake's release latch hangs on its handle's front, turning with it (John's headset note, 20 November 2026).
+    this.latch = createLeverLatch();
+    this.latch.position.fromArray(latchHinge(DRIVER_CONTROLS.brake.spec, [0, 0, 0]));
+    this.pivots.brake.add(this.latch);
+    // The pedals on their pivots, under the steering levers.
+    for (const id of PEDAL_IDS) {
+      const pedal = createPedal(id);
+      const { x, pivot } = PEDALS[id];
+      pedal.position.set(x, pivot[0], pivot[1]);
+      this.root.add(pedal);
+      this.pedals[id] = pedal;
+    }
+    // The clutch's push rod hangs on its arm at the clevis and stays level, sliding into the master cylinder.
+    this.pushRod = createClutchPushRod();
+    this.pushRod.position.set(0, -PEDALS.clutch.clevis, 0);
+    this.pedals.clutch.add(this.pushRod);
 
     const panel = new Group();
     panel.position.set(...PANEL.centre);
@@ -282,6 +315,7 @@ export class DriverStationSystem extends createSystem({}) {
           parkingBrake: drive.parkingBrake, brakeFreed: self.levers.brake.freed,
           grinds: self.grinds, shifts: self.shifts, usable: self.usable(),
           readout: self.readoutGear < 0 ? '' : GEARS[self.readoutGear].short, readoutGrinding: self.readoutGrinding,
+          pedals: { ...self.pedalPress }, latch: self.squeezed,
         };
       },
       gauges: () => {
@@ -410,9 +444,29 @@ export class DriverStationSystem extends createSystem({}) {
     }
     this.wasRunning = state?.running ?? this.wasRunning;
     this.lastStart = engineStart();
+    this.movePedals(dt, shown);
     this.feel(dt);
     this.draw();
     this.drawEngine(dt, shown, state);
+  }
+
+  /**
+   * The pedals follow the clutch and accelerator the tank runs on (this
+   * driver's, or the crewmate driver's as their packets say), and the
+   * parking brake's latch is squeezed while the holding hand's trigger frees
+   * the pawl, or, on the crewmate's page, while the lever goes forwards off.
+   */
+  private movePedals(dt: number, shown: DriverControls | null): void {
+    const k = 1 - Math.exp(-PEDAL_RATE * dt);
+    this.pedalPress.clutch += ((shown?.clutch ?? 0) - this.pedalPress.clutch) * k;
+    this.pedalPress.accelerator += ((shown?.accel ?? 0) - this.pedalPress.accelerator) * k;
+    for (const id of PEDAL_IDS) this.pedals[id].rotation.x = pedalTurn(id, this.pedalPress[id]);
+    this.pushRod.rotation.x = -this.pedals.clutch.rotation.x;
+    const brake = this.levers.brake;
+    const releasing = brake.anyHeld ? brake.freed : brake.angle - this.brakeWas > 0.2 * DEG * dt * 60;
+    this.brakeWas = brake.angle;
+    this.squeezed += ((releasing ? 1 : 0) - this.squeezed) * (1 - Math.exp(-LATCH_RATE * dt));
+    this.latch.rotation.x = -LATCH.squeeze * this.squeezed;
   }
 
   /**
