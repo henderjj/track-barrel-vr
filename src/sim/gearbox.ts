@@ -237,6 +237,25 @@ export function engagement(s: GearboxState, c: GearboxControls): number {
 /** Reverse goes in only with the tank stopped: slower than this, m/s. */
 export const REVERSE_GEAR_SPEED = 0.15;
 
+/**
+ * Below this the engine's side of the gearbox has stopped turning, rpm: the
+ * engine is off and has run down, and the starter isn't turning it.
+ */
+export const STILL_RPM = 60;
+/** Slower than this the tracks' side of the gearbox is all but still, m/s. */
+export const STILL_SPEED = REVERSE_GEAR_SPEED;
+
+/**
+ * Nothing in the gearbox turns: the engine is stopped (not running, not on
+ * the starter, run down) and the tank stands still. Gears only grind when
+ * one shaft turns against another, so then any gear goes in without the
+ * clutch, with a clunk (John's note, 20 November 2026: it ground with the
+ * engine off).
+ */
+export function shaftsStill(s: GearboxState): boolean {
+  return !s.running && !s.cranking && s.rpm < STILL_RPM && Math.abs(s.speed) <= STILL_SPEED;
+}
+
 /** Whether `gear` can go in at `speed` without over-revving the engine (1st also needs the tank all but stopped, reverse stopped). */
 export function gearFits(gear: Gear, speed: number): boolean {
   if (gear === NEUTRAL) return true;
@@ -275,7 +294,8 @@ function finishShift(s: GearboxState, dt: number, seconds: number): boolean {
  *   with the clutch in, if it fits the speed. Without the clutch, or into
  *   1st on the move or reverse before stopping, or too low a gear for the
  *   speed, it grinds: out of gear until the clutch goes in and the tank
- *   has slowed enough (or the lever comes back).
+ *   has slowed enough (or the lever comes back). With the engine stopped
+ *   and the tank still nothing turns, so a gear goes in without the clutch.
  */
 export function stepGearbox(s: GearboxState, c: GearboxControls, dt: number): void {
   s.grinding = false;
@@ -308,7 +328,7 @@ export function stepGearbox(s: GearboxState, c: GearboxControls, dt: number): vo
     finishShift(s, dt, SHIFT_SECONDS);
     return;
   }
-  if (clutchEngagement(c.clutch) > 0 || !gearFits(asked, s.speed)) {
+  if (!shaftsStill(s) && (clutchEngagement(c.clutch) > 0 || !gearFits(asked, s.speed))) {
     s.grinding = true;
     s.shiftTimer = 0;
     return;

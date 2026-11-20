@@ -2544,6 +2544,11 @@ async function driverStation() {
   const onLever = station();
   handTo('controller-left', handle('gear', 4), 0.3);
   await sleep(400);
+  // The clutch let out in 2nd at a halt has stalled the engine by now, and with the engine stopped and the tank still
+  // nothing in the box turns, so a gear goes in without grinding (John's note, 20 November 2026). Out of gear between
+  // 2nd and 3rd, start it again: the gears grind against a running engine.
+  evalInApp('(window.__drive.engine("start"), true)');
+  await waitFor('the engine running', () => tank().running, 3000).catch(() => null);
   handTo('controller-left', handle('gear', 8), 0.3);
   // Read in one go: the station counts a grind on the frame the tank starts grinding.
   const both = () => evalInApp('({ s: window.__driverStation.state(), t: window.__drive.state(), sign: window.__drive.sign })');
