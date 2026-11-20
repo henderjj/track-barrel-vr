@@ -2055,6 +2055,17 @@ async function layingWithTheSight() {
   check('Leaning in to the laid sight renders the range',
     open.open && spread > 20, `open ${open.open}, ${open.renders - rendersBefore} frames, picture spread ${spread}, ${open.calls} calls, ${Math.round(open.triangles / 1000)}k triangles`);
 
+  // The crank drill (docs/turret.md "Laying blind"): the gun put off a board, then laid back on (here by Practice's lay), timed.
+  await menuButtonPress();
+  await menuClick('menu-sight-drill');
+  const started = sight('drill.state()');
+  evalInApp(`(window.__sight.lay(${started.target}), true)`);
+  const drilled = await waitFor('the drill laid', () => { const d = sight('drill.state()'); return !d.running && d.result && d; }, 8000).catch(() => sight('drill.state()'));
+  const drillSaid = sight('state()').status;
+  check('Practice → Sights → Crank drill puts the gun 12 mils left and 30 low of a board, and times it laid back on',
+    started.running && Math.abs(started.error.across - 12) < 2 && Math.abs(started.error.up + 30) < 2 && drilled.result?.laid === true && drillSaid.startsWith('Laid in'),
+    `started ${started.error.across.toFixed(1)} mils across, ${started.error.up.toFixed(1)} up on board ${started.target}; "${drillSaid}"`);
+
   evalInApp("(window.__sight.lay('ahead'), true)");
   const ahead = await waitFor('the turret ahead', () => { const t = evalInApp('window.__turret.state()'); return Math.abs(t.yaw) < 1e-6 && t; }, 4000).catch(() => evalInApp('window.__turret.state()'));
   check('Lay on → Ahead turns the turret and gun straight ahead', Math.abs(ahead.yaw) < 1e-6 && ahead.elevation === 0, `turret ${ahead.yawDeg.toFixed(2)}°, gun ${ahead.elevationDeg.toFixed(2)}°`);
@@ -2295,7 +2306,57 @@ async function layingTheGun() {
   const eased = await waitFor('the trigger bar let go', () => { const s = state('elevation'); return !s.firing && s; }, 3000, 100).catch(() => state('elevation'));
   check("The trigger on the elevation handwheel's handle pulls while it is held",
     pulled.firing && !eased.firing && eased.presses === pressesBefore + 1, `firing ${pulled.firing} then ${eased.firing}, presses ${pressesBefore} to ${eased.presses}`);
+
+  // Laying blind (docs/turret.md): the hand wandering 7 cm out along the handle's axle, off its end, buzzes and turns nothing.
+  const driftsBefore = state('elevation').drifts;
+  const gunBefore = turret().elevationDeg;
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('elevation', [0, rr, 0.06 + 0.07])), duration: 0.3 });
+  const drifted = await waitFor('the drift buzz', () => { const s = state('elevation'); return s.drifts > driftsBefore && s; }, 4000).catch(() => state('elevation'));
+  const gunDrifted = turret().elevationDeg;
+  check('A hand holding the elevation handle and wandering off it feels a buzz, still holds it, and turns nothing',
+    drifted.drifts > driftsBefore && drifted.heldBy === 'right' && Math.abs(gunDrifted - gunBefore) < 0.01,
+    `${drifted.drifts - driftsBefore} buzzes, held by ${drifted.heldBy}, gun ${gunBefore.toFixed(3)}° to ${gunDrifted.toFixed(3)}°`);
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('elevation', [0, rr, out])), duration: 0.3 });
+  await sleep(500);
+  // A grip eased off to a third holds on.
+  squeeze(0.3);
+  await sleep(1000);
+  const eased3 = state('elevation');
+  squeeze(1);
+  check('The elevation handle stays held through a grip eased off to a third', eased3.heldBy === 'right', `held by ${eased3.heldBy}`);
   await letGoOf('elevation');
+  // An open hand coming back onto the handle feels a tap, before it squeezes.
+  const tapsBefore = state('elevation').taps;
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('elevation', [0, rr + 0.15, out])), duration: 0.3 });
+  await sleep(600);
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('elevation', [0, rr, out])), duration: 0.3 });
+  const tapped = await waitFor('the touch tap', () => { const s = state('elevation'); return s.taps > tapsBefore && s; }, 3000).catch(() => state('elevation'));
+  check('An open hand coming onto the elevation handle feels a tap', tapped.taps > tapsBefore && tapped.heldBy === null, `${tapped.taps - tapsBefore} taps`);
+
+  // With the eye at the sight, the right hand's squeeze 15 cm above the traverse crank's knob takes it; away from the sight it doesn't.
+  const crankKnob = handle('crank');
+  const above = [crankKnob[0], crankKnob[1] + 0.15, crankKnob[2]];
+  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(above), duration: 0.4 });
+  await sleep(600);
+  squeeze(1);
+  await sleep(600);
+  const notTaken = { crank: state('crank').heldBy, holding: evalInApp('window.__mechanisms.holding()').right };
+  squeeze(0);
+  await sleep(300);
+  const lens = evalInApp('window.__sight.lens()');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(lens.at.map((v, i) => v + lens.facing[i] * 0.06)) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toRig(lens.at.map((v, i) => v - lens.facing[i] * 20)) });
+  await waitFor('the eye at the sight', () => evalInApp('window.__sight.state()').open, 6000).catch(() => null);
+  squeeze(1);
+  const blindTaken = await waitFor('the crank taken blind', () => { const s = state('crank'); return s.heldBy === 'right' && s; }, 3000).catch(() => state('crank'));
+  check('With the eye at the sight, a right-hand squeeze 15 cm from the traverse crank takes it (and not with the eye away)',
+    notTaken.crank === null && notTaken.holding !== names.crank && blindTaken.heldBy === 'right',
+    `away: ${notTaken.crank ?? 'not taken'}; at the sight: held by ${blindTaken.heldBy}`);
+  await letGoOf('crank');
+  iwsdk(['xr', 'set-device-state'], {});
+  await sleep(300);
+  evalInApp('(window.__seats.reseat(), true)');
+  await sleep(300);
 
   await menuButtonPress();
   await menuClick('menu-turret-forward');

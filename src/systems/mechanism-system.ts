@@ -7,7 +7,7 @@ import { fingerInputs, forcedRelease, grip, handCurls, handUse } from './grip-sy
 import { controlHoldKinds, HoldKind, type LockResolver, lockResolvers } from './hand-lock.js';
 import { buzz } from './haptics.js';
 
-type Side = 'left' | 'right';
+export type Side = 'left' | 'right';
 const SIDES: readonly Side[] = ['left', 'right'];
 const DEG = Math.PI / 180;
 
@@ -27,14 +27,55 @@ export interface Control {
   active(): boolean;
   /** Called each frame it is usable, once it has moved, with what happened (MechEvent bits): draw it here. */
   moved?(events: number): void;
+  /** Laid without looking at it (the gun's cranks, with the eye at the sight): how the kit helps the hand find and keep it. */
+  readonly blind?: BlindUse;
 }
+
+/**
+ * A control a player works without looking at it, as the gunner lays the
+ * gun with an eye at the sight (John, 2026-11-20; docs/turret.md "Laying
+ * blind"). The hand feels it: a light tap as an open hand comes onto its
+ * handle, and a buzz, stronger the further it goes, while a hand holding it
+ * wanders off the handle. It holds on through a grip eased off for a
+ * moment. And while `now()`, a squeeze by `side`'s hand within `reach` of
+ * the handle takes it when nothing else is in reach.
+ */
+export interface BlindUse {
+  /** The hand it is meant for. */
+  side: Side;
+  /** How far from its handle that hand's squeeze still takes it while `now()`, m. */
+  reach: number;
+  /** Whether the player is working it blind now (say, an eye is at the sight). */
+  now(): boolean;
+}
+
+/** A hand holding a blind control this far off its handle starts to feel a buzz, m... */
+export const DRIFT_FROM = 0.04;
+/** ...growing to its strongest this far off, m. */
+export const DRIFT_FULL = 0.1;
+/** The drift buzz comes this often while it lasts, s. */
+const DRIFT_EVERY = 0.25;
+/** An open hand this near a blind control's handle feels a tap, once, m... */
+export const TOUCH_NEAR = 0.05;
+/** ...and again only after going this far away. */
+const TOUCH_AWAY = 0.07;
+/** A blind control holds on while the controller's grip is squeezed at least this much, though it reads as let go... */
+const LOOSE_SQUEEZE = 0.15;
+/** ...or for this long after it was let go altogether, s. */
+export const LOOSE_TIME = 0.15;
 
 interface Entry {
   control: Control;
   /** Time since each holding hand's last strain buzz, s. */
   strainClock: [number, number];
-  /** How many limits, detents and presses it has felt, for the test hook. */
-  counts: { limits: number; detents: number; presses: number };
+  /** Time since each holding hand's last drift buzz, s (a blind control). */
+  driftClock: [number, number];
+  /** Each hand is near the handle, having felt its tap (a blind control). */
+  touching: [boolean, boolean];
+  /** How long each holding hand's grip has read as let go, s (a blind control). */
+  loose: [number, number];
+  /** How many limits, detents, presses, drift buzzes and touch taps it has felt, for the test hook. */
+  counts: { limits: number; detents: number; presses: number; drifts: number; taps: number };
 }
 
 const entries: Entry[] = [];
@@ -68,7 +109,14 @@ export function findControl(name: string): Control | null {
  * cleanup.
  */
 export function addControl(control: Control): () => void {
-  const entry: Entry = { control, strainClock: [0, 0], counts: { limits: 0, detents: 0, presses: 0 } };
+  const entry: Entry = {
+    control,
+    strainClock: [0, 0],
+    driftClock: [0, 0],
+    touching: [false, false],
+    loose: [0, 0],
+    counts: { limits: 0, detents: 0, presses: 0, drifts: 0, taps: 0 },
+  };
   entries.push(entry);
   controlHoldKinds.set(control.name, control.kind);
   if (control.kind !== HoldKind.None && !lockResolvers.has(control.kind)) {
@@ -207,6 +255,8 @@ export class MechanismSystem extends createSystem({}) {
   /** Each hand's squeeze this frame and whether it is a fresh one: the grip's, or a scripted hand's. */
   private squeezed = { left: false, right: false };
   private fresh = { left: false, right: false };
+  /** This frame's step, s. */
+  private dt = 0;
 
   init(): void {
     // Across the fist: the grip space's +X (out of the back of a right hand), made square to the fist's hole.
@@ -262,6 +312,7 @@ export class MechanismSystem extends createSystem({}) {
 
   update(delta: number): void {
     const dt = Math.min(delta, 0.1);
+    this.dt = dt;
     for (const side of SIDES) {
       this.readHand(side);
     }
@@ -272,7 +323,7 @@ export class MechanismSystem extends createSystem({}) {
       for (let i = 0; i < 2; i++) {
         if (!control.mech.held[i]) continue;
         const side = SIDES[i];
-        if (!active || !this.squeezed[side] || !this.present[side] || handUse[side] !== control.name) {
+        if (!active || !this.stillGripped(entry, i, dt) || !this.present[side] || handUse[side] !== control.name) {
           // Pulled off it because the real hand strayed from the handle (grip locking): a fumble (F1.14).
           if (!this.squeezed[side] && forcedRelease[side] && !scriptedHands[side]) reportFumble(control.name, 'slip');
           control.mech.release(i as HandIndex);
@@ -301,6 +352,18 @@ export class MechanismSystem extends createSystem({}) {
         if (d < control.mech.reachRadius * MISS_REACH && d < nearDistance) {
           near = control;
           nearDistance = d;
+        }
+      }
+      // Nothing in reach: a control laid blind takes its own hand's squeeze from further off (the gun's cranks, eye at the sight).
+      if (!best) {
+        for (const { control } of entries) {
+          const blind = control.blind;
+          if (!blind || blind.side !== side || !control.active() || !blind.now()) continue;
+          const d = control.mech.reach(i as HandIndex, this.localHand(control, i as HandIndex));
+          if (d < blind.reach && d < bestDistance) {
+            best = control;
+            bestDistance = d;
+          }
         }
       }
       if (best && best.mech.grab(i as HandIndex, this.localHand(best, i as HandIndex))) {
@@ -343,12 +406,79 @@ export class MechanismSystem extends createSystem({}) {
           this.pulse(side, Math.min(0.6, 0.15 + strain / (20 * DEG)), 40);
         }
       }
+      if (control.blind) this.feelBlind(entry);
       // A button pressed by a fingertip buzzes that hand.
       if (events & MechEvent.Press && !mech.anyHeld) {
         const by = (mech as Mechanism & { pressedBy?: number }).pressedBy;
         if (by === 0 || by === 1) this.pulse(SIDES[by], 0.5, 20);
       }
       control.moved?.(events);
+    }
+  }
+
+  /**
+   * Whether hand `i` still grips `entry`'s control: squeezing, or, on a
+   * control laid blind, its grip eased off but not let go (a controller's
+   * grip still part squeezed), or let go only a moment ago. A hand pulled
+   * off by straying from the handle (grip locking) or a scripted hand lets
+   * go at once.
+   */
+  private stillGripped(entry: Entry, i: number, dt: number): boolean {
+    const side = SIDES[i];
+    if (this.squeezed[side]) {
+      entry.loose[i] = 0;
+      return true;
+    }
+    if (!entry.control.blind || forcedRelease[side] || scriptedHands[side]) return false;
+    if (!grip[side].hand && fingerInputs[side].squeeze >= LOOSE_SQUEEZE) {
+      entry.loose[i] = 0;
+      return true;
+    }
+    entry.loose[i] += dt;
+    return entry.loose[i] < LOOSE_TIME;
+  }
+
+  /**
+   * What a hand feels of a control laid blind (`Control.blind`), with
+   * `this.given` the hands in its space this frame: a buzz every
+   * DRIFT_EVERY while a hand holding it is more than DRIFT_FROM off its
+   * handle, stronger out to DRIFT_FULL; and a tap as an open hand comes
+   * within TOUCH_NEAR of the handle.
+   */
+  private feelBlind(entry: Entry): void {
+    const mech = entry.control.mech;
+    if (!mech.offHandle) return;
+    for (let i = 0; i < 2; i++) {
+      const side = SIDES[i];
+      const hand = this.given[i];
+      if (!hand) {
+        entry.touching[i] = false;
+        continue;
+      }
+      const off = mech.offHandle(hand);
+      if (mech.held[i]) {
+        entry.touching[i] = true;
+        if (off <= DRIFT_FROM) {
+          // Buzz at once when it next wanders off.
+          entry.driftClock[i] = DRIFT_EVERY;
+          continue;
+        }
+        entry.driftClock[i] += this.dt;
+        if (entry.driftClock[i] >= DRIFT_EVERY) {
+          entry.driftClock[i] = 0;
+          entry.counts.drifts++;
+          const far = Math.min(1, (off - DRIFT_FROM) / (DRIFT_FULL - DRIFT_FROM));
+          this.pulse(side, 0.15 + 0.35 * far, 60);
+        }
+        continue;
+      }
+      if (entry.touching[i]) {
+        if (off > TOUCH_AWAY) entry.touching[i] = false;
+      } else if (off < TOUCH_NEAR && handUse[side] === null && !this.squeezed[side]) {
+        entry.touching[i] = true;
+        entry.counts.taps++;
+        this.pulse(side, 0.15, 10);
+      }
     }
   }
 

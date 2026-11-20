@@ -20,7 +20,7 @@ import {
   Yoke,
 } from '../src/sim/mechanism.js';
 import { TILLER } from '../src/sim/lever.js';
-import { ELEVATION_WHEEL, TRAVERSE_CRANK } from '../src/sim/turret.js';
+import { CRANK_TRAVERSE_PER_TURN, ELEVATION_WHEEL, elevationForWheel, MIL, TRAVERSE_CRANK } from '../src/sim/turret.js';
 import { PERISCOPE_CRANK } from '../src/sim/periscope.js';
 import { BENCH, BUTTON, CRANK, HANDWHEEL, MOUNTS, mountToBench, NOTCHED_LEVER, SWITCH, TWIST, YOKE } from '../src/sim/mechanism-bench.js';
 import { rigOffset, SEATED_EYE, targetEyeHeight } from '../src/sim/body-height.js';
@@ -323,34 +323,112 @@ describe('the wheel and the crank', () => {
     expect(PERISCOPE_CRANK.direct).toBeFalsy();
   });
 
-  it('keeps a direct crank under the hand while laying: a slow quarter turn, then nudges of a few degrees each way', () => {
-    // On the knob's circle, and on circles a little off the axle or inside the knob's: the crank goes by the hand's angle round the axle.
-    for (const [ox, oy, rad] of [[0, 0, 0.08], [0.02, 0, 0.07], [0, -0.02, 0.06], [0.015, 0.015, 0.05]]) {
-      const crank = new Wheel(TRAVERSE_CRANK);
-      // A millimetre of tremor, the same every run.
-      let seed = 7;
-      const shake = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 0.002;
-      const at = (deg: number) => hand(ox - rad * Math.sin(deg * DEG) + shake(), oy + rad * Math.cos(deg * DEG) + shake(), 0.03);
-      const axleAngle = (deg: number) => Math.atan2(-(ox - rad * Math.sin(deg * DEG)), oy + rad * Math.cos(deg * DEG));
-      expect(crank.grab(1, at(0))).toBe(true);
-      let a = 0;
-      let crankWas = 0;
-      let handWas = axleAngle(0);
-      for (const target of [90, 84, 87, 85, 92, 88, 89, 70, 75, 73]) {
-        const from = a;
-        const frames = Math.abs(target - from) > 20 ? 100 : 20;
-        for (let i = 1; i <= frames; i++) {
-          a = from + ((target - from) * i) / frames;
-          crank.update(1 / 72, right(at(a)));
-        }
-        for (let i = 0; i < 29; i++) crank.update(1 / 72, right(at(a)));
-        // Each move turns it as far as the hand went round the axle, give or take the tremor (the circling way was up to 13° out).
-        const handMoved = wrap(axleAngle(a) - handWas);
-        expect(Math.abs(crank.angle - crankWas - handMoved) / DEG).toBeLessThan(1.5);
-        crankWas = crank.angle;
-        handWas = axleAngle(a);
+  /** A slow quarter turn, then nudges of a few degrees each way, of a hand on a circle of `rad` round (ox, oy): each move's crank turn, and the hand's angle round the axle and round its own circle. */
+  function layByHand(ox: number, oy: number, rad: number): { crank: number; axle: number; own: number }[] {
+    const crank = new Wheel(TRAVERSE_CRANK);
+    // A millimetre of tremor, the same every run.
+    let seed = 7;
+    const shake = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 0.002;
+    const at = (deg: number) => hand(ox - rad * Math.sin(deg * DEG) + shake(), oy + rad * Math.cos(deg * DEG) + shake(), 0.03);
+    const axleAngle = (deg: number) => Math.atan2(-(ox - rad * Math.sin(deg * DEG)), oy + rad * Math.cos(deg * DEG));
+    expect(crank.grab(1, at(0))).toBe(true);
+    const moves: { crank: number; axle: number; own: number }[] = [];
+    let a = 0;
+    let crankWas = 0;
+    for (const target of [90, 84, 87, 85, 92, 88, 89, 70, 75, 73]) {
+      const from = a;
+      const frames = Math.abs(target - from) > 20 ? 100 : 20;
+      for (let i = 1; i <= frames; i++) {
+        a = from + ((target - from) * i) / frames;
+        crank.update(1 / 72, right(at(a)));
       }
+      for (let i = 0; i < 29; i++) crank.update(1 / 72, right(at(a)));
+      moves.push({ crank: (crank.angle - crankWas) / DEG, axle: wrap(axleAngle(a) - axleAngle(from)) / DEG, own: target - from });
+      crankWas = crank.angle;
     }
+    return moves;
+  }
+
+  it('keeps a direct crank under the hand while laying on the knob: a slow quarter turn, then nudges of a few degrees each way', () => {
+    // Round the axle, on the knob's circle and inside it: the crank goes by the hand's angle round the axle, give or take the tremor.
+    for (const rad of [0.08, 0.06, 0.05]) {
+      for (const move of layByHand(0, 0, rad)) expect(Math.abs(move.crank - move.axle)).toBeLessThan(1.5);
+    }
+  });
+
+  it("turns a direct crank by the hand's angle round its own circle once the hand has gone round it, wherever that circle is", () => {
+    // A quarter turn round a circle off the axle finds its middle; the nudges after it go by the hand's angle round that, not the axle's.
+    for (const [ox, oy, rad] of [[0.02, 0, 0.07], [0, -0.02, 0.06], [0.015, 0.015, 0.05]]) {
+      const moves = layByHand(ox, oy, rad);
+      for (const move of moves.slice(1)) expect(Math.abs(move.crank - move.own)).toBeLessThan(1.5);
+    }
+  });
+
+  it('turns a direct crank evenly with the hand circling blind, off the axle (John, 2026-11-20: laying through the sight)', () => {
+    // Circles up to 4 cm off the axle (half the crank's radius), slow and fast, wobbling, drifting, and on the CI's slow frames.
+    const R = TRAVERSE_CRANK.radius;
+    const cases = [
+      { cx: 0.03, cy: 0, r: R, hz: 0.7, dt: 1 / 72, wobble: 0, drift: 0 },
+      { cx: 0.04, cy: 0, r: R, hz: 0.7, dt: 1 / 72, wobble: 0, drift: 0 },
+      { cx: 0, cy: -0.04, r: R, hz: 0.7, dt: 1 / 72, wobble: 0, drift: 0 },
+      { cx: 0.03, cy: 0, r: 0.05, hz: 0.7, dt: 1 / 72, wobble: 0, drift: 0 },
+      { cx: 0.03, cy: 0, r: R, hz: 0.25, dt: 1 / 72, wobble: 0, drift: 0 },
+      { cx: 0.03, cy: 0, r: R, hz: 1.5, dt: 1 / 72, wobble: 0, drift: 0 },
+      { cx: 0.03, cy: 0, r: R, hz: 0.7, dt: 1 / 72, wobble: 0.01, drift: 0 },
+      { cx: 0, cy: 0, r: R, hz: 0.7, dt: 1 / 72, wobble: 0.01, drift: 0.04 },
+      { cx: 0.03, cy: 0, r: R, hz: 0.7, dt: 0.1, wobble: 0, drift: 0 },
+    ];
+    for (const { cx, cy, r, hz, dt, wobble, drift } of cases) {
+      const crank = new Wheel(TRAVERSE_CRANK);
+      const turns = 5;
+      const w = 2 * Math.PI * hz;
+      const frames = Math.round(turns / hz / dt);
+      const at = (t: number) => {
+        const p = w * t;
+        const rr = r + wobble * Math.sin(3.1 * p);
+        return hand(cx + (drift * t * hz) / turns - rr * Math.sin(p), cy + rr * Math.cos(p), 0.03);
+      };
+      expect(crank.grab(1, at(0))).toBe(true);
+      let before = crank.angle;
+      let slowest = Infinity;
+      let fastest = 0;
+      for (let i = 1; i <= frames; i++) {
+        crank.update(dt, right(at(i * dt)));
+        // How fast it turns against how fast the hand goes round, after the first turn (it finds the circle's middle in that).
+        const speed = (crank.angle - before) / dt / w;
+        before = crank.angle;
+        if (i * dt * hz < 1) continue;
+        slowest = Math.min(slowest, speed);
+        fastest = Math.max(fastest, speed);
+      }
+      const label = JSON.stringify({ cx, cy, r, hz, dt, wobble, drift });
+      expect(slowest, label).toBeGreaterThan(0.85);
+      expect(fastest, label).toBeLessThan(1.15);
+      expect(Math.abs(crank.turns - turns), label).toBeLessThan(0.1);
+    }
+  });
+
+  it("ticks the gun's cranks once a mil of elevation and every two mils of traverse, so a correction can be counted by feel (John, 2026-11-20)", () => {
+    expect(elevationForWheel(ELEVATION_WHEEL.tickEvery) / MIL).toBeCloseTo(1, 9);
+    expect(((TRAVERSE_CRANK.tickEvery / (2 * Math.PI)) * CRANK_TRAVERSE_PER_TURN) / MIL).toBeCloseTo(2, 9);
+    // Turned three ticks' worth, the elevation handwheel ticks three times.
+    const wheel = new Wheel(ELEVATION_WHEEL);
+    const r = ELEVATION_WHEEL.radius;
+    wheel.grab(1, wheelHand(0, r, 0.03));
+    let ticks = 0;
+    const end = (3.5 * ELEVATION_WHEEL.tickEvery) / DEG;
+    for (let i = 1; i <= 60; i++) if (wheel.update(DT, right(wheelHand((end * i) / 60, r, 0.03))) & MechEvent.Detent) ticks++;
+    expect(ticks).toBe(3);
+  });
+
+  it("says how far a hand is off a crank's knob, along it and round it, for the drift buzz", () => {
+    const crank = new Wheel(TRAVERSE_CRANK);
+    const r = TRAVERSE_CRANK.radius;
+    crank.angle = 90 * DEG;
+    // On the knob anywhere along it: 0. Five centimetres out from the axle past it, or past the knob's end.
+    expect(crank.offHandle(wheelHand(90, r, 0.03))).toBeCloseTo(0, 9);
+    expect(crank.offHandle(wheelHand(90, r + 0.05, 0.03))).toBeCloseTo(0.05, 9);
+    expect(crank.offHandle(wheelHand(90, r, TRAVERSE_CRANK.knobLength + 0.05))).toBeCloseTo(0.05, 9);
   });
 
   it('turns a direct crank smoothly with the hand circling off the axle, never stopping or jumping', () => {

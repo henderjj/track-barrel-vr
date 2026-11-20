@@ -54,4 +54,10 @@ export const seating = {
    * pages; SeatSystem darkens the whole view at least this much.
    */
   fallDark: 0,
+  /**
+   * An eye is at the gunsight's eyepiece, whatever the sight's draw mode
+   * (SightSystem sets it): the gunner lays the gun blind, by feel, so the
+   * gun's cranks help the hands find them (docs/turret.md "Laying blind").
+   */
+  atSight: false,
 };

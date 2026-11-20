@@ -41,6 +41,24 @@ export const CRANK_TRAVERSE_PER_TURN = 2 * DEG;
  */
 export const ELEVATION_PER_TURN = 0.75 * DEG;
 
+/** A milliradian, the sight's unit (its range marks and the hull mark are drawn in them), rad. */
+export const MIL = 0.001;
+/**
+ * The gun's cranks tick in the hand once for every this many mils they move
+ * the gun, so a gunner laying blind, the eye at the sight, can count a
+ * correction by feel ("two clicks up"): every mil of elevation (13 a turn),
+ * every two mils of traverse (17 a turn) (John, 2026-11-20).
+ */
+export const ELEVATION_TICK_MILS = 1;
+export const TRAVERSE_TICK_MILS = 2;
+/**
+ * With an eye at the sight, a squeeze by the hand a gun crank is meant for
+ * takes it from this far off its handle when nothing else is in reach, m
+ * (twice the kit's reach): the left hand finds the elevation handle, the
+ * right the traverse crank, without looking.
+ */
+export const BLIND_REACH = 0.2;
+
 /** The gun's trunnions, which it elevates about: in the front plate, at the gun's height, turret space (x 0), m. */
 export const TRUNNION = { y: GUN.y, z: TURRET.front } as const;
 
@@ -176,11 +194,11 @@ export const ELEVATION_WHEEL: WheelSpec = {
   // The handle faces away from the gunner's eyes, so their clockwise is the kit's anticlockwise (src/sim/mechanism.ts), a positive turn.
   min: wheelForElevation(MIN_ELEVATION),
   max: wheelForElevation(MAX_ELEVATION),
-  tickEvery: Math.PI / 4,
+  tickEvery: (TURN * ELEVATION_TICK_MILS * MIL) / ELEVATION_PER_TURN,
   perTurn: ELEVATION_PER_TURN / DEG,
 };
 
-/** The manual traverse crank: turns for ever, a tick each quarter turn; anticlockwise turns the turret left. */
+/** The manual traverse crank: turns for ever, a tick every two mils of traverse; anticlockwise turns the turret left. */
 export const TRAVERSE_CRANK: WheelSpec = {
   radius: 0.08,
   grip: 'crank',
@@ -189,7 +207,7 @@ export const TRAVERSE_CRANK: WheelSpec = {
   direct: true,
   min: -Infinity,
   max: Infinity,
-  tickEvery: Math.PI / 2,
+  tickEvery: (TURN * TRAVERSE_TICK_MILS * MIL) / CRANK_TRAVERSE_PER_TURN,
   perTurn: CRANK_TRAVERSE_PER_TURN / DEG,
 };
 
