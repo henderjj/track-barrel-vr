@@ -9,6 +9,7 @@ import {
   GEAR_READOUT,
   LAMP,
   PANEL,
+  PARKING_BRAKE,
   PANEL_HOUSING,
   SWITCH_PANEL,
   CHOKE_PLATE,
@@ -18,6 +19,9 @@ import {
   TILLER_PEDESTAL,
 } from '../sim/driver-station.js';
 import { NEUTRAL, REVERSE } from '../sim/gearbox.js';
+import { LATCH } from './mechanism.scene-asset.js';
+
+const DEG = Math.PI / 180;
 
 /**
  * The driver's station (F1.5, docs/driver-station.md), the parts that
@@ -78,6 +82,19 @@ export function driverStationParts(): Part[] {
   const [bx, by, bz] = DRIVER_CONTROLS.brake.pivot;
   const postTop = by + 0.025;
   parts.push(box([2 * BRAKE_POST.halfWidth, postTop + 0.01, BRAKE_POST.depth], [bx, (postTop - 0.01) / 2, bz], OLIVE_DARK));
+  // Its ratchet: a toothed quadrant standing out of the post's top beside the lever, a tooth at each of its clicks,
+  // the pawl on the lever riding over their tips (the latch on the handle lifts it).
+  const { detents, min, max } = PARKING_BRAKE;
+  const qx = bx + LATCH.side;
+  const tipRadius = LATCH.pawlRadius - 0.005;
+  for (let a = min - 4 * DEG; a <= max + 4.01 * DEG; a += 3 * DEG) {
+    const r = (0.02 + tipRadius - 0.006) / 2;
+    parts.push({ geometry: new BoxGeometry(0.006, tipRadius - 0.006 - 0.02, 0.0045), color: STEEL, position: [qx, by + r * Math.cos(a), bz - r * Math.sin(a)], rotation: [-a, 0, 0] });
+  }
+  for (const a of detents) {
+    const r = tipRadius - 0.0035;
+    parts.push({ geometry: new BoxGeometry(0.006, 0.007, 0.0035), color: STEEL, position: [qx, by + r * Math.cos(a), bz - r * Math.sin(a)], rotation: [-a, 0, 0] });
+  }
   // The hand throttle's quadrant, sunk 1 cm into the left wall, its pivot inside the top.
   const [tx, ty, tz] = DRIVER_CONTROLS.throttle.pivot;
   const q = THROTTLE_QUADRANT;

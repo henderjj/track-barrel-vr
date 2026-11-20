@@ -440,9 +440,16 @@ export interface LeverSpec {
   /**
    * A ratchet (F1.18's parking brake): the hand moves the lever only this way
    * (+1 forwards, -1 back) unless its trigger is pulled, which frees the
-   * pawl (the release button on top of the handle) and lets it go back.
+   * pawl (the release latch on the handle) and lets it go back.
    */
   ratchet?: 1 | -1;
+  /**
+   * A squeeze latch on the handle's front, under the index finger (the
+   * parking brake's release): a hand on the handle is drawn closed round it
+   * this far from the pivot, m, thumb up and its fingers round the handle's
+   * front (the side it leans to), so the index finger rests on the latch.
+   */
+  latch?: { fist: number };
 }
 
 /**
@@ -653,10 +660,15 @@ export class Lever extends Mechanism {
       axis[2] = 0;
       return;
     }
-    segment(fist, 0, 0, 0, 0, c, -s, length - gripLength, length, seg);
+    // A handle with a latch is held where the index finger finds the latch.
+    let t = this.spec.latch?.fist ?? 0;
+    if (!this.spec.latch) {
+      segment(fist, 0, 0, 0, 0, c, -s, length - gripLength, length, seg);
+      t = seg.t;
+    }
     point[0] = 0;
-    point[1] = seg.t * c;
-    point[2] = -seg.t * s;
+    point[1] = t * c;
+    point[2] = -t * s;
     axis[0] = 0;
     axis[1] = c;
     axis[2] = -s;

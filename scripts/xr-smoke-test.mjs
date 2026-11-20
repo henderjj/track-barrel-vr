@@ -2558,6 +2558,10 @@ async function driverStation() {
   const shifted = await waitFor('3rd to go in', () => { const t = tank(); return t.gear === 3 && !t.grinding && t; }, 6000).catch(() => tank());
   check('The clutch (left trigger) in, 3rd goes in', shifted.gear === 3 && !shifted.grinding && station().shifts > before.shifts,
     `gear ${shifted.gear}, ${station().shifts - before.shifts} shift(s)`);
+  // The clutch pedal goes down with it (John's headset note, 20 November 2026).
+  const pedal = await waitFor('the clutch pedal down', () => { const s = station(); return s.pedals.clutch > 0.5 && s; }, 3000).catch(() => station());
+  check('The clutch pedal is drawn pressed while the clutch (left trigger) is held', pedal.pedals.clutch > 0.5,
+    `clutch pedal ${pedal.pedals.clutch.toFixed(2)}, accelerator ${pedal.pedals.accelerator.toFixed(2)}`);
   // Back past 2nd, let go near 1st: it drops into its notch and 1st goes in.
   handTo('controller-left', handle('gear', 0), 0.3);
   await sleep(400);
@@ -2624,9 +2628,9 @@ async function driverStation() {
   trigger('controller-left', 0);
   squeeze('controller-left', 0);
   await sleep(300);
-  check('Pushed down, the ratchet holds it until the trigger frees it; then it goes down and the lamp goes out',
-    ratcheted.parkingBrake && !off.parkingBrake && !lamp(),
-    `pushed without the trigger ${ratcheted.angles.brake.toFixed(1)}° (${ratcheted.parkingBrake ? 'on' : 'off'}), with it ${off.angles.brake.toFixed(1)}°, lamp ${lamp()}`);
+  check('Pushed down, the ratchet holds it until the trigger frees it, squeezing the release latch; then it goes down and the lamp goes out',
+    ratcheted.parkingBrake && ratcheted.latch < 0.5 && !off.parkingBrake && off.latch > 0.5 && !lamp(),
+    `pushed without the trigger ${ratcheted.angles.brake.toFixed(1)}° (${ratcheted.parkingBrake ? 'on' : 'off'}, latch ${ratcheted.latch.toFixed(2)}), with it ${off.angles.brake.toFixed(1)}° (latch ${off.latch.toFixed(2)}), lamp ${lamp()}`);
   iwsdk(['xr', 'set-device-state'], {});
 }
 

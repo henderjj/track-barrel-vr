@@ -1,5 +1,6 @@
-import { BoxGeometry, CylinderGeometry, ExtrudeGeometry, LatheGeometry, Shape, TorusGeometry, Vector2 } from '@iwsdk/core';
-import { beam, type Part } from './lowpoly.js';
+import { BoxGeometry, CylinderGeometry, ExtrudeGeometry, LatheGeometry, Mesh, MeshStandardMaterial, Shape, TorusGeometry, Vector2 } from '@iwsdk/core';
+import { beam, mergeParts, type Part } from './lowpoly.js';
+import { litInside } from './cabin-light.js';
 import { GUN, HULL, TURRET } from '../sim/cabin.js';
 import { GEARBOX } from '../sim/driver-station.js';
 import {
@@ -12,6 +13,7 @@ import {
   HULL_BIN,
   HULL_RACK,
   PEDALS,
+  type PedalId,
   PISTOL_PORT,
   PROPELLER_SHAFT,
   RECOIL_CYLINDERS,
@@ -21,7 +23,7 @@ import {
   TRAVERSE_MOTOR,
   TURRET_LOCK,
 } from '../sim/interior-fittings.js';
-import { INTERIOR_COLORS as C } from './finish.js';
+import { INTERIOR_COLORS as C, interiorFinish } from './finish.js';
 
 /**
  * The crew compartment's fittings nobody works (docs/interior.md, "The rest
@@ -36,8 +38,8 @@ type Vec3 = readonly [number, number, number];
 
 const ALONG_X: Vec3 = [0, 0, Math.PI / 2];
 const ALONG_Z: Vec3 = [Math.PI / 2, 0, 0];
-/** The pedals' pads lean back towards the driver this far from flat, rad. */
-const PAD_TILT = 0.95;
+
+const material = litInside(new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }), { finish: true });
 
 function box(size: Vec3, position: Vec3, color: number, rotation?: Vec3): Part {
   return { geometry: new BoxGeometry(...size), color, position, rotation };
@@ -145,21 +147,21 @@ export function driveTrainParts(): Part[] {
       parts.push(box([0.034, 0.008, 0.01], [x, f.top + 0.002, z], C.steel, [0, turn, 0]));
     }
   }
-  // The pedals: an arm from a hinge on the plate up and forward to a pad tilted back at the driver.
-  for (const pedal of [PEDALS.clutch, PEDALS.accelerator]) {
-    const hinge: Vec3 = [pedal.x, f.top + 0.02, PEDALS.hingeZ];
-    parts.push(cylinder(0.02, pedal.width + 0.02, hinge, C.steel, ALONG_X, 8));
-    parts.push(beam(hinge, [pedal.x, PEDALS.padY - 0.02, PEDALS.padZ + 0.02], 0.012, C.steel, 6));
-    parts.push(box([pedal.width, 0.014, pedal.length], [pedal.x, PEDALS.padY, PEDALS.padZ], C.steel, [-PAD_TILT, 0, 0]));
-    // Grip ribs across the pad, standing 4 mm proud of it.
-    for (const k of [-1, 0, 1]) {
-      const along = (k * pedal.length) / 3.5;
-      // Out along the pad's normal (0, cos, -sin of its tilt) and along it (0, sin, cos).
-      const n = [Math.cos(PAD_TILT), -Math.sin(PAD_TILT)];
-      const a = [Math.sin(PAD_TILT), Math.cos(PAD_TILT)];
-      parts.push(box([pedal.width - 0.012, 0.014, 0.008], [pedal.x, PEDALS.padY + n[0] * 0.005 + a[0] * along, PEDALS.padZ + n[1] * 0.005 + a[1] * along], C.rubber, [-PAD_TILT, 0, 0]));
-    }
+  // The pedals' fixed parts: the clutch's pivot between two cheeks on the plate, the accelerator's heel hinge and the
+  // rubber stop under its toe (the pedals themselves move: createPedal).
+  const c = PEDALS.clutch;
+  for (const side of [-1, 1]) {
+    parts.push(box([0.008, c.pivot[0] + 0.02 - f.top, 0.05], [c.x + side * 0.022, (c.pivot[0] + 0.02 + f.top) / 2, c.pivot[1]], C.steel));
   }
+  parts.push(cylinder(0.009, 0.06, [c.x, c.pivot[0], c.pivot[1]], C.steel, ALONG_X, 8));
+  const a = PEDALS.accelerator;
+  for (const side of [-1, 1]) {
+    parts.push(box([0.008, a.pivot[0] + 0.012 - f.top, 0.03], [a.x + side * (a.width / 2 + 0.006), (a.pivot[0] + 0.012 + f.top) / 2, a.pivot[1]], C.steel));
+  }
+  parts.push(cylinder(0.006, a.width + 0.024, [a.x, a.pivot[0], a.pivot[1]], C.steel, ALONG_X, 8));
+  const toeDown = a.rise - a.travel;
+  const toe = [a.pivot[0] + Math.sin(toeDown) * a.length * 0.8, a.pivot[1] - Math.cos(toeDown) * a.length * 0.8];
+  parts.push(cylinder(0.014, toe[0] - PEDALS.padThickness / 2 / Math.cos(toeDown) - f.top - 0.004, [a.x, (toe[0] - PEDALS.padThickness / 2 / Math.cos(toeDown) - 0.004 + f.top) / 2, toe[1]], C.rubber, undefined, 8));
   return parts;
 }
 
@@ -322,4 +324,43 @@ export function turretFittingParts(): Part[] {
   parts.push(cylinder(0.016, 0.02, [wall - 0.062, GUN.y + 0.06, 0.62], C.rubber, ALONG_X, 8));
   parts.push(box([0.008, 0.03, 0.05], [wall - 0.058, GUN.y + 0.01, 0.62], C.ivory));
   return parts;
+}
+
+/**
+ * A pedal that moves (src/sim/interior-fittings.ts PEDALS), turning about
+ * X on its pivot at the origin: put it at the pivot and set `rotation.x`
+ * to −pedalAngle. The clutch: an arm leaning back to a ribbed pad facing up
+ * and back at the driver. The accelerator: a long ribbed pad rising
+ * forwards from its heel, its face up and back.
+ */
+export function createPedal(id: PedalId): Mesh {
+  const parts: Part[] = [];
+  const t = PEDALS.padThickness;
+  // A pad `length` long and `width` wide with its middle at `at`, facing (0, cos tilt, sin tilt), with grip ribs across it standing 4 mm proud.
+  const pad = (width: number, length: number, at: Vec3, tilt: number): void => {
+    parts.push(box([width, t, length], at, C.steel, [tilt, 0, 0]));
+    const n = [Math.cos(tilt), Math.sin(tilt)];
+    const along = [Math.sin(tilt), -Math.cos(tilt)];
+    for (let k = -2; k <= 2; k++) {
+      const d = (k * length) / 5.5;
+      parts.push(box([width - 0.012, t, 0.008], [at[0], at[1] + n[0] * 0.004 + along[0] * d, at[2] + n[1] * 0.004 + along[1] * d], C.rubber, [tilt, 0, 0]));
+    }
+  };
+  if (id === 'clutch') {
+    const c = PEDALS.clutch;
+    const end: Vec3 = [0, Math.cos(c.lean) * c.arm, Math.sin(c.lean) * c.arm];
+    // The arm's boss on the pivot, the arm, and the pad on its end, the arm meeting the pad's back.
+    parts.push(cylinder(0.016, 0.034, [0, 0, 0], C.steel, ALONG_X, 8));
+    parts.push(beam([0, 0, 0], [0, end[1] - Math.cos(c.padTilt) * 0.004, end[2] - Math.sin(c.padTilt) * 0.004], 0.013, C.steel, 6));
+    pad(c.width, c.length, [0, end[1] + Math.cos(c.padTilt) * 0.004, end[2] + Math.sin(c.padTilt) * 0.004], c.padTilt);
+  } else {
+    const a = PEDALS.accelerator;
+    // The heel's barrel on the hinge, and the pad rising forwards from it, its face up and back.
+    parts.push(cylinder(0.011, a.width - 0.004, [0, 0, 0], C.steel, ALONG_X, 8));
+    const mid = a.length / 2;
+    pad(a.width, a.length, [0, Math.sin(a.rise) * mid + Math.cos(a.rise) * 0.004, -Math.cos(a.rise) * mid + Math.sin(a.rise) * 0.004], a.rise);
+  }
+  const mesh = new Mesh(mergeParts(parts, interiorFinish), material);
+  mesh.name = id === 'clutch' ? 'Clutch Pedal' : 'Accelerator Pedal';
+  return mesh;
 }

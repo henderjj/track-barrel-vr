@@ -75,11 +75,23 @@ export function createDriverSeat(): Mesh {
     ...seatShellParts(x, top, z),
     beam(c, [c[0] - RISE.x * reach, c[1] - RISE.y * reach, c[2] - RISE.z * reach], 0.024, STEEL_LIGHT, 8),
   ];
-  // The seat lever's bracket, out from the cushion's side, and the hinge it turns on, across the seat.
+  // The seat lever's bracket (John's headset note, 20 November 2026: the lever looked as if it floated beside the seat):
+  // a plate bolted along the seat pan's side, with an arm rising from it to the lever's pivot, and the boss the lever
+  // turns in, from the plate out round the lever's foot, with the pivot's pin and nut through it.
   const b = SEAT_LEVER_BRACKET;
   const [px, py, pz] = [x + SEAT_LEVER_FROM_CUSHION[0], top + SEAT_LEVER_FROM_CUSHION[1], z + SEAT_LEVER_FROM_CUSHION[2]];
-  parts.push({ geometry: new BoxGeometry(b.to - b.from, b.height, b.depth), color: STEEL, position: [x + (b.from + b.to) / 2, py, pz] });
-  parts.push({ geometry: new CylinderGeometry(0.016, 0.016, 0.045, 8, 1), color: STEEL_LIGHT, position: [px, py, pz], rotation: [0, 0, Math.PI / 2] });
+  const plateX = x + b.from + b.thickness / 2;
+  const strapTop = top - b.strapTop;
+  const strapBottom = top - b.strapBottom;
+  parts.push({ geometry: new BoxGeometry(b.thickness, strapTop - strapBottom, b.strapBack - b.strapFront), color: STEEL, position: [plateX, (strapTop + strapBottom) / 2, z + (b.strapFront + b.strapBack) / 2] });
+  parts.push({ geometry: new BoxGeometry(b.thickness, py + b.armAbove - strapBottom, b.armDepth), color: STEEL, position: [plateX, (py + b.armAbove + strapBottom) / 2, pz] });
+  for (const dz of [b.strapFront + 0.025, b.strapBack - 0.025]) {
+    parts.push({ geometry: new CylinderGeometry(0.007, 0.007, 0.012, 6, 1), color: STEEL_LIGHT, position: [x + b.from + b.thickness, (strapTop + strapBottom) / 2, z + dz], rotation: [0, 0, Math.PI / 2] });
+  }
+  const bossFrom = x + b.from + b.thickness - 0.002;
+  const bossTo = px + 0.0225;
+  parts.push({ geometry: new CylinderGeometry(0.016, 0.016, bossTo - bossFrom, 8, 1), color: STEEL_LIGHT, position: [(bossFrom + bossTo) / 2, py, pz], rotation: [0, 0, Math.PI / 2] });
+  parts.push({ geometry: new CylinderGeometry(0.0105, 0.0105, 0.008, 6, 1), color: STEEL, position: [bossTo + 0.004, py, pz], rotation: [0, 0, Math.PI / 2] });
   const mesh = new Mesh(mergeParts(parts, interiorFinish), material);
   mesh.name = DRIVER_SEAT_NAME;
   return mesh;

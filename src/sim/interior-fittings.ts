@@ -52,18 +52,31 @@ export const PROPELLER_SHAFT = { x: MIDDLE_X, y: 0.11, radius: 0.12, from: GEARB
 
 /**
  * The driver's pedals, as figure 9: the clutch under the left steering
- * lever and the accelerator under the right, each a pad on an arm hinged
- * at the floor. They don't move: the game's clutch and accelerator are on
- * the levers and the trigger (docs/gearbox.md). The perforated foot plate
- * they stand on, in front of the seat.
+ * lever, a long arm rising from a pivot on the foot plate at the front and
+ * leaning back to its pad, and the accelerator under the right, a pad hinged
+ * at its heel on the plate with its toe up. Both pads face the driver, up
+ * and back (they faced the front until John's headset note of 20 November
+ * 2026). They move as the game's clutch and accelerator are worked (the
+ * left and right triggers, docs/gearbox.md), the clutch's pad forwards and
+ * the accelerator's toe down, `travel` rad when pressed fully. Pivots are
+ * hull space [y, z]. The perforated foot plate they stand on, in front of
+ * the seat.
  */
 export const PEDALS = {
-  clutch: { x: DRIVER_CONTROLS.tillerLeft.pivot[0] + 0.11, width: 0.09, length: 0.11 },
-  accelerator: { x: DRIVER_CONTROLS.tillerRight.pivot[0] - 0.1, width: 0.065, length: 0.16 },
-  hingeZ: -2.12,
-  padZ: -2.24,
-  padY: 0.17,
+  /** The clutch: its arm `arm` long from the pivot to the pad, leaning back `lean` rad, its pad facing up and back `padTilt` rad from upright. */
+  clutch: { x: DRIVER_CONTROLS.tillerLeft.pivot[0] + 0.11, width: 0.09, length: 0.11, pivot: [0.045, -2.35], arm: 0.25, lean: 0.7, padTilt: 0.9, travel: 0.35 },
+  /** The accelerator: its pad rising `rise` rad from the floor from its heel's hinge, toe forwards. */
+  accelerator: { x: DRIVER_CONTROLS.tillerRight.pivot[0] - 0.1, width: 0.065, length: 0.16, pivot: [0.035, -2.11], rise: 0.56, travel: 0.24 },
+  padThickness: 0.014,
 } as const;
+export type PedalId = 'clutch' | 'accelerator';
+export const PEDAL_IDS: readonly PedalId[] = ['clutch', 'accelerator'];
+
+/** How far a pedal is turned on its pivot when pressed `press` (0 to 1) of the way, rad (positive forwards: the clutch's pad forwards, the accelerator's toe down). */
+export function pedalAngle(id: PedalId, press: number): number {
+  return PEDALS[id].travel * Math.min(1, Math.max(0, press));
+}
+
 export const FOOT_PLATE = { x0: -0.79, x1: GEARBOX.x0 - 0.02, z0: HULL.front + 0.02, z1: -2.0, top: 0.016 } as const;
 
 /**

@@ -11,6 +11,8 @@ import {
   FOOT_PLATE,
   HULL_BIN,
   HULL_RACK,
+  PEDAL_IDS,
+  pedalAngle,
   PEDALS,
   PROPELLER_SHAFT,
   RECOIL_CYLINDERS,
@@ -63,6 +65,43 @@ describe("the compartment's fittings (docs/interior.md, the fifth pass)", () => 
     // The plate stops short of the pedestals and the transmission.
     expect(FOOT_PLATE.z1).toBeLessThan(DRIVER_CONTROLS.tillerLeft.pivot[2] - TILLER_PEDESTAL.depth / 2);
     expect(FOOT_PLATE.x1).toBeLessThan(GEARBOX.x0);
+  });
+
+  it("faces the pedals' pads up and back at the driver, and moves them forwards as they are pressed (John's headset note, 20 November 2026)", () => {
+    const c = PEDALS.clutch;
+    const a = PEDALS.accelerator;
+    expect(pedalAngle('clutch', -1)).toBe(0);
+    expect(pedalAngle('clutch', 2)).toBe(c.travel);
+    for (const press of [0, 0.5, 1]) {
+      // The clutch: the pad on the arm's end, turned with it; its face's normal points up and back (+Y, +Z) the whole way.
+      const tc = pedalAngle('clutch', press);
+      const lean = c.lean - tc;
+      const tilt = c.padTilt - tc;
+      expect(Math.cos(tilt)).toBeGreaterThan(0.3);
+      expect(Math.sin(tilt)).toBeGreaterThan(0.3);
+      const padZ = c.pivot[1] + Math.sin(lean) * c.arm;
+      const padY = c.pivot[0] + Math.cos(lean) * c.arm;
+      // Within a seated foot's reach, in front of the steering levers' pedestals, behind the nose plate and over the plate.
+      expect(padZ).toBeLessThan(DRIVER_CONTROLS.tillerLeft.pivot[2] - TILLER_PEDESTAL.depth / 2 - 0.1);
+      expect(padZ - c.length / 2).toBeGreaterThan(HULL.front + 0.05);
+      expect(padY).toBeGreaterThan(0.12);
+      expect(padY).toBeLessThan(0.32);
+      // The accelerator: rising from its heel, its toe forwards and its face up and back.
+      const ta = pedalAngle('accelerator', press);
+      const rise = a.rise - ta;
+      expect(rise).toBeGreaterThan(0.2);
+      const toeY = a.pivot[0] + Math.sin(rise) * a.length;
+      expect(toeY).toBeGreaterThan(FOOT_PLATE.top + 0.04);
+      expect(a.pivot[1] - Math.cos(rise) * a.length).toBeGreaterThan(HULL.front + 0.05);
+    }
+    // Pressed, the clutch's pad goes forwards and the accelerator's toe down.
+    expect(Math.sin(c.lean - c.travel)).toBeLessThan(Math.sin(c.lean));
+    expect(Math.sin(a.rise - a.travel)).toBeLessThan(Math.sin(a.rise));
+    // Both stand on the foot plate.
+    for (const id of PEDAL_IDS) {
+      expect(PEDALS[id].pivot[1]).toBeGreaterThan(FOOT_PLATE.z0);
+      expect(PEDALS[id].pivot[1]).toBeLessThan(FOOT_PLATE.z1);
+    }
   });
 
   it('runs the propeller shaft from the transmission to the bulkhead under the basket', () => {

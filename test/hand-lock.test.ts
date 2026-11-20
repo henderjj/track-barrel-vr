@@ -1,8 +1,8 @@
 import { Quaternion, Vector3 } from '@iwsdk/core';
 import { afterEach, describe, expect, it } from 'vitest';
-import { FIST_AXIS, FIST_CENTRE } from '../src/scene-assets/hand.scene-asset.js';
+import { FIST_AXIS, FIST_CENTRE, indexTip } from '../src/scene-assets/hand.scene-asset.js';
 import { createFingerCurls } from '../src/sim/hand-pose.js';
-import { HoldKind, LOCK_EASE, LockedHand, lockResolvers } from '../src/systems/hand-lock.js';
+import { HoldKind, LATCH_INDEX_ALONG, LATCH_INDEX_REST, LATCH_INDEX_SQUEEZED, LOCK_EASE, LockedHand, lockResolvers } from '../src/systems/hand-lock.js';
 
 const HANDLE = new Vector3(0.4, 1.0, -0.5);
 /**
@@ -12,6 +12,7 @@ const HANDLE = new Vector3(0.4, 1.0, -0.5);
 const CRANK = 101;
 const ROPE = 102;
 const UNREGISTERED = 103;
+const LATCHED = 104;
 
 /** A crank-like handle running along X at HANDLE. */
 function registerHandle(): void {
@@ -135,6 +136,48 @@ describe('grip locking', () => {
       expect(Math.hypot(centre.x + 0.85, centre.y - 0.95)).toBeLessThan(1e-6);
       // ...turned only the 25° it takes, so the hand keeps the controller's roll.
       expect((q.angleTo(controller) * 180) / Math.PI).toBeCloseTo(25, 3);
+    }
+  });
+
+  it('turns a hand on a handle with a latch so its index finger rests on the latch, thumb up, and squeezes it with the trigger (the parking brake, 20 November 2026)', () => {
+    // An upright handle at HANDLE with its latch on the -Z side.
+    lockResolvers.set(LATCHED, (_hand, point, axis, _side, _own, latch) => {
+      point.copy(HANDLE);
+      axis.set(0, 1, 0);
+      latch.set(0, 0, -1);
+    });
+    for (const side of ['left', 'right'] as const) {
+      const m = side === 'left' ? -1 : 1;
+      const axisOf = new Vector3(FIST_AXIS[0] * m, FIST_AXIS[1], FIST_AXIS[2]).normalize();
+      const centreOf = new Vector3(FIST_CENTRE[0] * m, FIST_CENTRE[1], FIST_CENTRE[2]);
+      // Hands taking hold rolled every way round the handle, and upside down.
+      for (const roll of [0, 1.5, 3, 4.5]) {
+        for (const flip of [false, true]) {
+          let quat = new Quaternion().setFromUnitVectors(axisOf, new Vector3(0, flip ? -1 : 1, 0));
+          quat = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), roll).multiply(quat);
+          const lock = new LockedHand(side);
+          const pos = new Vector3();
+          const q = new Quaternion();
+          const curls = createFingerCurls(0.12, 1, 1);
+          for (let i = 0; i < 10; i++) {
+            curls.index = 0.12;
+            lock.update(0.011, LATCHED, hand, quat, pos, q, curls);
+          }
+          // The handle through the fist, thumb up.
+          expect(centreOf.clone().applyQuaternion(q).add(pos).distanceTo(HANDLE)).toBeLessThan(1e-6);
+          expect(axisOf.clone().applyQuaternion(q).y).toBeCloseTo(1, 5);
+          // The index finger off the trigger rests on the latch: its last joint on the latch's side, above the fist.
+          expect(curls.index).toBeCloseTo(LATCH_INDEX_REST, 5);
+          const tip = indexTip(curls.index, 1, side, new Vector3(), 0.011).applyQuaternion(q).add(pos).sub(HANDLE);
+          expect(tip.z).toBeLessThan(-0.03);
+          expect(Math.abs(tip.x)).toBeLessThan(0.01);
+          expect(tip.y).toBeCloseTo(LATCH_INDEX_ALONG, 2);
+          // Pulling the trigger squeezes it.
+          curls.index = 1;
+          lock.update(0.011, LATCHED, hand, quat, pos, q, curls);
+          expect(curls.index).toBeCloseTo(LATCH_INDEX_SQUEEZED, 5);
+        }
+      }
     }
   });
 });

@@ -239,6 +239,8 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     const { Group } = await import('@iwsdk/core');
     const station = await import('../src/sim/driver-station.js');
     const { createGearReadout, createLamp, createNeedle } = await import('../src/scene-assets/driver-station.scene-asset.js');
+    const fittings = await import('../src/sim/interior-fittings.js');
+    const { createPedal } = await import('../src/scene-assets/interior-fittings.js');
     const hull = cabin.createHull();
     for (const pose of ['min', 'rest', 'max'] as const) {
       const root = new Group();
@@ -247,7 +249,22 @@ describe('no faces that flicker through each other (z-fighting)', () => {
         const lever = mechanism.createLever(spec);
         lever.position.set(pivot[0], pivot[1], pivot[2]);
         lever.rotation.x = -spec[pose];
+        // The parking brake's release latch (20 November 2026): out, half and fully squeezed.
+        if (spec.latch) {
+          const latch = mechanism.createLeverLatch();
+          latch.position.fromArray(mechanism.latchHinge(spec, [0, 0, 0]));
+          latch.rotation.x = -mechanism.LATCH.squeeze * (pose === 'min' ? 0 : pose === 'rest' ? 0.5 : 1);
+          lever.add(latch);
+        }
         root.add(lever);
+      }
+      // The pedals let go, half and fully pressed.
+      for (const id of fittings.PEDAL_IDS) {
+        const pedal = createPedal(id);
+        const { x, pivot } = fittings.PEDALS[id];
+        pedal.position.set(x, pivot[0], pivot[1]);
+        pedal.rotation.x = -fittings.pedalAngle(id, pose === 'min' ? 0 : pose === 'rest' ? 0.5 : 1);
+        root.add(pedal);
       }
       const panel = new Group();
       panel.position.set(...station.PANEL.centre);
