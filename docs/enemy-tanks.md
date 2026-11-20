@@ -62,7 +62,7 @@ As gunner it engages a tank as soon as it is in range (in the open, a tank shows
 
 - `test/enemy-tanks.test.ts`: the routes (off the lane, clear of obstacles, the course and the guns); driving there and back, facing the way they go; never seeing the start, seeing the tank where Meet parks it; driving on, halting to lay and fire, driving on again after smoke, stopping when knocked out; their own muzzle and numbers, missing more on a moving tank; starting apart from the guns; the face square to the crew, side or front, ahead where the shell finds it; armour (AP counts, HE direct or beside doesn't); the shared state, with an older message; the menu line.
 - `test/z-fighting.test.ts`: the tank with its turret turned every way, and the wreck.
-- `npm run test:xr` (step 6v, part 1): Meet A draws both tanks, tank A seeing the crew's tank and halting; it fires and hits are called; HE on it does nothing; AP knocks it out (its wreck drawn, the sign); tank B drives on its route; Stop takes them away.
+- `npm run test:xr` (step 6v, part 2): Meet A draws both tanks, tank A seeing the crew's tank and halting; it fires and hits are called; HE on it does nothing; AP knocks it out (its wreck drawn, the sign); tank B drives on its route; Stop takes them away.
 - `npm run test:net` (`ONLY_FIRING=1`): the host's tanks appear on both pages, driving, within a few metres of each other; a guest's Meet B; the guest gunner's AP knocks tank B out on both pages; Stop.
 
 `window.__enemy` adds `start(seed, 'tanks')`, `stop('tanks')`, `hold(i, held)`, `place(i, d)`, `meetTank(j)`, and in `state().guns` each one's group, whether it is there, how far along its route, whether it drives on, where it is drawn and its turret's turn.
