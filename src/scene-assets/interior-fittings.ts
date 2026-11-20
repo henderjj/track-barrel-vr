@@ -7,6 +7,8 @@ import {
   BASKET_SKIRT,
   BRAKE_DRUMS,
   BREATHER,
+  ACCELERATOR_PAD_LIFT,
+  ACCELERATOR_STOP,
   CLUTCH_MASTER,
   CLUTCH_PUSH_ROD,
   CLUTCH_RESERVOIR,
@@ -185,9 +187,13 @@ export function driveTrainParts(): Part[] {
     parts.push(box([0.008, a.pivot[0] + 0.012 - f.top, 0.03], [a.x + side * (a.width / 2 + 0.006), (a.pivot[0] + 0.012 + f.top) / 2, a.pivot[1]], C.steel));
   }
   parts.push(cylinder(0.006, a.width + 0.024, [a.x, a.pivot[0], a.pivot[1]], C.steel, ALONG_X, 8));
-  const toeDown = a.rise - a.travel;
-  const toe = [a.pivot[0] + Math.sin(toeDown) * a.length * 0.8, a.pivot[1] - Math.cos(toeDown) * a.length * 0.8];
-  parts.push(cylinder(0.014, toe[0] - PEDALS.padThickness / 2 / Math.cos(toeDown) - f.top - 0.004, [a.x, (toe[0] - PEDALS.padThickness / 2 / Math.cos(toeDown) - 0.004 + f.top) / 2, toe[1]], C.rubber, undefined, 8));
+  // The toe's rubber stop: a post from the plate and a buffer on it tilted to meet the pressed pad's underside flat.
+  const st = ACCELERATOR_STOP;
+  const cap = 0.008;
+  const capMid = [st.top[0] - Math.cos(st.tilt) * cap / 2, st.top[1] - Math.sin(st.tilt) * cap / 2];
+  parts.push(cylinder(st.radius, cap, [a.x, capMid[0], capMid[1]], C.rubber, [st.tilt, 0, 0], 8));
+  const postTop = capMid[0];
+  parts.push(cylinder(st.radius * 0.8, postTop - f.top, [a.x, (postTop + f.top) / 2, capMid[1]], C.rubber, undefined, 8));
   return parts;
 }
 
@@ -389,7 +395,8 @@ export function createPedal(id: PedalId): Mesh {
     // The heel's barrel on the hinge, and the pad rising forwards from it, its face up and back.
     parts.push(cylinder(0.011, a.width - 0.004, [0, 0, 0], C.steel, ALONG_X, 8));
     const mid = a.length / 2;
-    pad(a.width, a.length, [0, Math.sin(a.rise) * mid + Math.cos(a.rise) * 0.004, -Math.cos(a.rise) * mid + Math.sin(a.rise) * 0.004], a.rise);
+    const lift = ACCELERATOR_PAD_LIFT;
+    pad(a.width, a.length, [0, Math.sin(a.rise) * mid + Math.cos(a.rise) * lift, -Math.cos(a.rise) * mid + Math.sin(a.rise) * lift], a.rise);
   }
   const mesh = new Mesh(mergeParts(parts, interiorFinish), material);
   mesh.name = id === 'clutch' ? 'Clutch Pedal' : 'Accelerator Pedal';

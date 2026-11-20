@@ -24,7 +24,7 @@ In [`src/sim/interior-fittings.ts`](../src/sim/interior-fittings.ts) (`PEDALS`),
 | --- | --- | --- |
 | Clutch | pivot 53 cm up, 12 cm behind the nose; knee 20 cm under it; pad 33 cm under and 11 cm behind it; 25° travel (`PEDALS.clutch`, `clutchPoint`) | A car's hanging pedal: the pad where a seated foot rests, ahead of the steering levers' pedestals; pressed it goes about 15 cm forwards, staying over the floor and behind the nose |
 | Master cylinder | 2.2 cm bore radius, 6 cm under the pivot (the clevis), from the nose plate back to 6 cm behind it; rod 8.5 cm (`CLUTCH_MASTER`, `CLUTCH_PUSH_ROD`) | In line with the clevis, so the rod pushes straight in; the pressed arm clears its end and the rod never leaves it |
-| Accelerator | heel hinge 3.5 cm up, 29 cm behind the nose; 6.5 × 16 cm pad rising 32°; 14° travel | Toe 12 cm up, 8.5 cm when pressed |
+| Accelerator | heel hinge 3.5 cm up, 29 cm behind the nose; 6.5 × 16 cm pad rising 45°; 33° travel, down to 11.5° (32° rising and 14° travel before John's notes: more range, starting higher, going a little lower) | Toe 15 cm up, 6.7 cm when pressed, its underside flat on the rubber stop's tilted buffer (`ACCELERATOR_STOP`, 1 mm under it) |
 | Seat lever's bracket | 1 cm plate on the pan's side, strap 24 cm long, arm 6 cm wide to 2 cm over the pivot | Fixed to the seat, so it rises with it head out |
 | Latch | hinge 5 cm over where the hand is drawn (36 cm up the 42 cm lever), 3.5 cm in front of the lever; 4.2 cm red bar; squeezes in 0.15 rad | Under the index finger of a fist drawn there (the finger lies 3 cm towards the thumb from the fist's middle) |
 | Index finger on the latch | curl 0.64 resting (finger off the trigger or resting on it), 0.8 with the trigger pulled | Its last joint wraps the bar's front instead of the handle |
@@ -37,7 +37,7 @@ In [`src/sim/interior-fittings.ts`](../src/sim/interior-fittings.ts) (`PEDALS`),
 
 ## Tests
 
-- `test/interior-fittings.test.ts`: both pads face the driver through their travel, within a seated foot's reach, ahead of the pedestals and behind the nose; pressed, the clutch's pad swings over 12 cm forwards and never rises, its arm clears the master cylinder, its pivot is in the pedal box and its push rod stays in the cylinder; the accelerator's toe goes down.
+- `test/interior-fittings.test.ts`: both pads face the driver through their travel, within a seated foot's reach, ahead of the pedestals and behind the nose; pressed, the clutch's pad swings over 12 cm forwards and never rises, its arm clears the master cylinder, its pivot is in the pedal box and its push rod stays in the cylinder; the accelerator's toe goes down from 45° to its stop at 11.5°, landing on the rubber stop.
 - `test/hand-lock.test.ts`: a hand on a latched handle, taken rolled every way and upside down, is drawn thumb up with its index finger's last joint on the latch's side, 3 cm above the fist; the trigger squeezes it.
 - `test/parking-brake.test.ts`: the hand on the brake is locked at the latch's point wherever it took hold, at every angle.
 - `test/z-fighting.test.ts`: the pedals and the clutch's push rod let go, half and fully pressed, the pedal box, master cylinder and reservoir, the latch out and squeezed, the ratchet quadrant, and the seat's bracket raised and lowered.
