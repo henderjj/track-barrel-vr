@@ -125,8 +125,10 @@ jobs:
       matrix:
         part: [1, 2, 3]
     name: xr (part ${{ matrix.part }})
-    # Twice a part's 12 minutes when one is rerun (see the test step).
-    timeout-minutes: 45
+    # Twice a part's 12 minutes when one is rerun (see the test step). Raised from 45 on 2026-11-20: on slow
+    # runners (a frame every ~1 s, against 0.6-0.7 s the day before) part 2 passed every check it reached but ran
+    # out of time three runs in a row (PR #130).
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
