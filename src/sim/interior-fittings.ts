@@ -52,9 +52,11 @@ export const PROPELLER_SHAFT = { x: MIDDLE_X, y: 0.11, radius: 0.12, from: GEARB
 
 /**
  * The driver's pedals, as figure 9: the clutch under the left steering
- * lever, a long arm rising from a pivot on the foot plate at the front and
- * leaning back to its pad, and the accelerator under the right, a pad hinged
- * at its heel on the plate with its toe up. Both pads face the driver, up
+ * lever, a long arm rising through a slot in the foot plate from a pivot
+ * under the floor and leaning forwards to its pad, so pressed it swings
+ * down and forwards as a real clutch pedal does (John's note, 20 November
+ * 2026: turned on a pivot on the plate it only tipped), and the accelerator
+ * under the right, a pad hinged at its heel on the plate with its toe up. Both pads face the driver, up
  * and back (they faced the front until John's headset note of 20 November
  * 2026). They move as the game's clutch and accelerator are worked (the
  * left and right triggers, docs/gearbox.md), the clutch's pad forwards and
@@ -63,14 +65,16 @@ export const PROPELLER_SHAFT = { x: MIDDLE_X, y: 0.11, radius: 0.12, from: GEARB
  * the seat.
  */
 export const PEDALS = {
-  /** The clutch: its arm `arm` long from the pivot to the pad, leaning back `lean` rad, its pad facing up and back `padTilt` rad from upright. */
-  clutch: { x: DRIVER_CONTROLS.tillerLeft.pivot[0] + 0.11, width: 0.09, length: 0.11, pivot: [0.045, -2.35], arm: 0.25, lean: 0.7, padTilt: 0.9, travel: 0.35 },
+  /** The clutch: its arm `arm` long from the pivot under the floor to the pad, leaning forwards `lean` rad, its pad facing up and back `padTilt` rad from upright. */
+  clutch: { x: DRIVER_CONTROLS.tillerLeft.pivot[0] + 0.11, width: 0.09, length: 0.11, pivot: [-0.022, -2.016], arm: 0.32, lean: 0.61, padTilt: 0.75, travel: 0.35 },
   /** The accelerator: its pad rising `rise` rad from the floor from its heel's hinge, toe forwards. */
   accelerator: { x: DRIVER_CONTROLS.tillerRight.pivot[0] - 0.1, width: 0.065, length: 0.16, pivot: [0.035, -2.11], rise: 0.56, travel: 0.24 },
   padThickness: 0.014,
 } as const;
 export type PedalId = 'clutch' | 'accelerator';
 export const PEDAL_IDS: readonly PedalId[] = ['clutch', 'accelerator'];
+/** The slot in the foot plate the clutch's arm rises through, from the arm's line at rest to pressed, with a rubber boot round it: its length along Z, m. */
+export const CLUTCH_SLOT = { from: -2.025, to: -2.095, width: 0.05, height: 0.012 } as const;
 
 /** How far a pedal is turned on its pivot when pressed `press` (0 to 1) of the way, rad (positive forwards: the clutch's pad forwards, the accelerator's toe down). */
 export function pedalAngle(id: PedalId, press: number): number {

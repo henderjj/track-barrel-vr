@@ -7,6 +7,7 @@ import {
   BASKET_SKIRT,
   BRAKE_DRUMS,
   BREATHER,
+  CLUTCH_SLOT,
   COAX,
   DIFFERENTIAL,
   FOOT_PLATE,
@@ -143,17 +144,17 @@ export function driveTrainParts(): Part[] {
     for (let j = 0; j < along; j++) {
       const x = f.x0 + ((i + 0.5) / across) * (f.x1 - f.x0);
       const z = f.z0 + ((j + 0.5) / along) * (f.z1 - f.z0);
+      // None under the clutch's boot.
+      if (Math.abs(x - PEDALS.clutch.x) < CLUTCH_SLOT.width / 2 + 0.02 && z < CLUTCH_SLOT.from + 0.02 && z > CLUTCH_SLOT.to - 0.02) continue;
       const turn = (i + j) % 2 === 0 ? Math.PI / 4 : -Math.PI / 4;
       parts.push(box([0.034, 0.008, 0.01], [x, f.top + 0.002, z], C.steel, [0, turn, 0]));
     }
   }
-  // The pedals' fixed parts: the clutch's pivot between two cheeks on the plate, the accelerator's heel hinge and the
-  // rubber stop under its toe (the pedals themselves move: createPedal).
+  // The pedals' fixed parts: the rubber boot round the clutch's slot in the plate (its pivot is under the floor), the
+  // accelerator's heel hinge and the rubber stop under its toe (the pedals themselves move: createPedal).
   const c = PEDALS.clutch;
-  for (const side of [-1, 1]) {
-    parts.push(box([0.008, c.pivot[0] + 0.02 - f.top, 0.05], [c.x + side * 0.022, (c.pivot[0] + 0.02 + f.top) / 2, c.pivot[1]], C.steel));
-  }
-  parts.push(cylinder(0.009, 0.06, [c.x, c.pivot[0], c.pivot[1]], C.steel, ALONG_X, 8));
+  const slot = CLUTCH_SLOT;
+  parts.push(box([slot.width, slot.height, slot.from - slot.to], [c.x, f.top + slot.height / 2 - 0.005, (slot.from + slot.to) / 2], C.rubber));
   const a = PEDALS.accelerator;
   for (const side of [-1, 1]) {
     parts.push(box([0.008, a.pivot[0] + 0.012 - f.top, 0.03], [a.x + side * (a.width / 2 + 0.006), (a.pivot[0] + 0.012 + f.top) / 2, a.pivot[1]], C.steel));
@@ -329,7 +330,7 @@ export function turretFittingParts(): Part[] {
 /**
  * A pedal that moves (src/sim/interior-fittings.ts PEDALS), turning about
  * X on its pivot at the origin: put it at the pivot and set `rotation.x`
- * to −pedalAngle. The clutch: an arm leaning back to a ribbed pad facing up
+ * to −pedalAngle. The clutch: an arm leaning forwards to a ribbed pad facing up
  * and back at the driver. The accelerator: a long ribbed pad rising
  * forwards from its heel, its face up and back.
  */
@@ -348,8 +349,8 @@ export function createPedal(id: PedalId): Mesh {
   };
   if (id === 'clutch') {
     const c = PEDALS.clutch;
-    const end: Vec3 = [0, Math.cos(c.lean) * c.arm, Math.sin(c.lean) * c.arm];
-    // The arm's boss on the pivot, the arm, and the pad on its end, the arm meeting the pad's back.
+    const end: Vec3 = [0, Math.cos(c.lean) * c.arm, -Math.sin(c.lean) * c.arm];
+    // The arm's boss on the pivot (under the floor), the arm, and the pad on its end, the arm meeting the pad's back.
     parts.push(cylinder(0.016, 0.034, [0, 0, 0], C.steel, ALONG_X, 8));
     parts.push(beam([0, 0, 0], [0, end[1] - Math.cos(c.padTilt) * 0.004, end[2] - Math.sin(c.padTilt) * 0.004], 0.013, C.steel, 6));
     pad(c.width, c.length, [0, end[1] + Math.cos(c.padTilt) * 0.004, end[2] + Math.sin(c.padTilt) * 0.004], c.padTilt);

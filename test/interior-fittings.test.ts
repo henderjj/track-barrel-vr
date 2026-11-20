@@ -6,6 +6,7 @@ import {
   BASKET_SWEEP,
   BRAKE_DRUMS,
   BREATHER,
+  CLUTCH_SLOT,
   COAX,
   DIFFERENTIAL,
   FOOT_PLATE,
@@ -75,11 +76,11 @@ describe("the compartment's fittings (docs/interior.md, the fifth pass)", () => 
     for (const press of [0, 0.5, 1]) {
       // The clutch: the pad on the arm's end, turned with it; its face's normal points up and back (+Y, +Z) the whole way.
       const tc = pedalAngle('clutch', press);
-      const lean = c.lean - tc;
+      const lean = c.lean + tc;
       const tilt = c.padTilt - tc;
       expect(Math.cos(tilt)).toBeGreaterThan(0.3);
       expect(Math.sin(tilt)).toBeGreaterThan(0.3);
-      const padZ = c.pivot[1] + Math.sin(lean) * c.arm;
+      const padZ = c.pivot[1] - Math.sin(lean) * c.arm;
       const padY = c.pivot[0] + Math.cos(lean) * c.arm;
       // Within a seated foot's reach, in front of the steering levers' pedestals, behind the nose plate and over the plate.
       expect(padZ).toBeLessThan(DRIVER_CONTROLS.tillerLeft.pivot[2] - TILLER_PEDESTAL.depth / 2 - 0.1);
@@ -94,8 +95,16 @@ describe("the compartment's fittings (docs/interior.md, the fifth pass)", () => 
       expect(toeY).toBeGreaterThan(FOOT_PLATE.top + 0.04);
       expect(a.pivot[1] - Math.cos(rise) * a.length).toBeGreaterThan(HULL.front + 0.05);
     }
-    // Pressed, the clutch's pad goes forwards and the accelerator's toe down.
-    expect(Math.sin(c.lean - c.travel)).toBeLessThan(Math.sin(c.lean));
+    // Pressed, the clutch's pad goes down and forwards, at least 5 cm each way, as a real one (20 November 2026), and the accelerator's toe down.
+    expect(c.arm * (Math.cos(c.lean) - Math.cos(c.lean + c.travel))).toBeGreaterThan(0.05);
+    expect(c.arm * (Math.sin(c.lean + c.travel) - Math.sin(c.lean))).toBeGreaterThan(0.05);
+    // Its pivot is under the floor, and the arm rises through the slot at rest and pressed.
+    expect(c.pivot[0]).toBeLessThan(0);
+    for (const lean of [c.lean, c.lean + c.travel]) {
+      const z = c.pivot[1] - Math.tan(lean) * (FOOT_PLATE.top - c.pivot[0]);
+      expect(z).toBeLessThan(CLUTCH_SLOT.from - 0.01);
+      expect(z).toBeGreaterThan(CLUTCH_SLOT.to + 0.01);
+    }
     expect(Math.sin(a.rise - a.travel)).toBeLessThan(Math.sin(a.rise));
     // Both stand on the foot plate.
     for (const id of PEDAL_IDS) {
