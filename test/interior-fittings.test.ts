@@ -124,6 +124,9 @@ describe("the compartment's fittings (docs/interior.md, the fifth pass)", () => 
       expect(end).toBeGreaterThan(HULL.front + 0.012);
     }
     expect(Math.sin(a.rise - a.travel)).toBeLessThan(Math.sin(a.rise));
+    // John's note (20 November 2026): more range, starting higher off the floor and stopping where it did (18°).
+    expect(a.rise).toBeGreaterThanOrEqual(0.75);
+    expect(a.rise - a.travel).toBeCloseTo(0.32, 2);
     // The accelerator stands on the foot plate.
     expect(a.pivot[1]).toBeGreaterThan(FOOT_PLATE.z0);
     expect(a.pivot[1]).toBeLessThan(FOOT_PLATE.z1);
