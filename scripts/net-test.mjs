@@ -353,7 +353,9 @@ function deepestDuck(page, ms) {
 async function waitForPoses(pages, count = 30) {
   const received = () => Promise.all(pages.map((p) => p.page.evaluate(() => window.__net.received)));
   const start = await received();
-  await waitFor('pose packets both ways', async () => (await received()).every((n, i) => n - start[i] >= count), 20000);
+  // A pair opened first on a cold runner (NET_PART=2 opens its lagged pair straight away) loads its pages and
+  // compiles their shaders before it sends much: 20 s wasn't always enough there. A longer limit costs nothing when quick.
+  await waitFor('pose packets both ways', async () => (await received()).every((n, i) => n - start[i] >= count), 60000);
 }
 
 /**
