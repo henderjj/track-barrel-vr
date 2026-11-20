@@ -240,7 +240,7 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     const station = await import('../src/sim/driver-station.js');
     const { createGearReadout, createLamp, createNeedle } = await import('../src/scene-assets/driver-station.scene-asset.js');
     const fittings = await import('../src/sim/interior-fittings.js');
-    const { createPedal } = await import('../src/scene-assets/interior-fittings.js');
+    const { createClutchPushRod, createPedal } = await import('../src/scene-assets/interior-fittings.js');
     const hull = cabin.createHull();
     for (const pose of ['min', 'rest', 'max'] as const) {
       const root = new Group();
@@ -258,12 +258,18 @@ describe('no faces that flicker through each other (z-fighting)', () => {
         }
         root.add(lever);
       }
-      // The pedals let go, half and fully pressed.
+      // The pedals let go, half and fully pressed, and the clutch's push rod.
       for (const id of fittings.PEDAL_IDS) {
         const pedal = createPedal(id);
         const { x, pivot } = fittings.PEDALS[id];
         pedal.position.set(x, pivot[0], pivot[1]);
-        pedal.rotation.x = -fittings.pedalAngle(id, pose === 'min' ? 0 : pose === 'rest' ? 0.5 : 1);
+        pedal.rotation.x = fittings.pedalTurn(id, pose === 'min' ? 0 : pose === 'rest' ? 0.5 : 1);
+        if (id === 'clutch') {
+          const rod = createClutchPushRod();
+          rod.position.set(0, -fittings.PEDALS.clutch.clevis, 0);
+          rod.rotation.x = -pedal.rotation.x;
+          pedal.add(rod);
+        }
         root.add(pedal);
       }
       const panel = new Group();

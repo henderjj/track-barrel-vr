@@ -6,15 +6,18 @@ import {
   BASKET_SWEEP,
   BRAKE_DRUMS,
   BREATHER,
-  CLUTCH_SLOT,
+  CLUTCH_MASTER,
+  CLUTCH_PUSH_ROD,
+  clutchPoint,
   COAX,
   DIFFERENTIAL,
   FOOT_PLATE,
   HULL_BIN,
   HULL_RACK,
-  PEDAL_IDS,
+  PEDAL_BOX,
   pedalAngle,
   PEDALS,
+  pedalTurn,
   PROPELLER_SHAFT,
   RECOIL_CYLINDERS,
   RECOIL_GUARD,
@@ -68,25 +71,30 @@ describe("the compartment's fittings (docs/interior.md, the fifth pass)", () => 
     expect(FOOT_PLATE.x1).toBeLessThan(GEARBOX.x0);
   });
 
-  it("faces the pedals' pads up and back at the driver, and moves them forwards as they are pressed (John's headset note, 20 November 2026)", () => {
+  it("faces the pedals' pads at the driver and moves them as a car's pedals move (John's headset notes, 20 November 2026)", () => {
     const c = PEDALS.clutch;
     const a = PEDALS.accelerator;
     expect(pedalAngle('clutch', -1)).toBe(0);
     expect(pedalAngle('clutch', 2)).toBe(c.travel);
+    const pad: [number, number] = [0, 0];
+    const at = (press: number) => clutchPoint(c.pad, pedalTurn('clutch', press), [0, 0]);
     for (const press of [0, 0.5, 1]) {
-      // The clutch: the pad on the arm's end, turned with it; its face's normal points up and back (+Y, +Z) the whole way.
-      const tc = pedalAngle('clutch', press);
-      const lean = c.lean + tc;
-      const tilt = c.padTilt - tc;
-      expect(Math.cos(tilt)).toBeGreaterThan(0.3);
-      expect(Math.sin(tilt)).toBeGreaterThan(0.3);
-      const padZ = c.pivot[1] - Math.sin(lean) * c.arm;
-      const padY = c.pivot[0] + Math.cos(lean) * c.arm;
-      // Within a seated foot's reach, in front of the steering levers' pedestals, behind the nose plate and over the plate.
-      expect(padZ).toBeLessThan(DRIVER_CONTROLS.tillerLeft.pivot[2] - TILLER_PEDESTAL.depth / 2 - 0.1);
-      expect(padZ - c.length / 2).toBeGreaterThan(HULL.front + 0.05);
-      expect(padY).toBeGreaterThan(0.12);
-      expect(padY).toBeLessThan(0.32);
+      // The clutch hangs from its pivot: the pad on the arm's end, turned with it; its face's normal points back at the driver (+Z) and not down.
+      const turn = pedalTurn('clutch', press);
+      const tilt = c.padTilt + turn;
+      expect(Math.sin(tilt)).toBeGreaterThan(0.6);
+      expect(Math.cos(tilt)).toBeGreaterThan(-0.2);
+      clutchPoint(c.pad, turn, pad);
+      // Within a seated foot's reach, in front of the steering levers' pedestals, behind the nose plate and over the foot plate.
+      expect(pad[1]).toBeLessThan(DRIVER_CONTROLS.tillerLeft.pivot[2] - TILLER_PEDESTAL.depth / 2 - 0.1);
+      expect(pad[1] - c.length / 2).toBeGreaterThan(HULL.front + 0.04);
+      expect(pad[0]).toBeGreaterThan(0.12);
+      expect(pad[0]).toBeLessThan(0.3);
+      // The arm and knee stay behind the master cylinder's end and the nose plate.
+      const knee = clutchPoint(c.knee, turn, [0, 0]);
+      expect(knee[1]).toBeGreaterThan(HULL.front + 0.02);
+      const underCylinder = clutchPoint([-(c.clevis + CLUTCH_MASTER.radius), 0], turn, [0, 0]);
+      expect(underCylinder[1] - 0.012).toBeGreaterThan(CLUTCH_MASTER.back + 0.005);
       // The accelerator: rising from its heel, its toe forwards and its face up and back.
       const ta = pedalAngle('accelerator', press);
       const rise = a.rise - ta;
@@ -95,22 +103,30 @@ describe("the compartment's fittings (docs/interior.md, the fifth pass)", () => 
       expect(toeY).toBeGreaterThan(FOOT_PLATE.top + 0.04);
       expect(a.pivot[1] - Math.cos(rise) * a.length).toBeGreaterThan(HULL.front + 0.05);
     }
-    // Pressed, the clutch's pad goes down and forwards, at least 5 cm each way, as a real one (20 November 2026), and the accelerator's toe down.
-    expect(c.arm * (Math.cos(c.lean) - Math.cos(c.lean + c.travel))).toBeGreaterThan(0.05);
-    expect(c.arm * (Math.sin(c.lean + c.travel) - Math.sin(c.lean))).toBeGreaterThan(0.05);
-    // Its pivot is under the floor, and the arm rises through the slot at rest and pressed.
-    expect(c.pivot[0]).toBeLessThan(0);
-    for (const lean of [c.lean, c.lean + c.travel]) {
-      const z = c.pivot[1] - Math.tan(lean) * (FOOT_PLATE.top - c.pivot[0]);
-      expect(z).toBeLessThan(CLUTCH_SLOT.from - 0.01);
-      expect(z).toBeGreaterThan(CLUTCH_SLOT.to + 0.01);
+    // Pressed, the clutch's pad swings forwards over 12 cm, as a car's, and drops a little, never rising.
+    const up = at(0);
+    const down = at(1);
+    expect(up[1] - down[1]).toBeGreaterThan(0.12);
+    expect(down[0]).toBeLessThanOrEqual(up[0]);
+    expect(up[0] - down[0]).toBeLessThan(0.04);
+    // Its pivot is in the pedal box on the nose plate, between the cheeks, over the master cylinder; the push rod stays in the cylinder.
+    expect(c.pivot[0]).toBeGreaterThan(PEDAL_BOX.bottom);
+    expect(c.pivot[0]).toBeLessThan(PEDAL_BOX.top);
+    expect(c.pivot[1]).toBeGreaterThan(HULL.front);
+    expect(c.pivot[1]).toBeLessThan(PEDAL_BOX.back);
+    expect(PEDAL_BOX.bottom).toBeGreaterThanOrEqual(c.pivot[0] - c.clevis + CLUTCH_MASTER.radius - 0.003);
+    const clevis = clutchPoint([-c.clevis, 0], pedalTurn('clutch', 1), [0, 0]);
+    expect(Math.abs(clevis[0] - (c.pivot[0] - c.clevis))).toBeLessThan(CLUTCH_MASTER.radius - CLUTCH_MASTER.rod);
+    for (const press of [0, 1]) {
+      const pin = clutchPoint([-c.clevis, 0], pedalTurn('clutch', press), [0, 0]);
+      const end = pin[1] - CLUTCH_PUSH_ROD.from - CLUTCH_PUSH_ROD.length;
+      expect(end).toBeLessThan(CLUTCH_MASTER.back - 0.01);
+      expect(end).toBeGreaterThan(HULL.front + 0.012);
     }
     expect(Math.sin(a.rise - a.travel)).toBeLessThan(Math.sin(a.rise));
-    // Both stand on the foot plate.
-    for (const id of PEDAL_IDS) {
-      expect(PEDALS[id].pivot[1]).toBeGreaterThan(FOOT_PLATE.z0);
-      expect(PEDALS[id].pivot[1]).toBeLessThan(FOOT_PLATE.z1);
-    }
+    // The accelerator stands on the foot plate.
+    expect(a.pivot[1]).toBeGreaterThan(FOOT_PLATE.z0);
+    expect(a.pivot[1]).toBeLessThan(FOOT_PLATE.z1);
   });
 
   it('runs the propeller shaft from the transmission to the bulkhead under the basket', () => {

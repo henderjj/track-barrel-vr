@@ -14,8 +14,8 @@ import { createConvoyGrip } from '../scene-assets/convoy-seat.scene-asset.js';
 import { createGearReadout, createLamp, createNeedle, LAMP_DARK } from '../scene-assets/driver-station.scene-asset.js';
 import { CONVOY_GRIP, CONVOY_GRIP_OFFSET } from '../sim/convoy-seat.js';
 import { createButtonCap, createLever, createLeverLatch, createPullKnob, createToggleBat, createToggleNut, LATCH, latchHinge } from '../scene-assets/mechanism.scene-asset.js';
-import { createPedal } from '../scene-assets/interior-fittings.js';
-import { PEDAL_IDS, PEDALS, pedalAngle, type PedalId } from '../sim/interior-fittings.js';
+import { createClutchPushRod, createPedal } from '../scene-assets/interior-fittings.js';
+import { PEDAL_IDS, PEDALS, type PedalId, pedalTurn } from '../sim/interior-fittings.js';
 import {
   CAP_PROUD,
   CHOKE_PLATE,
@@ -225,6 +225,7 @@ export class DriverStationSystem extends createSystem({}) {
   /** The clutch and accelerator pedals (they follow the controls the tank runs on), and how far each is pressed as drawn, 0 to 1. */
   private pedals = {} as Record<PedalId, Object3D>;
   private pedalPress = { clutch: 0, accelerator: 0 } as Record<PedalId, number>;
+  private pushRod!: Object3D;
   /** The parking brake's release latch on its handle, and how far it is squeezed as drawn, 0 to 1. */
   private latch!: Object3D;
   private squeezed = 0;
@@ -274,6 +275,10 @@ export class DriverStationSystem extends createSystem({}) {
       this.root.add(pedal);
       this.pedals[id] = pedal;
     }
+    // The clutch's push rod hangs on its arm at the clevis and stays level, sliding into the master cylinder.
+    this.pushRod = createClutchPushRod();
+    this.pushRod.position.set(0, -PEDALS.clutch.clevis, 0);
+    this.pedals.clutch.add(this.pushRod);
 
     const panel = new Group();
     panel.position.set(...PANEL.centre);
@@ -455,7 +460,8 @@ export class DriverStationSystem extends createSystem({}) {
     const k = 1 - Math.exp(-PEDAL_RATE * dt);
     this.pedalPress.clutch += ((shown?.clutch ?? 0) - this.pedalPress.clutch) * k;
     this.pedalPress.accelerator += ((shown?.accel ?? 0) - this.pedalPress.accelerator) * k;
-    for (const id of PEDAL_IDS) this.pedals[id].rotation.x = -pedalAngle(id, this.pedalPress[id]);
+    for (const id of PEDAL_IDS) this.pedals[id].rotation.x = pedalTurn(id, this.pedalPress[id]);
+    this.pushRod.rotation.x = -this.pedals.clutch.rotation.x;
     const brake = this.levers.brake;
     const releasing = brake.anyHeld ? brake.freed : brake.angle - this.brakeWas > 0.2 * DEG * dt * 60;
     this.brakeWas = brake.angle;
