@@ -82,7 +82,7 @@ export const PEDALS = {
     clevis: 0.06,
   },
   /** The accelerator: its pad rising `rise` rad from the floor from its heel's hinge, toe forwards. */
-  accelerator: { x: DRIVER_CONTROLS.tillerRight.pivot[0] - 0.1, width: 0.065, length: 0.16, pivot: [0.035, -2.11], rise: 0.78, travel: 0.46 },
+  accelerator: { x: DRIVER_CONTROLS.tillerRight.pivot[0] - 0.1, width: 0.065, length: 0.16, pivot: [0.035, -2.11], rise: 0.78, travel: 0.58 },
   padThickness: 0.014,
 } as const;
 export type PedalId = 'clutch' | 'accelerator';
