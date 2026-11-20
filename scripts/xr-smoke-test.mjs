@@ -3833,9 +3833,19 @@ async function theCommander() {
     const l = c().loaded;
     return l[0] === l[1] ? l : null;
   }, 20000).catch(() => c().loaded);
+  // The page keeps only the last 20 calls said, and a part that fought before this step has filled them:
+  // what is new is what follows the old list's end, not what lies past its old length.
+  const saidSince = (prev, now) => {
+    const key = (l) => l.join(' ');
+    for (let n = 0; n <= prev.length; n++) {
+      const kept = prev.length - n;
+      if (now.length >= kept && prev.slice(n).every((l, i) => key(l) === key(now[i]))) return now.slice(kept).map(key);
+    }
+    return now.map(key);
+  };
   evalInApp('(window.__damage.repair(), window.__commander.reset(), true)');
   await sleep(500);
-  const before = c().said.length;
+  const before = c().said;
   // While he speaks: the tank ducked, and his voice coming out (watched in the page: a call lasts a second or two).
   evalInApp(`(() => {
     const p = (window.__commanderProbe = { duck: 0, level: 0, frames: 0 });
@@ -3849,11 +3859,11 @@ async function theCommander() {
     return true;
   })()`);
   evalInApp('(window.__damage.test("engine"), true)');
-  await waitFor('the commander to call the hit', () => c().said.length > before, 8000).catch(() => null);
+  await waitFor('the commander to call the hit', () => saidSince(before, c().said).length > 0, 8000).catch(() => null);
   await waitFor('him to finish', () => !c().speaking, 10000).catch(() => null);
   const probe = evalInApp('window.__commanderProbe');
   const heard = probe.frames > 0 && probe.duck < -3 && probe.level > 0.005 ? probe : null;
-  const said = c().said.slice(before).map((l) => l.join(' '));
+  const said = saidSince(before, c().said);
   check('A hit on the tank: the commander calls it over the intercom and the tank ducks under him',
     loaded[0] === loaded[1] && said.includes('hit-engine') && heard !== null,
     `lines ${loaded.join(' of ')}, context ${c().context}, said [${said.join(', ')}], while speaking (${probe.frames} looks) the tank ducked ${probe.duck.toFixed(1)} dB, voice RMS up to ${probe.level.toFixed(3)}`);
@@ -3881,8 +3891,8 @@ async function theCommander() {
   const quiet = c();
   await menuTouch('vol-commander-track', 0.99);
   check("Sound and view → Commander's slider at its left end keeps him quiet, the note still asked for; at its right end, full again",
-    quiet.asked > off.asked && quiet.said.length === off.said.length && quiet.speaking === false && evalInApp('window.__settings.commander') === 1,
-    `asked ${off.asked} → ${quiet.asked}, said ${off.said.length} → ${quiet.said.length}`);
+    quiet.asked > off.asked && saidSince(off.said, quiet.said).length === 0 && quiet.speaking === false && evalInApp('window.__settings.commander') === 1,
+    `asked ${off.asked} → ${quiet.asked}, said since [${saidSince(off.said, quiet.said).join(', ')}]`);
   if (evalInApp('window.__gameMenu.open')) await menuButtonPress();
   evalInApp('(window.__damage.repair(), true)');
 }

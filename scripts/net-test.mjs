@@ -50,9 +50,9 @@
  * lifecycle), NET_PART=2 the 150 ms RTT pair and the practice crewmate.
  * With no NET_PART both run. Per pull request the 150 ms pair checks the
  * seats, the drive and the turret; TEST_EXTRAS=1 (the nightly run) adds the
- * rest of its sections and the smoothness measurements ("Crewmate moves
- * smoothly"), which a runner drawing two or three frames a second can't
- * judge reliably.
+ * rest of its sections and judges the smoothness measurements ("Crewmate
+ * moves smoothly"), which a runner drawing two or three frames a second
+ * can't judge reliably.
  */
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -2100,14 +2100,13 @@ async function main() {
       await raceChecks(a, b, 'local network');
       await lobbyChecks(browser, a, b);
 
+      // Measured every run (the report keeps it, and the link settles while it runs); judged nightly only.
+      const motion = await measureMotion(a, b, 3);
+      report.local = { ...(await netStats(b.page)), motion };
       if (EXTRAS) {
-        const motion = await measureMotion(a, b, 3);
-        report.local = { ...(await netStats(b.page)), motion };
         check('Crewmate moves smoothly (local network)',
           motion.frames >= 20 && motion.backwards === 0 && motion.maxRate < Math.max(3, motion.median * 4) && motion.radiusError < motion.radiusAllowed,
           motionDetail(motion));
-      } else {
-        report.local = await netStats(b.page);
       }
       const s = report.local;
       check('Round trip measured', Number.isFinite(s.srtt) && s.srtt < 50, `RTT ${s.srtt?.toFixed(1)} ms, route ${s.route}, connected in ${s.connectMs.toFixed(0)} ms`);
@@ -2145,11 +2144,12 @@ async function main() {
       await waitFor('lagged pair connected', async () => (await state(d.page)) === 'connected' && (await state(e.page)) === 'connected');
       await waitForPoses([d, e]);
       await new Promise((r) => setTimeout(r, 2500)); // let RTT and jitter settle
-      const lagMotion = EXTRAS ? await measureMotion(d, e, 3) : null;
-      report.lagged = { ...(await netStats(e.page)), ...(lagMotion ? { motion: lagMotion } : {}) };
+      // Measured every run (the RTT and voice checks below need the time it gives the link to settle); judged nightly only.
+      const lagMotion = await measureMotion(d, e, 3);
+      report.lagged = { ...(await netStats(e.page)), motion: lagMotion };
       const l = report.lagged;
       check('RTT reflects simulated lag', l.srtt > 115 && l.srtt < 200, `RTT ${l.srtt.toFixed(1)} ms, arrival jitter ${l.arrivalJitterMs.toFixed(1)} ms, packet interval ${l.packetIntervalMs.toFixed(1)} ms, render delay ${l.renderDelayMs.toFixed(0)} ms`);
-      if (lagMotion) {
+      if (EXTRAS) {
         check('Crewmate moves smoothly (simulated lag and jitter)',
           lagMotion.frames >= 20 && lagMotion.backwards === 0 && lagMotion.maxRate < Math.max(3, lagMotion.median * 4) && lagMotion.radiusError < lagMotion.radiusAllowed,
           motionDetail(lagMotion));
