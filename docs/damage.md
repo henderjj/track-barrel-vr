@@ -69,7 +69,7 @@ A sign below the enemy's says what each hit did ("Bounced off the front plate", 
 ## Tests
 
 - `test/damage.test.ts`: the armour and penetration numbers; the zones from every side and height, the turret turned; the sides always through, the glacis less at range and never when angled; what each zone hits inside; adding up to a knock-out and repairing it; the hit lines; a held, a weakened and hot, and a stopped engine, its stall cause through the tank packet; the shared state and the enemy shot carrying its hit.
-- `npm run test:xr` (step 6w, part 1): Me wounds this player (red, the sign); Hit engine once runs on, twice stops it and the starter won't start it; Repair starts it; Track holds it under full throttle; Turret stops the power traverse but not the crank; gun A's hit says what it did; three hits knock the tank out and the guns hold their fire; Repair.
+- `npm run test:xr` (step 6w, part 2): Me wounds this player (red, the sign); Hit engine once runs on, twice stops it and the starter won't start it; Repair starts it; Track holds it under full throttle; Turret stops the power traverse but not the crank; gun A's hit says what it did; three hits knock the tank out and the guns hold their fire; Repair.
 - `npm run test:net` (`ONLY_FIRING=1`): the host's turret hit stops the guest gunner's power traverse; the guest's Me wounds the gunner on both pages, the red only on the guest's; the host's engine hits stop the engine on both pages; the guest's Repair mends it all on both.
 
 `window.__damage` has `state()` (with the last hit, the stun left and how dark the view is), `take(hit)` (host), `test(kind)`, `repair()` and `sign`.

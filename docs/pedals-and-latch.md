@@ -41,7 +41,7 @@ In [`src/sim/interior-fittings.ts`](../src/sim/interior-fittings.ts) (`PEDALS`),
 - `test/hand-lock.test.ts`: a hand on a latched handle, taken rolled every way and upside down, is drawn thumb up with its index finger's last joint on the latch's side, 3 cm above the fist; the trigger squeezes it.
 - `test/parking-brake.test.ts`: the hand on the brake is locked at the latch's point wherever it took hold, at every angle.
 - `test/z-fighting.test.ts`: the pedals and the clutch's push rod let go, half and fully pressed, the pedal box, master cylinder and reservoir, the latch out and squeezed, the ratchet quadrant, and the seat's bracket raised and lowered.
-- `npm run test:xr`, the driver's station step (part 2): the clutch pedal is drawn pressed while the left trigger holds the clutch; the latch is out while the ratchet holds the lever and squeezed while the trigger frees it.
+- `npm run test:xr`, the driver's station step (part 3): the clutch pedal is drawn pressed while the left trigger holds the clutch; the latch is out while the ratchet holds the lever and squeezed while the trigger frees it.
 
 `window.__driverStation.state()` has `pedals` ({ clutch, accelerator }, 0 to 1 as drawn) and `latch` (0 to 1).
 

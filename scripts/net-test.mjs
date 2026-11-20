@@ -44,6 +44,15 @@
  * see the host's result, on a clean link and at 150 ms RTT.
  *
  * Writes measured RTT, packet rate and route to artifacts/net-report.json.
+ *
+ * CI runs it in two parts at once, on two runners: NET_PART=1 is the clean
+ * link (everything up to the host leaving and rejoining, and the crew
+ * lifecycle), NET_PART=2 the 150 ms RTT pair and the practice crewmate.
+ * With no NET_PART both run. Per pull request the 150 ms pair checks the
+ * seats, the drive and the turret; TEST_EXTRAS=1 (the nightly run) adds the
+ * rest of its sections and the smoothness measurements ("Crewmate moves
+ * smoothly"), which a runner drawing two or three frames a second can't
+ * judge reliably.
  */
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -57,6 +66,9 @@ const BASE = `https://localhost:${PREVIEW_PORT}/`;
 // halves the frame rate the motion checks sample (docs/testing.md).
 // Random parts off (the gun's scatter, the biathlon's ranges picked each race): their own checks turn them on.
 const QUIET = 'hud=0&ground=0&scatter=0&boardranges=0';
+const NET_PART = Number(process.env.NET_PART ?? 0);
+if (![0, 1, 2].includes(NET_PART)) throw new Error(`NET_PART is 1 or 2, not ${process.env.NET_PART}`);
+const EXTRAS = Boolean(process.env.TEST_EXTRAS);
 
 const results = [];
 function check(name, pass, detail) {
@@ -1898,257 +1910,273 @@ async function main() {
       check('No console errors', botErrors.length === 0, botErrors.slice(0, 3).join(' | '));
       return;
     }
-    const room = 'TEST';
-    // ONLY_SEATS=lag runs the quick seat checks at about 150 ms RTT.
-    const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' || process.env.ONLY_TURRET === 'lag' || process.env.ONLY_FIRING === 'lag' || process.env.ONLY_RUN === 'lag' || process.env.ONLY_COURSE === 'lag' || process.env.ONLY_RACE === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
-    const a = await openPlayer(browser, `room=${room}&name=Ann${quickLag}`);
-    await waitFor('Ann waiting in the lobby', async () => (await state(a.page)) === 'waiting');
-    const b = await openPlayer(browser, `room=${room}&name=Bo${quickLag}`);
-    await waitFor('both connected', async () => (await state(a.page)) === 'connected' && (await state(b.page)) === 'connected');
-    check('Two players connect over WebRTC', true);
-    // Opened from a link with the crew code, each page's start screen shows
-    // the crew and gets out of the way once the crewmate is aboard.
-    const startScreens = () => Promise.all([a, b].map((p) => p.page.evaluate(() => ({ page: window.__startScreen.page, mode: window.__startScreen.mode, visible: window.__startScreen.visible }))));
-    const stepped = await waitFor('the start screens to step aside', async () => {
-      const s = await startScreens();
-      return s.every((x) => x.page === null && !x.visible) ? s : null;
-      // A cold CI runner can take over 5 s to load the panels on the first pages.
-    }, 10000).catch(() => null);
-    check('A crew link\'s start screen steps aside once the crewmate is aboard', stepped !== null && stepped.every((x) => x.mode === 'link'),
-      JSON.stringify(stepped ?? await startScreens()));
-    if (process.env.ONLY_LIFECYCLE) {
-      // Quick loop for spike S10: just pausing and reconnecting.
-      await lifecycleChecks(a, b);
-      return;
-    }
-    if (process.env.ONLY_SEATS) {
-      // Quick loop for F1.1: just the seats.
-      await seatChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
-      return;
-    }
-    if (process.env.ONLY_DRIVE) {
-      // Quick loop for F1.4: just the drive (ONLY_DRIVE=lag at about 150 ms RTT).
-      await driveChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
-      return;
-    }
-    if (process.env.ONLY_TURRET) {
-      // Quick loop for F1.8: just the turret (ONLY_TURRET=lag at about 150 ms RTT).
-      await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
-      return;
-    }
-    if (process.env.ONLY_FIRING) {
-      // Quick loop for F1.10: the turret, then loading and firing (ONLY_FIRING=lag at about 150 ms RTT).
-      await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
-      await firingChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
-      return;
-    }
-    if (process.env.ONLY_COURSE) {
-      // Quick loop for F5.3a: the biathlon course's progress shared (ONLY_COURSE=lag at about 150 ms RTT).
-      await courseChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
-      return;
-    }
-    if (process.env.ONLY_RACE) {
-      // Quick loop for F5.3b: the biathlon race with a guest gunner (ONLY_RACE=lag at about 150 ms RTT).
-      await raceChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
-      return;
-    }
-    if (process.env.ONLY_RUN) {
-      // Quick loop for F1.11 and F1.14: the range run with a guest gunner, then its stats rows and bumps (ONLY_RUN=lag at about 150 ms RTT).
-      await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
-      await runChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
-      await statsChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
-      return;
-    }
-
-    const c = await openPlayer(browser, `room=${room}&name=Cy`);
-    const cState = await waitFor('the third player to be refused', async () => {
-      const s = await state(c.page);
-      return s === 'full' ? s : null;
-    });
-    check('A third player is turned away', cState === 'full');
-    await c.context.close();
-
-    // A still pose arrives intact.
-    const sent = {
-      head: { px: 0.3, py: 1.52, pz: -0.45, qx: 0, qy: Math.sin(Math.PI / 12), qz: 0, qw: Math.cos(Math.PI / 12) },
-      left: { px: 0.05, py: 1.1, pz: -0.7, qx: 0.2, qy: 0, qz: 0, qw: Math.sqrt(0.96) },
-      right: { px: 0.55, py: 1.05, pz: -0.7, qx: 0, qy: 0, qz: -0.3, qw: Math.sqrt(0.91) },
-      flags: 3,
-      // Posed hands: the left flat, the right pointing.
-      leftFingers: { index: 0.12, grip: 0.1, thumb: 0 },
-      rightFingers: { index: 0.12, grip: 1, thumb: 1 },
-    };
-    await a.page.evaluate((pose) => window.__net.setTestPose(pose), sent);
-    // How far what Bo's page draws is from what Ann's sent.
-    const poseError = (got) => {
-      let posErr = Infinity;
-      let rotDot = 0;
-      if (got) {
-        posErr = 0;
-        rotDot = 1;
-        for (const k of ['head', 'left', 'right']) {
-          posErr = Math.max(posErr, Math.hypot(got[k].px - sent[k].px, got[k].py - sent[k].py, got[k].pz - sent[k].pz));
-          const dot = Math.abs(got[k].qx * sent[k].qx + got[k].qy * sent[k].qy + got[k].qz * sent[k].qz + got[k].qw * sent[k].qw);
-          rotDot = Math.min(rotDot, dot);
-        }
+    const pages = [];
+    if (NET_PART !== 2) {
+      const room = 'TEST';
+      // ONLY_SEATS=lag runs the quick seat checks at about 150 ms RTT.
+      const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' || process.env.ONLY_TURRET === 'lag' || process.env.ONLY_FIRING === 'lag' || process.env.ONLY_RUN === 'lag' || process.env.ONLY_COURSE === 'lag' || process.env.ONLY_RACE === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
+      const a = await openPlayer(browser, `room=${room}&name=Ann${quickLag}`);
+      await waitFor('Ann waiting in the lobby', async () => (await state(a.page)) === 'waiting');
+      const b = await openPlayer(browser, `room=${room}&name=Bo${quickLag}`);
+      await waitFor('both connected', async () => (await state(a.page)) === 'connected' && (await state(b.page)) === 'connected');
+      check('Two players connect over WebRTC', true);
+      // Opened from a link with the crew code, each page's start screen shows
+      // the crew and gets out of the way once the crewmate is aboard.
+      const startScreens = () => Promise.all([a, b].map((p) => p.page.evaluate(() => ({ page: window.__startScreen.page, mode: window.__startScreen.mode, visible: window.__startScreen.visible }))));
+      const stepped = await waitFor('the start screens to step aside', async () => {
+        const s = await startScreens();
+        return s.every((x) => x.page === null && !x.visible) ? s : null;
+        // A cold CI runner can take over 5 s to load the panels on the first pages.
+      }, 10000).catch(() => null);
+      check('A crew link\'s start screen steps aside once the crewmate is aboard', stepped !== null && stepped.every((x) => x.mode === 'link'),
+        JSON.stringify(stepped ?? await startScreens()));
+      if (process.env.ONLY_LIFECYCLE) {
+        // Quick loop for spike S10: just pausing and reconnecting.
+        await lifecycleChecks(a, b);
+        return;
       }
-      return { posErr, rotDot, intact: posErr < 0.002 && rotDot > 0.9999 && got?.flags === 3 };
-    };
-    // Wait for it rather than a fixed time: Ann's page sends the pose with its next frame and Bo's draws it a
-    // buffer's delay later, on a frame of its own. With a frame every 400 ms (a slow runner) that is over a
-    // second, and Bo's page would be read while still drawing its way over from the last pose.
-    const remotePose = () => b.page.evaluate(() => window.__net.remotePose());
-    const got = await waitFor('the still pose to be drawn', async () => {
-      const pose = await remotePose();
-      return poseError(pose).intact ? pose : null;
-    }, 10000).catch(remotePose);
-    const { posErr, rotDot, intact } = poseError(got);
-    check('Head and hand poses arrive intact', intact,
-      `position error ${(posErr * 1000).toFixed(2)} mm, rotation error ${((Math.acos(Math.min(1, rotDot)) * 2 * 180) / Math.PI).toFixed(3)}°`);
-    const fingers = await b.page.evaluate(() => {
-      const pose = window.__net.remotePose();
-      const hand = window.__debug.world.scene.getObjectByName('Crew 2 Right Hand');
-      // Bone 1 is the index finger's first bone; bone 4 the middle finger's.
-      return { left: pose?.leftFingers, right: pose?.rightFingers, index: hand?.skeleton.bones[1].rotation.x, middle: hand?.skeleton.bones[4].rotation.x };
-    });
-    const near = (a, b) => a !== undefined && Math.abs(a - b) < 0.01;
-    check('Finger poses arrive and pose the crewmate\'s hands',
-      near(fingers.left?.index, 0.12) && near(fingers.left?.thumb, 0) && near(fingers.right?.grip, 1) && near(fingers.right?.index, 0.12) &&
-        fingers.index > -0.3 && fingers.middle < -1.3,
-      `left ${JSON.stringify(fingers.left)}, right ${JSON.stringify(fingers.right)}, drawn index bend ${fingers.index?.toFixed(2)}, middle ${fingers.middle?.toFixed(2)} rad`);
-    const visible = await b.page.evaluate(() =>
-      ['Crew 2 Head', 'Crew 2 Body', 'Crew 2 Left Hand', 'Crew 2 Right Hand'].every(
-        (name) => window.__debug.world.scene.getObjectByName(name)?.visible,
-      ),
-    );
-    check('Crewmate avatar is drawn', visible);
-    if (process.env.SHOT_DIR) {
-      // A picture of the crewmate facing this player, for checking the avatar by eye.
-      const facing = { qx: 0, qy: 1, qz: 0, qw: 0 };
-      await a.page.evaluate((pose) => window.__net.setTestPose(pose), {
-        head: { px: 0, py: 1.62, pz: -1.3, ...facing },
-        left: { px: -0.22, py: 1.05, pz: -1.0, ...facing },
-        right: { px: 0.22, py: 1.05, pz: -1.0, ...facing },
-        flags: 3,
+      if (process.env.ONLY_SEATS) {
+        // Quick loop for F1.1: just the seats.
+        await seatChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+        return;
+      }
+      if (process.env.ONLY_DRIVE) {
+        // Quick loop for F1.4: just the drive (ONLY_DRIVE=lag at about 150 ms RTT).
+        await driveChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+        return;
+      }
+      if (process.env.ONLY_TURRET) {
+        // Quick loop for F1.8: just the turret (ONLY_TURRET=lag at about 150 ms RTT).
+        await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+        return;
+      }
+      if (process.env.ONLY_FIRING) {
+        // Quick loop for F1.10: the turret, then loading and firing (ONLY_FIRING=lag at about 150 ms RTT).
+        await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+        await firingChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+        return;
+      }
+      if (process.env.ONLY_COURSE) {
+        // Quick loop for F5.3a: the biathlon course's progress shared (ONLY_COURSE=lag at about 150 ms RTT).
+        await courseChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+        return;
+      }
+      if (process.env.ONLY_RACE) {
+        // Quick loop for F5.3b: the biathlon race with a guest gunner (ONLY_RACE=lag at about 150 ms RTT).
+        await raceChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+        return;
+      }
+      if (process.env.ONLY_RUN) {
+        // Quick loop for F1.11 and F1.14: the range run with a guest gunner, then its stats rows and bumps (ONLY_RUN=lag at about 150 ms RTT).
+        await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+        await runChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+        await statsChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+        return;
+      }
+
+      const c = await openPlayer(browser, `room=${room}&name=Cy`);
+      const cState = await waitFor('the third player to be refused', async () => {
+        const s = await state(c.page);
+        return s === 'full' ? s : null;
       });
-      const size = b.page.viewportSize();
-      await b.page.setViewportSize({ width: 960, height: 600 });
-      await b.page.evaluate(() => document.querySelectorAll('body > div:not(#scene-container)').forEach((e) => { e.style.display = 'none'; }));
-      await b.page.waitForTimeout(1500);
-      await b.page.screenshot({ path: `${process.env.SHOT_DIR}/crewmate.png` });
-      // Back to the small page: software rendering at full size slows the timing checks that follow.
-      await b.page.setViewportSize(size);
+      check('A third player is turned away', cState === 'full');
+      await c.context.close();
+
+      // A still pose arrives intact.
+      const sent = {
+        head: { px: 0.3, py: 1.52, pz: -0.45, qx: 0, qy: Math.sin(Math.PI / 12), qz: 0, qw: Math.cos(Math.PI / 12) },
+        left: { px: 0.05, py: 1.1, pz: -0.7, qx: 0.2, qy: 0, qz: 0, qw: Math.sqrt(0.96) },
+        right: { px: 0.55, py: 1.05, pz: -0.7, qx: 0, qy: 0, qz: -0.3, qw: Math.sqrt(0.91) },
+        flags: 3,
+        // Posed hands: the left flat, the right pointing.
+        leftFingers: { index: 0.12, grip: 0.1, thumb: 0 },
+        rightFingers: { index: 0.12, grip: 1, thumb: 1 },
+      };
+      await a.page.evaluate((pose) => window.__net.setTestPose(pose), sent);
+      // How far what Bo's page draws is from what Ann's sent.
+      const poseError = (got) => {
+        let posErr = Infinity;
+        let rotDot = 0;
+        if (got) {
+          posErr = 0;
+          rotDot = 1;
+          for (const k of ['head', 'left', 'right']) {
+            posErr = Math.max(posErr, Math.hypot(got[k].px - sent[k].px, got[k].py - sent[k].py, got[k].pz - sent[k].pz));
+            const dot = Math.abs(got[k].qx * sent[k].qx + got[k].qy * sent[k].qy + got[k].qz * sent[k].qz + got[k].qw * sent[k].qw);
+            rotDot = Math.min(rotDot, dot);
+          }
+        }
+        return { posErr, rotDot, intact: posErr < 0.002 && rotDot > 0.9999 && got?.flags === 3 };
+      };
+      // Wait for it rather than a fixed time: Ann's page sends the pose with its next frame and Bo's draws it a
+      // buffer's delay later, on a frame of its own. With a frame every 400 ms (a slow runner) that is over a
+      // second, and Bo's page would be read while still drawing its way over from the last pose.
+      const remotePose = () => b.page.evaluate(() => window.__net.remotePose());
+      const got = await waitFor('the still pose to be drawn', async () => {
+        const pose = await remotePose();
+        return poseError(pose).intact ? pose : null;
+      }, 10000).catch(remotePose);
+      const { posErr, rotDot, intact } = poseError(got);
+      check('Head and hand poses arrive intact', intact,
+        `position error ${(posErr * 1000).toFixed(2)} mm, rotation error ${((Math.acos(Math.min(1, rotDot)) * 2 * 180) / Math.PI).toFixed(3)}°`);
+      const fingers = await b.page.evaluate(() => {
+        const pose = window.__net.remotePose();
+        const hand = window.__debug.world.scene.getObjectByName('Crew 2 Right Hand');
+        // Bone 1 is the index finger's first bone; bone 4 the middle finger's.
+        return { left: pose?.leftFingers, right: pose?.rightFingers, index: hand?.skeleton.bones[1].rotation.x, middle: hand?.skeleton.bones[4].rotation.x };
+      });
+      const near = (a, b) => a !== undefined && Math.abs(a - b) < 0.01;
+      check('Finger poses arrive and pose the crewmate\'s hands',
+        near(fingers.left?.index, 0.12) && near(fingers.left?.thumb, 0) && near(fingers.right?.grip, 1) && near(fingers.right?.index, 0.12) &&
+          fingers.index > -0.3 && fingers.middle < -1.3,
+        `left ${JSON.stringify(fingers.left)}, right ${JSON.stringify(fingers.right)}, drawn index bend ${fingers.index?.toFixed(2)}, middle ${fingers.middle?.toFixed(2)} rad`);
+      const visible = await b.page.evaluate(() =>
+        ['Crew 2 Head', 'Crew 2 Body', 'Crew 2 Left Hand', 'Crew 2 Right Hand'].every(
+          (name) => window.__debug.world.scene.getObjectByName(name)?.visible,
+        ),
+      );
+      check('Crewmate avatar is drawn', visible);
+      if (process.env.SHOT_DIR) {
+        // A picture of the crewmate facing this player, for checking the avatar by eye.
+        const facing = { qx: 0, qy: 1, qz: 0, qw: 0 };
+        await a.page.evaluate((pose) => window.__net.setTestPose(pose), {
+          head: { px: 0, py: 1.62, pz: -1.3, ...facing },
+          left: { px: -0.22, py: 1.05, pz: -1.0, ...facing },
+          right: { px: 0.22, py: 1.05, pz: -1.0, ...facing },
+          flags: 3,
+        });
+        const size = b.page.viewportSize();
+        await b.page.setViewportSize({ width: 960, height: 600 });
+        await b.page.evaluate(() => document.querySelectorAll('body > div:not(#scene-container)').forEach((e) => { e.style.display = 'none'; }));
+        await b.page.waitForTimeout(1500);
+        await b.page.screenshot({ path: `${process.env.SHOT_DIR}/crewmate.png` });
+        // Back to the small page: software rendering at full size slows the timing checks that follow.
+        await b.page.setViewportSize(size);
+      }
+
+      // Voice: the fake microphone beeps about once a second.
+      const voicePeak = await peakVoiceLevel(b.page, 2500);
+      check('Crewmate voice arrives', voicePeak > 0.01, `peak level ${voicePeak.toFixed(3)}`);
+      // F1.12: the voice plays plain, like an intercom, and the tank's sounds duck about 12 dB while either player speaks.
+      const ducks = await Promise.all([a, b].map((p) => deepestDuck(p.page, 2500)));
+      const modes = await Promise.all([a, b].map((p) => p.page.evaluate(() => window.__net.voice.mode)));
+      check('The intercom plays plain by default, and the tank sounds duck while someone speaks', modes.every((m) => m === 'plain') && ducks.every((d) => d < -8),
+        `voice ${modes.join('/')}, deepest duck ${ducks.map((d) => `${d.toFixed(1)} dB`).join(' and ')}`);
+      // John's play test (2026-11-07): the menu said -6 dB but the engine sounded no quieter. Measure
+      // what the tank sounds actually put out, nobody speaking and then someone speaking.
+      const out = await measureDuckedOutput(a.page);
+      check('The tank sounds come out about 12 dB quieter while someone speaks', out.db < -11 && out.db > -13,
+        `output RMS ${out.quiet.toFixed(4)} with nobody speaking, ${out.ducked.toFixed(4)} speaking: ${out.db.toFixed(1)} dB (engine ${out.engineHz.toFixed(0)} Hz)`);
+      // The game menu's mute buttons: Ann mutes her microphone, then Bo turns Ann's voice off.
+      await a.page.evaluate(() => window.__gameMenu.click('row-mic-1'));
+      await new Promise((r) => setTimeout(r, 500));
+      const mutedPeak = await peakVoiceLevel(b.page, 2500);
+      const mutedLit = await a.page.evaluate(() => window.__gameMenu.selected('row-mic-1'));
+      check('Mute silences the microphone', mutedPeak < 0.002 && mutedLit, `peak level ${mutedPeak.toFixed(4)}, Muted ${mutedLit ? '' : 'not '}highlighted`);
+      await a.page.evaluate(() => window.__gameMenu.click('row-mic-0'));
+      await b.page.evaluate(() => window.__gameMenu.click('row-crew-1'));
+      await new Promise((r) => setTimeout(r, 500));
+      const crewMutedPeak = await peakVoiceLevel(b.page, 2500);
+      await b.page.evaluate(() => window.__gameMenu.click('row-crew-0'));
+      await new Promise((r) => setTimeout(r, 500));
+      const crewBackPeak = await peakVoiceLevel(b.page, 2500);
+      check('Muting the crewmate silences their voice, and unmuting brings it back', crewMutedPeak < 0.002 && crewBackPeak > 0.01,
+        `peak level muted ${crewMutedPeak.toFixed(4)}, unmuted ${crewBackPeak.toFixed(3)}`);
+
+      // Spike S8: each player sees the other's platform report, with the microphone named.
+      const crews = await waitFor('platform reports', async () => {
+        const r = await Promise.all([a, b].map((p) => p.page.evaluate(() => window.__platform?.crew)));
+        return r.every((c) => c && c.mic !== 'not open') ? r : null;
+      }, 10000).catch(() => null);
+      check('Players swap platform reports', crews !== null, crews ? `Ann sees "${crews[0].browser} on ${crews[0].os}, mic ${crews[0].mic}"` : '');
+
+      await seatChecks(a, b, 'local network');
+      await driveChecks(a, b, 'local network');
+      await turretChecks(a, b, 'local network');
+      await firingChecks(a, b, 'local network');
+      await runChecks(a, b, 'local network');
+      await statsChecks(a, b, 'local network');
+      await courseChecks(a, b, 'local network');
+      await raceChecks(a, b, 'local network');
+      await lobbyChecks(browser, a, b);
+
+      if (EXTRAS) {
+        const motion = await measureMotion(a, b, 3);
+        report.local = { ...(await netStats(b.page)), motion };
+        check('Crewmate moves smoothly (local network)',
+          motion.frames >= 20 && motion.backwards === 0 && motion.maxRate < Math.max(3, motion.median * 4) && motion.radiusError < motion.radiusAllowed,
+          motionDetail(motion));
+      } else {
+        report.local = await netStats(b.page);
+      }
+      const s = report.local;
+      check('Round trip measured', Number.isFinite(s.srtt) && s.srtt < 50, `RTT ${s.srtt?.toFixed(1)} ms, route ${s.route}, connected in ${s.connectMs.toFixed(0)} ms`);
+      check('Pose packets arrive at about 45 Hz with no loss', s.lost === 0 && s.received > 100, `${s.received} received, ${s.lost} lost`);
+
+      // Host leaves: Bo becomes host and Ann can come back.
+      await a.context.close();
+      await waitFor('Bo to be told the crewmate left', async () => (await state(b.page)) === 'waiting');
+      const boHost = await b.page.evaluate(() => window.__net.session.isHost);
+      check('The remaining player becomes host', boHost);
+      const left = await waitForCrew(b.page, 'waiting');
+      check('The game waits for a crewmate who left', left !== null && left.paused && left.signVisible, left ? `"${left.message}"` : '');
+      const a2 = await openPlayer(browser, `room=${room}&name=Ann`);
+      await waitFor('reconnected', async () => (await state(a2.page)) === 'connected' && (await state(b.page)) === 'connected');
+      check('A player can rejoin', true);
+      await waitForPoses([a2, b]);
+
+      // Bo, the gunner, became host and keeps that seat; Ann comes back as the driver.
+      await seatChecks(b, a2, 'after a rejoin', 'gunner');
+      await lifecycleChecks(b, a2);
+      await a2.context.close();
+      await b.context.close();
+      await b.context.close();
+      pages.push(a, b);
     }
 
-    // Voice: the fake microphone beeps about once a second.
-    const voicePeak = await peakVoiceLevel(b.page, 2500);
-    check('Crewmate voice arrives', voicePeak > 0.01, `peak level ${voicePeak.toFixed(3)}`);
-    // F1.12: the voice plays plain, like an intercom, and the tank's sounds duck about 12 dB while either player speaks.
-    const ducks = await Promise.all([a, b].map((p) => deepestDuck(p.page, 2500)));
-    const modes = await Promise.all([a, b].map((p) => p.page.evaluate(() => window.__net.voice.mode)));
-    check('The intercom plays plain by default, and the tank sounds duck while someone speaks', modes.every((m) => m === 'plain') && ducks.every((d) => d < -8),
-      `voice ${modes.join('/')}, deepest duck ${ducks.map((d) => `${d.toFixed(1)} dB`).join(' and ')}`);
-    // John's play test (2026-11-07): the menu said -6 dB but the engine sounded no quieter. Measure
-    // what the tank sounds actually put out, nobody speaking and then someone speaking.
-    const out = await measureDuckedOutput(a.page);
-    check('The tank sounds come out about 12 dB quieter while someone speaks', out.db < -11 && out.db > -13,
-      `output RMS ${out.quiet.toFixed(4)} with nobody speaking, ${out.ducked.toFixed(4)} speaking: ${out.db.toFixed(1)} dB (engine ${out.engineHz.toFixed(0)} Hz)`);
-    // The game menu's mute buttons: Ann mutes her microphone, then Bo turns Ann's voice off.
-    await a.page.evaluate(() => window.__gameMenu.click('row-mic-1'));
-    await new Promise((r) => setTimeout(r, 500));
-    const mutedPeak = await peakVoiceLevel(b.page, 2500);
-    const mutedLit = await a.page.evaluate(() => window.__gameMenu.selected('row-mic-1'));
-    check('Mute silences the microphone', mutedPeak < 0.002 && mutedLit, `peak level ${mutedPeak.toFixed(4)}, Muted ${mutedLit ? '' : 'not '}highlighted`);
-    await a.page.evaluate(() => window.__gameMenu.click('row-mic-0'));
-    await b.page.evaluate(() => window.__gameMenu.click('row-crew-1'));
-    await new Promise((r) => setTimeout(r, 500));
-    const crewMutedPeak = await peakVoiceLevel(b.page, 2500);
-    await b.page.evaluate(() => window.__gameMenu.click('row-crew-0'));
-    await new Promise((r) => setTimeout(r, 500));
-    const crewBackPeak = await peakVoiceLevel(b.page, 2500);
-    check('Muting the crewmate silences their voice, and unmuting brings it back', crewMutedPeak < 0.002 && crewBackPeak > 0.01,
-      `peak level muted ${crewMutedPeak.toFixed(4)}, unmuted ${crewBackPeak.toFixed(3)}`);
+    if (NET_PART !== 1) {
 
-    // Spike S8: each player sees the other's platform report, with the microphone named.
-    const crews = await waitFor('platform reports', async () => {
-      const r = await Promise.all([a, b].map((p) => p.page.evaluate(() => window.__platform?.crew)));
-      return r.every((c) => c && c.mic !== 'not open') ? r : null;
-    }, 10000).catch(() => null);
-    check('Players swap platform reports', crews !== null, crews ? `Ann sees "${crews[0].browser} on ${crews[0].os}, mic ${crews[0].mic}"` : '');
+      // The plan's worst playable case: about 150 ms RTT (60 ms each way plus
+      // 0 to 20 ms jitter on each side, which also reorders packets) and 1% loss.
+      // The loopback route only serves the spatial voice (plain is the default since F1.12).
+      const lag = 'netlag=60&netjitter=20&netloss=0.01&voice=spatial&voiceloop=1';
+      const d = await openPlayer(browser, `room=LAGS&name=Di&${lag}`);
+      const e = await openPlayer(browser, `room=LAGS&name=Ed&${lag}`);
+      await waitFor('lagged pair connected', async () => (await state(d.page)) === 'connected' && (await state(e.page)) === 'connected');
+      await waitForPoses([d, e]);
+      await new Promise((r) => setTimeout(r, 2500)); // let RTT and jitter settle
+      const lagMotion = EXTRAS ? await measureMotion(d, e, 3) : null;
+      report.lagged = { ...(await netStats(e.page)), ...(lagMotion ? { motion: lagMotion } : {}) };
+      const l = report.lagged;
+      check('RTT reflects simulated lag', l.srtt > 115 && l.srtt < 200, `RTT ${l.srtt.toFixed(1)} ms, arrival jitter ${l.arrivalJitterMs.toFixed(1)} ms, packet interval ${l.packetIntervalMs.toFixed(1)} ms, render delay ${l.renderDelayMs.toFixed(0)} ms`);
+      if (lagMotion) {
+        check('Crewmate moves smoothly (simulated lag and jitter)',
+          lagMotion.frames >= 20 && lagMotion.backwards === 0 && lagMotion.maxRate < Math.max(3, lagMotion.median * 4) && lagMotion.radiusError < lagMotion.radiusAllowed,
+          motionDetail(lagMotion));
+      }
 
-    await seatChecks(a, b, 'local network');
-    await driveChecks(a, b, 'local network');
-    await turretChecks(a, b, 'local network');
-    await firingChecks(a, b, 'local network');
-    await runChecks(a, b, 'local network');
-    await statsChecks(a, b, 'local network');
-    await courseChecks(a, b, 'local network');
-    await raceChecks(a, b, 'local network');
-    await lobbyChecks(browser, a, b);
+      const loopVoice = await peakVoiceLevel(e.page, 2500);
+      const loopActive = await e.page.evaluate(() => window.__net.voice.loopbackActive);
+      check('Voice through the loopback route', loopActive && loopVoice > 0.01, `loopback ${loopActive}, peak level ${loopVoice.toFixed(3)}`);
 
-    const motion = await measureMotion(a, b, 3);
-    report.local = { ...(await netStats(b.page)), motion };
-    check('Crewmate moves smoothly (local network)',
-      motion.frames >= 20 && motion.backwards === 0 && motion.maxRate < Math.max(3, motion.median * 4) && motion.radiusError < motion.radiusAllowed,
-      motionDetail(motion));
-    const s = report.local;
-    check('Round trip measured', Number.isFinite(s.srtt) && s.srtt < 50, `RTT ${s.srtt?.toFixed(1)} ms, route ${s.route}, connected in ${s.connectMs.toFixed(0)} ms`);
-    check('Pose packets arrive at about 45 Hz with no loss', s.lost === 0 && s.received > 100, `${s.received} received, ${s.lost} lost`);
+      await seatChecks(d, e, '150 ms RTT');
+      await driveChecks(d, e, '150 ms RTT');
+      await turretChecks(d, e, '150 ms RTT');
+      if (EXTRAS) {
+        // The same code as on the clean link; at 150 ms nightly only.
+        await firingChecks(d, e, '150 ms RTT');
+        await runChecks(d, e, '150 ms RTT');
+        await statsChecks(d, e, '150 ms RTT');
+        await courseChecks(d, e, '150 ms RTT');
+        await raceChecks(d, e, '150 ms RTT');
+      }
 
-    // Host leaves: Bo becomes host and Ann can come back.
-    await a.context.close();
-    await waitFor('Bo to be told the crewmate left', async () => (await state(b.page)) === 'waiting');
-    const boHost = await b.page.evaluate(() => window.__net.session.isHost);
-    check('The remaining player becomes host', boHost);
-    const left = await waitForCrew(b.page, 'waiting');
-    check('The game waits for a crewmate who left', left !== null && left.paused && left.signVisible, left ? `"${left.message}"` : '');
-    const a2 = await openPlayer(browser, `room=${room}&name=Ann`);
-    await waitFor('reconnected', async () => (await state(a2.page)) === 'connected' && (await state(b.page)) === 'connected');
-    check('A player can rejoin', true);
-    await waitForPoses([a2, b]);
+      await d.context.close();
+      await e.context.close();
+      pages.push(d, e, { errors: await botChecks(browser) });
+    }
 
-    // Bo, the gunner, became host and keeps that seat; Ann comes back as the driver.
-    await seatChecks(b, a2, 'after a rejoin', 'gunner');
-    await lifecycleChecks(b, a2);
-    await a2.context.close();
-    await b.context.close();
-    await b.context.close();
-
-    // The plan's worst playable case: about 150 ms RTT (60 ms each way plus
-    // 0 to 20 ms jitter on each side, which also reorders packets) and 1% loss.
-    // The loopback route only serves the spatial voice (plain is the default since F1.12).
-    const lag = 'netlag=60&netjitter=20&netloss=0.01&voice=spatial&voiceloop=1';
-    const d = await openPlayer(browser, `room=LAGS&name=Di&${lag}`);
-    const e = await openPlayer(browser, `room=LAGS&name=Ed&${lag}`);
-    await waitFor('lagged pair connected', async () => (await state(d.page)) === 'connected' && (await state(e.page)) === 'connected');
-    await waitForPoses([d, e]);
-    await new Promise((r) => setTimeout(r, 2500)); // let RTT and jitter settle
-    const lagMotion = await measureMotion(d, e, 3);
-    report.lagged = { ...(await netStats(e.page)), motion: lagMotion };
-    const l = report.lagged;
-    check('RTT reflects simulated lag', l.srtt > 115 && l.srtt < 200, `RTT ${l.srtt.toFixed(1)} ms, arrival jitter ${l.arrivalJitterMs.toFixed(1)} ms, packet interval ${l.packetIntervalMs.toFixed(1)} ms, render delay ${l.renderDelayMs.toFixed(0)} ms`);
-    check('Crewmate moves smoothly (simulated lag and jitter)',
-      lagMotion.frames >= 20 && lagMotion.backwards === 0 && lagMotion.maxRate < Math.max(3, lagMotion.median * 4) && lagMotion.radiusError < lagMotion.radiusAllowed,
-      motionDetail(lagMotion));
-
-    const loopVoice = await peakVoiceLevel(e.page, 2500);
-    const loopActive = await e.page.evaluate(() => window.__net.voice.loopbackActive);
-    check('Voice through the loopback route', loopActive && loopVoice > 0.01, `loopback ${loopActive}, peak level ${loopVoice.toFixed(3)}`);
-
-    await seatChecks(d, e, '150 ms RTT');
-    await driveChecks(d, e, '150 ms RTT');
-    await turretChecks(d, e, '150 ms RTT');
-    await firingChecks(d, e, '150 ms RTT');
-    await runChecks(d, e, '150 ms RTT');
-    await statsChecks(d, e, '150 ms RTT');
-    await courseChecks(d, e, '150 ms RTT');
-    await raceChecks(d, e, '150 ms RTT');
-
-    await d.context.close();
-    await e.context.close();
-    const botErrors = await botChecks(browser);
-
-    const errors = [...a.errors, ...b.errors, ...d.errors, ...e.errors, ...botErrors].filter(
+    const errors = pages.flatMap((p) => p.errors).filter(
       (m) => !m.includes('net::ERR_') && !m.includes('Failed to load resource'),
     );
     check('No console errors', errors.length === 0, errors.slice(0, 3).join(' | '));
