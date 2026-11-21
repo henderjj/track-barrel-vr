@@ -1,5 +1,5 @@
 import { Quaternion, Vector3 } from '@iwsdk/core';
-import { FIST_AXIS, FIST_CENTRE, indexTip } from '../scene-assets/hand.scene-asset.js';
+import { FIST_AXIS, FIST_CENTRE, HAND_POINTING } from '../scene-assets/hand.scene-asset.js';
 import { type FingerCurls, INDEX_RESTING } from '../sim/hand-pose.js';
 
 /**
@@ -79,8 +79,9 @@ export const controlHoldKinds = new Map<string, number>();
  * squeeze latch under the index finger (the parking brake's release) also
  * sets `latch` to the way the latch lies from the handle's centre line
  * (unit, square to `axis`; left zero for none, as it comes): the hand is
- * then drawn thumb along `axis`, turned so its index finger rests on the
- * latch, and that finger squeezes it with the trigger.
+ * then drawn thumb along `axis`, pointing that way (the lever's travel), its
+ * index finger round the latch's front, and that finger squeezes it with
+ * the trigger.
  */
 export type LockResolver = (hand: Vector3, point: Vector3, axis: Vector3, side: 'left' | 'right', own: boolean, latch: Vector3) => void;
 
@@ -95,12 +96,14 @@ export const LOCK_SLIP = 0.25;
 const CLOSED: FingerCurls = { index: 0.9, grip: 1, thumb: 1 };
 /**
  * The index finger's curl on a latch: resting on it (the finger off the
- * trigger, or resting there), and squeezing it in (the trigger pulled).
- * Resting, the finger's last joint lies about 4 cm from the handle's centre
- * line, round a latch standing off the handle's front.
+ * trigger, or resting there), and squeezing it in (the trigger pulled). A
+ * hand pointing along the lever's travel crosses the handle's front with
+ * it, wrapped round the latch's bar (which stands 3 cm in front of the
+ * handle's centre line) as the other fingers are round the handle; squeezed,
+ * it follows the bar 6 mm in (LATCH in mechanism.scene-asset.ts).
  */
-export const LATCH_INDEX_REST = 0.64;
-export const LATCH_INDEX_SQUEEZED = 0.8;
+export const LATCH_INDEX_REST = 0.5;
+export const LATCH_INDEX_SQUEEZED = 0.58;
 /** How far along the fist's hole from its middle the index finger lies, m (towards the thumb). */
 export const LATCH_INDEX_ALONG = 0.03;
 
@@ -125,8 +128,8 @@ export class LockedHand {
   private sign = 1;
   /** The way a latch lies from the handle, as the resolver says (zero: none). */
   private latch = new Vector3();
-  /** The way the index finger's last joint lies from the fist's hole when it rests on a latch, this hand's grip space (square to the hole). */
-  private readonly indexWay: Vector3;
+  /** The way this hand points, wrist to knuckles, in its grip space (square to the fist's hole). */
+  private readonly pointWay: Vector3;
   private pad = new Vector3();
   private twist = new Quaternion();
 
@@ -135,8 +138,8 @@ export class LockedHand {
     const m = side === 'left' ? -1 : 1;
     this.fistAxis = new Vector3(FIST_AXIS[0] * m, FIST_AXIS[1], FIST_AXIS[2]).normalize();
     this.centre = new Vector3(FIST_CENTRE[0] * m, FIST_CENTRE[1], FIST_CENTRE[2]);
-    this.indexWay = indexTip(LATCH_INDEX_REST, 1, side, new Vector3(), 0.011).sub(this.centre);
-    this.indexWay.addScaledVector(this.fistAxis, -this.indexWay.dot(this.fistAxis)).normalize();
+    this.pointWay = new Vector3(HAND_POINTING[0] * m, HAND_POINTING[1], HAND_POINTING[2]);
+    this.pointWay.addScaledVector(this.fistAxis, -this.pointWay.dot(this.fistAxis)).normalize();
   }
 
   /**
@@ -186,8 +189,10 @@ export class LockedHand {
     this.lockQuat.multiplyQuaternions(this.turn, quat);
     const latched = this.latch.lengthSq() > 0;
     if (latched) {
-      // Turn the hand round the handle until its index finger lies on the latch.
-      this.pad.copy(this.indexWay).applyQuaternion(this.lockQuat);
+      // Turn the hand round the handle until it points the way the lever moves, towards the latch
+      // (John's headset note, 21 November 2026): the forearm along the pull, palm to the side, the
+      // fingers round the handle's front and the index finger round the latch's.
+      this.pad.copy(this.pointWay).applyQuaternion(this.lockQuat);
       this.pad.addScaledVector(this.axis, -this.pad.dot(this.axis));
       if (this.pad.lengthSq() > 1e-8) {
         this.pad.normalize();
