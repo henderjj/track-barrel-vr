@@ -1969,10 +1969,24 @@ async function botChecks(browser) {
   const startAt = await tank();
   const goal = [startAt.x, startAt.z - 120];
   await me.page.evaluate(([x, z]) => window.__mapCase.touch(x, z), goal);
-  const arrived = await waitFor('the crewmate at the spot touched on the map', async () => {
+  // On a slow runner the simulation runs several times slower than the clock (a frame a second, a tenth of a second
+  // simulated), so it waits as long as the tank keeps closing on the spot: 30 s without getting 2 m closer is a fail.
+  let arrived = null;
+  let closest = Infinity;
+  let closedAt = Date.now();
+  while (Date.now() - closedAt < 30000) {
     const [t, driving] = await Promise.all([tank(), bot.page.evaluate(() => window.__bot.driving)]);
-    return driving.mode === 'goto' && driving.there && Math.hypot(t.x - goal[0], t.z - goal[1]) < 6 && Math.abs(t.speed) < 0.3 ? { t, driving } : null;
-  }, 60000, 500).catch(() => null);
+    const d = Math.hypot(t.x - goal[0], t.z - goal[1]);
+    if (driving.mode === 'goto' && driving.there && d < 6 && Math.abs(t.speed) < 0.3) {
+      arrived = { t, driving };
+      break;
+    }
+    if (d < closest - 2) {
+      closest = d;
+      closedAt = Date.now();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
   const heardOrder = await bot.page.evaluate(() => window.__navigator.state());
   check('Navigator: a spot touched on the gunner\'s map sends the crewmate driver there, and it halts on it',
     arrived !== null && heardOrder.lastSign.startsWith('Commander: Driver, go to'),
