@@ -1,8 +1,8 @@
-import { CanvasTexture, createSystem, type Entity, Group, Matrix4, type Mesh, type MeshBasicMaterial, Quaternion, SRGBColorSpace, Vector3, VisibilityState } from '@iwsdk/core';
+import { CanvasTexture, createSystem, InputComponent, type Entity, Group, Matrix4, Mesh, MeshBasicMaterial, Quaternion, SphereGeometry, SRGBColorSpace, Vector3, VisibilityState } from '@iwsdk/core';
 import { FIST_AXIS, FIST_CENTRE } from '../scene-assets/hand.scene-asset.js';
 import { createMapCase, createMapSheet } from '../scene-assets/map-case.scene-asset.js';
 import { contours, FIELD_MAP, gridLines, gridRef, type MapFeature, mapFeatures, MAP_HEIGHT, MAP_WIDTH, sampleGround } from '../sim/field-map.js';
-import { canGrab, CASE_CLIPPED, clippedPose, createHeldPose, type HeldPose, heldPose, SPRING_BACK, TO_HAND } from '../sim/map-case.js';
+import { canGrab, CASE_CLIPPED, MAP_CASE, sheetToWorld, MAP_LEFT, MAP_PX, MAP_SCALE, MAP_TOP, mapPx, mapPy, clippedPose, createHeldPose, type HeldPose, heldPose, SPRING_BACK, TO_HAND } from '../sim/map-case.js';
 import type { MapMark } from '../sim/map-marks.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { grip, handUse } from './grip-system.js';
@@ -12,8 +12,6 @@ import { HoldKind } from './hand-lock.js';
 
 /** The map case's `handUse` name; holdKindOf maps it to HoldKind.MapCase. */
 export const MAP_USE = 'map-case';
-/** The painted map, px square. */
-const MAP_PX = 2048;
 /** On a PC page, G holds the map up this far in front of the eyes, m. */
 const FLAT_AWAY = 0.42;
 const SIGN_SECONDS = 8;
@@ -46,6 +44,24 @@ export interface MapCheckpoint {
 
 let shownCheckpoints: readonly MapCheckpoint[] = [];
 
+/** The spot the commander sent the driver to (F2.13, NavigatorSystem), pencilled in blue, or none. */
+let shownGoal: { x: number; z: number } | null = null;
+
+/** Show the commander's goal on the map, or rub it out (null). */
+export function showMapGoal(goal: { x: number; z: number } | null): void {
+  if (goal === null && shownGoal === null) return;
+  shownGoal = goal ? { x: goal.x, z: goal.z } : null;
+  marksVersion++;
+}
+
+/** Who hears a touch on the map (F2.13): NavigatorSystem. */
+let touchHandler: ((x: number, z: number) => void) | null = null;
+
+/** Hear the commander touching a spot on the map: world x and z, on the map's copy of the ground. */
+export function onMapTouch(handler: ((x: number, z: number) => void) | null): void {
+  touchHandler = handler;
+}
+
 /** Show these checkpoints on the map (NavCourseSystem, on every change of the run); none clears them. */
 export function showMapCheckpoints(cps: readonly MapCheckpoint[]): void {
   shownCheckpoints = cps.map((c) => ({ ...c }));
@@ -68,6 +84,14 @@ interface MapCaseDebug {
   gridRef(x: number, z: number, figures?: 4 | 6): string;
   /** The painted map, as a PNG data URL. */
   image(): string;
+  /** Touch the map at a world point, as a finger or a click on it would (F2.13). */
+  touch(x: number, z: number): void;
+  /** The world point a ray (scene space) points at on the map, or null (F2.13). */
+  rayAt(origin: number[], direction: number[]): number[] | null;
+  /** The middle of the map's face, and the way it faces, scene space (F2.13). */
+  face(): { centre: number[]; facing: number[] };
+  /** Hold the case in this page's hand (`side`) as if squeezed on it, or let go (null): for tests on a page without controllers. */
+  holdFor(side: Side | null): void;
 }
 
 /**
@@ -120,6 +144,21 @@ export class MapCaseSystem extends createSystem({}) {
   private signText = '';
   private signUntil = 0;
   private time = 0;
+  /** F2.13: the free hand's pencil point on the sheet, the trigger as last seen, a held-for-tests side, and scratch for the ray. */
+  private pencil!: Mesh;
+  private wasTrigger: Record<Side, boolean> = { left: false, right: false };
+  private heldFor: Side | null = null;
+  private toSheet = new Matrix4();
+  private rayO = new Vector3();
+  private rayD = new Vector3();
+  private hit: [number, number] = [0, 0];
+  private hitLocal = new Vector3();
+  private clickAt: [number, number] | null = null;
+  private pointerDown = (event: PointerEvent) => {
+    if (this.holder !== 'flat' || !(event.target instanceof HTMLCanvasElement)) return;
+    const r = event.target.getBoundingClientRect();
+    this.clickAt = [((event.clientX - r.left) / r.width) * 2 - 1, -(((event.clientY - r.top) / r.height) * 2 - 1)];
+  };
 
   init(): void {
     active = this;
@@ -146,11 +185,20 @@ export class MapCaseSystem extends createSystem({}) {
       console.warn('[MapCase] no turret in the scene');
       this.world.createTransformEntity(this.group);
     }
+    // The free hand's pencil point on the map (F2.13): a small ball where its ray meets the sheet, while it is held.
+    this.pencil = new Mesh(new SphereGeometry(0.004, 10, 8), new MeshBasicMaterial({ color: 0x1c4f9c }));
+    this.pencil.name = 'Map Pencil Point';
+    this.pencil.visible = false;
+    this.group.add(this.pencil);
     this.sign = new FloatingSign('Map Case Sign', 0.75, [600, 200], 1.1, 0.3);
     this.world.createTransformEntity(this.sign.mesh);
     window.addEventListener('keydown', this.keyDown);
+    window.addEventListener('pointerdown', this.pointerDown);
     this.cleanupFuncs.push(() => {
       window.removeEventListener('keydown', this.keyDown);
+      window.removeEventListener('pointerdown', this.pointerDown);
+      this.pencil.geometry.dispose();
+      (this.pencil.material as MeshBasicMaterial).dispose();
       this.texture.dispose();
       this.caseMesh.geometry.dispose();
       this.sheet.geometry.dispose();
@@ -179,6 +227,21 @@ export class MapCaseSystem extends createSystem({}) {
           checkpoints: self.paintedMarks === marksVersion ? shownCheckpoints.map((c) => ({ ...c })) : [],
         };
       },
+      touch: (x, z) => touchHandler?.(x, z),
+      rayAt: (origin, direction) => {
+        const o = new Vector3().fromArray(origin);
+        const d = new Vector3().fromArray(direction);
+        return self.sheetHit(o, d) ? [self.hit[0], self.hit[1]] : null;
+      },
+      face: () => {
+        self.sheet.updateWorldMatrix(true, false);
+        const c = new Vector3(0, 0, MAP_CASE.thick / 2 + MAP_CASE.sheetGap).applyMatrix4(self.sheet.matrixWorld);
+        const f = new Vector3(0, 0, 1).transformDirection(self.sheet.matrixWorld);
+        return { centre: c.toArray(), facing: f.toArray() };
+      },
+      holdFor: (side) => {
+        self.heldFor = side;
+      },
       at: (out = 0) => {
         const t = self.turret?.object3D;
         const v = new Vector3(CASE_CLIPPED.x - out, CASE_CLIPPED.y, CASE_CLIPPED.z);
@@ -200,7 +263,7 @@ export class MapCaseSystem extends createSystem({}) {
     if (!netLink.connected) seating.ask('gunner');
     const vr = this.world.visibilityState.peek() !== VisibilityState.NonImmersive;
     this.say('Read the map', vr ? 'Map case on the wall behind your right shoulder: squeeze to take it' : 'G: hold the map up, G again to put it back',
-      'North is up; the grid is 100 m squares');
+      vr ? 'North up, 100 m squares. Other hand\'s trigger on it: send the driver there' : 'North up, 100 m squares. Click on it: send the driver there');
   }
 
   update(delta: number): void {
@@ -222,6 +285,8 @@ export class MapCaseSystem extends createSystem({}) {
       if (holder === side && !pressed) holder = null;
       if (holder === null && down && handUse[side] === null && vr && this.input.xr.gamepads[side] && this.fistInTurret(side) && canGrab(this.fist)) holder = side;
     }
+    // A test's hand on it (no controllers on the page).
+    if (this.heldFor !== null) holder = this.heldFor;
     for (const side of SIDES) {
       if (holder === side) handUse[side] = MAP_USE;
       else if (handUse[side] === MAP_USE) handUse[side] = null;
@@ -255,10 +320,69 @@ export class MapCaseSystem extends createSystem({}) {
       this.group.quaternion.copy(this.fromQuat).slerp(this.goalQuat, t);
     }
 
+    this.touchInput(vr);
+
     if (this.sign.visible) {
       if (this.time > this.signUntil) this.sign.setVisible(false);
       else this.sign.follow(vr ? this.player.head : this.camera, delta);
     }
+  }
+
+  /**
+   * Touching the map (F2.13): holding the case in one hand, the other hand's
+   * ray shows a pencil point on the map and its trigger touches there; on a
+   * PC page with the map held up (G), a click on it. The spot goes to
+   * NavigatorSystem.
+   */
+  private touchInput(vr: boolean): void {
+    let point: [number, number] | null = null;
+    let aiming = false;
+    const holder = this.holder;
+    if (vr && (holder === 'left' || holder === 'right') && this.blend >= 1) {
+      const free: Side = holder === 'left' ? 'right' : 'left';
+      const space = this.player.raySpaces[free];
+      const pressed = (this.input.xr.gamepads[free]?.getButtonValue(InputComponent.Trigger) ?? 0) > 0.6;
+      const down = pressed && !this.wasTrigger[free];
+      this.wasTrigger[free] = pressed;
+      if (space && handUse[free] === null) {
+        space.updateWorldMatrix(true, false);
+        this.rayO.setFromMatrixPosition(space.matrixWorld);
+        this.rayD.set(-space.matrixWorld.elements[8], -space.matrixWorld.elements[9], -space.matrixWorld.elements[10]);
+        if (this.sheetHit(this.rayO, this.rayD)) {
+          aiming = true;
+          if (down) point = this.hit;
+        }
+      }
+    } else {
+      this.wasTrigger.left = false;
+      this.wasTrigger.right = false;
+    }
+    if (this.clickAt && holder === 'flat' && this.blend >= 1) {
+      this.camera.getWorldPosition(this.rayO);
+      this.rayD.set(this.clickAt[0], this.clickAt[1], 0.5).unproject(this.camera).sub(this.rayO);
+      if (this.sheetHit(this.rayO, this.rayD)) point = this.hit;
+    }
+    this.clickAt = null;
+    this.pencil.visible = aiming;
+    if (aiming) this.pencil.position.set(this.hitLocal.x, this.hitLocal.y, MAP_CASE.thick / 2 + MAP_CASE.sheetGap + 0.006);
+    if (point) {
+      console.info(`[MapCase] touched at ${point[0].toFixed(0)}, ${point[1].toFixed(0)}`);
+      touchHandler?.(point[0], point[1]);
+    }
+  }
+
+  /** Where a scene-space ray meets the map's window: the world point into `hit` and the case-space point into `hitLocal`; false if it misses. */
+  private sheetHit(origin: Vector3, direction: Vector3): boolean {
+    this.sheet.updateWorldMatrix(true, false);
+    this.toSheet.copy(this.sheet.matrixWorld).invert();
+    origin.applyMatrix4(this.toSheet);
+    direction.transformDirection(this.toSheet);
+    const z = MAP_CASE.thick / 2 + MAP_CASE.sheetGap;
+    if (Math.abs(direction.z) < 1e-6) return false;
+    const t = (z - origin.z) / direction.z;
+    if (t <= 0 || t > 3) return false;
+    this.hitLocal.copy(direction).multiplyScalar(t).add(origin);
+    return sheetToWorld(this.hitLocal.x, this.hitLocal.y, this.hit) !== null;
   }
 
   /** The middle of this player's fist and the handle's way through it, turret space, into `fist` and `axis`; false with no hand. */
@@ -339,6 +463,7 @@ export class MapCaseSystem extends createSystem({}) {
     const ctx = this.canvas.getContext('2d')!;
     ctx.drawImage(this.base, 0, 0);
     for (const c of shownCheckpoints) paintCheckpoint(ctx, c);
+    if (shownGoal) paintGoal(ctx, shownGoal);
     for (const m of shownMarks) paintMark(ctx, m);
     this.texture.needsUpdate = true;
   }
@@ -351,8 +476,8 @@ export class MapCaseSystem extends createSystem({}) {
     ctx.font = 'bold 44px sans-serif';
     ctx.fillText(title, width / 2, 64);
     ctx.font = '26px sans-serif';
-    ctx.fillText(line1, width / 2, 118);
-    ctx.fillText(line2, width / 2, 160);
+    ctx.fillText(line1, width / 2, 118, width - 30);
+    ctx.fillText(line2, width / 2, 160, width - 30);
     this.sign.refresh();
     this.sign.setVisible(true, 'setup');
     this.signText = `${title}. ${line1} ${line2}`;
@@ -361,23 +486,8 @@ export class MapCaseSystem extends createSystem({}) {
   }
 }
 
-/** The map's frame on the sheet, px: margins for the grid's numbers, a title band on top. */
-const MAP_LEFT = 96;
-const MAP_TOP = 170;
-/** Sheet pixels per world metre. */
-const MAP_SCALE = (MAP_PX - 2 * MAP_LEFT) / MAP_WIDTH;
 /** The red pencil's colour. */
 const PENCIL = '#c0262d';
-
-/** A world x's place across the sheet, px. */
-function mapPx(x: number): number {
-  return MAP_LEFT + (x - FIELD_MAP.west) * MAP_SCALE;
-}
-
-/** A world z's place down the sheet, px. */
-function mapPy(z: number): number {
-  return MAP_TOP + (z - FIELD_MAP.north) * MAP_SCALE;
-}
 
 /**
  * One enemy seen, in red pencil (F2.11): the map's symbol for it (an
@@ -467,6 +577,36 @@ function paintCheckpoint(ctx: CanvasRenderingContext2D, c: Readonly<MapCheckpoin
   ctx.lineWidth = 10;
   ctx.strokeText(`CP${c.n}`, x - 24, y - 20);
   ctx.fillText(`CP${c.n}`, x - 24, y - 20);
+  ctx.restore();
+}
+
+/** The commander's goal for the driver (F2.13): a blue pencilled cross in a ring, and "Go". */
+function paintGoal(ctx: CanvasRenderingContext2D, g: { x: number; z: number }): void {
+  const x = mapPx(g.x);
+  const y = mapPy(g.z);
+  ctx.save();
+  ctx.strokeStyle = BLUE_PENCIL;
+  ctx.fillStyle = BLUE_PENCIL;
+  ctx.lineWidth = 6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x - 18, y - 18);
+  ctx.lineTo(x + 18, y + 18);
+  ctx.moveTo(x + 18, y - 18);
+  ctx.lineTo(x - 18, y + 18);
+  ctx.stroke();
+  ctx.setLineDash([8, 7]);
+  ctx.beginPath();
+  ctx.arc(x, y, 30, 0, 2 * Math.PI);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = 'bold italic 44px serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.strokeStyle = '#f2ead4';
+  ctx.lineWidth = 10;
+  ctx.strokeText('Go', x + 28, y + 14);
+  ctx.fillText('Go', x + 28, y + 14);
   ctx.restore();
 }
 

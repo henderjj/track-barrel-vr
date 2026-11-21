@@ -1213,6 +1213,26 @@ async function navChecks(host, guest, label) {
   }, 8000).catch(() => null);
   check(`The guest's Stop clears the course on both pages (${label})`, stopped !== null);
   await host.page.evaluate(() => window.__drive.place(0, 0, 0));
+
+  // F2.13 (and F2.10's deferred check): the map case in the guest's hand is drawn in its hand on the host's page;
+  // the guest's touch on it goes to the host as an order, pencilled on both maps.
+  await guest.page.evaluate(() => window.__mapCase.holdFor('right'));
+  const inHand = await waitFor("the case in the guest's hand on the host's page", async () => {
+    const s = await host.page.evaluate(() => window.__mapCase.state());
+    return s.holder === 'crew-right' ? s : null;
+  }, 8000).catch(() => null);
+  check(`The map case in the guest's hand is drawn in its hand on the host's page (${label})`, inHand !== null,
+    JSON.stringify(await host.page.evaluate(() => window.__mapCase.state())));
+  await guest.page.evaluate(() => window.__mapCase.touch(100, -300));
+  const ordered = await waitFor('the order on both pages', async () => {
+    const [h, g] = await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__navigator.state())));
+    return h.goal?.[0] === 100 && h.goal?.[1] === -300 && g.goal?.[0] === 100 && h.lastSign.startsWith('Commander: Driver, go to') ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`The guest's touch on the map is an order the host's page shows, the spot pencilled on both maps (${label})`, ordered !== null,
+    JSON.stringify(ordered ?? (await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__navigator.state()))))));
+  await guest.page.evaluate(() => window.__mapCase.holdFor(null));
+  const putBack = await waitFor("the case back on its clips on the host's page", async () => (await host.page.evaluate(() => window.__mapCase.state())).holder === null, 8000).catch(() => false);
+  check(`Let go on the guest's page, the case goes back to its clips on the host's (${label})`, putBack === true);
 }
 
 /**
@@ -1943,6 +1963,49 @@ async function botChecks(browser) {
     JSON.stringify(movesOn ?? await Promise.all([tank(), bot.page.evaluate(() => ({ lamp: window.__firingLamp.state(), driving: window.__bot.driving }))])));
   await me.page.evaluate(() => window.__gameMenu.click('call-halt'));
   await me.page.evaluate(() => window.__drive.reset());
+
+  // F2.13: the player as commander touches a spot on the map 120 m up the road; the crewmate driver drives there and halts.
+  await waitFor('the tank at a halt', async () => Math.abs((await tank()).speed) < 0.05, 10000).catch(() => null);
+  const startAt = await tank();
+  const goal = [startAt.x, startAt.z - 120];
+  await me.page.evaluate(([x, z]) => window.__mapCase.touch(x, z), goal);
+  // On a slow runner the simulation runs several times slower than the clock (a frame a second, a tenth of a second
+  // simulated), so it waits as long as the tank keeps closing on the spot: 30 s without getting 2 m closer is a fail.
+  let arrived = null;
+  let closest = Infinity;
+  let closedAt = Date.now();
+  while (Date.now() - closedAt < 30000) {
+    const [t, driving] = await Promise.all([tank(), bot.page.evaluate(() => window.__bot.driving)]);
+    const d = Math.hypot(t.x - goal[0], t.z - goal[1]);
+    if (driving.mode === 'goto' && driving.there && d < 6 && Math.abs(t.speed) < 0.3) {
+      arrived = { t, driving };
+      break;
+    }
+    if (d < closest - 2) {
+      closest = d;
+      closedAt = Date.now();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  const heardOrder = await bot.page.evaluate(() => window.__navigator.state());
+  check('Navigator: a spot touched on the gunner\'s map sends the crewmate driver there, and it halts on it',
+    arrived !== null && heardOrder.lastSign.startsWith('Commander: Driver, go to'),
+    JSON.stringify(arrived ?? { tank: await tank(), driving: await bot.page.evaluate(() => window.__bot.driving), heard: heardOrder }));
+
+  // F2.13: with the player driving the map course, the crewmate commander gives the next checkpoint's heading.
+  await me.page.evaluate(() => window.__gameMenu.click('row-seat-0'));
+  await sat('driver', 'gunner');
+  await me.page.evaluate(() => window.__nav.start(5));
+  const headed = await waitFor("the crewmate's heading for CP1", async () => {
+    const n = await me.page.evaluate(() => window.__navigator.state());
+    return n.headings >= 1 && n.lastHeading.startsWith('CP1: steer') ? n : null;
+  }, 15000, 500).catch(() => null);
+  const cp1 = await me.page.evaluate(() => window.__nav.state().refs[0]);
+  check("Navigator: on the map course the crewmate commander gives the driver CP1's bearing, distance and turn, on the sign and the board",
+    headed !== null && headed.lastSign.startsWith('Commander: CP1: steer')
+      && (await me.page.evaluate(() => window.__crewBoard.text().calls.some((c) => c.text.startsWith('Commander: CP1: steer')))),
+    JSON.stringify(headed ?? await me.page.evaluate(() => window.__navigator.state())) + ` (CP1 at ${cp1})`);
+  await me.page.evaluate(() => window.__nav.stop());
 
   const errors = [...me.errors, ...bot.errors].filter((m) => !m.includes('net::ERR_') && !m.includes('Failed to load resource'));
   await me.context.close();

@@ -236,6 +236,12 @@ const THROUGH_AHEAD = 4;
  * 8 km/h that drowns the engine.
  */
 export const COURSE_KMH = { loop: 20, box: 10, penalty: 12, slalom: 9, descent: 16, tight: 16, bridge: 8, mud: 12, ford: 7 } as const;
+const same = (v: number): number => v;
+/** Within this of a spot touched on the map it stops steering for it, m. */
+const GOTO_HOLD = 8;
+
+/** Its speed to a spot touched on the map (F2.13), km/h: a steady cross-country pace. */
+export const GOTO_KMH = 18;
 /** Faster than its speed by this much, m/s (running on downhill), it brakes. */
 const OVERSPEED = 0.6;
 const BRAKE = -0.3;
@@ -482,7 +488,7 @@ export const BOT_COOL_RESUME = 96;
  * It drives with the automatic box (F1.16), so it never changes gear itself.
  */
 export class BotDriver {
-  mode: 'calls' | 'route' | 'course' | 'race' = 'calls';
+  mode: 'calls' | 'route' | 'course' | 'race' | 'goto' = 'calls';
   motion: 'halt' | 'advance' | 'reverse' = 'halt';
   /** The heading it holds, rad (NaN until it has seen the tank). */
   heading = Number.NaN;
@@ -506,6 +512,38 @@ export class BotDriver {
   private legs: readonly RouteLeg[] = ROUTE;
   /** On the course, it starts from the leg nearest the tank once it sees where the tank is. */
   private pickLeg = false;
+  /** Driving to a spot touched on the map (F2.13): its legs, and the spot's name for the menu. */
+  private gotoLegs: RouteLeg[] = [];
+  gotoLabel = '';
+
+  /**
+   * Drive to a spot touched on the map (F2.13): along `path` (its waypoints,
+   * the last the spot, src/sim/nav-path.ts) at GOTO_KMH, then halt there and
+   * stay. Any driving call takes it off.
+   */
+  goTo(path: readonly (readonly [number, number])[], label: string, from: { x: number; z: number }): void {
+    if (path.length === 0) return;
+    let x = from.x;
+    let z = from.z;
+    this.gotoLegs = path.map(([px, pz], k) => {
+      const last = k === path.length - 1;
+      const leg: RouteLeg = last ? { x: px, z: pz, kmh: GOTO_KMH, halt: 1 } : { x: px, z: pz, kmh: GOTO_KMH, halt: 0, through: true, heading: headingTo(px - x, pz - z) };
+      x = px;
+      z = pz;
+      return leg;
+    });
+    this.mode = 'goto';
+    this.legs = this.gotoLegs;
+    this.leg = 0;
+    this.halting = 0;
+    this.gotoLabel = label;
+    this.pickLeg = false;
+  }
+
+  /** Whether it has reached the spot touched on the map and stands there. */
+  get there(): boolean {
+    return this.mode === 'goto' && this.leg === this.gotoLegs.length - 1 && this.halting > 0;
+  }
 
   /** A call from the gunner. The tank's heading now sets where Left and Right turn from. */
   call(call: CrewCall, tankHeading: number): boolean {
@@ -621,6 +659,11 @@ export class BotDriver {
     if (this.halting > 0) {
       // In a race it waits at a line while the line is open (the gunner's rounds), and at the finish for good.
       const wait = this.mode === 'race' ? legs[this.leg].wait : undefined;
+      // At the spot touched on the map (F2.13) it stays, facing as it came in.
+      if (this.mode === 'goto') {
+        this.heading = tank.heading;
+        return 0;
+      }
       if (wait === 'finish' || (wait === 'line' && this.orders.hold && this.halting <= dt)) return 0;
       this.halting -= dt;
       if (this.halting <= 0) {
@@ -630,16 +673,18 @@ export class BotDriver {
       return 0;
     }
     let leg = legs[this.leg];
-    let dx = wrapTile(leg.x - tank.x);
-    let dz = wrapTile(leg.z - tank.z);
+    // A spot touched on the map (F2.13) is on the tank's own copy of the ground, however far: no wrapping to a nearer copy.
+    const near = this.mode === 'goto' ? same : wrapTile;
+    let dx = near(leg.x - tank.x);
+    let dz = near(leg.z - tank.z);
     // Through legs: on to the next once level with this one (a few legs at most in one frame).
     for (let k = 0; k < 4 && leg.through; k++) {
       const h = leg.heading ?? 0;
       if (dx * -Math.sin(h) + dz * -Math.cos(h) > THROUGH_AHEAD) break;
       this.leg = this.nextLeg(this.leg);
       leg = legs[this.leg];
-      dx = wrapTile(leg.x - tank.x);
-      dz = wrapTile(leg.z - tank.z);
+      dx = near(leg.x - tank.x);
+      dz = near(leg.z - tank.z);
     }
     if (leg.through) {
       this.heading = headingTo(dx, dz);
@@ -653,7 +698,8 @@ export class BotDriver {
       this.halting = Math.max(leg.halt, 1e-3);
       return 0;
     }
-    this.heading = headingTo(dx, dz);
+    // Close in, the way to the point swings about with every small miss: a spot touched on the map (F2.13) keeps the way it had.
+    if (this.mode !== 'goto' || distance > GOTO_HOLD) this.heading = headingTo(dx, dz);
     // Slow down in time to stop on the spot: faster legs slow from further out.
     const slowFrom = leg.kmh > 15 ? 50 : 12;
     return (leg.kmh / 3.6 / MAX_SPEED) * clamp(distance / slowFrom, 0.3, 1);
@@ -694,6 +740,7 @@ export class BotDriver {
       if (leg.lap === -1) return `racing: round the penalty loop (${this.orders.owed} owed)`;
       return `racing: lap ${Math.min(this.orders.laps + 1, BOX_Z.length + 1)}`;
     }
+    if (this.mode === 'goto') return this.there ? `halted at ${this.gotoLabel}` : `driving to ${this.gotoLabel}`;
     if (this.mode === 'course') {
       const leg = this.legs[this.leg];
       if (this.halting > 0) return `driving the course, halted in ${leg.label ?? 'a box'} (${Math.ceil(this.halting)} s)`;

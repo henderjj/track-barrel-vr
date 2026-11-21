@@ -14,6 +14,7 @@
  */
 
 import { HULL, SEATS, TURRET } from './cabin.js';
+import { FIELD_MAP, MAP_WIDTH } from './field-map.js';
 
 type Vec3 = [number, number, number];
 
@@ -26,6 +27,44 @@ export const MAP_CASE = {
   sheetGap: 0.004,
   frameGap: 0.004,
 } as const;
+
+/**
+ * The painted sheet (MapCaseSystem): MAP_PX square, the map's frame
+ * MAP_LEFT in from the sides and MAP_TOP down from the top (the margins
+ * carry the grid's numbers, the title band is on top), MAP_SCALE px a metre.
+ */
+export const MAP_PX = 2048;
+export const MAP_LEFT = 96;
+export const MAP_TOP = 170;
+export const MAP_SCALE = (MAP_PX - 2 * MAP_LEFT) / MAP_WIDTH;
+
+/** A world x's place across the sheet, px. */
+export function mapPx(x: number): number {
+  return MAP_LEFT + (x - FIELD_MAP.west) * MAP_SCALE;
+}
+
+/** A world z's place down the sheet, px. */
+export function mapPy(z: number): number {
+  return MAP_TOP + (z - FIELD_MAP.north) * MAP_SCALE;
+}
+
+/**
+ * The world point under a point on the case's map window (F2.13), from its
+ * middle, m (`u` right, `v` up, as the sheet's plane lies in the case),
+ * into `out`; null outside the map's frame (the margins, the frame).
+ */
+export function sheetToWorld(u: number, v: number, out: [number, number]): [number, number] | null {
+  const half = MAP_CASE.sheet / 2;
+  if (Math.abs(u) > half || Math.abs(v) > half) return null;
+  const px = (u / MAP_CASE.sheet + 0.5) * MAP_PX;
+  const py = (0.5 - v / MAP_CASE.sheet) * MAP_PX;
+  const x = FIELD_MAP.west + (px - MAP_LEFT) / MAP_SCALE;
+  const z = FIELD_MAP.north + (py - MAP_TOP) / MAP_SCALE;
+  if (x < FIELD_MAP.west || x > FIELD_MAP.east || z < FIELD_MAP.north || z > FIELD_MAP.south) return null;
+  out[0] = x;
+  out[1] = z;
+  return out;
+}
 
 /** Half the case's width (and height), m. */
 export const CASE_HALF = MAP_CASE.sheet / 2 + MAP_CASE.border;
