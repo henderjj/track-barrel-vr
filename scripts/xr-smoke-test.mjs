@@ -4949,10 +4949,12 @@ async function frameRateChecks() {
     15000,
   ).catch(() => null);
   check('No rate request without the frame-rate API', pcRateLog?.message.includes('requesting=none') === true, pcRateLog?.message);
+  // The rate is the median of 30 frame intervals (src/perf/refresh-rate.ts): on a runner drawing a frame a second
+  // that takes over 30 s, so wait for 40 of the slowest frames, and never less than 12 s.
   const pcPlatform = await waitFor(
     'measured platform report',
     () => evalInApp("window.__platform.mine && window.__platform.mine.hzSource === 'measured' ? window.__platform.mine : null"),
-    12000,
+    Math.max(12000, 40 * slowestFrameMs()),
   ).catch(() => null);
   check(
     'Refresh rate is measured instead',
