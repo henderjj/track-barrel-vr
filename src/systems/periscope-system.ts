@@ -102,6 +102,11 @@ export const periscopeStats = {
   gunner: newStats(),
 };
 
+/** Periscope `id`'s turn as this page draws it, rad, positive left of its seat's forward (the turret's, for the gunner's). */
+export function periscopeAngleNow(id: PeriscopeId): number {
+  return active?.angleOf(id) ?? 0;
+}
+
 /** One line for the perf HUD while a periscope renders (within the last second), or null. */
 export function periscopeSummary(now: number): string | null {
   const id = periscopeStats.driver.lastRender >= periscopeStats.gunner.lastRender ? 'driver' : 'gunner';
@@ -409,6 +414,11 @@ export class PeriscopeSystem extends createSystem({}) {
       if (open !== was) console.info(`[Periscope] ${id}'s ${open ? 'open' : 'closed'}`);
       if (open) this.render(scope);
     }
+  }
+
+  /** Periscope `id`'s turn as drawn, rad. */
+  angleOf(id: PeriscopeId): number {
+    return this.scopes?.[id]?.angle ?? 0;
   }
 
   private render(scope: Scope): void {

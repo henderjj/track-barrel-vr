@@ -3748,7 +3748,7 @@ async function partThree() {
 }
 
 /**
- * Part 4: the turret, the periscopes, the biathlon's driving challenge and the map case.
+ * Part 4: the turret, the periscopes, the biathlon's driving challenge, the map case and the marks on it.
  */
 async function partFour() {
   // 6f. The turret (F1.8).
@@ -3762,6 +3762,9 @@ async function partFour() {
 
   // 6zf. The map case (F2.10).
   await theMapCase();
+
+  // 6zg. Enemies seen, pencilled on the map (F2.11).
+  await theMapMarks();
 }
 
 /**
@@ -4756,11 +4759,11 @@ async function theCompasses() {
   // The drill: an order on the board and a sign, in the driver's seat.
   await menuButtonPress();
   await menuClick('menu-course');
-  const ordered = await waitFor('the course order', () => { const s = state(); return s.drill && s.sign && s; }, 8000).catch(() => state());
+  const ordered = await waitFor('the course order', () => { const s = state(); return s.drill && s.lastSign && s; }, 8000).catch(() => state());
   const seat = evalInApp('window.__seats.mine');
   const board = JSON.stringify(evalInApp('window.__crewBoard.text().calls'));
   check('Practice → Drive the tank → Steer a course seats the player as driver, with the order on the board and a sign',
-    seat === 'driver' && ordered.drill !== null && board.includes(`steer ${String(ordered.drill?.course ?? -1).padStart(3, '0')}`) && ordered.sign.startsWith('Steer'),
+    seat === 'driver' && ordered.drill !== null && board.includes(`steer ${String(ordered.drill?.course ?? -1).padStart(3, '0')}`) && ordered.lastSign.startsWith('Steer'),
     `seat ${seat}, drill ${JSON.stringify(ordered.drill)}, sign "${ordered.sign}"`);
 
   // The course crank: the right hand on its knob, a quarter turn clockwise.
@@ -4828,10 +4831,10 @@ async function theMapCase() {
   evalInApp('(window.__turret.set(null), window.__turret.forward(), window.__drive.set(null), window.__drive.place(0, 0, 0), true)');
   await menuButtonPress();
   await menuClick('menu-map');
-  const told = await waitFor('the map sign', () => { const s = state(); return s.sign.startsWith('Read the map') && s; }, 8000).catch(() => state());
+  const told = await waitFor('the map sign', () => { const s = state(); return s.lastSign.startsWith('Read the map') && s; }, 8000).catch(() => state());
   const seat = evalInApp('window.__seats.mine');
   check('Practice → Commander → Read the map seats the player as gunner, the case on its clips and a sign saying where it hangs',
-    seat === 'gunner' && told.clipped && told.holder === null && told.sign.includes('behind your right shoulder'),
+    seat === 'gunner' && told.clipped && told.holder === null && told.lastSign.includes('behind your right shoulder'),
     `seat ${seat}, ${JSON.stringify(told)}`);
   const eye = evalInApp('window.__seats.eye("gunner")');
   iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin(eye) });
@@ -4875,6 +4878,42 @@ async function theMapCase() {
   iwsdk(['xr', 'set-device-state'], {});
 }
 
+/**
+ * 6zg. Enemies seen, pencilled on the map (F2.11, docs/map-marks.md):
+ *      Practice → Commander → Spot on the map seats the player as gunner
+ *      with the guns out and a sign; with the gun laid on gun A and the
+ *      sight open (Draw: always), gun A goes on the map as mark 1; knocked out, it
+ *      is crossed through; the guns stopped, the map is clean again.
+ */
+async function theMapMarks() {
+  const state = () => evalInApp('window.__mapMarks.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  await menuButtonPress();
+  await menuClick('menu-map-spot');
+  const told = await waitFor('the spotting sign', () => { const s = state(); return s.lastSign.startsWith('Spot on the map') && s; }, 8000).catch(() => state());
+  const seat = evalInApp('window.__seats.mine');
+  const gunsOut = evalInApp('window.__enemy.state().present.slice(0, 3)');
+  check('Practice → Commander → Spot on the map seats the player as gunner, the guns out and a sign',
+    seat === 'gunner' && gunsOut.every(Boolean) && told.marks.length === 0,
+    `seat ${seat}, guns ${JSON.stringify(gunsOut)}, ${JSON.stringify(told)}`);
+  // The sight drawn as if an eye were at it (Sights → Draw: always), and the gun laid on gun A.
+  evalInApp("(window.__mapMarks.layOn(0), window.__sight.setMode('always'), true)");
+  const marked = await waitFor('gun A on the map', () => { const s = state(); return s.marks.some((m) => m.enemy === 0) && s; }, 20000, 200).catch(() => state());
+  const a = marked.marks.find((m) => m.enemy === 0);
+  const where = evalInApp('window.__mapMarks.where(0)');
+  evalInApp("(window.__sight.setMode('auto'), true)");
+  check('With the sight open and the gun on gun A, gun A is pencilled on the map as mark 1, a gun, where it stands',
+    marked.looking >= 1 && a?.n === 1 && a.kind === 'gun' && a.how === 'seen' && Math.abs(a.x - where[0]) <= 10 && Math.abs(a.z - where[1]) <= 10,
+    `looking through ${marked.looking}, ${JSON.stringify(marked.marks)}, gun A at ${where.map((v) => v.toFixed(0)).join(', ')}`);
+  evalInApp('(window.__enemy.kill(0), true)');
+  const crossed = await waitFor('gun A crossed out', () => { const s = state(); return s.marks.find((m) => m.enemy === 0)?.out && s; }, 8000, 200).catch(() => state());
+  check('Knocked out, gun A\'s mark is crossed through', crossed.marks.find((m) => m.enemy === 0)?.out === true, JSON.stringify(crossed.marks));
+  evalInApp('(window.__enemy.stop(), true)');
+  const clean = await waitFor('the map clean', () => { const s = state(); return s.marks.length === 0 && s; }, 8000, 200).catch(() => state());
+  check('The guns stopped, their marks are rubbed out', clean.marks.length === 0, JSON.stringify(clean.marks));
+  iwsdk(['xr', 'set-device-state'], {});
+}
+
 /** Every part ends with these: the perf log, PC VR without the frame-rate API, and the console. */
 /**
  * 7. The perf log records; 8. a runtime without the frame-rate API (desktop
@@ -4910,10 +4949,12 @@ async function frameRateChecks() {
     15000,
   ).catch(() => null);
   check('No rate request without the frame-rate API', pcRateLog?.message.includes('requesting=none') === true, pcRateLog?.message);
+  // The rate is the median of 30 frame intervals (src/perf/refresh-rate.ts): on a runner drawing a frame a second
+  // that takes over 30 s, so wait for 40 of the slowest frames, and never less than 12 s.
   const pcPlatform = await waitFor(
     'measured platform report',
     () => evalInApp("window.__platform.mine && window.__platform.mine.hzSource === 'measured' ? window.__platform.mine : null"),
-    12000,
+    Math.max(12000, 40 * slowestFrameMs()),
   ).catch(() => null);
   check(
     'Refresh rate is measured instead',

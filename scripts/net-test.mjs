@@ -867,6 +867,7 @@ async function ammoChecks(host, guest, label) {
     he ? `host "${he.hr.line}", gunner "${he.gr.line}", hits ${he.h.hits}/${he.g.hits}` : JSON.stringify(await Promise.all([host, guest].map(state))));
   await guest.page.evaluate(() => window.__turret.forward());
   await enemyChecks(host, guest, label);
+  await mapMarksChecks(host, guest, label);
   await enemyTankChecks(host, guest, label);
   await damageChecks(host, guest, label);
   await combatChecks(host, guest, label);
@@ -1128,6 +1129,47 @@ async function enemyChecks(host, guest, label) {
   check(`Stop takes the enemy guns away on both pages (${label})`, stopped !== null);
   await guest.page.evaluate(() => window.__turret.forward());
   await host.page.evaluate(([x, z, h]) => window.__drive.place(x, z, h), [was.x, was.z, was.heading]);
+}
+
+/**
+ * Enemies seen on the map (F2.11): the guest gunner looks at gun A through
+ * the sight (Draw: always, the gun laid on it); the guest's page sees it
+ * and tells the host, which pencils it, and both maps show the same mark;
+ * Stop rubs it out on both.
+ */
+async function mapMarksChecks(host, guest, label) {
+  const marks = (p) => p.page.evaluate(() => window.__mapMarks.state());
+  await host.page.evaluate(() => {
+    window.__drive.place(0, -80, 0);
+    window.__enemy.start(1);
+  });
+  await waitFor("the guest to have the guns and the tank at gun A's spot", async () => {
+    const [t, e] = await Promise.all([guest.page.evaluate(() => window.__drive.state()), guest.page.evaluate(() => window.__enemy.state())]);
+    return e.on && Math.hypot(t.x, t.z + 80) < 0.5 && Math.abs(t.speed) < 0.05;
+  }, 8000).catch(() => null);
+  await guest.page.evaluate(() => {
+    window.__sight.setMode('always');
+    window.__mapMarks.layOn(0);
+  });
+  const both = await waitFor('gun A on both maps', async () => {
+    const [h, g] = await Promise.all([host, guest].map(marks));
+    const a = h.marks.find((m) => m.enemy === 0);
+    const b = g.marks.find((m) => m.enemy === 0);
+    return a && b && a.x === b.x && a.z === b.z && a.n === b.n && a.kind === 'gun' ? { h, g } : null;
+  }, 15000).catch(() => null);
+  check(`The guest gunner sees gun A through the sight: the host pencils it and both maps show the same mark (${label})`,
+    both !== null && both.h.looking === 0 && both.g.looking >= 1,
+    JSON.stringify(both ?? (await Promise.all([host, guest].map(marks)))));
+  await guest.page.evaluate(() => {
+    window.__sight.setMode('auto');
+    window.__turret.forward();
+  });
+  await host.page.evaluate(() => window.__enemy.stop());
+  const clean = await waitFor('both maps clean', async () => {
+    const [h, g] = await Promise.all([host, guest].map(marks));
+    return h.marks.length === 0 && g.marks.length === 0 ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`Stopping the guns rubs their marks out on both maps (${label})`, clean !== null);
 }
 
 /**

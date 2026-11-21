@@ -57,6 +57,8 @@ interface CompassDebug {
     held: boolean;
     drill: { course: number; held: number; done: boolean } | null;
     sign: string;
+    /** The last sign put up, shown or since faded (a slow page's 8 s can pass before a test reads it). */
+    lastSign: string;
   };
   /** Set the driver's course card, degrees (as the crank would leave it). */
   setCourse(deg: number): void;
@@ -189,6 +191,7 @@ export class CompassSystem extends createSystem({}) {
           held: self.crank.held[0] || self.crank.held[1],
           drill: d ? { course: d.course, held: d.held, done: d.done } : null,
           sign: self.sign.visible ? self.signText : '',
+          lastSign: self.signText,
         };
       },
       setCourse: (deg) => self.setCourse(deg),

@@ -46,6 +46,7 @@ import { StartScreenSystem } from './systems/start-screen-system.js';
 import { TurretDialSystem } from './systems/turret-dial-system.js';
 import { CompassSystem } from './systems/compass-system.js';
 import { MapCaseSystem } from './systems/map-case-system.js';
+import { MapMarksSystem } from './systems/map-marks-system.js';
 import { TurretSystem } from './systems/turret-system.js';
 
 // On a two-GPU PC, start on the graphics card Link uses (src/gpu-preference.ts).
@@ -142,6 +143,8 @@ World.create(
   world.registerSystem(PeriscopeSystem);
   // The hull direction mark in the gunsight and the gunner's periscope (F2.4): turns it to the turret and periscope as drawn this frame.
   world.registerSystem(HullDirectionSystem);
+  // Enemies seen, pencilled on the map (F2.11): looks through the gunsight and periscopes as they are open this frame.
+  world.registerSystem(MapMarksSystem);
   // After NetSystem, which may have joined a crew from the page's link.
   world.registerSystem(StartScreenSystem);
   world.registerSystem(GameMenuSystem);
