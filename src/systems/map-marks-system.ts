@@ -37,7 +37,7 @@ export function spotOnTheMap(): void {
 
 interface MapMarksDebug {
   /** The book as this page has it, and how many of this page's sights and periscopes are open. */
-  state(): { v: number; marks: MapMark[]; looking: number; sign: string };
+  state(): { v: number; marks: MapMark[]; looking: number; sign: string; lastSign: string };
   /** Practice → Commander → Spot on the map. */
   practice(): void;
   /** Lay the gun straight on enemy `i` (the turret's owner page). */
@@ -97,7 +97,7 @@ export class MapMarksSystem extends createSystem({}) {
 
     const self = this;
     (window as unknown as { __mapMarks: MapMarksDebug }).__mapMarks = {
-      state: () => ({ v: self.book.v, marks: self.book.marks.map((m) => ({ ...m })), looking: self.viewing, sign: self.sign.visible ? self.signText : '' }),
+      state: () => ({ v: self.book.v, marks: self.book.marks.map((m) => ({ ...m })), looking: self.viewing, sign: self.sign.visible ? self.signText : '', lastSign: self.signText }),
       practice: () => self.practice(),
       layOn: (i) => self.layOn(i),
       where: (i) => {

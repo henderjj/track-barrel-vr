@@ -43,7 +43,7 @@ export function readTheMap(): void {
 
 interface MapCaseDebug {
   /** Who holds it, whether it is on its clips, its middle and the way its face looks (turret space), how square its face is to this player's eyes (1 square on), and the sign. */
-  state(): { holder: Holder; clipped: boolean; centre: number[]; facing: number[]; facesEyes: number; sign: string };
+  state(): { holder: Holder; clipped: boolean; centre: number[]; facing: number[]; facesEyes: number; sign: string; lastSign: string };
   /** The middle of the case on its clips, `out` m in front of its face, scene space (with the turret as drawn): where a hand goes to take it. */
   at(out?: number): number[];
   /** Hold it up in front of the eyes on a PC page (G), or put it back. */
@@ -159,6 +159,7 @@ export class MapCaseSystem extends createSystem({}) {
           facing: [f.x, f.y, f.z],
           facesEyes: f.dot(toEyes),
           sign: self.sign.visible ? self.signText : '',
+          lastSign: self.signText,
         };
       },
       at: (out = 0) => {

@@ -4759,11 +4759,11 @@ async function theCompasses() {
   // The drill: an order on the board and a sign, in the driver's seat.
   await menuButtonPress();
   await menuClick('menu-course');
-  const ordered = await waitFor('the course order', () => { const s = state(); return s.drill && s.sign && s; }, 8000).catch(() => state());
+  const ordered = await waitFor('the course order', () => { const s = state(); return s.drill && s.lastSign && s; }, 8000).catch(() => state());
   const seat = evalInApp('window.__seats.mine');
   const board = JSON.stringify(evalInApp('window.__crewBoard.text().calls'));
   check('Practice → Drive the tank → Steer a course seats the player as driver, with the order on the board and a sign',
-    seat === 'driver' && ordered.drill !== null && board.includes(`steer ${String(ordered.drill?.course ?? -1).padStart(3, '0')}`) && ordered.sign.startsWith('Steer'),
+    seat === 'driver' && ordered.drill !== null && board.includes(`steer ${String(ordered.drill?.course ?? -1).padStart(3, '0')}`) && ordered.lastSign.startsWith('Steer'),
     `seat ${seat}, drill ${JSON.stringify(ordered.drill)}, sign "${ordered.sign}"`);
 
   // The course crank: the right hand on its knob, a quarter turn clockwise.
@@ -4831,10 +4831,10 @@ async function theMapCase() {
   evalInApp('(window.__turret.set(null), window.__turret.forward(), window.__drive.set(null), window.__drive.place(0, 0, 0), true)');
   await menuButtonPress();
   await menuClick('menu-map');
-  const told = await waitFor('the map sign', () => { const s = state(); return s.sign.startsWith('Read the map') && s; }, 8000).catch(() => state());
+  const told = await waitFor('the map sign', () => { const s = state(); return s.lastSign.startsWith('Read the map') && s; }, 8000).catch(() => state());
   const seat = evalInApp('window.__seats.mine');
   check('Practice → Commander → Read the map seats the player as gunner, the case on its clips and a sign saying where it hangs',
-    seat === 'gunner' && told.clipped && told.holder === null && told.sign.includes('behind your right shoulder'),
+    seat === 'gunner' && told.clipped && told.holder === null && told.lastSign.includes('behind your right shoulder'),
     `seat ${seat}, ${JSON.stringify(told)}`);
   const eye = evalInApp('window.__seats.eye("gunner")');
   iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin(eye) });
@@ -4890,7 +4890,7 @@ async function theMapMarks() {
   iwsdk(['xr', 'set-device-state'], {});
   await menuButtonPress();
   await menuClick('menu-map-spot');
-  const told = await waitFor('the spotting sign', () => { const s = state(); return s.sign.startsWith('Spot on the map') && s; }, 8000).catch(() => state());
+  const told = await waitFor('the spotting sign', () => { const s = state(); return s.lastSign.startsWith('Spot on the map') && s; }, 8000).catch(() => state());
   const seat = evalInApp('window.__seats.mine');
   const gunsOut = evalInApp('window.__enemy.state().present.slice(0, 3)');
   check('Practice → Commander → Spot on the map seats the player as gunner, the guns out and a sign',
