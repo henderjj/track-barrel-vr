@@ -3,7 +3,7 @@ import { COLUMN_TRUCK } from '../sim/column.js';
 import { beam, mergeParts, type Part, shade } from './lowpoly.js';
 
 /**
- * An enemy lorry (F5.10, docs/recon-ambush.md): a generic 3-tonne army
+ * An enemy lorry (F5.10, docs/ambush.md): a generic 3-tonne army
  * lorry for the ambush's column, a bonnet and cab over a ladder frame and a
  * load bed under a canvas tilt, on three axles, in the enemy tanks' dark
  * yellow with a grey-green canvas. Low poly, vertex coloured, one mesh. Its

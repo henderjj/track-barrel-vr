@@ -940,31 +940,14 @@ async function escortChecks(host, guest, label) {
 }
 
 /**
- * The missions (F5.10): the guest's Recon unseen → Start runs it on the
- * host with the guns and tanks in, both pages showing it, and its Stop ends
- * it; the guest's Ambush a column → Start puts the host's column on both
+ * The mission (F5.10): the guest's Ambush a column → Start puts the host's column on both
  * pages; the host's column moved up the road is drawn within a few metres
  * of it on the guest's page; a lorry the host knocks out shows as out in
  * both pages' ambush; the guest's Stop ends it and takes the column away.
  */
 async function missionChecks(host, guest, label) {
-  const recon = (p) => p.page.evaluate(() => window.__recon.state());
   const ambush = (p) => p.page.evaluate(() => window.__ambush.state());
   const enemy = (p) => p.page.evaluate(() => window.__enemy.state());
-  await guest.page.evaluate(() => window.__recon.start());
-  const reconOn = await waitFor('the recon on both pages', async () => {
-    const [h, g] = await Promise.all([recon(host), recon(guest)]);
-    const e = await enemy(guest);
-    return h.phase === 'on' && g.phase === 'on' && e.present.slice(0, 5).every(Boolean) ? g : null;
-  }, 8000).catch(() => null);
-  await guest.page.evaluate(() => window.__recon.stop());
-  const reconOff = await waitFor('the recon off on both pages', async () => {
-    const [h, g] = await Promise.all([recon(host), recon(guest)]);
-    return h.phase === 'off' && g.phase === 'off' && !(await enemy(guest)).on ? g : null;
-  }, 8000).catch(() => null);
-  check(`The guest's Recon unseen → Start runs it on the host with the guns and tanks in on both pages, and its Stop ends it (${label})`,
-    reconOn !== null && reconOff !== null, JSON.stringify(await Promise.all([host, guest].map(recon))));
-
   await guest.page.evaluate(() => window.__ambush.start());
   const on = await waitFor('the ambush on both pages', async () => {
     const [h, g] = await Promise.all([ambush(host), ambush(guest)]);

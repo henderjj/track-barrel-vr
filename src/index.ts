@@ -105,7 +105,7 @@ World.create(
   world.registerSystem(CombatSystem);
   // Escort a convoy (F5.8): after CombatSystem, whose scenario and its own stop each other, and EnemySystem, which fires on its trucks.
   world.registerSystem(EscortSystem);
-  // The F5.10 missions, recon unseen and ambush a column: after CombatSystem, which a mission stops, and DamageSystem and EnemySystem, whose state they judge.
+  // The F5.10 mission, ambush a column: after CombatSystem, which it stops, and DamageSystem and EnemySystem, whose state it judges.
   world.registerSystem(MissionsSystem);
   // Hold the hill (F5.9): after CombatSystem, which it stops on starting (and stops for); it judges the same state.
   world.registerSystem(HillSystem);

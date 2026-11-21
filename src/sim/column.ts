@@ -1,5 +1,5 @@
 /**
- * The enemy column (F5.10, docs/recon-ambush.md): four vehicles, a tank at
+ * The enemy column (F5.10, docs/ambush.md): four vehicles, a tank at
  * each end and two lorries between, driving one way along a road across
  * the crew's front for the "Ambush a column" scenario. They join the enemy
  * battery (src/sim/enemy-guns.ts) as its 'column' group, which looks, lays
