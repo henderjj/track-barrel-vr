@@ -532,9 +532,9 @@ async function driveChecks(host, guest, label) {
     const start = performance.now();
     const frame = () => {
       out.push(window.__drive.state().odometer);
-      // 2 s, and on a slow runner (four or five frames a second) on until there are enough frames to judge, up to 6 s.
+      // 2 s, and on a slow runner on until there are enough frames to judge, up to ten times that (6 s gave 10 frames at 600 ms a frame, PR #136).
       const took = performance.now() - start;
-      if (took < 2000 || (out.length < 16 && took < 6000)) requestAnimationFrame(frame);
+      if (took < 2000 || (out.length < 16 && took < 20000)) requestAnimationFrame(frame);
       else resolve(out);
     };
     requestAnimationFrame(frame);
@@ -550,7 +550,8 @@ async function driveChecks(host, guest, label) {
   const stopped = await waitFor('both to see the tank stop', async () => {
     const [h, g] = await Promise.all([tank(host), tank(guest)]);
     return h.speed === 0 && Math.abs(g.speed) < 0.01 && Math.hypot(h.x - g.x, h.z - g.z) < 0.02 ? { h, g } : null;
-  }, 15000).catch(() => null);
+    // The tank's clock moves on at most 0.25 s a frame: at a frame a second it takes 16 s to run down from 4 m/s.
+  }, 40000).catch(() => null);
   // On a miss, say whether the guest's packets stopped coming or its page stopped drawing (seen once on a slow runner, PR #136).
   const stopMiss = async () => {
     const link = (p) => p.page.evaluate(() => new Promise((resolve) => {
@@ -657,9 +658,9 @@ async function turretChecks(host, guest, label) {
     const start = performance.now();
     const frame = () => {
       out.push(window.__turret.state().yaw);
-      // 2 s, and on a slow runner (four or five frames a second) on until there are enough frames to judge, up to 6 s.
+      // 2 s, and on a slow runner on until there are enough frames to judge, up to ten times that (6 s gave 10 frames at 600 ms a frame, PR #136).
       const took = performance.now() - start;
-      if (took < 2000 || (out.length < 16 && took < 6000)) requestAnimationFrame(frame);
+      if (took < 2000 || (out.length < 16 && took < 20000)) requestAnimationFrame(frame);
       else resolve(out);
     };
     requestAnimationFrame(frame);
