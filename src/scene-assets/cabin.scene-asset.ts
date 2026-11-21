@@ -34,6 +34,8 @@ import { LID_ASIDE } from '../sim/convoy-seat.js';
 import { binParts, boardParts, BREECH_BORE, BREECH_CHAMFER, breechFittings, rackParts } from './loading.scene-asset.js';
 import { driverClockParts, gunnerClockParts } from './range-run.scene-asset.js';
 import { turretDialParts } from './turret-dial.scene-asset.js';
+import { compassCaseParts } from './compass.scene-asset.js';
+import { DRIVER_COMPASS, GUNNER_COMPASS } from '../sim/compass.js';
 import { firingLampParts, lampRepeaterParts } from './firing-lamp.scene-asset.js';
 import { litInside } from './cabin-light.js';
 import { interiorFinish } from './finish.js';
@@ -314,6 +316,8 @@ function hullParts(): Part[] {
   parts.push(...turretDialParts());
   // The firing lamp's bezel on the hood's face beside the turret dial (F2.5).
   parts.push(...firingLampParts());
+  // The driver's compass's case on the hood's face right of the firing lamp (F2.9).
+  parts.push(...compassCaseParts(DRIVER_COMPASS));
   // The rest of a Sherman's front compartment (docs/interior.md).
   parts.push(...hullDetailParts());
 
@@ -584,6 +588,8 @@ function turretParts(): Part[] {
   parts.push(...gunnerClockParts());
   // The firing lamp's repeater's bezel on the front wall, right of the gunsight (F2.5).
   parts.push(...lampRepeaterParts());
+  // The gunner's compass's case on the front wall over the crew board (F2.9).
+  parts.push(...compassCaseParts(GUNNER_COMPASS));
   // The radio in the turret's bustle and the dome lamp's housing (docs/interior.md).
   parts.push(...turretDetailParts());
   // The traverse gearbox and motor, the turret lock, the basket's skirt, the pistol port and the interphone box.
