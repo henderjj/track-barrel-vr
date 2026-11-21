@@ -3745,6 +3745,9 @@ async function partThree() {
   check('The drive was heard: gears going in, the engine catching and stalling',
     heard.clunk >= 1 && heard.catch >= 1 && heard.stall >= 1,
     Object.entries(heard).map(([id, n]) => `${id} ${n}`).join(', '));
+
+  // 6zh. The map-reading course (F2.12).
+  await theMapCourse();
 }
 
 /**
@@ -4911,6 +4914,51 @@ async function theMapMarks() {
   evalInApp('(window.__enemy.stop(), true)');
   const clean = await waitFor('the map clean', () => { const s = state(); return s.marks.length === 0 && s; }, 8000, 200).catch(() => state());
   check('The guns stopped, their marks are rubbed out', clean.marks.length === 0, JSON.stringify(clean.marks));
+  iwsdk(['xr', 'set-device-state'], {});
+}
+
+/**
+ * 6zh. The map-reading course (F2.12): Practice → Map course → Start seats a
+ * lone player as driver at SP with a sign, five checkpoints on the board and
+ * the map; the tank at CP1 reaches it (the board moves on, the map ticks it);
+ * Stop clears both.
+ */
+async function theMapCourse() {
+  const state = () => evalInApp('window.__nav.state()');
+  const board = () => evalInApp('window.__crewBoard.text()');
+  iwsdk(['xr', 'set-device-state'], {});
+  await menuButtonPress();
+  await menuClick('menu-nav-start');
+  const started = await waitFor('the course started', () => { const s = state(); return s.on && s.lastSign.startsWith('Map reading') && s; }, 8000).catch(() => state());
+  const seat = evalInApp('window.__seats.mine');
+  const at = evalInApp('(() => { const t = window.__drive.state(); return [t.x, t.z]; })()');
+  check('Practice → Map course → Start seats the player as driver at SP with a sign, and five checkpoints',
+    seat === 'driver' && started.on && started.cps.length === 5 && started.next === 0 && Math.hypot(at[0], at[1]) < 5,
+    `seat ${seat}, tank at ${at.map((v) => v.toFixed(0)).join(', ')}, ${JSON.stringify(started)}`);
+  const first = await waitFor('the board showing CP1', () => { const b = board(); return b.objective === 'Map reading' && b.tasks[0]?.text === `Next: CP1 at ${started.refs[0]}` && b; }, 8000, 250).catch(() => board());
+  check('The board gives CP1 and CP2 by their six-figure references',
+    first.objective === 'Map reading' && first.tasks[0]?.text === `Next: CP1 at ${started.refs[0]}` && first.tasks[1]?.text === `Then: CP2 at ${started.refs[1]}`,
+    JSON.stringify(first.tasks));
+  const painted = () => evalInApp('window.__mapCase.state().checkpoints');
+  const ringed = await waitFor('five checkpoints on the map', () => { const c = painted(); return c.length === 5 && c; }, 8000, 200).catch(() => painted());
+  check('The map rings the five checkpoints, none ticked', ringed.length === 5 && ringed.every((c, k) => c.n === k + 1 && !c.done), JSON.stringify(ringed));
+  // Park on CP1.
+  evalInApp('(() => { const [x, z] = window.__nav.at(0); window.__drive.place(x, z, 0); return true; })()');
+  const reached = await waitFor('CP1 reached', () => { const s = state(); return s.next === 1 && s; }, 8000, 200).catch(() => state());
+  const moved = await waitFor('the board moving on to CP2', () => { const b = board(); return b.tasks[0]?.text === `Next: CP2 at ${started.refs[1]}` && b; }, 8000, 250).catch(() => board());
+  const ticked = await waitFor('CP1 ticked on the map', () => { const c = painted(); return c[0]?.done && c; }, 8000, 200).catch(() => painted());
+  check('At CP1 the run reaches it: its time taken, the board on to CP2, the call logged, the map ticked',
+    reached.next === 1 && reached.splits.length === 1 && moved.tasks[0]?.text === `Next: CP2 at ${started.refs[1]}`
+      && moved.calls.some((c) => c.text.startsWith('CP1 reached')) && ticked[0]?.done === true && ticked[1]?.done === false,
+    `${JSON.stringify(reached)}, board ${JSON.stringify(moved.tasks)}, map ${JSON.stringify(ticked)}`);
+  await menuButtonPress();
+  await menuClick('menu-nav-stop');
+  const stopped = await waitFor('the course stopped', () => { const s = state(); return s.cps.length === 0 && s; }, 8000, 200).catch(() => state());
+  const rubbed = await waitFor('the map rubbed clean', () => painted().length === 0, 8000, 200).catch(() => false);
+  const cleared = await waitFor('the board cleared', () => { const b = board(); return b.objective !== 'Map reading' && b; }, 8000, 250).catch(() => board());
+  check('Stop clears the course off the board and the map', stopped.cps.length === 0 && !stopped.on && cleared.objective !== 'Map reading' && rubbed,
+    `${JSON.stringify(stopped)}, board ${cleared.objective}, map clean ${rubbed}`);
+  evalInApp('(window.__drive.place(0, 0, 0), true)');
   iwsdk(['xr', 'set-device-state'], {});
 }
 

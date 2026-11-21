@@ -687,6 +687,13 @@
             </div>
           </div>
           <div class="setting">
+            <div class="label">Map course</div>
+            <div class="choices">
+              <Button id="menu-nav-start" class="choice" size="sm" variant="secondary">Start</Button>
+              <Button id="menu-nav-stop" class="choice" size="sm" variant="secondary">Stop</Button>
+            </div>
+          </div>
+          <div class="setting">
             <div class="label">Tank sounds</div>
             <div class="choices">
               <Button id="menu-audio-play" class="choice" size="sm" variant="secondary">Play each</Button>

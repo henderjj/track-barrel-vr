@@ -26,7 +26,6 @@ type Holder = Side | 'crew-left' | 'crew-right' | 'flat' | null;
 
 let active: MapCaseSystem | null = null;
 
-/** Practice → Sights → Read the map (F2.10): into the gunner's seat, with a sign saying where the map case is. */
 /** The marks the map shows (F2.11, MapMarksSystem), and their version: the sheet is painted again when it changes. */
 let shownMarks: readonly MapMark[] = [];
 let marksVersion = 0;
@@ -37,13 +36,30 @@ export function showMapMarks(marks: readonly MapMark[]): void {
   marksVersion++;
 }
 
+/** A map-reading checkpoint as the map shows it (F2.12, NavCourseSystem): a red circle, numbered, ticked once reached. */
+export interface MapCheckpoint {
+  x: number;
+  z: number;
+  n: number;
+  done: boolean;
+}
+
+let shownCheckpoints: readonly MapCheckpoint[] = [];
+
+/** Show these checkpoints on the map (NavCourseSystem, on every change of the run); none clears them. */
+export function showMapCheckpoints(cps: readonly MapCheckpoint[]): void {
+  shownCheckpoints = cps.map((c) => ({ ...c }));
+  marksVersion++;
+}
+
+/** Practice → Commander → Read the map (F2.10): into the gunner's seat, with a sign saying where the map case is. */
 export function readTheMap(): void {
   active?.practice();
 }
 
 interface MapCaseDebug {
   /** Who holds it, whether it is on its clips, its middle and the way its face looks (turret space), how square its face is to this player's eyes (1 square on), and the sign. */
-  state(): { holder: Holder; clipped: boolean; centre: number[]; facing: number[]; facesEyes: number; sign: string; lastSign: string };
+  state(): { holder: Holder; clipped: boolean; centre: number[]; facing: number[]; facesEyes: number; sign: string; lastSign: string; checkpoints: MapCheckpoint[] };
   /** The middle of the case on its clips, `out` m in front of its face, scene space (with the turret as drawn): where a hand goes to take it. */
   at(out?: number): number[];
   /** Hold it up in front of the eyes on a PC page (G), or put it back. */
@@ -160,6 +176,7 @@ export class MapCaseSystem extends createSystem({}) {
           facesEyes: f.dot(toEyes),
           sign: self.sign.visible ? self.signText : '',
           lastSign: self.signText,
+          checkpoints: self.paintedMarks === marksVersion ? shownCheckpoints.map((c) => ({ ...c })) : [],
         };
       },
       at: (out = 0) => {
@@ -321,6 +338,7 @@ export class MapCaseSystem extends createSystem({}) {
     this.paintedMarks = marksVersion;
     const ctx = this.canvas.getContext('2d')!;
     ctx.drawImage(this.base, 0, 0);
+    for (const c of shownCheckpoints) paintCheckpoint(ctx, c);
     for (const m of shownMarks) paintMark(ctx, m);
     this.texture.needsUpdate = true;
   }
@@ -410,6 +428,45 @@ function paintMark(ctx: CanvasRenderingContext2D, m: Readonly<MapMark>): void {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
   ctx.fillText(m.how === 'flash' ? `${m.n}?` : `${m.n}`, x + 34, y - 14);
+  ctx.restore();
+}
+
+/** The blue pencil for map-reading checkpoints (F2.12), so they never read as the red of the objectives or the enemy. */
+const BLUE_PENCIL = '#1c4f9c';
+
+/**
+ * A map-reading checkpoint (F2.12) as a commander would ring it in pencil:
+ * a blue circle round the place with CPn beside it, ticked through once
+ * the tank has been there. The label has a halo of paper so it reads over
+ * whatever is drawn beneath.
+ */
+function paintCheckpoint(ctx: CanvasRenderingContext2D, c: Readonly<MapCheckpoint>): void {
+  const x = mapPx(c.x);
+  const y = mapPy(c.z);
+  ctx.save();
+  ctx.strokeStyle = BLUE_PENCIL;
+  ctx.fillStyle = BLUE_PENCIL;
+  ctx.lineWidth = 6;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.arc(x, y, 28, 0, 2 * Math.PI);
+  ctx.stroke();
+  if (c.done) {
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(x - 16, y);
+    ctx.lineTo(x - 4, y + 14);
+    ctx.lineTo(x + 20, y - 18);
+    ctx.stroke();
+  }
+  ctx.font = 'bold italic 48px serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'bottom';
+  ctx.strokeStyle = '#f2ead4';
+  ctx.lineWidth = 10;
+  ctx.strokeText(`CP${c.n}`, x - 24, y - 20);
+  ctx.fillText(`CP${c.n}`, x - 24, y - 20);
   ctx.restore();
 }
 

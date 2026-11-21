@@ -47,6 +47,7 @@ import { TurretDialSystem } from './systems/turret-dial-system.js';
 import { CompassSystem } from './systems/compass-system.js';
 import { MapCaseSystem } from './systems/map-case-system.js';
 import { MapMarksSystem } from './systems/map-marks-system.js';
+import { NavCourseSystem } from './systems/nav-course-system.js';
 import { TurretSystem } from './systems/turret-system.js';
 
 // On a two-GPU PC, start on the graphics card Link uses (src/gpu-preference.ts).
@@ -121,6 +122,8 @@ World.create(
   world.registerSystem(FiringLampSystem);
   // The biathlon course (F5.3a): after DriveSystem has moved the tank, it follows it round the course's gates.
   world.registerSystem(CourseSystem);
+  // The map-reading course (F2.12): after DriveSystem has moved the tank, it calls each checkpoint reached; before the crew board shows them (the map shows them next frame).
+  world.registerSystem(NavCourseSystem);
   // The crew board (F6.5): after the systems whose notes it logs and whose state it shows (damage, the fight, the run, the course); it redraws only on a change.
   world.registerSystem(CrewBoardSystem);
   // After the kit has moved its levers: it reads them into the drive (DriveSystem drives by them next frame) and draws the gauges.
