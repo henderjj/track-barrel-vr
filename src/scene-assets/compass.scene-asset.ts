@@ -1,125 +1,91 @@
-import { BoxGeometry, BufferGeometry, CircleGeometry, CylinderGeometry, Float32BufferAttribute, Mesh, MeshBasicMaterial } from '@iwsdk/core';
-import { type CompassPlace, faceOut } from '../sim/compass.js';
+import { BoxGeometry, CylinderGeometry, Mesh, MeshBasicMaterial } from '@iwsdk/core';
+import { backFront, type CompassPlace, caseSize, cardY, windowSize } from '../sim/compass.js';
 import { mergeParts, type Part } from './lowpoly.js';
 
 /**
- * The compasses at both seats (F2.9, docs/compass.md): each one's case,
- * merged into the hull's or the turret's mesh (cabin.scene-asset.ts), and
- * the card, lubber, course mark and hull mark, which CompassSystem places
- * in the case, paints and turns. Sizes from src/sim/compass.ts. Low-poly
- * and vertex-coloured; the card and marks are unlit, as the turret dial's
- * face and pointer are, so they read in the dark cabin.
+ * The compasses at both seats (F2.9, docs/compass.md), as the gyro compass
+ * of a German tank's dashboard: a small box with a window in its front,
+ * through which the edges of horizontal cards show, and a red lubber line
+ * down the window's middle. The case is merged into the hull's or the
+ * turret's mesh (cabin.scene-asset.ts); the cards and the lubber are
+ * CompassSystem's, which paints the cards' edges and slides their figures
+ * past the line. Sizes from src/sim/compass.ts. Low-poly and
+ * vertex-coloured; the cards and lubber are unlit, as the turret dial's face
+ * is, so they read in the dark cabin.
  */
 
 const CASE = 0x2b2e2a;
-/** The lubber: red, fixed at the top. */
+/** Inside the box, behind the cards: darker, so the window's gaps read as depth. */
+const INSIDE = 0x121310;
+/** The lubber line: red. */
 const LUBBER = 0xd8322a;
-/** The course mark: the gauges' needles' orange (driver-station.scene-asset.ts). */
-const BUG = 0xf08a24;
-/** The gunner's hull mark: the turret dial's hull's olive, darker, so it reads on the cream card. */
-const HULL_MARK = 0x3d4a2a;
-/** Marks are this thick, m. */
-const T = 0.002;
 
-/** A compass's case, in its frame's space, for the hull's or the turret's mesh: a shallow drum sunk into the wall round the face. */
+/**
+ * A compass's case, in its frame's space, for the hull's or the turret's
+ * mesh: the box's four walls from the front back into the wall it stands
+ * on, a dark back plate behind the cards, and the frame round the window.
+ */
 export function compassCaseParts(p: CompassPlace): Part[] {
-  const caseRadius = p.radius + p.rim;
-  const length = p.proud + p.sunk;
-  const drum = new CylinderGeometry(caseRadius, caseRadius, length, 28, 1);
-  drum.rotateX(Math.PI / 2);
-  const wall = p.z - faceOut(p);
-  return [{ geometry: drum, color: CASE, position: [p.x, p.y, wall - p.sunk + length / 2] }];
-}
-
-/** The card: a disc at the origin facing +Z, the face's radius. CompassSystem paints it and turns it with `rotation.z`. */
-export function createCompassCard(p: CompassPlace): Mesh {
-  const mesh = new Mesh(new CircleGeometry(p.radius, 48), new MeshBasicMaterial({ color: 0xefe6c8, toneMapped: false }));
-  mesh.name = `Compass Card ${p.id}`;
-  return mesh;
-}
-
-const markMaterial = new MeshBasicMaterial({ vertexColors: true, toneMapped: false });
-
-/** A flat triangle, thickness T, its tip at `tip` (face x, y) and its base `width` wide `length` back towards `toward` ±y. */
-function wedge(tipY: number, length: number, width: number): BufferGeometry {
-  // A prism: the triangle at z 0 and z T, with its three sides.
-  const b = tipY + length;
-  const tri = [
-    [0, tipY],
-    [-width / 2, b],
-    [width / 2, b],
+  const [halfW, halfH] = caseSize(p);
+  const [winW, winH] = windowSize(p);
+  const back = backFront(p);
+  // Back into the wall: far enough that a turned box's far side still reaches it.
+  const deep = (halfW * Math.abs(Math.sin(p.yaw)) + (p.z - p.wall)) / Math.cos(p.yaw) + 0.01;
+  const behind = -deep;
+  const length = p.frameFront - behind;
+  const mid = (p.frameFront + behind) / 2;
+  const t = p.caseWall;
+  const rot: [number, number, number] = [0, p.yaw, 0];
+  const at = (x: number, y: number, z: number): [number, number, number] => {
+    const c = Math.cos(p.yaw);
+    const s = Math.sin(p.yaw);
+    return [p.x + x * c + z * s, p.y + y, p.z - x * s + z * c];
+  };
+  const frameDepth = 0.003;
+  const fz = p.frameFront - frameDepth / 2;
+  const sideBar = halfW - winW;
+  const topBar = halfH - winH;
+  return [
+    // The walls: top, bottom, left, right.
+    { geometry: new BoxGeometry(2 * halfW, t, length), color: CASE, position: at(0, halfH - t / 2, mid), rotation: rot },
+    { geometry: new BoxGeometry(2 * halfW, t, length), color: CASE, position: at(0, -halfH + t / 2, mid), rotation: rot },
+    { geometry: new BoxGeometry(t, 2 * halfH - 2 * t, length), color: CASE, position: at(-halfW + t / 2, 0, mid), rotation: rot },
+    { geometry: new BoxGeometry(t, 2 * halfH - 2 * t, length), color: CASE, position: at(halfW - t / 2, 0, mid), rotation: rot },
+    // The back plate, just behind the cards' edges.
+    { geometry: new BoxGeometry(2 * halfW - 2 * t, 2 * halfH - 2 * t, 0.004), color: INSIDE, position: at(0, 0, back - 0.002), rotation: rot },
+    // The frame round the window: over and under it, and either side.
+    { geometry: new BoxGeometry(2 * halfW, topBar, frameDepth), color: CASE, position: at(0, winH + topBar / 2, fz), rotation: rot },
+    { geometry: new BoxGeometry(2 * halfW, topBar, frameDepth), color: CASE, position: at(0, -winH - topBar / 2, fz), rotation: rot },
+    { geometry: new BoxGeometry(sideBar, 2 * winH, frameDepth), color: CASE, position: at(-winW - sideBar / 2, 0, fz), rotation: rot },
+    { geometry: new BoxGeometry(sideBar, 2 * winH, frameDepth), color: CASE, position: at(winW + sideBar / 2, 0, fz), rotation: rot },
   ];
-  const pos: number[] = [];
-  const v = (i: number, z: number) => pos.push(tri[i][0], tri[i][1], z);
-  const front = length > 0 ? [0, 2, 1] : [0, 1, 2];
-  for (const i of front) v(i, T);
-  for (const i of [front[0], front[2], front[1]]) v(i, 0);
-  for (let i = 0; i < 3; i++) {
-    const j = (i + 1) % 3;
-    v(i, 0); v(j, 0); v(j, T);
-    v(i, 0); v(j, T); v(i, T);
-  }
-  const g = new BufferGeometry();
-  g.setAttribute('position', new Float32BufferAttribute(pos, 3));
-  g.computeVertexNormals();
-  return g;
 }
 
 /**
- * The lubber: a red wedge pointing down into the card from its top edge,
- * fixed to the case, in front of the card and the course mark (2 × markGap).
+ * Card `i`'s edge, in box space: an arc of an upright cylinder's side, the
+ * card's radius, `arc` either side of the lubber, its axis `radius` behind
+ * the window. Its u runs as bearing over 360, 0 on the lubber line and
+ * growing to the right, so CompassSystem slides a painted 0°–360° strip
+ * with the texture's offset (`cardOffset`), repeating.
  */
+export function createCardEdge(p: CompassPlace, i: number): Mesh {
+  const segments = 24;
+  const geometry = new CylinderGeometry(p.radius, p.radius, p.band, segments, 1, true, -p.arc, 2 * p.arc);
+  // CylinderGeometry's u runs 0 to 1 over thetaLength from thetaStart (θ 0 faces +Z, growing towards +X): make it θ over a turn.
+  const uv = geometry.getAttribute('uv');
+  for (let k = 0; k < uv.count; k++) uv.setX(k, (-p.arc + uv.getX(k) * 2 * p.arc) / (2 * Math.PI));
+  geometry.translate(0, cardY(p, i), -p.radius);
+  const mesh = new Mesh(geometry, new MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
+  mesh.name = `Compass ${p.cards[i]} card ${p.id}`;
+  return mesh;
+}
+
+/** The lubber line: a thin red bar down the window's middle (about a sixteenth of a card's band wide), `lubberFront` in front of the cards. */
 export function createLubber(p: CompassPlace): Mesh {
-  const r = p.radius;
-  const z = 2 * p.markGap;
-  const mesh = new Mesh(mergeParts([{ geometry: wedge(r * 0.72, r * 0.28, r * 0.2), color: LUBBER, position: [0, 0, z] }]), markMaterial);
+  const [, winH] = windowSize(p);
+  const thick = 0.0015;
+  const geometry = mergeParts([{ geometry: new BoxGeometry(p.band * 0.06, 2 * winH, thick), color: LUBBER, position: [0, 0, p.lubberFront - thick / 2] }]);
+  const mesh = new Mesh(geometry, new MeshBasicMaterial({ vertexColors: true, toneMapped: false }));
   mesh.name = `Compass Lubber ${p.id}`;
-  return mesh;
-}
-
-/**
- * The driver's course mark: an orange notch on the card's edge, two prongs
- * either side of the ordered course, pointing in, markGap in front of the
- * card. At angle 0 it sits at the top, round the lubber's tip; turn it with
- * `rotation.z` (bugAngle).
- */
-export function createCourseBug(p: CompassPlace): Mesh {
-  const r = p.radius;
-  const prong = r * 0.07;
-  const depth = r * 0.16;
-  const gap = r * 0.12;
-  const z = p.markGap;
-  const mesh = new Mesh(mergeParts([
-    { geometry: new BoxGeometry(prong, depth, T), color: BUG, position: [-gap - prong / 2, r - depth / 2, z + T / 2] },
-    { geometry: new BoxGeometry(prong, depth, T), color: BUG, position: [gap + prong / 2, r - depth / 2, z + T / 2] },
-    { geometry: new BoxGeometry(2 * (gap + prong), prong * 0.8, T), color: BUG, position: [0, r - prong * 0.4, z + T / 2] },
-  ]), markMaterial);
-  mesh.name = 'Compass Course Mark';
-  return mesh;
-}
-
-/**
- * The gunner's hull mark: the hull from above, nose up, a small dark
- * outline with an arrowhead at its nose, in the card's middle markGap in
- * front of it. At angle 0 it points up the face as the gun does; turn it
- * with `rotation.z` (hullMarkAngle).
- */
-export function createHullMark(p: CompassPlace): Mesh {
-  const r = p.radius;
-  const half = r * 0.09;
-  const length = r * 0.34;
-  const bar = r * 0.04;
-  const z = p.markGap + T / 2;
-  const nose = length / 2;
-  const mesh = new Mesh(mergeParts([
-    // The two sides, the tail and the nose's bar.
-    { geometry: new BoxGeometry(bar, length, T), color: HULL_MARK, position: [-half, 0, z] },
-    { geometry: new BoxGeometry(bar, length, T), color: HULL_MARK, position: [half, 0, z] },
-    { geometry: new BoxGeometry(2 * half + bar, bar, T), color: HULL_MARK, position: [0, -length / 2, z] },
-    { geometry: new BoxGeometry(2 * half + bar, bar, T), color: HULL_MARK, position: [0, nose, z] },
-    // The arrowhead on the nose.
-    { geometry: wedge(nose + r * 0.14, -r * 0.14 + bar / 2, 2 * half + 3 * bar), color: HULL_MARK, position: [0, 0, p.markGap] },
-  ]), markMaterial);
-  mesh.name = 'Compass Hull Mark';
   return mesh;
 }

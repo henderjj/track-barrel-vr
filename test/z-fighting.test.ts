@@ -349,36 +349,33 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
-  it('on the compasses (F2.9): their cases on the hull and turret, the cards turned every way, the lubbers, the course mark, the hull mark and the course crank', async () => {
+  it('on the compasses (F2.9): their boxes on the hull and turret, the cards behind the windows, the lubber lines and the course crank', async () => {
     const { Group } = await import('@iwsdk/core');
     const compass = await import('../src/sim/compass.js');
     const asset = await import('../src/scene-assets/compass.scene-asset.js');
     const { createWheel } = await import('../src/scene-assets/mechanism.scene-asset.js');
-    const mountOf = (p: typeof compass.DRIVER_COMPASS, bearing: number, other: number) => {
+    // The cards turn by sliding their painted strips, not their meshes: one pose each is enough.
+    const mountOf = (p: typeof compass.DRIVER_COMPASS) => {
       const mount = new Group();
       mount.position.set(p.x, p.y, p.z);
-      const card = asset.createCompassCard(p);
-      card.rotation.z = compass.cardAngle(bearing);
-      mount.add(card);
+      mount.rotation.y = p.yaw;
+      p.cards.forEach((_, i) => mount.add(asset.createCardEdge(p, i)));
       mount.add(asset.createLubber(p));
-      const mark = p.id === 'driver' ? asset.createCourseBug(p) : asset.createHullMark(p);
-      mark.rotation.z = p.id === 'driver' ? compass.bugAngle(bearing, other) : compass.hullMarkAngle(other);
-      mount.add(mark);
       return mount;
     };
-    for (const [bearing, other] of [[0, 0], [37, 0], [200, 210], [300, 90]]) {
+    for (const turn of [0, 37, 200]) {
       const hull = cabin.createHull();
-      hull.add(mountOf(compass.DRIVER_COMPASS, bearing, other));
+      hull.add(mountOf(compass.DRIVER_COMPASS));
       const crank = createWheel(compass.COURSE_CRANK);
       crank.position.set(...compass.COURSE_CRANK_HUB);
-      crank.rotation.z = bearing * (Math.PI / 180);
+      crank.rotation.z = turn * (Math.PI / 180);
       hull.add(crank);
       hull.updateMatrixWorld(true);
       expectNone([hull], CABIN_GAP);
       const turret = cabin.createTurret();
       turret.position.set(0, 0, TURRET.z);
-      turret.rotation.y = other * (Math.PI / 180);
-      turret.add(mountOf(compass.GUNNER_COMPASS, bearing, other * (Math.PI / 180)));
+      turret.rotation.y = turn * (Math.PI / 180);
+      turret.add(mountOf(compass.GUNNER_COMPASS));
       turret.updateMatrixWorld(true);
       expectNone([turret], CABIN_GAP);
     }

@@ -1,25 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { EYE_CLEARANCE, GLACIS, HULL, SEATS, TURRET } from '../src/sim/cabin.js';
 import {
+  backFront,
   bearingDelta,
   bearingText,
-  bugAngle,
-  cardAngle,
+  boxDirToFrame,
+  boxToFrame,
+  cardOffset,
+  cardY,
+  caseSize,
+  type CompassPlace,
   COMPASSES,
   COURSE_CRANK,
   COURSE_CRANK_HUB,
+  COURSE_KNOB_OUT,
   courseFromCrank,
   createCourseDrill,
   DRIVER_COMPASS,
-  faceOut,
   GUNNER_COMPASS,
   gunBearing,
   HOLD_COURSE,
   hullBearing,
-  hullMarkAngle,
   pickCourse,
   pointName,
   stepCourseDrill,
+  windowSize,
   wrapBearing,
 } from '../src/sim/compass.js';
 import { BOARD_BORDER, BOARDS, CLIP } from '../src/sim/crew-board.js';
@@ -31,12 +36,24 @@ import { TURRET_DIAL } from '../src/sim/turret-dial.js';
 const DEG = Math.PI / 180;
 const dist = (a: readonly number[], b: readonly number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
-/** Points round a compass's face's edge and its middle, in its frame, at the face's front. */
-function facePoints(p: typeof DRIVER_COMPASS, at = p.radius): number[][] {
-  const out = [[p.x, p.y, p.z]];
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * 2 * Math.PI;
-    out.push([p.x + Math.cos(a) * at, p.y + Math.sin(a) * at, p.z]);
+/** The case's corners, front and back plate, in its frame's space. */
+function caseCorners(p: CompassPlace): number[][] {
+  const [w, h] = caseSize(p);
+  const out: number[][] = [];
+  for (const x of [-w, w]) for (const y of [-h, h]) for (const z of [p.frameFront, backFront(p) - 0.004]) out.push(boxToFrame(p, [x, y, z], [0, 0, 0]));
+  return out;
+}
+
+/** Points on the cards' edges seen through the window (its middle 80%), in the frame's space. */
+function windowTargets(p: CompassPlace): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < p.cards.length; i++) {
+    for (const k of [-0.8, -0.4, 0, 0.4, 0.8]) {
+      const a = k * p.window;
+      for (const dy of [-0.35, 0, 0.35]) {
+        out.push(boxToFrame(p, [p.radius * Math.sin(a), cardY(p, i) + dy * p.band, -p.radius * (1 - Math.cos(a))], [0, 0, 0]));
+      }
+    }
   }
   return out;
 }
@@ -71,17 +88,15 @@ describe('compass bearings (F2.9)', () => {
     expect(pointName(355)).toBe('N');
   });
 
-  it('turns the card to bring the bearing under the lubber, and the course mark with it', () => {
-    // Painted north up, clockwise: east is a quarter turn clockwise, so the card turns a quarter anticlockwise.
-    expect(cardAngle(90)).toBeCloseTo(Math.PI / 2);
-    // Heading 090, course 120: the mark 30° right of the lubber (clockwise, a negative turn about +Z).
-    expect(bugAngle(90, 120)).toBeCloseTo(-30 * DEG);
-    expect(bugAngle(120, 120)).toBeCloseTo(0);
-    // The gunner's hull mark: the turret turned left, the hull shows to the right of the gun.
-    expect(hullMarkAngle(90 * DEG)).toBeCloseTo(-90 * DEG);
+  it("slides each card's strip so the bearing is on the lubber line, figures growing to the right", () => {
+    expect(cardOffset(0)).toBe(0);
+    expect(cardOffset(90)).toBeCloseTo(0.25);
+    expect(cardOffset(-90)).toBeCloseTo(0.75);
+    // A point 20° right of the line on a card showing 090 is the strip's 110°: u (θ over a turn) plus the offset.
+    expect((20 / 360 + cardOffset(90)) * 360).toBeCloseTo(110);
   });
 
-  it('turns the course mark clockwise with the crank turned clockwise, 90° a turn', () => {
+  it('turns the course card clockwise with the crank turned clockwise, 90° a turn', () => {
     expect(courseFromCrank(0, 0)).toBe(0);
     expect(courseFromCrank(0, -2 * Math.PI)).toBeCloseTo(90);
     expect(courseFromCrank(30, Math.PI)).toBeCloseTo(345);
@@ -124,52 +139,54 @@ describe("the driver's compass (F2.9)", () => {
   const p = DRIVER_COMPASS;
   const eye = SEATS.driver.eye;
 
-  it("lies on the hood's face at the eyes' height, right of the firing lamp, clear of the lamp and the dial", () => {
-    expect(p.z - faceOut(p)).toBeCloseTo(GLACIS.face);
-    expect(Math.abs(p.y - TURRET_DIAL.y)).toBeLessThan(0.05);
+  it("stands on the hood's face right of the turret dial and the firing lamp, a little under the eyes, turned to face the driver", () => {
+    expect(p.wall).toBeCloseTo(GLACIS.face);
+    expect(p.cards).toEqual(['course', 'gyro']);
     const lampRight = FIRING_LAMP.x + FIRING_LAMP.bezel;
-    expect(p.x - p.radius - p.rim - lampRight).toBeGreaterThan(0.015);
-    // Wholly on the hood's face: over the glacis's top edge, under the roof.
-    expect(p.y - p.radius - p.rim).toBeGreaterThan(GLACIS.hoodBottom + 0.01);
-    expect(p.y + p.radius + p.rim).toBeLessThan(HULL.roof - 0.05);
-    expect(p.x + p.radius + p.rim).toBeLessThan(HULL.halfWidth - 0.2);
+    const dialRight = TURRET_DIAL.x + TURRET_DIAL.radius + TURRET_DIAL.rim;
+    for (const c of caseCorners(p)) {
+      expect(c[0] - Math.max(lampRight, dialRight)).toBeGreaterThan(0.06);
+      expect(c[1]).toBeGreaterThan(GLACIS.hoodBottom + 0.03);
+      expect(c[1]).toBeLessThan(HULL.roof - 0.1);
+      expect(c[0]).toBeLessThan(HULL.halfWidth - 0.2);
+    }
+    // The back plate's corners stand in front of the wall (a turned box's near side comes nearest it).
+    const [w, h] = caseSize(p);
+    for (const x of [-w, w]) for (const y of [-h, h]) expect(boxToFrame(p, [x, y, backFront(p)], [0, 0, 0])[2] - p.wall).toBeGreaterThanOrEqual(0.003 - 1e-9);
+    // Turned towards the eyes: the window looks within 40° of them.
+    const n = boxDirToFrame(p, [0, 0, 1]);
+    const to = [eye[0] - p.x, eye[2] - p.z];
+    const cos = (n[0] * to[0] + n[2] * to[1]) / Math.hypot(to[0], to[1]);
+    expect(Math.acos(cos) / DEG).toBeLessThan(40);
   });
 
-  it('stands out of the way of a head leaning in, marks and all, as the dial does', () => {
-    const front = p.z + 2 * p.markGap + 0.002;
-    // The eyes come no further forward than headBox[2] ahead of the eye point; nothing of it within the fade's EYE_CLEARANCE of there.
-    expect(SEATS.driver.eye[2] - SEATS.driver.headBox[2] - front).toBeGreaterThan(EYE_CLEARANCE - 0.012);
-    expect(faceOut(p) + 2 * p.markGap + 0.002).toBeLessThanOrEqual(TURRET_DIAL.proud + TURRET_DIAL.faceGap + TURRET_DIAL.pointerGap + 0.002 + 0.004);
-    expect(p.faceGap).toBeGreaterThanOrEqual(0.003);
-    expect(p.markGap).toBeGreaterThanOrEqual(0.003);
-  });
-
-  it("keeps the driver's eyes EYE_CLEARANCE from it all along the head box's edges", () => {
+  it("keeps the driver's eyes EYE_CLEARANCE from it and its crank all along the head box's edges", () => {
     const seat = SEATS.driver;
     const [left, right, forward, back] = seat.headBox;
-    const points = facePoints(p, p.radius + p.rim).map((q) => [q[0], q[1], q[2] + 2 * p.markGap + 0.002]);
+    const hub = COURSE_CRANK_HUB;
+    const points = caseCorners(p).concat([[hub[0], hub[1], hub[2] + 0.01 + COURSE_CRANK.knobLength]]);
     for (let k = 0; k <= 8; k++) {
       const x = seat.eye[0] - left + ((left + right) * k) / 8;
       const z = seat.eye[2] - forward + ((forward + back) * k) / 8;
-      for (const at of [[x, seat.eye[1], seat.eye[2] - forward], [seat.eye[0] - left, seat.eye[1], z], [seat.eye[0], seat.eye[1] + seat.headUp, seat.eye[2]]]) {
-        for (const q of points) expect(dist(at, q)).toBeGreaterThan(EYE_CLEARANCE - 0.01);
+      for (const at of [[x, seat.eye[1], seat.eye[2] - forward], [seat.eye[0] + right, seat.eye[1], z], [seat.eye[0], seat.eye[1] + seat.headUp, seat.eye[2]]]) {
+        for (const q of points) expect(dist(at, q), `head at ${at.map((v) => v.toFixed(2))}, box at ${q.map((v) => v.toFixed(3))}`).toBeGreaterThan(EYE_CLEARANCE - 0.01);
       }
     }
   });
 
-  it('is a glance right from the slit, its figures as big to the eye as the dial\'s', () => {
+  it('is a glance right from the slit, its cards big enough to read', () => {
     const toFace = [p.x - eye[0], p.y - eye[1], p.z - eye[2]];
     const away = Math.hypot(...toFace);
-    expect(away).toBeLessThan(0.65);
+    expect(away).toBeLessThan(0.7);
     const right = Math.atan2(toFace[0], -toFace[2]) / DEG;
     expect(right).toBeGreaterThan(40);
-    expect(right).toBeLessThan(62);
-    // The card's radius seen from the eyes: at least the dial's.
-    const dialAway = dist(eye, [TURRET_DIAL.x, TURRET_DIAL.y, TURRET_DIAL.z]);
-    expect(p.radius / away).toBeGreaterThan((TURRET_DIAL.radius / dialAway) * 0.95);
+    expect(right).toBeLessThan(68);
+    // A card's band (its figures about half of it) at least 1.5° tall to the eye; the window at least 6° across.
+    expect(Math.atan2(p.band, away) / DEG).toBeGreaterThan(1.5);
+    expect(Math.atan2(2 * windowSize(p)[0], away) / DEG).toBeGreaterThan(6);
   });
 
-  it("is in plain sight from the driver's seat: nothing of the hull, the periscope or its crank (turned any way) in front of it", async () => {
+  it("is in plain sight through its window from the driver's seat: nothing of its own frame, the hull, the periscope or its crank (turned any way) in front of the cards", async () => {
     const { Group, Raycaster, Vector3 } = await import('@iwsdk/core');
     const { createHull } = await import('../src/scene-assets/cabin.scene-asset.js');
     const periscope = await import('../src/scene-assets/periscope.scene-asset.js');
@@ -185,7 +202,7 @@ describe("the driver's compass (F2.9)", () => {
     mount.add(crank);
     hull.add(mount);
     const ray = new Raycaster();
-    const targets = facePoints(p, p.radius * 0.95);
+    const targets = windowTargets(p);
     for (let k = 0; k < 12; k++) {
       crank.rotation.z = (k / 12) * 2 * Math.PI;
       hull.updateMatrixWorld(true);
@@ -203,23 +220,23 @@ describe("the driver's compass (F2.9)", () => {
     }
   });
 
-  it("has its course crank beside it, the knob's circle never over the face, in reach from the seat and clear of the periscope's crank", () => {
+  it("has its course crank beside it, the knob's circle clear of the box, in reach from the seat and clear of the periscope's crank", () => {
     const hub = COURSE_CRANK_HUB;
-    const knobOut = COURSE_CRANK.radius + 0.015;
-    expect(Math.hypot(hub[0] - p.x, hub[1] - p.y) - knobOut - (p.radius + p.rim)).toBeGreaterThan(0.009);
+    const rightmost = Math.max(...caseCorners(p).map((c) => c[0]));
+    expect(hub[0] - COURSE_KNOB_OUT - rightmost).toBeGreaterThan(0.009);
     // The hub's 4 cm drum sunk a little into the hood's face.
     expect(hub[2] - 0.02).toBeLessThan(GLACIS.face);
     expect(hub[2] - 0.02).toBeGreaterThan(GLACIS.face - 0.01);
     // Over the glacis's top edge, the knob's lowest included.
-    expect(hub[1] - knobOut).toBeGreaterThan(GLACIS.hoodBottom + 0.01);
+    expect(hub[1] - COURSE_KNOB_OUT).toBeGreaterThan(GLACIS.hoodBottom + 0.01);
     // Within a seated arm's reach, at chest height.
     const knobFront = [hub[0], hub[1], hub[2] + 0.01 + COURSE_CRANK.knobLength];
-    expect(dist(eye, knobFront)).toBeLessThan(0.75);
+    expect(dist(eye, knobFront)).toBeLessThan(0.8);
     expect(eye[1] - hub[1]).toBeGreaterThan(-0.05);
     expect(eye[1] - hub[1]).toBeLessThan(0.4);
     // The periscope's crank's knob circle (with the knob's own radius) and this one's don't meet.
     const s = PERISCOPES.driver;
-    expect(Math.hypot(hub[0] - s.crank[0], hub[1] - s.crank[1])).toBeGreaterThan(knobOut + PERISCOPE_CRANK.radius + 0.015 + 0.03);
+    expect(Math.hypot(hub[0] - s.crank[0], hub[1] - s.crank[1])).toBeGreaterThan(COURSE_KNOB_OUT + PERISCOPE_CRANK.radius + 0.015 + 0.03);
   });
 });
 
@@ -228,29 +245,33 @@ describe("the gunner's compass (F2.9)", () => {
   const eye = SEATS.gunner.eye;
 
   it("is on the turret's front wall over the crew board, under the roof's rounded edge, clear of the board's clip and the lamp's repeater", () => {
-    expect(p.z - faceOut(p)).toBeCloseTo(TURRET.front + HULL.wall);
-    const top = p.y + p.radius + p.rim;
-    const bottom = p.y - p.radius - p.rim;
-    expect(top).toBeLessThan(TURRET.roof - TURRET_INSIDE_ROUNDING);
+    expect(p.wall).toBeCloseTo(TURRET.front + HULL.wall);
+    expect(p.yaw).toBe(0);
+    expect(p.cards).toEqual(['gyro']);
+    const [w, h] = caseSize(p);
+    expect(p.y + h).toBeLessThan(TURRET.roof - TURRET_INSIDE_ROUNDING);
     const b = BOARDS.gunner;
     const clipTop = b.y + b.height / 2 + BOARD_BORDER + CLIP.height;
-    expect(bottom - clipTop).toBeGreaterThan(0.02);
+    expect(p.y - h - clipTop).toBeGreaterThan(0.02);
     const repeaterRight = LAMP_REPEATER.x + LAMP_REPEATER.bezel;
-    expect(p.x - p.radius - p.rim - repeaterRight).toBeGreaterThan(0.05);
-    expect(p.x + p.radius + p.rim).toBeLessThan(TURRET.halfWidth - HULL.wall - TURRET_INSIDE_ROUNDING);
+    expect(p.x - w - repeaterRight).toBeGreaterThan(0.05);
+    expect(p.x + w).toBeLessThan(TURRET.halfWidth - HULL.wall - TURRET_INSIDE_ROUNDING);
+    expect(p.z + backFront(p) - p.wall).toBeGreaterThanOrEqual(0.003 - 1e-9);
   });
 
-  it('is about a metre from the eyes, up and right of the sight, bigger for it, if not as big to the eye as the driver\'s', () => {
+  it("is about a metre from the eyes, up and right of the sight, and bigger for it: its figures as big to the eye as the driver's", () => {
     const away = dist(eye, [p.x, p.y, p.z]);
     expect(away).toBeGreaterThan(0.8);
     expect(away).toBeLessThan(1.1);
     const d = DRIVER_COMPASS;
     const driverAway = dist(SEATS.driver.eye, [d.x, d.y, d.z]);
-    expect(p.radius).toBeGreaterThan(d.radius);
-    expect(p.radius / away).toBeGreaterThan((d.radius / driverAway) * 0.55);
+    expect(p.band / away).toBeGreaterThan((d.band / driverAway) * 0.95);
+    // Square to the wall, it looks within 30° of the eyes.
+    const to = [eye[0] - p.x, eye[2] - p.z];
+    expect(Math.atan2(Math.abs(to[0]), to[1]) / DEG).toBeLessThan(30);
   });
 
-  it("is in plain sight from the gunner's seat: nothing of the turret, the gun, the sight or the gunner's periscope in front of it", async () => {
+  it("is in plain sight through its window from the gunner's seat: nothing of its frame, the turret, the gun, the sight or the gunner's periscope in front of the card", async () => {
     const { Group, Raycaster, Vector3 } = await import('@iwsdk/core');
     const { createTurret, createGun } = await import('../src/scene-assets/cabin.scene-asset.js');
     const periscope = await import('../src/scene-assets/periscope.scene-asset.js');
@@ -268,7 +289,7 @@ describe("the gunner's compass (F2.9)", () => {
     mount.add(crank);
     turret.add(mount);
     const ray = new Raycaster();
-    const targets = facePoints(p, p.radius * 0.95);
+    const targets = windowTargets(p);
     for (let k = 0; k < 12; k++) {
       crank.rotation.z = (k / 12) * 2 * Math.PI;
       turret.updateMatrixWorld(true);
@@ -280,7 +301,7 @@ describe("the gunner's compass (F2.9)", () => {
           ray.set(from, to.sub(from).normalize());
           ray.far = length - 0.002;
           const hit = ray.intersectObject(turret, true)[0];
-          expect(hit ? hit.object.name || 'a mesh' : 'nothing', `crank at ${k * 30}°, eyes moved (${dx}, ${dy})`).toBe('nothing');
+          expect(hit ? hit.object.name || 'a mesh' : 'nothing', `crank at ${k * 30}°, eyes moved (${dx}, ${dy}), at ${t.map((v) => v.toFixed(3))}`).toBe('nothing');
         }
       }
     }

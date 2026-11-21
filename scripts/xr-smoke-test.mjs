@@ -4754,14 +4754,14 @@ async function theFiringLamp() {
 
 /**
  * 6ze. The compasses (F2.9, docs/compass.md): both read 000 with the tank
- *      facing north; turned east, the driver's card shows 090 under its
- *      lubber; the turret at 9 o'clock brings the gunner's back to 000
- *      with its hull mark turned to the right. Practice → Drive the tank →
- *      Steer a course seats the player as driver with an order on the
- *      board and a sign; the right hand turns the course crank a quarter
- *      clockwise and the course mark goes round 22.5° (screenshot from the
- *      driver's eyes); driving on the ordered course for 3 s finishes the
- *      drill. A screenshot of the gunner's from the gunner's eyes.
+ *      facing north; turned east, the driver's gyro card shows 090 on its
+ *      lubber line; the turret at 9 o'clock brings the gunner's (turning
+ *      with the turret) back to 000. Practice → Drive the tank → Steer a
+ *      course seats the player as driver with an order on the board and a
+ *      sign; the right hand turns the course crank a quarter clockwise and
+ *      the course card goes round 22.5° (screenshot from the driver's
+ *      eyes); driving on the ordered course for 3 s finishes the drill. A
+ *      screenshot of the gunner's from the gunner's eyes.
  */
 async function theCompasses() {
   const state = () => evalInApp('window.__compass.state()');
@@ -4771,14 +4771,15 @@ async function theCompasses() {
   const north = await waitFor('both compasses on 000', () => { const s = state(); return s.driver.reads === '000' && s.gunner.reads === '000' && s; }, 8000).catch(() => state());
   evalInApp('(window.__drive.place(0, 0, -Math.PI / 2), true)');
   const east = await waitFor("the driver's compass on 090", () => { const s = state(); return s.driver.reads === '090' && s; }, 8000).catch(() => state());
-  check("Both compasses read 000 facing north, and turned east the driver's card turns a quarter to show 090 under its lubber",
-    north.driver.reads === '000' && north.gunner.reads === '000' && east.driver.reads === '090' && Math.abs(east.driver.cardDeg - 90) < 0.5,
-    `north: driver ${north.driver.reads}, gunner ${north.gunner.reads}; east: driver ${east.driver.reads}, card ${east.driver.cardDeg.toFixed(1)}°`);
+  check("Both compasses read 000 facing north, and turned east the driver's gyro card slides round to show 090 on its lubber line",
+    north.driver.reads === '000' && north.gunner.reads === '000' && east.driver.reads === '090' && Math.abs(east.driver.gyroDeg - 90) < 0.5,
+    `north: driver ${north.driver.reads}, gunner ${north.gunner.reads}; east: driver ${east.driver.reads}, gyro card at ${east.driver.gyroDeg.toFixed(1)}°`);
   evalInApp('(window.__turretDial.toHour(9), true)');
-  const left = await waitFor("the gun at 9 o'clock", () => { const s = state(); return s.gunner.reads === '000' && Math.abs(s.gunner.hullMarkDeg + 90) < 0.5 && s; }, 20000).catch(() => state());
-  check("With the hull east and the turret at 9 o'clock the gunner's compass reads 000, its hull mark turned to the right",
-    left.gunner.reads === '000' && left.gunner.hull === 90 && Math.abs(left.gunner.hullMarkDeg + 90) < 0.5,
-    `gunner ${left.gunner.reads}, hull ${left.gunner.hull}, hull mark ${left.gunner.hullMarkDeg.toFixed(1)}°`);
+  const left = await waitFor("the gun at 9 o'clock", () => { const s = state(); return s.gunner.reads === '000' && s; }, 20000).catch(() => state());
+  const gyroOff = Math.abs(((left.gunner.gyroDeg + 180) % 360) - 180);
+  check("With the hull east and the turret at 9 o'clock the gunner's compass, turning with the turret, reads the gun's 000",
+    left.gunner.reads === '000' && Math.round(left.gunner.hull) === 90 && gyroOff < 0.5,
+    `gunner ${left.gunner.reads}, gyro card at ${left.gunner.gyroDeg.toFixed(1)}°, hull ${left.gunner.hull}`);
   const gunnerEye = evalInApp('window.__seats.eye("gunner")');
   const gunnerAt = evalInApp('window.__compass.at().gunner');
   evalInApp("(window.__seats.ask('gunner'), true)");
@@ -4826,7 +4827,7 @@ async function theCompasses() {
     handTo(knob(start + deg), 0.25);
     await sleep(450);
   }
-  const set = await waitFor('the course mark at 022', () => { const s = state(); return Math.abs(s.driver.course - 22.5) < 3 && s; }, 6000).catch(() => state());
+  const set = await waitFor('the course card at 022', () => { const s = state(); return Math.abs(s.driver.course - 22.5) < 3 && s; }, 6000).catch(() => state());
   squeeze(0);
   const eye = evalInApp('window.__seats.eye("driver")');
   const at = evalInApp('window.__compass.at().driver');
@@ -4834,9 +4835,9 @@ async function theCompasses() {
   iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(at) });
   await sleep(300);
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-compass-driver.png'], {});
-  check('A quarter turn of the crank clockwise moves the course mark 22.5° clockwise round the card',
-    Math.abs(set.driver.course - 22.5) < 3 && Math.abs(set.driver.bugDeg - (set.driver.bearing - set.driver.course)) < 0.5,
-    `course ${set.driver.course.toFixed(1)}°, crank ${(set.crankDeg - start).toFixed(0)}°, mark ${set.driver.bugDeg.toFixed(1)}° on a card showing ${set.driver.reads}`);
+  check('A quarter turn of the crank clockwise slides the course card round 22.5°, the gyro card staying put',
+    Math.abs(set.driver.course - 22.5) < 3 && Math.abs(set.driver.courseDeg - set.driver.course) < 0.5 && Math.abs(set.driver.gyroDeg - set.driver.bearing) < 0.5,
+    `course ${set.driver.course.toFixed(1)}°, crank ${(set.crankDeg - start).toFixed(0)}°, course card at ${set.driver.courseDeg.toFixed(1)}°, gyro card at ${set.driver.gyroDeg.toFixed(1)}° (reads ${set.driver.reads})`);
   iwsdk(['xr', 'set-device-state'], {});
 
   // On course for 3 s, moving: the drill is done.

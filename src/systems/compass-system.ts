@@ -1,11 +1,11 @@
-import { CanvasTexture, createSystem, type Entity, Group, type Mesh, type MeshBasicMaterial, SRGBColorSpace, VisibilityState } from '@iwsdk/core';
+import { CanvasTexture, createSystem, type Entity, Group, type Mesh, type MeshBasicMaterial, RepeatWrapping, SRGBColorSpace, type Texture, VisibilityState } from '@iwsdk/core';
 import { createWheel } from '../scene-assets/mechanism.scene-asset.js';
-import { createCompassCard, createCourseBug, createHullMark, createLubber } from '../scene-assets/compass.scene-asset.js';
+import { createCardEdge, createLubber } from '../scene-assets/compass.scene-asset.js';
 import { SEATS, seatToHull } from '../sim/cabin.js';
 import {
   bearingText,
-  bugAngle,
-  cardAngle,
+  boxDirToFrame,
+  cardOffset,
   COMPASSES,
   type CompassId,
   type CompassPlace,
@@ -17,7 +17,6 @@ import {
   gunBearing,
   HOLD_COURSE,
   hullBearing,
-  hullMarkAngle,
   pickCourse,
   pointName,
   stepCourseDrill,
@@ -34,8 +33,9 @@ import { seating } from './seating.js';
 import { turretState } from './turret-system.js';
 
 const DEG = Math.PI / 180;
-/** The card's canvas, px square. */
-const CARD_PX = 512;
+/** A card's edge, painted 0° to 360° left to right, px. */
+const STRIP_W = 4096;
+const STRIP_H = 176;
 /** The course crank's name in the mechanism kit and handUse. */
 const CRANK = 'course-crank';
 /** How long the drill's sign stays up, s. */
@@ -49,56 +49,57 @@ export function steerACourse(): void {
 }
 
 interface CompassDebug {
-  /** What each compass shows, degrees: the bearing under its lubber, the course mark's (driver's), the card's and marks' turns as drawn; the drill. */
+  /** What each compass shows, degrees: the bearing on its lubber line, the driver's course card's; each card as drawn (its strip's offset as degrees); the drill. */
   state(): {
-    driver: { bearing: number; reads: string; course: number; cardDeg: number; bugDeg: number };
-    gunner: { bearing: number; reads: string; hull: number; cardDeg: number; hullMarkDeg: number };
+    driver: { bearing: number; reads: string; course: number; gyroDeg: number; courseDeg: number };
+    gunner: { bearing: number; reads: string; hull: number; gyroDeg: number };
     crankDeg: number;
     held: boolean;
     drill: { course: number; held: number; done: boolean } | null;
     sign: string;
   };
-  /** Set the driver's course mark, degrees (as the crank would leave it). */
+  /** Set the driver's course card, degrees (as the crank would leave it). */
   setCourse(deg: number): void;
   /** Practice → Steer a course; `course` instead of a random one. */
   drill(course?: number): void;
   /** Where the crank's knob is (hull space) with the crank at `deg` (unwrapped degrees, + anticlockwise as the driver sees it). */
   knob(deg: number): number[];
-  /** Each face's middle (hull space, the gunner's with the turret as drawn) and which way it faces: for the test's camera. */
+  /** Each window's middle (hull space, the gunner's with the turret as drawn) and which way it faces: for the test's camera. */
   at(): { driver: number[]; gunner: number[]; facing: { driver: number[]; gunner: number[] } };
 }
 
 interface Face {
   place: CompassPlace;
   mount: Group;
-  card: Mesh;
-  marks: Mesh[];
+  /** Each card's edge, top first, and its texture (its own offset, the strip shared). */
+  cards: Mesh[];
+  maps: Texture[];
+  lubber: Mesh;
 }
 
 /**
- * Compasses at both seats (F2.9, docs/compass.md): the driver's on the
- * hood's face right of the firing lamp, the gunner's on the turret's front
- * wall over the crew board. Each card turns so the bearing under its red
- * lubber is the way its seat faces: the hull's heading for the driver, the
- * gun's for the gunner (the card painted once, turned each frame). The
- * driver sets an orange course mark with a small crank beside the case;
- * the gunner's has a small hull under the lubber, turned by the turret's
- * angle. Both read the tank and turret as this page draws them
- * (DriveSystem's and TurretSystem's `shown`), so nothing is sent; the
- * course mark is the driver's own reminder, never shared. Runs after
- * TurretSystem.
+ * Compasses at both seats (F2.9, docs/compass.md), as a German tank's
+ * gyro compass: a box with a window showing the edges of horizontal cards
+ * behind a red lubber line. The driver's, on the hood's face right of the
+ * turret dial, has the course card over the gyro card; the gunner's, on
+ * the turret's front wall over the crew board, the gyro card alone. Each
+ * card's edge is painted once as a strip, 0° to 360°, and slid past the
+ * line each frame by its texture's offset: the gyro card's to the hull's
+ * heading (driver) or the gun's bearing (gunner), the course card's to the
+ * course the driver sets with a small crank beside the box. Both read the
+ * tank and turret as this page draws them (DriveSystem's and
+ * TurretSystem's `shown`), so nothing is sent; the course card is the
+ * driver's own reminder, never shared. Runs after TurretSystem.
  */
 export class CompassSystem extends createSystem({}) {
   private faces!: Record<CompassId, Face>;
-  private texture!: CanvasTexture;
+  private strips!: Record<'course' | 'gyro', CanvasTexture>;
   private crank = new Wheel(COURSE_CRANK);
   private crankPart!: Mesh;
   private crankMount = new Group();
   /** The course the crank's angle 0 stands for, degrees: setCourse moves it so the crank's own angle never jumps. */
   private courseAtZero = 0;
   private course = 0;
-  private bug!: Mesh;
-  private hullMark!: Mesh;
   private drillState: CourseDrill | null = null;
   private sign!: FloatingSign;
   private signText = '';
@@ -107,33 +108,37 @@ export class CompassSystem extends createSystem({}) {
 
   init(): void {
     active = this;
-    this.texture = paintCard();
+    this.strips = { course: paintStrip('course'), gyro: paintStrip('gyro') };
     const turret: Entity | null = this.world.getSceneEntity('turret') ?? null;
     const make = (id: CompassId): Face => {
       const place = COMPASSES[id];
       const mount = new Group();
       mount.name = `Compass ${id}`;
       mount.position.set(place.x, place.y, place.z);
-      const card = createCompassCard(place);
-      const material = card.material as MeshBasicMaterial;
-      material.map = this.texture;
-      material.color.setRGB(1, 1, 1);
-      material.needsUpdate = true;
-      mount.add(card);
-      const marks = [createLubber(place)];
-      if (id === 'driver') marks.push(createCourseBug(place));
-      else marks.push(createHullMark(place));
-      for (const m of marks) mount.add(m);
+      mount.rotation.y = place.yaw;
+      const cards: Mesh[] = [];
+      const maps: Texture[] = [];
+      place.cards.forEach((kind, i) => {
+        const card = createCardEdge(place, i);
+        const map = this.strips[kind].clone();
+        map.needsUpdate = true;
+        const material = card.material as MeshBasicMaterial;
+        material.map = map;
+        material.needsUpdate = true;
+        mount.add(card);
+        cards.push(card);
+        maps.push(map);
+      });
+      const lubber = createLubber(place);
+      mount.add(lubber);
       if (id === 'gunner' && turret) this.world.createTransformEntity(mount, { parent: turret });
       else {
         if (id === 'gunner') console.warn('[Compass] no turret in the scene for the gunner\'s compass');
         this.world.createTransformEntity(mount);
       }
-      return { place, mount, card, marks };
+      return { place, mount, cards, maps, lubber };
     };
     this.faces = { driver: make('driver'), gunner: make('gunner') };
-    this.bug = this.faces.driver.marks[1];
-    this.hullMark = this.faces.gunner.marks[1];
 
     // The course crank, beside the driver's compass, on the hood's face: the driver's own, never sent.
     this.crankMount.name = 'Compass course crank mount';
@@ -155,11 +160,15 @@ export class CompassSystem extends createSystem({}) {
     this.world.createTransformEntity(this.sign.mesh);
 
     this.cleanupFuncs.push(() => {
-      this.texture.dispose();
+      for (const t of Object.values(this.strips)) t.dispose();
       for (const f of Object.values(this.faces)) {
-        f.card.geometry.dispose();
-        (f.card.material as MeshBasicMaterial).dispose();
-        for (const m of f.marks) m.geometry.dispose();
+        for (const m of f.maps) m.dispose();
+        for (const c of f.cards) {
+          c.geometry.dispose();
+          (c.material as MeshBasicMaterial).dispose();
+        }
+        f.lubber.geometry.dispose();
+        (f.lubber.material as MeshBasicMaterial).dispose();
       }
       this.crankPart.geometry.dispose();
       if (active === this) active = null;
@@ -174,8 +183,8 @@ export class CompassSystem extends createSystem({}) {
         const gb = gunBearing(t.heading, yaw);
         const d = self.drillState;
         return {
-          driver: { bearing: hb, reads: bearingText(hb), course: self.course, cardDeg: self.faces.driver.card.rotation.z / DEG, bugDeg: self.bug.rotation.z / DEG },
-          gunner: { bearing: gb, reads: bearingText(gb), hull: hb, cardDeg: self.faces.gunner.card.rotation.z / DEG, hullMarkDeg: self.hullMark.rotation.z / DEG },
+          driver: { bearing: hb, reads: bearingText(hb), course: self.course, courseDeg: self.faces.driver.maps[0].offset.x * 360, gyroDeg: self.faces.driver.maps[1].offset.x * 360 },
+          gunner: { bearing: gb, reads: bearingText(gb), hull: hb, gyroDeg: self.faces.gunner.maps[0].offset.x * 360 },
           crankDeg: self.crank.angle / DEG,
           held: self.crank.held[0] || self.crank.held[1],
           drill: d ? { course: d.course, held: d.held, done: d.done } : null,
@@ -194,10 +203,14 @@ export class CompassSystem extends createSystem({}) {
         const yaw = turretState().yaw;
         const d = COMPASSES.driver;
         const g = COMPASSES.gunner;
+        const gf = boxDirToFrame(g, [0, 0, 1]);
         return {
           driver: [d.x, d.y, d.z],
           gunner: seatToHull(SEATS.gunner, yaw, [g.x, g.y, g.z], [0, 0, 0]),
-          facing: { driver: [0, 0, 1], gunner: [Math.sin(yaw), 0, Math.cos(yaw)] },
+          facing: {
+            driver: boxDirToFrame(d, [0, 0, 1]),
+            gunner: [gf[0] * Math.cos(yaw) + gf[2] * Math.sin(yaw), 0, -gf[0] * Math.sin(yaw) + gf[2] * Math.cos(yaw)],
+          },
         };
       },
     };
@@ -219,8 +232,8 @@ export class CompassSystem extends createSystem({}) {
     const text = bearingText(c);
     crewLog.post(`Commander: driver, steer ${text} (${pointName(c)})`, 'info');
     const vr = this.world.visibilityState.peek() !== VisibilityState.NonImmersive;
-    this.say(`Steer ${text}`, vr ? 'Turn the crank by the compass to set the orange mark' : 'Compass right of the turret dial',
-      `Then steer till the mark is under the red lubber, ${HOLD_COURSE} s`);
+    this.say(`Steer ${text}`, vr ? 'Turn the crank by the compass: set the upper card to it' : 'Compass right of the turret dial: set the upper card to it',
+      `Then steer till the lower card's figures line up with it, ${HOLD_COURSE} s`);
   }
 
   update(delta: number): void {
@@ -229,18 +242,18 @@ export class CompassSystem extends createSystem({}) {
     const yaw = turretState().yaw;
     const hb = hullBearing(t.heading);
     const gb = gunBearing(t.heading, yaw);
-    // The course crank: its turn moves the mark (clockwise raises the course).
+    // The course crank: its turn moves the course card (clockwise raises the course).
     this.crankPart.rotation.z = this.crank.angle;
     this.course = courseFromCrank(this.courseAtZero, this.crank.angle);
-    this.faces.driver.card.rotation.z = cardAngle(hb);
-    this.bug.rotation.z = bugAngle(hb, this.course);
-    this.faces.gunner.card.rotation.z = cardAngle(gb);
-    this.hullMark.rotation.z = hullMarkAngle(yaw);
+    const d = this.faces.driver.maps;
+    d[0].offset.x = cardOffset(this.course);
+    d[1].offset.x = cardOffset(hb);
+    this.faces.gunner.maps[0].offset.x = cardOffset(gb);
 
-    const d = this.drillState;
-    if (d && !d.done && stepCourseDrill(d, hb, t.speed, delta)) {
-      crewLog.post(`On course ${bearingText(d.course)}`, 'good');
-      this.say(`On course ${bearingText(d.course)}`, 'Held for 3 s', 'Practice: Steer a course for another');
+    const drill = this.drillState;
+    if (drill && !drill.done && stepCourseDrill(drill, hb, t.speed, delta)) {
+      crewLog.post(`On course ${bearingText(drill.course)}`, 'good');
+      this.say(`On course ${bearingText(drill.course)}`, 'Held for 3 s', 'Practice: Steer a course for another');
     }
     if (this.sign.visible) {
       if (this.time > this.signUntil) this.sign.setVisible(false);
@@ -267,58 +280,50 @@ export class CompassSystem extends createSystem({}) {
 }
 
 /**
- * The card, painted once: cream, north up, bearings clockwise; a tick every
- * 5°, longer every 10°, and every 30° its figure in tens (3 for 030, as
- * compass cards are marked), the four quarters as N, E, S and W, N in red.
- * Each figure is written with its top to the rim, so it reads upright when
- * it comes to the lubber at the top.
+ * A card's edge, painted once as a strip 0° to 360° left to right (the
+ * cards read directly: figures grow to the right): a tick every 5°, longer
+ * every 10°, and every 10° its figure in tens (6 for 060, as compass cards
+ * are marked), bigger every 30°, the four quarters as N, E, S and W, N in
+ * red. The gyro card is cream with its ticks along its top edge; the
+ * course card, over it, is buff with its ticks along its bottom edge, so
+ * the two cards' ticks meet across the gap between them.
  */
-function paintCard(): CanvasTexture {
+function paintStrip(kind: 'course' | 'gyro'): CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = CARD_PX;
-  canvas.height = CARD_PX;
+  canvas.width = STRIP_W;
+  canvas.height = STRIP_H;
   const ctx = canvas.getContext('2d')!;
-  const c = CARD_PX / 2;
-  ctx.fillStyle = '#efe6c8';
-  ctx.fillRect(0, 0, CARD_PX, CARD_PX);
+  const top = kind === 'gyro';
+  ctx.fillStyle = kind === 'gyro' ? '#efe6c8' : '#e2c48e';
+  ctx.fillRect(0, 0, STRIP_W, STRIP_H);
+  const perDeg = STRIP_W / 360;
   ctx.strokeStyle = '#1a1a14';
-  ctx.lineWidth = 8;
-  ctx.beginPath();
-  ctx.arc(c, c, c - 4, 0, 2 * Math.PI);
-  ctx.stroke();
   for (let deg = 0; deg < 360; deg += 5) {
-    const a = deg * DEG;
+    const x = deg * perDeg;
     const ten = deg % 10 === 0;
     const thirty = deg % 30 === 0;
-    const outer = c - 10;
-    const inner = outer - (thirty ? 34 : ten ? 26 : 16);
+    const length = thirty ? 54 : ten ? 42 : 26;
     ctx.lineWidth = thirty ? 7 : ten ? 5 : 3;
     ctx.beginPath();
-    ctx.moveTo(c + Math.sin(a) * outer, c - Math.cos(a) * outer);
-    ctx.lineTo(c + Math.sin(a) * inner, c - Math.cos(a) * inner);
+    ctx.moveTo(x, top ? 0 : STRIP_H);
+    ctx.lineTo(x, top ? length : STRIP_H - length);
     ctx.stroke();
   }
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const words: Record<number, string> = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
-  for (let deg = 0; deg < 360; deg += 30) {
+  const y = top ? STRIP_H * 0.66 : STRIP_H * 0.34;
+  for (let deg = 0; deg < 360; deg += 10) {
     const word = words[deg] ?? String(deg / 10);
-    const quarter = deg in words;
-    ctx.save();
-    ctx.translate(c, c);
-    ctx.rotate(deg * DEG);
+    const thirty = deg % 30 === 0;
     ctx.fillStyle = deg === 0 ? '#b3261e' : '#1a1a14';
-    ctx.font = `bold ${quarter ? 76 : 58}px sans-serif`;
-    ctx.fillText(word, 0, -(c - 90));
-    ctx.restore();
+    ctx.font = `bold ${thirty ? 92 : 64}px sans-serif`;
+    // Each figure also past either end, so those near 0° are whole where the strip repeats.
+    for (const x of [deg * perDeg, deg * perDeg + STRIP_W, deg * perDeg - STRIP_W]) ctx.fillText(word, x, y);
   }
-  // The pivot.
-  ctx.fillStyle = '#1a1a14';
-  ctx.beginPath();
-  ctx.arc(c, c, 10, 0, 2 * Math.PI);
-  ctx.fill();
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
-  texture.anisotropy = 4;
+  texture.wrapS = RepeatWrapping;
+  texture.anisotropy = 8;
   return texture;
 }
