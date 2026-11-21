@@ -349,6 +349,38 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
+  it('on the compasses (F2.9): their boxes on the hull and turret, the cards behind the windows, the lubber lines and the course crank', async () => {
+    const { Group } = await import('@iwsdk/core');
+    const compass = await import('../src/sim/compass.js');
+    const asset = await import('../src/scene-assets/compass.scene-asset.js');
+    const { createWheel } = await import('../src/scene-assets/mechanism.scene-asset.js');
+    // The cards turn by sliding their painted strips, not their meshes: one pose each is enough.
+    const mountOf = (p: typeof compass.DRIVER_COMPASS) => {
+      const mount = new Group();
+      mount.position.set(p.x, p.y, p.z);
+      mount.rotation.y = p.yaw;
+      p.cards.forEach((_, i) => mount.add(asset.createCardEdge(p, i)));
+      mount.add(asset.createLubber(p));
+      return mount;
+    };
+    for (const turn of [0, 37, 200]) {
+      const hull = cabin.createHull();
+      hull.add(mountOf(compass.DRIVER_COMPASS));
+      const crank = createWheel(compass.COURSE_CRANK);
+      crank.position.set(...compass.COURSE_CRANK_HUB);
+      crank.rotation.z = turn * (Math.PI / 180);
+      hull.add(crank);
+      hull.updateMatrixWorld(true);
+      expectNone([hull], CABIN_GAP);
+      const turret = cabin.createTurret();
+      turret.position.set(0, 0, TURRET.z);
+      turret.rotation.y = turn * (Math.PI / 180);
+      turret.add(mountOf(compass.GUNNER_COMPASS));
+      turret.updateMatrixWorld(true);
+      expectNone([turret], CABIN_GAP);
+    }
+  });
+
   it('on the firing lamp (F2.5): its lens in its bezel on the slit frame, and the repeater on the turret turned two ways', async () => {
     const { MeshBasicMaterial } = await import('@iwsdk/core');
     const { FIRING_LAMP, LAMP_REPEATER } = await import('../src/sim/firing-lamp.js');

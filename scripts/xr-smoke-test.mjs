@@ -3932,6 +3932,9 @@ async function theCommander() {
   await sleep(500);
   const before = c().said;
   // While he speaks: the tank ducked, and his voice coming out (watched in the page: a call lasts a second or two).
+  // Read the level once first: the page makes its meter at the first read, which comes back silent, and on a slow
+  // runner a call may get only one look (2026-11-21, a frame every 630 ms: 1 look, RMS 0).
+  evalInApp('(window.__commander.outputLevel(), true)');
   evalInApp(`(() => {
     const p = (window.__commanderProbe = { duck: 0, level: 0, frames: 0 });
     const id = setInterval(() => {
@@ -4240,7 +4243,7 @@ async function partFive() {
 
 /**
  * Part 6: the driver's turret dial, the callout card, the firing lamp, the
- * biathlon course and the missions.
+ * compasses, the biathlon course and the missions.
  */
 async function partSix() {
   // 6n. The driver's turret position dial (F2.3).
@@ -4251,6 +4254,9 @@ async function partSix() {
 
   // 6p. The firing lamp (F2.5).
   await theFiringLamp();
+
+  // 6ze. The compasses (F2.9).
+  await theCompasses();
 
   // 6q. The biathlon course (F5.3a).
   await theBiathlonCourse();
@@ -4703,6 +4709,105 @@ async function theFiringLamp() {
     gripped.handOnTrigger && gripped.look === 'dark' && !gripped.ready && !letGo.handOnTrigger,
     `holding ${JSON.stringify(gripped)}, let go ${JSON.stringify(letGo)}`);
   iwsdk(['xr', 'set-device-state'], {});
+}
+
+/**
+ * 6ze. The compasses (F2.9, docs/compass.md): both read 000 with the tank
+ *      facing north; turned east, the driver's gyro card shows 090 on its
+ *      lubber line; the turret at 9 o'clock brings the gunner's (turning
+ *      with the turret) back to 000. Practice → Drive the tank → Steer a
+ *      course seats the player as driver with an order on the board and a
+ *      sign; the right hand turns the course crank a quarter clockwise and
+ *      the course card goes round 22.5° (screenshot from the driver's
+ *      eyes); driving on the ordered course for 3 s finishes the drill. A
+ *      screenshot of the gunner's from the gunner's eyes.
+ */
+async function theCompasses() {
+  const state = () => evalInApp('window.__compass.state()');
+  const squeeze = (value) => iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value }] });
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp('(window.__turret.set(null), window.__turret.forward(), window.__drive.set(null), window.__drive.place(0, 0, 0), true)');
+  const north = await waitFor('both compasses on 000', () => { const s = state(); return s.driver.reads === '000' && s.gunner.reads === '000' && s; }, 8000).catch(() => state());
+  evalInApp('(window.__drive.place(0, 0, -Math.PI / 2), true)');
+  const east = await waitFor("the driver's compass on 090", () => { const s = state(); return s.driver.reads === '090' && s; }, 8000).catch(() => state());
+  check("Both compasses read 000 facing north, and turned east the driver's gyro card slides round to show 090 on its lubber line",
+    north.driver.reads === '000' && north.gunner.reads === '000' && east.driver.reads === '090' && Math.abs(east.driver.gyroDeg - 90) < 0.5,
+    `north: driver ${north.driver.reads}, gunner ${north.gunner.reads}; east: driver ${east.driver.reads}, gyro card at ${east.driver.gyroDeg.toFixed(1)}°`);
+  evalInApp('(window.__turretDial.toHour(9), true)');
+  const left = await waitFor("the gun at 9 o'clock", () => { const s = state(); return s.gunner.reads === '000' && s; }, 20000).catch(() => state());
+  const gyroOff = Math.abs(((left.gunner.gyroDeg + 180) % 360) - 180);
+  check("With the hull east and the turret at 9 o'clock the gunner's compass, turning with the turret, reads the gun's 000",
+    left.gunner.reads === '000' && Math.round(left.gunner.hull) === 90 && gyroOff < 0.5,
+    `gunner ${left.gunner.reads}, gyro card at ${left.gunner.gyroDeg.toFixed(1)}°, hull ${left.gunner.hull}`);
+  const gunnerEye = evalInApp('window.__seats.eye("gunner")');
+  const gunnerAt = evalInApp('window.__compass.at().gunner');
+  evalInApp("(window.__seats.ask('gunner'), true)");
+  await sleep(500);
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin(gunnerEye) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(gunnerAt) });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-compass-gunner.png'], {});
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp('(window.__turret.forward(), window.__compass.setCourse(0), true)');
+
+  // The drill: an order on the board and a sign, in the driver's seat.
+  await menuButtonPress();
+  await menuClick('menu-course');
+  const ordered = await waitFor('the course order', () => { const s = state(); return s.drill && s.sign && s; }, 8000).catch(() => state());
+  const seat = evalInApp('window.__seats.mine');
+  const board = JSON.stringify(evalInApp('window.__crewBoard.text().calls'));
+  check('Practice → Drive the tank → Steer a course seats the player as driver, with the order on the board and a sign',
+    seat === 'driver' && ordered.drill !== null && board.includes(`steer ${String(ordered.drill?.course ?? -1).padStart(3, '0')}`) && ordered.sign.startsWith('Steer'),
+    `seat ${seat}, drill ${JSON.stringify(ordered.drill)}, sign "${ordered.sign}"`);
+
+  // The course crank: the right hand on its knob, a quarter turn clockwise.
+  let fistOffset = [0, 0, 0];
+  const near = evalInApp('window.__compass.knob(0)').map((v, i) => v + (i === 2 ? 0.1 : 0));
+  iwsdk(['xr', 'set-transform'], { device: 'controller-right', position: toOrigin(near) });
+  await sleep(400);
+  const fist = evalInApp(`(() => {
+    const w = window.__debug.world;
+    const space = w.player.gripSpaces.right;
+    space.updateWorldMatrix(true, false);
+    const q = space.getWorldQuaternion(w.player.quaternion.clone());
+    return w.player.position.clone().set(0.016, -0.019, 0.011).applyQuaternion(q)
+      .add(space.getWorldPosition(w.player.position.clone())).toArray();
+  })()`);
+  fistOffset = fist.map((v, i) => v - near[i]);
+  const handTo = (p, duration = 0.4) => iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin([p[0] - fistOffset[0], p[1] - fistOffset[1], p[2] - fistOffset[2]]), duration });
+  const start = state().crankDeg;
+  const knob = (deg) => evalInApp(`window.__compass.knob(${deg})`);
+  handTo(knob(start));
+  await sleep(600);
+  squeeze(1);
+  const held = await waitFor('a hand on the course crank', () => { const s = state(); return s.held && s; }, 3000, 100).catch(() => state());
+  check('Squeezing at the course crank beside the compass takes hold of it', held.held === true, `held ${held.held}`);
+  for (let deg = -15; deg >= -90; deg -= 15) {
+    handTo(knob(start + deg), 0.25);
+    await sleep(450);
+  }
+  const set = await waitFor('the course card at 022', () => { const s = state(); return Math.abs(s.driver.course - 22.5) < 3 && s; }, 6000).catch(() => state());
+  squeeze(0);
+  const eye = evalInApp('window.__seats.eye("driver")');
+  const at = evalInApp('window.__compass.at().driver');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin(eye) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(at) });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-compass-driver.png'], {});
+  check('A quarter turn of the crank clockwise slides the course card round 22.5°, the gyro card staying put',
+    Math.abs(set.driver.course - 22.5) < 3 && Math.abs(set.driver.courseDeg - set.driver.course) < 0.5 && Math.abs(set.driver.gyroDeg - set.driver.bearing) < 0.5,
+    `course ${set.driver.course.toFixed(1)}°, crank ${(set.crankDeg - start).toFixed(0)}°, course card at ${set.driver.courseDeg.toFixed(1)}°, gyro card at ${set.driver.gyroDeg.toFixed(1)}° (reads ${set.driver.reads})`);
+  iwsdk(['xr', 'set-device-state'], {});
+
+  // On course for 3 s, moving: the drill is done.
+  const course = ordered.drill?.course ?? 90;
+  evalInApp(`(window.__drive.place(0, 0, ${-course} * Math.PI / 180), window.__drive.engine('start'), window.__drive.set({ left: 0.6, right: 0.6 }), true)`);
+  const done = await waitFor('the drill done', () => { const s = state(); return s.drill?.done && s; }, 30000).catch(() => state());
+  const boardAfter = JSON.stringify(evalInApp('window.__crewBoard.text().calls'));
+  check(`Driving on ${String(course).padStart(3, '0')} for 3 s finishes the drill, "On course" on the board`,
+    done.drill?.done === true && boardAfter.includes('On course'),
+    `drill ${JSON.stringify(done.drill)}, reads ${done.driver.reads}`);
+  evalInApp('(window.__drive.set(null), window.__drive.place(0, 0, 0), window.__drive.engine("stop"), window.__compass.setCourse(0), true)');
 }
 
 /** Every part ends with these: the perf log, PC VR without the frame-rate API, and the console. */

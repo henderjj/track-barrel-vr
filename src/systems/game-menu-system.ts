@@ -23,6 +23,7 @@ import { practiseLine, raceStatus, readyAtLine, readyToFire, runStatus, shownRun
 import { courseStatus, goToCourse, goToObstacle } from './course-system.js';
 import { OBSTACLES } from '../sim/course.js';
 import { turretToHour } from './turret-dial-system.js';
+import { steerACourse } from './compass-system.js';
 import { watchTheLamp } from './firing-lamp-system.js';
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
@@ -407,6 +408,12 @@ export class GameMenuSystem extends createSystem({}) {
       this.setOpen(false);
       stopRide();
       headOut();
+    });
+    ui.on('menu-course', () => {
+      // The compasses (F2.9): alone, into the driver's seat, with an order to steer a new course.
+      this.setOpen(false);
+      stopRide();
+      steerACourse();
     });
     ui.on('menu-turret-dial', () => {
       // The driver's turret dial (F2.3): alone, into the driver's seat, and the turret turns to 3 o'clock.

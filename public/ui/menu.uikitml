@@ -660,6 +660,7 @@
               <Button id="menu-drive-go" class="choice" size="sm" variant="secondary">Drive</Button>
               <Button id="menu-drive-reset" class="choice" size="sm" variant="secondary">Back to start</Button>
               <Button id="menu-head-out" class="choice" size="sm" variant="secondary">Head out</Button>
+              <Button id="menu-course" class="choice" size="sm" variant="secondary">Steer a course</Button>
             </div>
           </div>
           <div class="setting">
