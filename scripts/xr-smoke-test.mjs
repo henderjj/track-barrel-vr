@@ -4623,6 +4623,8 @@ async function theBiathlonCourse() {
   // Called where it passed the board, in words (docs/biathlon-race.md, "Calling a miss"): not "150 m over", where it landed far behind.
   check('A shell through the board\'s white, outside its black disc, misses it, called where it passed the board with no numbers',
     white?.kind !== 'target' && white?.line === 'Miss the line 1 left board: just high, just right', `shot: ${white?.line}`);
+  check('The commander calls the miss as it lands: "Missed! Just high!", "Just right!"',
+    evalInApp('window.__firing.missCall()') === 'missed-just-high just-right', `call: ${evalInApp('window.__firing.missCall()')}`);
   // The gun's scatter (on for this check): two rounds on one lay land apart, both close to it.
   evalInApp('(window.__firing.scatter(true), window.__firing.aimAt(3), true)');
   await sleep(300);

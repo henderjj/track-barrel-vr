@@ -355,6 +355,11 @@ export function boardMiss(
 
 /** boardMiss's words for a pass `p` by a disc of `radius` on a COURSE_BOARD. */
 export function boardMissWords(p: Readonly<BoardPass>, radius: number): string {
+  return boardMissParts(p, radius).join(', ');
+}
+
+/** boardMissWords's parts, up or down first: ["just high", "left"]; the commander says each (src/sim/commander-voice.ts, missCue). */
+export function boardMissParts(p: Readonly<BoardPass>, radius: number): string[] {
   const said = radius / 2;
   const upWord = (just: boolean) => `${just ? 'just ' : ''}${p.up > 0 ? 'high' : 'low'}`;
   const sideWord = (just: boolean) => `${just ? 'just ' : ''}${p.right > 0 ? 'right' : 'left'}`;
@@ -365,7 +370,26 @@ export function boardMissWords(p: Readonly<BoardPass>, radius: number): string {
   else if (Math.abs(p.up) >= said) parts.push(upWord(upJust));
   if (Math.abs(p.right) >= said) parts.push(sideWord(sideJust));
   if (parts.length === 0) parts.push(Math.abs(p.up) >= Math.abs(p.right) ? upWord(true) : sideWord(true));
-  return parts.join(', ');
+  return parts;
+}
+
+/**
+ * A miss on a biathlon board, as boardMiss's parts, for the commander to
+ * call (`["just high", "left"]`); null for a hit, or when the target nearest
+ * the shot's line isn't a board, or the shell never reached its plane.
+ */
+export function boardMissCall(
+  result: Readonly<ShotResult>,
+  origin: Readonly<Vec3>,
+  dir: Readonly<Vec3>,
+  faces: readonly HitFace[],
+  speed = MUZZLE_SPEED,
+): string[] | null {
+  if (result.kind === 'target' || faces.length === 0) return null;
+  const f = faces[missFrom(result, origin, dir, faces).nearest];
+  if (!f.round) return null;
+  const p = boardPass(result, origin, dir, f, speed, pass);
+  return p == null ? null : boardMissParts(p, f.halfWidth);
 }
 
 /** Where a shot landed against the target nearest its line: that target's index, and "20 m short, 3 m right" ('' when on it). */

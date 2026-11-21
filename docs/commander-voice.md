@@ -21,6 +21,7 @@ The rules live in [`src/sim/commander-voice.ts`](../src/sim/commander-voice.ts);
 | The fight won | "Objective reached! Well done, lads!" / "That's all of them! Well done, lads!" |
 | The driver's warnings | A track thrown or back on, the tracks straining, digging in or bogged in mud, the engine hot, overheating or stalled |
 | No power traverse | "No power traverse! Crank it by hand!" |
+| A shell misses a biathlon board, as it lands | Where it passed the board, as the loading board says it: "Missed! Just high!", "Missed! Short! Left!" (*high*, *just low*, *low*, *short*, then *just left*, *left*, *just right* or *right*; [biathlon-race.md](biathlon-race.md#calling-a-miss)). Each miss is its own call, so two the same way are both called. Added 2026-11-21 |
 
 - **One call at a time.** A call waits for the one before; one that has waited 6 s is old news and dropped, no more than 3 wait, and a call he has just made (within 8 s) isn't made again (a knock-out ends the fight too, and he says "Bail out!" once). A fire order on each enemy is its own call.
 - **The tank ducks 12 dB under him**, as it does under the crew's own voices.
@@ -29,7 +30,7 @@ The rules live in [`src/sim/commander-voice.ts`](../src/sim/commander-voice.ts);
 
 ## The lines
 
-57 clips in `public/audio/commander` (Opus, 32 kbit/s, 300 kB in all): the 30 calls in the table and the parts of a fire order, said once each (the twelve clock hours, the ranges one hundred to one thousand, the targets and the traverses). They were generated once, offline: a British voice (Kokoro's *bm_george*, Apache 2.0) made urgent by Chatterbox (MIT), its delivery tightened (pauses inside a line cut to 0.14 s), checked with Whisper that every word comes through the filter, then heard and approved by John. They ship dry; the filter is in the game.
+70 clips in `public/audio/commander` (Opus, 32 kbit/s, about 370 kB in all): the 30 calls in the table and the parts of a fire order, said once each (the twelve clock hours, the ranges one hundred to one thousand, the targets and the traverses). They were generated once, offline: a British voice (Kokoro's *bm_george*, Apache 2.0) made urgent by Chatterbox (MIT), its delivery tightened (pauses inside a line cut to 0.14 s), checked with Whisper that every word comes through the filter, then heard and approved by John. They ship dry; the filter is in the game. The 13 miss calls (nine "Missed! ..." lines and the second parts *just left*, *left*, *just right*, *right*) were made the same way on 21 November 2026, peak-normalised to −1 dB like the rest, and approved by John the same evening after one remake ("Missed! High!" was drawn out).
 
 To change or add a line: generate it the same way (the tools are in the project files under `audio/commander-voice/tools`), have John hear it, then add its clip and its words in `LINES`; the unit test checks every line has a clip.
 

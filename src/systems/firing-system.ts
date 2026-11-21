@@ -6,6 +6,7 @@ import {
   armouredTargets,
   createShotResult,
   decideShot,
+  boardMissCall,
   describeRound,
   flyShell,
   SCATTER,
@@ -24,6 +25,7 @@ import {
   type Vec3,
 } from '../sim/ballistics.js';
 import { wrapTile } from '../sim/terrain.js';
+import { commander, missCue } from '../sim/commander-voice.js';
 import { settings } from '../settings.js';
 import { barrelDirection, muzzlePoint } from '../sim/turret.js';
 import { tankState } from './drive-system.js';
@@ -150,6 +152,8 @@ interface FiringDebug {
   hits(): number[];
   /** Shots in the air now. */
   flying(): number;
+  /** The commander's call on the last board miss that landed on this page, its lines joined ("missed-just-high just-right"), or ''. */
+  missCall(): string;
   /** Fire a shell as if the breech had fired (tests): it leaves the muzzle as the turret is laid; AP unless `ammo` says. */
   fire(ammo?: AmmoKind): void;
   /** Where a shell (AP unless `ammo` says) from the muzzle as laid now would land, world space, and what it would hit. */
@@ -178,6 +182,8 @@ interface FiringDebug {
  */
 export class FiringSystem extends createSystem({}) {
   readonly records: ShotRecord[] = [];
+  /** The last board miss's call (callMiss), for the tests. */
+  private missCall = '';
   readonly hits: number[] = targetFaces().map(() => 0);
   readonly faces = targetFaces();
   /** The boards' version (src/sim/course.ts boardsVersion) the faces were last brought to: a race moves them. */
@@ -244,6 +250,7 @@ export class FiringSystem extends createSystem({}) {
       records: () => self.records.map((r) => ({ ...r, point: [...r.point] as Vec3 })),
       hits: () => [...self.hits],
       flying: () => self.shots.filter((s) => s.id >= 0 && !s.landed).length,
+      missCall: () => self.missCall,
       fire: (ammo = 'ap') => self.fire(ammo),
       predict: (ammo = 'ap') => {
         const origin: Vec3 = [0, 0, 0];
@@ -425,10 +432,26 @@ export class FiringSystem extends createSystem({}) {
         shot.landed = true;
         shot.tracer.visible = false;
         if (shot.flight.kind !== 'none') for (const listener of landedListeners) listener(shot.ammo, shot.flight.point);
+        this.callMiss(shot);
       }
       if (!shot.landed) this.drawTracer(shot, t, offX, offZ);
       else this.drawBurst(shot, t - end, offX, offZ);
     }
+  }
+
+  /**
+   * A shell that missed a biathlon board, landed: the commander calls where it
+   * passed the board ("Missed! Just high! Left!"), on each page from the shell
+   * it flew, as the loading board's line says it. Each shot its own call, so
+   * two misses the same way are both called.
+   */
+  private callMiss(shot: Shot): void {
+    if (shot.ammo === 'smoke') return;
+    const parts = boardMissCall(shot.flight, shot.origin, shot.dir, this.faces, AMMO[shot.ammo].speed);
+    if (parts == null) return;
+    const cue = missCue(parts);
+    this.missCall = cue.join(' ');
+    commander.ask(cue, `miss-${shot.id}`);
   }
 
   private drawTracer(shot: Shot, t: number, offX: number, offZ: number): void {
