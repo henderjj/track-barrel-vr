@@ -14,10 +14,8 @@ import {
   onRoad,
   stepColumn,
 } from '../src/sim/column.js';
-import { spotTime } from '../src/sim/combat.js';
 import {
   ENEMY_COUNT,
-  ENEMY_GUNS,
   EnemyBattery,
   type EnemyShot,
   enemyName,
@@ -31,10 +29,10 @@ import {
   noEnemies,
   parseShared,
   sharedOf,
+  TANK_SILHOUETTE,
   type TankTarget,
 } from '../src/sim/enemy-guns.js';
 import type { RoutePose } from '../src/sim/enemy-tanks.js';
-import { inReportView, noRecon, parseRecon, RECON, RECON_ENEMIES, reconDebrief, reconLine, ReconRun, reportLines, type ReconInput } from '../src/sim/recon.js';
 import { FOG } from '../src/sim/range.js';
 import { AMBUSH_WALL, CROSS_HALF, groundHeight, obstacleDistance, OBSTACLES, TILE, wrapTile } from '../src/sim/terrain.js';
 
@@ -201,7 +199,7 @@ describe('the column in the battery (F5.10)', () => {
     let turret = 0;
     let seen = 0;
     const leg = COLUMN_ROUTE.points[0][0] - COLUMN_ROUTE.points[1][0];
-    const eye: [number, number, number] = [AMBUSH.x, tank.ground + RECON.eye, AMBUSH.z];
+    const eye: [number, number, number] = [AMBUSH.x, tank.ground + TANK_SILHOUETTE.height - 0.3, AMBUSH.z];
     let crewSees = 0;
     for (let d = 0; d <= leg; d += 20) {
       b.guns[LEAD].d = d;
@@ -326,103 +324,5 @@ describe('ambush a column (F5.10)', () => {
     expect(back).toEqual(r.snap);
     expect(parseAmbush({ phase: 'maybe', time: 1, v: 1 })).toBeNull();
     expect(COLUMN_COUNT).toBe(4);
-  });
-});
-
-describe('recon unseen (F5.10)', () => {
-  it('reports an enemy in view with the gun on it, not one behind the gun or past its range', () => {
-    // Parked where Meet gun A parks (the gun sees it from there, so it sees the gun), the gun turned on it.
-    const g = ENEMY_GUNS[0];
-    const ground = groundHeight(0, g.meetZ);
-    const at = gunNear(0, 0, g.meetZ, [0, 0]);
-    const toGun = Math.atan2(-at[0], -(at[1] - g.meetZ));
-    expect(inReportView(0, 0, g.meetZ, ground, toGun, 0, seeAll)).toBe(true);
-    expect(inReportView(0, 0, g.meetZ, ground, toGun + RECON.cone * 0.9, 0, seeAll)).toBe(true);
-    expect(inReportView(0, 0, g.meetZ, ground, toGun + RECON.cone * 1.1, 0, seeAll)).toBe(false);
-    expect(inReportView(0, 0, g.meetZ, ground, toGun + Math.PI, 0, seeAll)).toBe(false);
-    // Smoke in the way.
-    expect(inReportView(0, 0, g.meetZ, ground, toGun, 0, () => false)).toBe(false);
-    // From the start, the ground hides it.
-    const from0 = gunNear(0, 0, 0, [0, 0]);
-    expect(inReportView(0, 0, 0, 0, Math.atan2(-from0[0], -from0[1]), 0, seeAll)).toBe(false);
-  });
-
-  it('can be done: each gun can be reported from somewhere up the lane, halted, well before it spots the tank', () => {
-    const b = new EnemyBattery();
-    b.start(undefined, 'guns');
-    for (let i = 0; i < ENEMY_GUNS.length; i++) {
-      let best = 0;
-      for (let z = 0; z >= -500; z -= 10) {
-        const ground = groundHeight(0, z);
-        const at = gunNear(i, 0, z, [0, 0]);
-        if (!inReportView(i, 0, z, ground, Math.atan2(-at[0], -(at[1] - z)), 0, seeAll)) continue;
-        const view = b.viewOf(i, { x: 0, ground, z, heading: 0, speed: 0 }, seeAll);
-        const range = Math.hypot(at[0], at[1] - z);
-        best = Math.max(best, view === 'none' || range > 600 ? Infinity : spotTime({ range, view, moving: false, fired: false, alert: false, driving: false }));
-      }
-      expect(best, ENEMY_GUNS[i].name).toBeGreaterThan(2 * RECON.reportFor);
-    }
-  });
-
-  const input = (patch: Partial<ReconInput> = {}): ReconInput => ({
-    fromStart: 300,
-    laid: [false, false, false, false, false],
-    out: [false, false, false, false, false],
-    spot: [0, 0, 0, 0, 0],
-    spottedBy: -1,
-    ...patch,
-  });
-
-  it('reports after the gun has been on it 3 s in all, counts one knocked out as found, and wins back at the start', () => {
-    const r = new ReconRun();
-    r.start();
-    const laid = [true, false, false, false, false];
-    r.step(2, input({ laid }));
-    expect(r.snap.reported[0]).toBe(false);
-    r.step(0.5, input());
-    r.step(1, input({ laid }));
-    expect(r.snap.reported[0]).toBe(true);
-    r.step(1, input({ out: [false, true, false, false, false] }));
-    expect(r.snap.reported[1]).toBe(true);
-    for (const i of [2, 3, 4]) {
-      const l = [false, false, false, false, false];
-      l[i] = true;
-      r.step(RECON.reportFor, input({ laid: l }));
-    }
-    expect(r.snap.reported.every(Boolean)).toBe(true);
-    expect(r.step(1, input())).toBe(false);
-    expect(r.step(1, input({ fromStart: RECON.home - 1 }))).toBe(true);
-    expect(r.snap.phase).toBe('won');
-    expect(reconDebrief(r.snap)[0]).toMatch(/^Recon complete in 0:1\d$/);
-  });
-
-  it('warns when an enemy nearly has it, and is lost the moment one spots it', () => {
-    const r = new ReconRun();
-    r.start();
-    r.step(1, input({ spot: [0, 0.55, 0, 0, 0] }));
-    expect(r.snap.warned).toBe(1);
-    expect(r.snap.watch).toBe(0.6);
-    r.step(1, input({ spot: [0, 0.52, 0, 0, 0] }));
-    expect(r.snap.warned).toBe(1);
-    r.step(1, input({ spot: [0, 0.2, 0, 0, 0] }));
-    r.step(1, input({ spot: [0, 0.6, 0, 0, 0] }));
-    expect(r.snap.warned).toBe(2);
-    r.fired();
-    expect(r.step(1, input({ spottedBy: 2 }))).toBe(true);
-    expect(r.snap.phase).toBe('lost');
-    expect(reconDebrief(r.snap)).toEqual(['Spotted by Gun C at 0:05', '0 of 5 reported, 1 fired']);
-  });
-
-  it('shares its run, and its lines', () => {
-    expect(reconLine(noRecon())).toBe('Recon unseen: off');
-    expect(reportLines(3, 284, 2)).toEqual(['Reported: Tank A, 280 m', '2 still to find']);
-    expect(RECON_ENEMIES).toBe(5);
-    const r = new ReconRun();
-    r.start();
-    r.step(65, input({ spot: [0.31, 0, 0, 0, 0] }));
-    expect(reconLine(r.snap)).toBe('Recon, 1:05. 0 of 5 reported, closest call 31%. Being watched 30%');
-    const back = parseRecon(JSON.parse(JSON.stringify({ t: 'recon', ...r.snap })));
-    expect(back).toEqual(r.snap);
-    expect(parseRecon({ phase: 'on' })).toBeNull();
   });
 });

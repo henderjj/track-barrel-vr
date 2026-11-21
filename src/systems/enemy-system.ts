@@ -205,14 +205,6 @@ export function startMission(groups: readonly EnemyGroup[], seed?: number): void
   active.restarted();
 }
 
-/** Host: each enemy's spotting of the tank, 0 to 1, into `out` (F5.10's recon). */
-export function enemySpots(out: number[]): number[] {
-  const guns = active?.battery.guns;
-  out.length = 0;
-  if (guns) for (const g of guns) out.push(g.present && g.alive ? g.spot : 0);
-  return out;
-}
-
 /** Host: the first enemy there and alive that has the tank spotted (laying on it or laid), or -1. */
 export function enemyTracking(): number {
   const guns = active?.battery.guns ?? [];

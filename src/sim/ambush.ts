@@ -1,5 +1,5 @@
 /**
- * Ambush a column (F5.10, docs/recon-ambush.md): the crew's tank waits
+ * Ambush a column (F5.10, docs/ambush.md): the crew's tank waits
  * hull down behind a wall while an enemy column (src/sim/column.ts: a tank,
  * two lorries and a tank) drives down the road across its front, 240 m off.
  * The first shot springs the ambush, as does any vehicle spotting the tank

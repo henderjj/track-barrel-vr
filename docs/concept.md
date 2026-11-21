@@ -131,7 +131,7 @@ The turret travel lock (a real WW2 feature) forces the driver to aim the hull in
 | Commander | AI callouts | Map only | No help |
 
 ### 7.3 Combat scenarios (ideas)
-Escort a convoy, hold a hill hull-down, recon without being spotted, ambush a column, night with limited vision, fog.
+Escort a convoy, hold a hill hull-down, ambush a column, night with limited vision, fog. (Recon without being spotted was built and then cut on 2026-11-21: a tank isn't stealthy.)
 
 ## 8. Replay value
 

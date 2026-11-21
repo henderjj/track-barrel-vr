@@ -17,7 +17,7 @@ import {
   toGo,
 } from '../sim/crew-board.js';
 import { FIRST_TANK, groupOf } from '../sim/enemy-guns.js';
-import { missionBoard, shownAmbush, shownRecon } from './missions-system.js';
+import { missionBoard, shownAmbush } from './missions-system.js';
 import { clockLines } from '../sim/range-run.js';
 import { shownScenario } from './combat-system.js';
 import { shownEscort } from './escort-system.js';
@@ -93,8 +93,8 @@ export class CrewBoardSystem extends createSystem({}) {
   private draws = 0;
   private fontsReady = false;
   /** The last numbers looked at: a change in any means the board is built again. */
-  private seen = new Float64Array(16).fill(Number.NaN);
-  private now = new Float64Array(16);
+  private seen = new Float64Array(15).fill(Number.NaN);
+  private now = new Float64Array(15);
   private rack: Record<AmmoKind, number> = { ap: 0, he: 0, smoke: 0 };
   private guns: EnemyCount = { out: 0, total: 0, in: false };
   private tanks: EnemyCount = { out: 0, total: 0, in: false };
@@ -183,8 +183,7 @@ export class CrewBoardSystem extends createSystem({}) {
     if (s.phase !== 'off') return s.time;
     const escort = shownEscort();
     if (escort.phase !== 'off') return escort.time;
-    // A mission (F5.10), running or just over.
-    if (shownRecon().phase !== 'off') return shownRecon().time;
+    // The ambush (F5.10), running or just over.
     if (shownAmbush().phase !== 'off') return shownAmbush().time;
     const hill = shownHill();
     if (hill.phase !== 'off') return hill.time;
@@ -194,7 +193,7 @@ export class CrewBoardSystem extends createSystem({}) {
   }
 
   private timed(): boolean {
-    return shownScenario().phase !== 'off' || shownEscort().phase !== 'off' || shownHill().phase !== 'off' || shownRun().phase !== 'idle' || shownRecon().phase !== 'off' || shownAmbush().phase !== 'off';
+    return shownScenario().phase !== 'off' || shownEscort().phase !== 'off' || shownHill().phase !== 'off' || shownRun().phase !== 'idle' || shownAmbush().phase !== 'off';
   }
 
   /** The numbers the board depends on, into `now`; whether any differs from last time. */
@@ -225,13 +224,12 @@ export class CrewBoardSystem extends createSystem({}) {
     const escort = shownEscort();
     n[11] = escort.phase === 'off' ? -1 : escort.v * 4 + PHASES.indexOf(escort.phase);
     n[12] = escort.phase === 'on' ? convoyToGo(escort) : -1;
-    // The F5.10 missions.
-    n[13] = shownRecon().v * 4 + PHASES.indexOf(shownRecon().phase);
-    n[14] = shownAmbush().v * 4 + PHASES.indexOf(shownAmbush().phase);
+    // The ambush (F5.10).
+    n[13] = shownAmbush().v * 4 + PHASES.indexOf(shownAmbush().phase);
     // Hold the hill (F5.9).
-    n[15] = shownHill().v;
+    n[14] = shownHill().v;
     let differs = false;
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 15; i++) {
       if (n[i] !== this.seen[i]) {
         differs = true;
         this.seen[i] = n[i];

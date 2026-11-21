@@ -16,7 +16,7 @@ import { escortAmbush, escortStatus, shownEscort, startEscort, stopEscort } from
 import { resetCombatTuning, scenarioStatus, setCombatTune, shownScenario, startScenario, stopScenario, tuningStatus } from './combat-system.js';
 import { hillStatus, hullDownPractice, shownHill, startHill, stopHill } from './hill-system.js';
 import { TUNE_ROWS } from '../sim/combat.js';
-import { ambushStatus, reconStatus, shownAmbush, shownRecon, startMissionRun, stopMissionRun } from './missions-system.js';
+import { ambushStatus, shownAmbush, startMissionRun, stopMissionRun } from './missions-system.js';
 import { clearStats, markQueasy, saveStatsCsv, statsStatus } from './play-stats-system.js';
 import { goUpTheRange, rangeStatus } from './range-system.js';
 import { practiseLine, raceStatus, readyAtLine, readyToFire, runStatus, shownRun, startRace, startRun, stopRun } from './range-run-system.js';
@@ -573,17 +573,15 @@ export class GameMenuSystem extends createSystem({}) {
       this.render();
     });
     // The Missions tab (F5.10): Start closes the menu, to play; Stop leaves it open. Status lines below every button, as Battle's.
-    for (const mission of ['recon', 'ambush'] as const) {
-      ui.on(`menu-${mission}-start`, () => {
-        this.setOpen(false);
-        stopRide();
-        startMissionRun(mission);
-      });
-      ui.on(`menu-${mission}-stop`, () => {
-        stopMissionRun(mission);
-        this.render();
-      });
-    }
+    ui.on('menu-ambush-start', () => {
+      this.setOpen(false);
+      stopRide();
+      startMissionRun('ambush');
+    });
+    ui.on('menu-ambush-stop', () => {
+      stopMissionRun('ambush');
+      this.render();
+    });
     ui.on('menu-loading', () => {
       this.setOpen(false);
       startLoading();
@@ -710,7 +708,6 @@ export class GameMenuSystem extends createSystem({}) {
       this.ui?.setText('menu-tune-status', tuningStatus());
       this.ui?.setText('menu-escort-status', escortStatus());
       this.renderTuning();
-      this.ui?.setText('menu-recon-status', reconStatus());
       this.ui?.setText('menu-ambush-status', ambushStatus());
       this.ui?.setText('menu-run-status', runStatus());
       this.ui?.setText('menu-course-status', courseStatus());
@@ -811,8 +808,6 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-escort-status', escortStatus());
     ui.setText('menu-escort-start', shownEscort().phase === 'on' ? 'Restart' : 'Start');
     this.renderTuning();
-    ui.setText('menu-recon-status', reconStatus());
-    ui.setText('menu-recon-start', shownRecon().phase === 'on' ? 'Restart' : 'Start');
     ui.setText('menu-ambush-status', ambushStatus());
     ui.setText('menu-ambush-start', shownAmbush().phase === 'on' ? 'Restart' : 'Start');
     ui.setText('menu-run-status', runStatus());
