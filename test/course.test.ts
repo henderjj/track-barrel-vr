@@ -4,6 +4,7 @@ import { ENEMY_TANKS } from '../src/sim/enemy-tanks.js';
 import { COURSE_SIGNS } from '../src/sim/course-signs.js';
 import {
   aimAt,
+  boardMissCall,
   COURSE_TARGET_FIRST,
   createShotResult,
   describeShot,
@@ -407,7 +408,10 @@ describe('biathlon course (F5.3a)', () => {
         const aim = aimAt(tank, corner, muzzlePoint);
         const origin = hullToWorld(tank, muzzlePoint(aim.yaw, aim.elevation, [0, 0, 0]), [0, 0, 0]);
         const dir = hullDirToWorld(tank, barrelDirection(aim.yaw, aim.elevation, [0, 0, 0]), [0, 0, 0]);
-        expect(describeShot(flyShell(origin, dir, faces, createShotResult()), origin, dir, faces, TARGET_NAMES)).toBe(miss('just high, just right'));
+        const cornerShot = flyShell(origin, dir, faces, createShotResult());
+        expect(describeShot(cornerShot, origin, dir, faces, TARGET_NAMES)).toBe(miss('just high, just right'));
+        // The commander's call on it: the same words, in parts.
+        expect(boardMissCall(cornerShot, origin, dir, faces)).toEqual(['just high', 'just right']);
       });
     }
     setLineRanges(LINE_RANGES);

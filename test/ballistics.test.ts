@@ -2,6 +2,7 @@ import { Euler, Matrix4, Vector3 } from '@iwsdk/core';
 import { describe, expect, it } from 'vitest';
 import {
   aimAt,
+  boardMissCall,
   boardMissWords,
   boardPass,
   createShotResult,
@@ -139,6 +140,13 @@ describe('ballistics (F1.10)', () => {
     expect(words(0.45, 0.19)).toBe('just high');
     expect(words(0.19, -0.15)).toBe('just high');
     expect(words(0.1, 0.15)).toBe('just right');
+    // A hit, or a miss near a range target (not a board), has no call.
+    const range = rangeFaces();
+    const tank = createTankDrive();
+    const { yaw, elevation } = aimAt(tank, range[2], muzzlePoint);
+    const o = hullToWorld(tank, muzzlePoint(yaw, elevation, [0, 0, 0]), [0, 0, 0]);
+    const d = hullDirToWorld(tank, barrelDirection(yaw, elevation + 0.01, [0, 0, 0]), [0, 0, 0]);
+    expect(boardMissCall(flyShell(o, d, range, createShotResult()), o, d, range)).toBeNull();
     // A shell fired away from the board never passes it.
     const f: HitFace = { x: 0, y: 1.5, z: -100, halfWidth: r, halfHeight: r, yaw: 0, round: true };
     const shot = createShotResult();

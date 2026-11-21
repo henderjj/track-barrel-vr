@@ -61,6 +61,21 @@ export const LINES: Readonly<Record<string, string>> = (() => {
     overheating: "Engine's overheating! Stop and let her idle!",
     stalled: "We've stalled! Driver, start her up!",
     'no-power-traverse': 'No power traverse! Crank it by hand!',
+    // A miss on a biathlon board, called where it passed the board (docs/biathlon-race.md, "Calling a miss"):
+    // up or down (or wide) first, then the second way on its own. Approved by John on 21 November 2026.
+    'missed-just-high': 'Missed! Just high!',
+    'missed-high': 'Missed! High!',
+    'missed-just-low': 'Missed! Just low!',
+    'missed-low': 'Missed! Low!',
+    'missed-short': 'Missed! Short!',
+    'missed-just-left': 'Missed! Just left!',
+    'missed-left': 'Missed! Left!',
+    'missed-just-right': 'Missed! Just right!',
+    'missed-right': 'Missed! Right!',
+    'just-left': 'Just left!',
+    left: 'Left!',
+    'just-right': 'Just right!',
+    right: 'Right!',
   };
   for (let h = 1; h <= 12; h++) lines[`clock-${h}`] = `${cap(NUMBERS[h - 1])} o'clock!`;
   for (let r = 1; r <= 10; r++) lines[`range-${r * 100}`] = r === 10 ? 'One thousand!' : `${cap(NUMBERS[r - 1])} hundred!`;
@@ -122,6 +137,17 @@ export function rangeLine(metres: number): string {
 export function fireOrder(b: Readonly<EnemyBearing>, tank: boolean): string[] {
   const turn = Math.abs(b.traverse) <= ON_THE_GUN_DEGREES ? 'on-the-gun' : b.traverse > 0 ? 'traverse-left' : 'traverse-right';
   return [turn, tank ? 'enemy-tank' : 'anti-tank-gun', `clock-${b.clock}`, rangeLine(b.range)];
+}
+
+/**
+ * A miss on a biathlon board called as one call: "Missed! Just high!", then
+ * the second way if there is one, "Left!". `parts` are the board's words
+ * (src/sim/ballistics.ts, boardMissParts): "just high", "short", "left".
+ */
+export function missCue(parts: readonly string[]): string[] {
+  const id = (words: string) => words.replace(' ', '-');
+  if (parts.length === 0) return [];
+  return [`missed-${id(parts[0])}`, ...parts.slice(1, 2).map(id)];
 }
 
 /** The fight's brief and debrief. */

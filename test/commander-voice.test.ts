@@ -6,6 +6,7 @@ import {
   fireOrder,
   hitCue,
   INTERCOM,
+  missCue,
   LINE_IDS,
   LINES,
   phaseCue,
@@ -25,7 +26,7 @@ const hit = (over: object) => ({ zone: 'hull-side' as const, through: true, armo
 
 describe("the commander's lines (docs/commander-voice.md)", () => {
   it('has a small clip for every line John approved, and no clip without a line', () => {
-    expect(LINE_IDS.length).toBe(57);
+    expect(LINE_IDS.length).toBe(70);
     for (const id of LINE_IDS) {
       const file = `public/audio/commander/${id}.ogg`;
       expect(existsSync(file), file).toBe(true);
@@ -43,6 +44,18 @@ describe("the commander's lines (docs/commander-voice.md)", () => {
 });
 
 describe('which line a note calls', () => {
+  it('a biathlon board miss: "Missed!" with the first way, then the second on its own, every pair said', () => {
+    expect(missCue(['just high'])).toEqual(['missed-just-high']);
+    expect(missCue(['short', 'left'])).toEqual(['missed-short', 'left']);
+    expect(missCue(['high', 'just right'])).toEqual(['missed-high', 'just-right']);
+    expect(missCue([])).toEqual([]);
+    const ups = ['just high', 'high', 'just low', 'low', 'short'];
+    const sides = ['just left', 'left', 'just right', 'right'];
+    for (const first of [...ups, ...sides]) for (const id of missCue([first])) expect(LINES[id], id).toBeDefined();
+    for (const up of ups) for (const side of sides) for (const id of missCue([up, side])) expect(LINES[id], id).toBeDefined();
+    expect(LINES['missed-high']).toBe('Missed! High!');
+  });
+
   it('a hit: the worst of it first, a bounce, a broken track, no harm', () => {
     expect(hitCue(hit({ effects: ['gunner', 'engine'] }))).toEqual(['hit-engine']);
     expect(hitCue(hit({ effects: ['traverse'] }))).toEqual(['hit-traverse']);
