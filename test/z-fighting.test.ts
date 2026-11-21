@@ -381,6 +381,32 @@ describe('no faces that flicker through each other (z-fighting)', () => {
     }
   });
 
+  it('on the map case (F2.10): the case on its clips on the turret wall, the map in its window, and the case held alone', async () => {
+    const { Group } = await import('@iwsdk/core');
+    const { CASE_CLIPPED } = await import('../src/sim/map-case.js');
+    const asset = await import('../src/scene-assets/map-case.scene-asset.js');
+    const mapCase = () => {
+      const group = new Group();
+      group.add(asset.createMapCase(), asset.createMapSheet());
+      return group;
+    };
+    for (const yaw of [0, 2.2]) {
+      const turret = cabin.createTurret();
+      turret.position.set(0, 0, TURRET.z);
+      turret.rotation.y = yaw;
+      const clipped = mapCase();
+      clipped.position.set(CASE_CLIPPED.x, CASE_CLIPPED.y, CASE_CLIPPED.z);
+      clipped.rotation.y = CASE_CLIPPED.yaw;
+      turret.add(clipped);
+      turret.updateMatrixWorld(true);
+      expectNone([turret], CABIN_GAP);
+    }
+    const held = mapCase();
+    held.rotation.set(0.4, -0.7, 0.3);
+    held.updateMatrixWorld(true);
+    expectNone([held], CABIN_GAP);
+  });
+
   it('on the firing lamp (F2.5): its lens in its bezel on the slit frame, and the repeater on the turret turned two ways', async () => {
     const { MeshBasicMaterial } = await import('@iwsdk/core');
     const { FIRING_LAMP, LAMP_REPEATER } = await import('../src/sim/firing-lamp.js');

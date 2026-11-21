@@ -101,6 +101,7 @@ export function holdKindOf(use: string | null): number {
     case 'block': return HoldKind.Block;
     case 'shell': return HoldKind.Shell;
     case 'breech-lever': return HoldKind.BreechLever;
+    case 'map-case': return HoldKind.MapCase;
     // The mechanism kit's controls say their own (MechanismSystem).
     default: return (use && controlHoldKinds.get(use)) || HoldKind.None;
   }

@@ -24,6 +24,7 @@ import { courseStatus, goToCourse, goToObstacle } from './course-system.js';
 import { OBSTACLES } from '../sim/course.js';
 import { turretToHour } from './turret-dial-system.js';
 import { steerACourse } from './compass-system.js';
+import { readTheMap } from './map-case-system.js';
 import { watchTheLamp } from './firing-lamp-system.js';
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
@@ -414,6 +415,12 @@ export class GameMenuSystem extends createSystem({}) {
       this.setOpen(false);
       stopRide();
       steerACourse();
+    });
+    ui.on('menu-map', () => {
+      // The map case (F2.10): alone, into the gunner's seat, told where the case hangs.
+      this.setOpen(false);
+      stopRide();
+      readTheMap();
     });
     ui.on('menu-turret-dial', () => {
       // The driver's turret dial (F2.3): alone, into the driver's seat, and the turret turns to 3 o'clock.

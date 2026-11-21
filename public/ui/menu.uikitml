@@ -680,6 +680,12 @@
           </div>
           <div id="menu-loading-status" class="hint">Loading</div>
           <div class="setting">
+            <div class="label">Commander</div>
+            <div class="choices">
+              <Button id="menu-map" class="choice" size="sm" variant="secondary">Read the map</Button>
+            </div>
+          </div>
+          <div class="setting">
             <div class="label">Tank sounds</div>
             <div class="choices">
               <Button id="menu-audio-play" class="choice" size="sm" variant="secondary">Play each</Button>
