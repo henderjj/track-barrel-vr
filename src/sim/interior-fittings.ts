@@ -82,7 +82,7 @@ export const PEDALS = {
     clevis: 0.06,
   },
   /** The accelerator: its pad rising `rise` rad from the floor from its heel's hinge, toe forwards. */
-  accelerator: { x: DRIVER_CONTROLS.tillerRight.pivot[0] - 0.1, width: 0.065, length: 0.16, pivot: [0.035, -2.11], rise: 0.56, travel: 0.24 },
+  accelerator: { x: DRIVER_CONTROLS.tillerRight.pivot[0] - 0.1, width: 0.065, length: 0.16, pivot: [0.035, -2.11], rise: 0.78, travel: 0.58 },
   padThickness: 0.014,
 } as const;
 export type PedalId = 'clutch' | 'accelerator';
@@ -109,6 +109,24 @@ export function pedalAngle(id: PedalId, press: number): number {
 export function pedalTurn(id: PedalId, press: number): number {
   return id === 'clutch' ? pedalAngle(id, press) : -pedalAngle(id, press);
 }
+
+/** How far the accelerator's pad's middle plane stands off the line from its hinge, along the pad's normal. */
+export const ACCELERATOR_PAD_LIFT = 0.004;
+
+/**
+ * The accelerator's rubber stop under its toe, hull space: `z` its middle, `top` [y, z] the middle of its face, which
+ * is tilted `tilt` rad to lie under the pressed pad's underside, `gap` under it (John: the stop must meet the pad).
+ */
+export const ACCELERATOR_STOP = (() => {
+  const a = PEDALS.accelerator;
+  const tilt = a.rise - a.travel;
+  const along = 0.8 * a.length;
+  const under = ACCELERATOR_PAD_LIFT - PEDALS.padThickness / 2;
+  const gap = 0.001;
+  const y = a.pivot[0] + Math.sin(tilt) * along + Math.cos(tilt) * (under - gap);
+  const z = a.pivot[1] - Math.cos(tilt) * along + Math.sin(tilt) * (under - gap);
+  return { z, top: [y, z] as const, tilt, gap, radius: 0.014 };
+})();
 
 /** A point [y, z] from the clutch's pivot as it stands turned `turn` rad (pedalTurn), hull space [y, z], into `out`. */
 export function clutchPoint(p: readonly [number, number], turn: number, out: [number, number]): [number, number] {

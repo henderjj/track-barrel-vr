@@ -364,5 +364,6 @@ describe("the convoy position's head box against the cabin's meshes (docs/convoy
         expect(clearance(p), `eyes at ${p.map((v) => v.toFixed(2))}`).toBeGreaterThan(EYE_CLEARANCE - 0.01);
       }
     }
-  });
+    // Rays against every triangle of the cabin, the seat raised: over 5 s on a slow runner (PR #133's quick job).
+  }, 30_000);
 });

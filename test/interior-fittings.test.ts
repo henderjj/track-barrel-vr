@@ -6,6 +6,8 @@ import {
   BASKET_SWEEP,
   BRAKE_DRUMS,
   BREATHER,
+  ACCELERATOR_PAD_LIFT,
+  ACCELERATOR_STOP,
   CLUTCH_MASTER,
   CLUTCH_PUSH_ROD,
   clutchPoint,
@@ -124,6 +126,20 @@ describe("the compartment's fittings (docs/interior.md, the fifth pass)", () => 
       expect(end).toBeGreaterThan(HULL.front + 0.012);
     }
     expect(Math.sin(a.rise - a.travel)).toBeLessThan(Math.sin(a.rise));
+    // John's notes (20 November 2026): more range, starting higher off the floor, and going a little lower pressed (11.5°, 18° before).
+    expect(a.rise).toBeGreaterThanOrEqual(0.75);
+    expect(a.rise - a.travel).toBeCloseTo(0.2, 2);
+    // The rubber stop's face meets the fully pressed pad's underside, under the pad and not past its ends (John's note: the stop looked short of it).
+    const tilt = a.rise - a.travel;
+    const dy = ACCELERATOR_STOP.top[0] - a.pivot[0];
+    const dz = ACCELERATOR_STOP.top[1] - a.pivot[1];
+    const off = dy * Math.cos(tilt) + dz * Math.sin(tilt) - (ACCELERATOR_PAD_LIFT - PEDALS.padThickness / 2);
+    expect(off).toBeLessThan(0);
+    expect(off).toBeGreaterThan(-0.002);
+    const along = dy * Math.sin(tilt) - dz * Math.cos(tilt);
+    expect(along).toBeGreaterThan(ACCELERATOR_STOP.radius);
+    expect(along).toBeLessThan(a.length - ACCELERATOR_STOP.radius);
+    expect(ACCELERATOR_STOP.top[0]).toBeGreaterThan(FOOT_PLATE.top + 0.02);
     // The accelerator stands on the foot plate.
     expect(a.pivot[1]).toBeGreaterThan(FOOT_PLATE.z0);
     expect(a.pivot[1]).toBeLessThan(FOOT_PLATE.z1);

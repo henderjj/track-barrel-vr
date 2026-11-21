@@ -98,13 +98,15 @@
  * Add a numbered step for each feature you add (see the building skill in
  * .claude/skills/), with a screenshot where it helps a review.
  *
- * CI runs the steps in three parts at once, on three runners: part 1 is
- * steps 0 to 6c and 6r (the biathlon race), part 2 is 6d to 6f (the driver and the turret), 6l
- * (the periscopes) and 6x (the biathlon's driving challenge), part 3 is 6g to 6k, 6m to 6q, 6zb (the convoy escort), 6zc (the missions: recon and ambush) and 6zd (hold the hill). Each part ends with step 7. Put a new feature's steps in
- * partOne, partTwo or partThree, whichever is shortest on CI.
+ * CI runs the steps in six parts at once, on six runners (partOne to
+ * partSix below say which steps each holds). Each part ends with step 7
+ * (its frame-rate checks only in part 1). Put a new feature's steps in
+ * whichever part is shortest on CI. TEST_EXTRAS=1, as the nightly run sets,
+ * adds the Phase 0 spike rigs' steps to part 1.
  *
  * Usage: npm run test:xr   (starts the dev runtime headless if needed)
  *        XR_PART=2 npm run test:xr   (only part 2, as one CI runner does)
+ *        TEST_EXTRAS=1 npm run test:xr   (everything, as the nightly run does)
  * Exit code 0 = all checks passed. Screenshots go to artifacts/.
  */
 
@@ -326,15 +328,23 @@ let appRunning = false;
 let startedAt = Date.now();
 
 /**
- * The test comes in three parts of about the same length, which CI runs on
- * three runners at once (XR_PART=1, 2 or 3); with no XR_PART all three run
- * one after another. Parts 2 and 3 start the game with Play solo
- * (playSolo) and every part ends with lastChecks. A new feature's steps go
- * in the part that is shortest on CI.
+ * The test comes in six parts of about the same length, which CI runs on
+ * six runners at once (XR_PART=1 to 6); with no XR_PART all six run one
+ * after another. Parts 2 to 6 start the game with Play solo (playSolo) and
+ * every part ends with lastChecks. A new feature's steps go in the part
+ * that is shortest on CI.
  */
+const PARTS = 6;
 const XR_PART = Number(process.env.XR_PART ?? 0);
-if (![0, 1, 2, 3].includes(XR_PART)) throw new Error(`XR_PART is 1, 2 or 3, not ${process.env.XR_PART}`);
+if (!Number.isInteger(XR_PART) || XR_PART < 0 || XR_PART > PARTS) throw new Error(`XR_PART is 1 to ${PARTS}, not ${process.env.XR_PART}`);
 const inPart = (n) => XR_PART === 0 || XR_PART === n;
+/**
+ * TEST_EXTRAS=1 (the nightly run) adds the checks that cost a pull request
+ * more than they tell it: the Phase 0 spike rigs (the lever test, the
+ * mechanism kit's bench, riding the tank, the gunsight spike's measuring
+ * tools), each of whose controls is tested on the real tank too.
+ */
+const EXTRAS = Boolean(process.env.TEST_EXTRAS);
 
 /** The slowest frame a ray click has had to wait for so far, to log when it grows. */
 let slowestClickFrameMs = 400;
@@ -848,6 +858,20 @@ async function sightStep() {
   check('Leaning back closes the sight and it stops rendering',
     !shut.open && later.renders === shut.renders, `open ${shut.open}, ${later.renders - shut.renders} frames rendered after closing`);
 
+  if (EXTRAS) await sightSpikeTools(later);
+
+  evalInApp("(window.__seats.ask('driver'), true)");
+  iwsdk(['xr', 'set-device-state'], {});
+  await waitFor("the driver's seat again", () => seated().mine === 'driver', 5000).catch(() => null);
+  await sleep(300);
+}
+
+/**
+ * Spike S1's measuring tools (nightly only, TEST_EXTRAS): "Draw: always"
+ * renders the sight from anywhere, and the game menu's Practice button
+ * changes its texture size.
+ */
+async function sightSpikeTools(later) {
   evalInApp("(window.__sight.setMode('always'), true)");
   await sleep(1000);
   const always = evalInApp('window.__sight.state()');
@@ -867,11 +891,6 @@ async function sightStep() {
   evalInApp('(window.__sight.setSize(512), true)');
   check("The game menu's Practice button changes the sight's texture size",
     sized.size === 1024 && sized.label === '1024 px', `size ${sized.size}, label ${sized.label}`);
-
-  evalInApp("(window.__seats.ask('driver'), true)");
-  iwsdk(['xr', 'set-device-state'], {});
-  await waitFor("the driver's seat again", () => seated().mine === 'driver', 5000).catch(() => null);
-  await sleep(300);
 }
 
 /**
@@ -2624,6 +2643,11 @@ async function driverStation() {
   const onLever = station();
   handTo('controller-left', handle('gear', 4), 0.3);
   await sleep(400);
+  // The clutch let out in 2nd at a halt has stalled the engine by now, and with the engine stopped and the tank still
+  // nothing in the box turns, so a gear goes in without grinding (John's note, 20 November 2026). Out of gear between
+  // 2nd and 3rd, start it again: the gears grind against a running engine.
+  evalInApp('(window.__drive.engine("start"), true)');
+  await waitFor('the engine running', () => tank().running, 3000).catch(() => null);
   handTo('controller-left', handle('gear', 8), 0.3);
   // Read in one go: the station counts a grind on the frame the tank starts grinding.
   const both = () => evalInApp('({ s: window.__driverStation.state(), t: window.__drive.state(), sign: window.__drive.sign })');
@@ -2784,13 +2808,17 @@ async function main() {
   else await playSolo();
   if (inPart(2)) await partTwo();
   if (inPart(3)) await partThree();
+  if (inPart(4)) await partFour();
+  if (inPart(5)) await partFive();
+  if (inPart(6)) await partSix();
   await lastChecks();
 }
 
 /**
  * Part 1: the start screen and menu, calibration, the hands, the seats and
- * eye height, the frame rate, the gunsight spike, the lever test, the
- * mechanism kit, tracked hands and riding the tank.
+ * eye height, the frame rate, the gunsight spike, tracked hands, the
+ * biathlon race and the ammunition types (and, nightly, the lever test,
+ * the mechanism kit and riding the tank).
  */
 async function partOne() {
   await startScreenAndMenu();
@@ -2888,6 +2916,82 @@ async function partOne() {
   //     size button changes the texture.
   await sightStep();
 
+  // 5b-5c. The lever test and the mechanism kit's bench (nightly only).
+  if (EXTRAS) await leverTestAndBench();
+
+  const tillers = () => evalInApp('window.__lever.tillers()');
+  // 6. Spike S9: tracked hands, gripping by pinching (the emulator's hands
+  //    can pinch but not make a fist; fists are unit-tested).
+  iwsdk(['xr', 'set-input-mode'], { mode: 'hand' });
+  await sleep(500);
+  const pinching = () => evalInApp('({ ...window.__grip.state.right })');
+  const open = pinching();
+  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 1 });
+  const pinched = await waitFor('the pinch to grip', () => {
+    const g = pinching();
+    return g.pressed ? g : null;
+  }, 3000).catch(() => pinching());
+  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 0 });
+  const letGo = await waitFor('the grip to let go', () => {
+    const g = pinching();
+    return !g.pressed ? g : null;
+  }, 3000).catch(() => pinching());
+  check('A tracked hand grips with a pinch and lets go', !open.pressed && pinched.pressed && pinched.hand && !letGo.pressed,
+    `before ${JSON.stringify(open)}, pinched ${JSON.stringify(pinched)}, released ${JSON.stringify(letGo)}`);
+  await sleep(500);
+  const handOffset = (side) => {
+    const { result } = iwsdk(['xr', 'get-transform'], { device: `hand-${side}` });
+    const grip = evalInApp(`window.__debug.world.player.gripSpaces.${side}.getWorldPosition(window.__debug.world.player.position.clone()).toArray()`);
+    const o = toOrigin(grip);
+    return { x: result.position.x - o.x, y: result.position.y - o.y, z: result.position.z - o.z };
+  };
+  const handTo = (side, target, duration, offset) => {
+    const o = toOrigin(target);
+    iwsdk(['xr', 'animate-to'], { device: `hand-${side}`, position: { x: o.x + offset.x, y: o.y + offset.y, z: o.z + offset.z }, duration });
+  };
+  const rightOffset = handOffset('right');
+  // 6a. Spike S3 with tracked hands: a pinch at the handle takes hold of a
+  //     tiller and it follows the hand; letting go of the pinch lets go.
+  evalInApp('(window.__lever.show(), true)');
+  await sleep(500);
+  const handHandle = evalInApp('window.__lever.handle("right")');
+  handTo('right', handHandle, 0.5, rightOffset);
+  await sleep(700);
+  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 1 });
+  await sleep(300);
+  handTo('right', [handHandle[0], handHandle[1], handHandle[2] - 0.12], 0.5, rightOffset);
+  const pinchedTiller = await waitFor('the tiller to follow the tracked hand', () => { const t = tillers(); return t.right.angle > 10 && t; }, 5000).catch(() => tillers());
+  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 0 });
+  const unpinched = await waitFor('the tracked hand to let go', () => { const t = tillers(); return t.right.heldBy === null && t; }, 3000).catch(() => tillers());
+  check('A pinching tracked hand works a tiller and lets go with the pinch',
+    pinchedTiller.right.heldBy === 'right' && pinchedTiller.right.angle > 10 && unpinched.right.heldBy === null,
+    `held by ${pinchedTiller.right.heldBy} at ${pinchedTiller.right.angle.toFixed(1)}°, then ${unpinched.right.heldBy ?? 'let go'}`);
+  evalInApp('(window.__lever.hide(), true)');
+  await sleep(300);
+  iwsdk(['xr', 'set-input-mode'], { mode: 'controller' });
+  await sleep(300);
+
+  // 6c. Spike S2: riding the tank (nightly only).
+  if (EXTRAS) await ridingTheTank();
+
+  // 6r. The biathlon race (F5.3b).
+  await theBiathlonRace();
+
+  // 6s. Ammunition types (F3.1).
+  await theAmmunition();
+}
+
+/**
+ * 5b. Spike S3, lever feel (nightly only, TEST_EXTRAS; the real tillers are
+ *     tested at the driver's station): Practice > Lever test puts two
+ *     tillers in front of the player. A gripped tiller follows the hand,
+ *     stops at its limit with the drawn hand kept on the handle, lets go
+ *     when the hand is pulled 45 cm off, springs back, and both forwards
+ *     drive the tank up the lane on the board.
+ * 5c. The mechanism kit's bench (F1.3), each of whose controls is tested on
+ *     the real tank and in test/mechanism.test.ts.
+ */
+async function leverTestAndBench() {
   // 5b. Spike S3, lever feel: Practice > Lever test puts two tillers in
   //     front of the player. A gripped tiller follows the hand, stops at its
   //     limit with the drawn hand kept on the handle, lets go when the hand
@@ -2966,66 +3070,14 @@ async function partOne() {
   //     squeeze presses the button and turns the switch on.
   await mechanismBench();
 
-  // 6. Spike S9: tracked hands, gripping by pinching (the emulator's hands
-  //    can pinch but not make a fist; fists are unit-tested).
-  iwsdk(['xr', 'set-input-mode'], { mode: 'hand' });
-  await sleep(500);
-  const pinching = () => evalInApp('({ ...window.__grip.state.right })');
-  const open = pinching();
-  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 1 });
-  const pinched = await waitFor('the pinch to grip', () => {
-    const g = pinching();
-    return g.pressed ? g : null;
-  }, 3000).catch(() => pinching());
-  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 0 });
-  const letGo = await waitFor('the grip to let go', () => {
-    const g = pinching();
-    return !g.pressed ? g : null;
-  }, 3000).catch(() => pinching());
-  check('A tracked hand grips with a pinch and lets go', !open.pressed && pinched.pressed && pinched.hand && !letGo.pressed,
-    `before ${JSON.stringify(open)}, pinched ${JSON.stringify(pinched)}, released ${JSON.stringify(letGo)}`);
-  await sleep(500);
-  const handOffset = (side) => {
-    const { result } = iwsdk(['xr', 'get-transform'], { device: `hand-${side}` });
-    const grip = evalInApp(`window.__debug.world.player.gripSpaces.${side}.getWorldPosition(window.__debug.world.player.position.clone()).toArray()`);
-    const o = toOrigin(grip);
-    return { x: result.position.x - o.x, y: result.position.y - o.y, z: result.position.z - o.z };
-  };
-  const handTo = (side, target, duration, offset) => {
-    const o = toOrigin(target);
-    iwsdk(['xr', 'animate-to'], { device: `hand-${side}`, position: { x: o.x + offset.x, y: o.y + offset.y, z: o.z + offset.z }, duration });
-  };
-  const rightOffset = handOffset('right');
-  // 6a. Spike S3 with tracked hands: a pinch at the handle takes hold of a
-  //     tiller and it follows the hand; letting go of the pinch lets go.
-  evalInApp('(window.__lever.show(), true)');
-  await sleep(500);
-  const handHandle = evalInApp('window.__lever.handle("right")');
-  handTo('right', handHandle, 0.5, rightOffset);
-  await sleep(700);
-  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 1 });
-  await sleep(300);
-  handTo('right', [handHandle[0], handHandle[1], handHandle[2] - 0.12], 0.5, rightOffset);
-  const pinchedTiller = await waitFor('the tiller to follow the tracked hand', () => { const t = tillers(); return t.right.angle > 10 && t; }, 5000).catch(() => tillers());
-  iwsdk(['xr', 'set-select-value'], { device: 'hand-right', value: 0 });
-  const unpinched = await waitFor('the tracked hand to let go', () => { const t = tillers(); return t.right.heldBy === null && t; }, 3000).catch(() => tillers());
-  check('A pinching tracked hand works a tiller and lets go with the pinch',
-    pinchedTiller.right.heldBy === 'right' && pinchedTiller.right.angle > 10 && unpinched.right.heldBy === null,
-    `held by ${pinchedTiller.right.heldBy} at ${pinchedTiller.right.angle.toFixed(1)}°, then ${unpinched.right.heldBy ?? 'let go'}`);
-  evalInApp('(window.__lever.hide(), true)');
-  await sleep(300);
-  iwsdk(['xr', 'set-input-mode'], { mode: 'controller' });
-  await sleep(300);
+}
 
-  // 6c. Spike S2: riding the tank.
-  await ridingTheTank();
-
-  // 6r. The biathlon race (F5.3b).
-  await theBiathlonRace();
-
-  // 6s. Ammunition types (F3.1).
-  await theAmmunition();
-
+/**
+ * Part 2: overheating, the enemy's guns and tanks, the damage model, the
+ * combat scenario, the crew board, the commander and the hull direction
+ * mark.
+ */
+async function partTwo() {
   // 6t. Overheating (F3.7).
   await theEngineHeat();
 
@@ -3037,6 +3089,18 @@ async function partOne() {
 
   // 6w. The tank damage model (F3.4).
   await theDamage();
+
+  // 6y. The combat scenario and the fight's tuning (F3.10).
+  await theCombatScenario();
+
+  // 6z. The crew board (F6.5).
+  await theCrewBoard();
+
+  // 6za. The commander's voice.
+  await theCommander();
+
+  // 6zb. The hull direction mark in the gunner's sights (F2.4).
+  await theHullDirection();
 }
 
 /**
@@ -3663,8 +3727,8 @@ async function theConvoySeat() {
   }
 }
 
-/** Part 2: driving the tank, the driver's station and controls, laying the gun, and both crew's periscopes. */
-async function partTwo() {
+/** Part 3: driving the tank, the driver's station and controls, and the convoy seat. */
+async function partThree() {
   // 6d. The tank drive (F1.4).
   await drivingTheTank();
 
@@ -3674,33 +3738,27 @@ async function partTwo() {
   await driverFeedback();
   // 6e''. The driver's convoy position: head out of the hatch (docs/convoy-seat.md).
   await theConvoySeat();
-  // 6f. The turret (F1.8).
-  await layingTheGun();
 
-  // The driving steps' sounds (the rest are checked in part 3 with the
+  // The driving steps' sounds (the rest are checked in part 5 with the
   // tank's sounds).
   const heard = evalInApp('window.__audio.state().heard');
   check('The drive was heard: gears going in, the engine catching and stalling',
     heard.clunk >= 1 && heard.catch >= 1 && heard.stall >= 1,
     Object.entries(heard).map(([id, n]) => `${id} ${n}`).join(', '));
+}
+
+/**
+ * Part 4: the turret, the periscopes and the biathlon's driving challenge.
+ */
+async function partFour() {
+  // 6f. The turret (F1.8).
+  await layingTheGun();
 
   // 6l. The periscopes for both crew (F1.6, F1.19).
   await thePeriscopes();
 
   // 6x. The biathlon's driving challenge (F5.3d).
   await theDrivingChallenge();
-
-  // 6y. The combat scenario and the fight's tuning (F3.10).
-  await theCombatScenario();
-
-  // 6z. The crew board (F6.5).
-  await theCrewBoard();
-
-  // 6za. The commander's voice.
-  await theCommander();
-
-  // 6zb. The hull direction mark in the gunner's sights (F2.4).
-  await theHullDirection();
 }
 
 /**
@@ -3860,9 +3918,19 @@ async function theCommander() {
     const l = c().loaded;
     return l[0] === l[1] ? l : null;
   }, 20000).catch(() => c().loaded);
+  // The page keeps only the last 20 calls said, and a part that fought before this step has filled them:
+  // what is new is what follows the old list's end, not what lies past its old length.
+  const saidSince = (prev, now) => {
+    const key = (l) => l.join(' ');
+    for (let n = 0; n <= prev.length; n++) {
+      const kept = prev.length - n;
+      if (now.length >= kept && prev.slice(n).every((l, i) => key(l) === key(now[i]))) return now.slice(kept).map(key);
+    }
+    return now.map(key);
+  };
   evalInApp('(window.__damage.repair(), window.__commander.reset(), true)');
   await sleep(500);
-  const before = c().said.length;
+  const before = c().said;
   // While he speaks: the tank ducked, and his voice coming out (watched in the page: a call lasts a second or two).
   evalInApp(`(() => {
     const p = (window.__commanderProbe = { duck: 0, level: 0, frames: 0 });
@@ -3876,11 +3944,11 @@ async function theCommander() {
     return true;
   })()`);
   evalInApp('(window.__damage.test("engine"), true)');
-  await waitFor('the commander to call the hit', () => c().said.length > before, 8000).catch(() => null);
+  await waitFor('the commander to call the hit', () => saidSince(before, c().said).length > 0, 8000).catch(() => null);
   await waitFor('him to finish', () => !c().speaking, 10000).catch(() => null);
   const probe = evalInApp('window.__commanderProbe');
   const heard = probe.frames > 0 && probe.duck < -3 && probe.level > 0.005 ? probe : null;
-  const said = c().said.slice(before).map((l) => l.join(' '));
+  const said = saidSince(before, c().said);
   check('A hit on the tank: the commander calls it over the intercom and the tank ducks under him',
     loaded[0] === loaded[1] && said.includes('hit-engine') && heard !== null,
     `lines ${loaded.join(' of ')}, context ${c().context}, said [${said.join(', ')}], while speaking (${probe.frames} looks) the tank ducked ${probe.duck.toFixed(1)} dB, voice RMS up to ${probe.level.toFixed(3)}`);
@@ -3908,8 +3976,8 @@ async function theCommander() {
   const quiet = c();
   await menuTouch('vol-commander-track', 0.99);
   check("Sound and view → Commander's slider at its left end keeps him quiet, the note still asked for; at its right end, full again",
-    quiet.asked > off.asked && quiet.said.length === off.said.length && quiet.speaking === false && evalInApp('window.__settings.commander') === 1,
-    `asked ${off.asked} → ${quiet.asked}, said ${off.said.length} → ${quiet.said.length}`);
+    quiet.asked > off.asked && saidSince(off.said, quiet.said).length === 0 && quiet.speaking === false && evalInApp('window.__settings.commander') === 1,
+    `asked ${off.asked} → ${quiet.asked}, said since [${saidSince(off.said, quiet.said).join(', ')}]`);
   if (evalInApp('window.__gameMenu.open')) await menuButtonPress();
   evalInApp('(window.__damage.repair(), true)');
 }
@@ -4148,11 +4216,10 @@ async function theCalloutCard() {
 }
 
 /**
- * Part 3: loading and firing, the test range, the gunsight, the tank's
- * sounds, the range run, comfort and stats, the driver's turret dial and
- * the callout card.
+ * Part 5: loading and firing, the test range, the gunsight, the tank's
+ * sounds, the range run, and comfort and stats.
  */
-async function partThree() {
+async function partFive() {
   // 6g. Loading and firing (F1.10).
   await loadingAndFiring();
 
@@ -4169,7 +4236,13 @@ async function partThree() {
 
   // 6m. Comfort and stats (F1.14).
   await comfortAndStats();
+}
 
+/**
+ * Part 6: the driver's turret dial, the callout card, the firing lamp, the
+ * biathlon course and the missions.
+ */
+async function partSix() {
   // 6n. The driver's turret position dial (F2.3).
   await theTurretDial();
 
@@ -4674,7 +4747,13 @@ async function theFiringLamp() {
 }
 
 /** Every part ends with these: the perf log, PC VR without the frame-rate API, and the console. */
-async function lastChecks() {
+/**
+ * 7. The perf log records; 8. a runtime without the frame-rate API (desktop
+ * browsers over Link may lack it): leaving VR stops budgeting frames at the
+ * headset's rate, the game skips the rate request and measures the rate
+ * instead.
+ */
+async function frameRateChecks() {
   // 7. Perf log.
   const rows = evalInApp('window.__perf.recorder.rows.length');
   check('Perf CSV is recording', rows > 2, `${rows - 1} rows`);
@@ -4718,6 +4797,12 @@ async function lastChecks() {
   iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(wrist) });
   await sleep(800);
   iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-pcvr-hud.png'], {});
+}
+
+async function lastChecks() {
+  // 7-8. The perf log and the frame rate: the same code whichever steps ran
+  // before, so once, in part 1 (and in a whole run).
+  if (inPart(1)) await frameRateChecks();
 
   // The game draws its own gloves; IWSDK's controller and hand models (from
   // a CDN, which CI's runners can reach) must not load behind them.

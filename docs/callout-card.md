@@ -43,7 +43,7 @@ Nothing new to learn. The card's button calls are the Calls it already acts on; 
 
 - `test/callout-card.test.ts`: every Calls button's words (but the Practice route) on the card of the seat that makes it and as heard on the other; the plan's calls ("Driver, halt", "On the way!", "Target, tank, 2 o'clock", "Traverse left", "Gunner, hold fire") on the cards; the clock face's hours; the driver's card on the left wall, 50 to 70 cm from the eyes and a little below them, clear of the conduit, the throttle, the sponson rounds and the head box's edge; the gunner's on the front wall under the roof's chamfer, clear of the corner, the breech and the elevating gear, about 1.3 m away and big enough, and clear of the eyepiece from the eye point; the setting's default, `?card=0` and its menu row.
 - `test/z-fighting.test.ts`: the driver's card on the hull, and the gunner's on the turret turned four ways with the gun at both ends of its elevation.
-- `npm run test:xr` (part 3, step 6n): both cards drawn, each facing its seat at the right distance with the Calls' words; a screenshot looking at the driver's card (`artifacts/xr-callout-card.png`); Sound and view → Callout card → Off (a ray click) hides both, On shows them again.
+- `npm run test:xr` (part 6, step 6o): both cards drawn, each facing its seat at the right distance with the Calls' words; a screenshot looking at the driver's card (`artifacts/xr-callout-card.png`); Sound and view → Callout card → Off (a ray click) hides both, On shows them again.
 
 ## Headset check
 

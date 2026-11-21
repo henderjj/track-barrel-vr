@@ -53,7 +53,7 @@ As driver it stays seat down: its hands are scripted to the handles. As gunner o
 - `test/interior.test.ts`: the eyes keep `EYE_CLEARANCE` from the rim, the lid and the turret all along the raised head box.
 - `test/body-height.test.ts`: the grips and the seat lever in reach from a chair.
 - `test/z-fighting.test.ts`: the seat raised, the lid aside, the periscope down, the grips on the levers at both ends and the seat lever.
-- `npm run test:xr`, step 6e″ (part 2): Head out raises the seat with the eyes over the roof, the lid open and the periscope down; the tillers taken by their grips and pulled back; the crank turning the turret past the hatch (no stop); Head out lowers it; the seat lever raises and lowers it. Screenshot: `artifacts/xr-convoy.png`.
+- `npm run test:xr`, step 6e″ (part 3): Head out raises the seat with the eyes over the roof, the lid open and the periscope down; the tillers taken by their grips and pulled back; the crank turning the turret past the hatch (no stop); Head out lowers it; the seat lever raises and lowers it. Screenshot: `artifacts/xr-convoy.png`.
 - `npm run test:net` (`ONLY_SEATS=1`): the driver raising and lowering the seat, and the gunner's page drawing them raised with the lid open, its crank turning the turret past their hatch on both pages, then back down.
 
 `window.__convoy` gives `state()` (wanted, shown, the crewmate's, the seat lever), `headOut(up?)` and `lever()` (its grip, hull space).

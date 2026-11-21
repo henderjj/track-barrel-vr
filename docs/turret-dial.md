@@ -43,7 +43,7 @@ Nothing to learn: the dial only shows. As gunner on another page the crewmate's 
 - `test/turret-dial.test.ts`: the clock hours both ways; the pointer turning the way the barrel points over a nose-up hull; the hull, pointer and numbers fitting the face; the dial right of the slit's frame, under the brow pad, at eye height, 30 to 50 cm from the eyes and squarer to them than the run clock; the case sunk into the armour and under 2 cm proud, out of a leaning head's way; the Practice turn never faster than the power traverse, stopping on 3 o'clock in about 4.4 s, and going the short way round across 180°.
 - `test/interior.test.ts` (unchanged): the eyes keep `EYE_CLEARANCE` from every cabin mesh along the head box's edges, the dial's case now among them.
 - `test/z-fighting.test.ts`: the dial's case on the hull with its face and pointer turned five ways.
-- `npm run test:xr`, step 6n (part 3): Practice → Lay the gun → To 3 o'clock seats the player as driver and the turret turns by itself with the pointer on it; it stops at 3 o'clock and the dial reads 3; Forward brings both back to 12. Screenshot: `artifacts/xr-turret-dial.png`.
+- `npm run test:xr`, step 6n (part 6): Practice → Lay the gun → To 3 o'clock seats the player as driver and the turret turns by itself with the pointer on it; it stops at 3 o'clock and the dial reads 3; Forward brings both back to 12. Screenshot: `artifacts/xr-turret-dial.png`.
 - `npm run test:net` (`ONLY_TURRET=1`): the driver's To 3 o'clock asks the gunner's page, which turns the turret there, and the driver's dial reads 3 o'clock.
 
 `window.__turretDial` gives `state()` (the turret's angle, the pointer's as drawn, the hour it reads, whether the Practice turn is running), `toHour(hour)`, and the face's place (`at`, `facing`).

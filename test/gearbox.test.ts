@@ -16,8 +16,10 @@ import {
   parseGearbox,
   REVERSE,
   REVERSE_TOP,
+  STILL_RPM,
   TOP_GEAR,
 } from '../src/sim/gearbox.js';
+import { stopEngine } from '../src/sim/engine.js';
 import { createControls, createTankDrive, type DriverControls, stepDrive, type TankDrive } from '../src/sim/tank-drive.js';
 
 const DT = 1 / 60;
@@ -129,6 +131,39 @@ describe('gearbox (F1.16)', () => {
       // Into 1st on the move grinds even with the clutch in.
       run(s, c(1, 0, 'clutch', 1), 0.2);
       expect(s.grinding).toBe(true);
+    });
+
+    it('with the engine stopped and the tank still, gears go in without the clutch and never grind', () => {
+      const s = createTankDrive();
+      stopEngine(s);
+      // Run down in neutral: nothing turns.
+      run(s, c(NEUTRAL, 0, 'clutch'), 3);
+      expect(s.rpm).toBeLessThan(STILL_RPM);
+      for (const gear of [1, 2, 5, NEUTRAL, REVERSE, 3] as Gear[]) {
+        let ground = false;
+        run(s, c(gear, 0, 'clutch'), 0.4, (t) => (ground ||= t.grinding));
+        expect(ground).toBe(false);
+        expect(s.gear).toBe(gear);
+      }
+    });
+
+    it('still grinds with the engine stopped while the starter turns it, or while the tank rolls', () => {
+      const s = createTankDrive();
+      stopEngine(s);
+      run(s, c(NEUTRAL, 0, 'clutch'), 3);
+      // The starter turns the engine (it won't catch: the ignition is off).
+      const cranking = { ...c(NEUTRAL, 0, 'clutch'), battery: true, starter: true };
+      run(s, cranking, 0.3);
+      expect(s.cranking).toBe(true);
+      run(s, { ...cranking, gear: 2 }, 0.2);
+      expect(s.grinding).toBe(true);
+      expect(s.gear).toBe(NEUTRAL);
+      // Starter off and run down, but rolling: the tracks turn the box.
+      run(s, c(NEUTRAL, 0, 'clutch'), 3);
+      s.speed = 2;
+      run(s, c(3, 0, 'clutch'), 0.1);
+      expect(s.grinding).toBe(true);
+      expect(s.gear).toBe(NEUTRAL);
     });
 
     it('lets out the clutch slowly to pull away; dropped in a high gear, the engine bogs and barely pulls', () => {

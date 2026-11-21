@@ -4,16 +4,30 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The nightly run: every test on main, the extras too (TEST_EXTRAS below).
+  schedule:
+    - cron: '17 3 * * *'
+  # The same by hand, on any branch: Actions -> CI -> Run workflow.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # The nightly or a run by hand never cancels, nor is cancelled by, a push.
+  group: ci-${{ github.event_name == 'schedule' && 'nightly' || github.event_name == 'workflow_dispatch' && 'manual' || '' }}${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # The checks a pull request doesn't need each time (docs/testing.md): the
+  # Phase 0 spike rigs, the network test's 150 ms repeats of the clean link's
+  # sections and its smoothness measurements. They run nightly, by hand, and
+  # on the weekly dependency updates, which can break anything.
+  TEST_EXTRAS: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'deps/')) && '1' || '' }}
+
 # The tests run as parallel jobs, each on its own runner: quick checks, the
-# emulated-headset test (in three parts) and the two-player network test. The `check` job at
+# emulated-headset test (in six parts) and the two-player network test (in
+# two). The `check` job at
 # the end gates on all of them; it is the status check the main ruleset
 # requires, so keep its name. See docs/testing.md for how to run each part.
 jobs:
@@ -55,6 +69,12 @@ jobs:
           echo "code=$code" >> "$GITHUB_OUTPUT"
           tests=true
           browser=true
+          if [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ]; then
+            # The nightly run, or one by hand: everything, whatever changed.
+            echo "tests=true" >> "$GITHUB_OUTPUT"
+            echo "browser=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # What this run changes: a pull request against its base, a push
           # against the commit main was on before it.
           base=HEAD^1
@@ -114,8 +134,8 @@ jobs:
   xr:
     # The emulated-headset test drives an emulated Quest 3 through the IWSDK
     # dev runtime. The runners draw it in software at a frame every 0.5 to
-    # 1 s, so all of it took about 36 minutes: it runs in three parts of
-    # about 12 minutes each, on three runners at once (XR_PART in
+    # 1.2 s, so all of it takes over an hour: it runs in six parts of about
+    # 10 to 15 minutes each, on six runners at once (XR_PART in
     # scripts/xr-smoke-test.mjs). One part failing doesn't stop the others.
     needs: plan
     if: needs.plan.outputs.browser == 'true'
@@ -123,12 +143,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2, 3]
+        part: [1, 2, 3, 4, 5, 6]
     name: xr (part ${{ matrix.part }})
-    # Twice a part's 12 minutes when one is rerun (see the test step). Raised from 45 on 2026-11-20: on slow
-    # runners (a frame every ~1 s, against 0.6-0.7 s the day before) part 2 passed every check it reached but ran
-    # out of time three runs in a row (PR #130).
-    timeout-minutes: 60
+    # Room for a part to run twice (see the test step) on a slow runner (a frame every ~1 s). With three
+    # parts this was 60 minutes, after part 2 ran out of 45 three runs in a row on 2026-11-20 (PR #130).
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -180,11 +199,18 @@ jobs:
 
   net:
     # Two Playwright browsers play together against `vite preview` and the
-    # local lobby, on a runner of their own.
+    # local lobby, in two parts on two runners (NET_PART in
+    # scripts/net-test.mjs): the clean link, and 150 ms RTT with the
+    # practice crewmate.
     needs: plan
     if: needs.plan.outputs.browser == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2]
+    name: net (part ${{ matrix.part }})
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -196,10 +222,12 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       - name: Two-player network test
         run: npm run test:net
+        env:
+          NET_PART: ${{ matrix.part }}
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: net-artifacts
+          name: net-artifacts-${{ matrix.part }}
           path: |
             artifacts/*.png
             artifacts/net-report.json

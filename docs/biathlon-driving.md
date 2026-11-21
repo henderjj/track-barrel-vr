@@ -49,7 +49,7 @@ The tank's packet carries the fall's time still to go (one more byte; a page on 
 
 Game menu → **Practice → Obstacles**: Slalom, Hill, Bridge, Mud or Ford parks the tank on the course short of that obstacle, facing it the way a lap drives it, with the engine running. Alone, you take the driver's seat. In a crew, the seats stay as they are.
 
-Test hooks: `window.__course.layout()` gives `posts`, `bridge` and `obstacles`, `__course.posts()` gives each post as drawn and whether it is down, `__course.obstacle(name)` runs the shortcut, and `__drive.going({ sink, thrown, refit })` sets the going on the host. XR step 6x is in part 2: it also checks that a fall fades the view to black, moves the tank while it is black, clears again and leaves the engine off. The net test checks that a thrown track reaches the guest, and that a fall on the host fades the guest's view and gives it the +30 s.
+Test hooks: `window.__course.layout()` gives `posts`, `bridge` and `obstacles`, `__course.posts()` gives each post as drawn and whether it is down, `__course.obstacle(name)` runs the shortcut, and `__drive.going({ sink, thrown, refit })` sets the going on the host. XR step 6x is in part 4: it also checks that a fall fades the view to black, moves the tank while it is black, clears again and leaves the engine off. The net test checks that a thrown track reaches the guest, and that a fall on the host fades the guest's view and gives it the +30 s.
 
 ## Headset check
 
