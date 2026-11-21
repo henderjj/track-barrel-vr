@@ -356,10 +356,58 @@ describe('biathlon course (F5.3a)', () => {
         const corner = 0.36;
         const white = fire({ ...faces[i], x: faces[i].x + Math.cos(faces[i].yaw) * corner, y: faces[i].y + corner, z: faces[i].z - Math.sin(faces[i].yaw) * corner });
         expect(white.result.kind).not.toBe('target');
-        // Laid a little high, it goes over the board and the miss names it.
+        // Laid a little high, it goes over the board and the miss names it: called where it passed the board, not where it landed.
         const high = fire(faces[i], 0.3 * DEG);
         expect(high.result.kind).not.toBe('target');
-        expect(describeShot(high.result, high.origin, high.d, faces, TARGET_NAMES)).toMatch(new RegExp(`^Miss ${t.name}: \\d+ m over`));
+        expect(describeShot(high.result, high.origin, high.d, faces, TARGET_NAMES)).toBe(`Miss ${t.name}: high`);
+      });
+    }
+    setLineRanges(LINE_RANGES);
+  });
+
+  it('calls a miss on a board where the shell passed it, high or low, left or right, with no numbers (John, 21 November 2026)', () => {
+    // The gun laid `up` m above the disc's middle and `right` m to its right, as the gunner sees it.
+    for (const ranges of [LINE_RANGES, [LINE_RANGE_SPAN[0][1], LINE_RANGE_SPAN[1][1]]]) {
+      setLineRanges(ranges);
+      const faces = targetFaces();
+      COURSE_TARGETS.forEach((t, j) => {
+        const [x, z, heading] = boxSpot(t.line);
+        const tank = createTankDrive(x, z, heading);
+        const f = faces[COURSE_TARGET_FIRST + j];
+        const dx = f.x - x;
+        const dz = f.z - z;
+        const d = Math.hypot(dx, dz);
+        const call = (up: number, right: number) => {
+          const laid = { ...f, x: f.x - (dz / d) * right, y: f.y + up, z: f.z + (dx / d) * right };
+          const { yaw, elevation } = aimAt(tank, laid, muzzlePoint);
+          const origin = hullToWorld(tank, muzzlePoint(yaw, elevation, [0, 0, 0]), [0, 0, 0]);
+          const dir = hullDirToWorld(tank, barrelDirection(yaw, elevation, [0, 0, 0]), [0, 0, 0]);
+          const result = flyShell(origin, dir, faces, createShotResult());
+          return describeShot(result, origin, dir, faces, TARGET_NAMES);
+        };
+        const miss = (words: string) => `Miss ${t.name}: ${words}`;
+        expect(call(0, 0)).toBe(`Hit: ${t.name}`);
+        // Through the white over or under the disc (it is 1.1 m from the disc's middle to the board's edge): "just"; over or under the whole board: plain.
+        expect(call(0.6, 0)).toBe(miss('just high'));
+        expect(call(1.5, 0)).toBe(miss('high'));
+        expect(call(-0.6, 0)).toBe(miss('just low'));
+        expect(call(-1.3, 0)).toBe(miss('low'));
+        // Laid into the ground under the board, it strikes the ground before it: once "over", landing far behind.
+        expect(call(-2.5, 0)).toBe(miss('short'));
+        expect(call(0, 0.8)).toBe(miss('just right'));
+        expect(call(0, -1.6)).toBe(miss('left'));
+        expect(call(0.6, -0.8)).toBe(miss('just high, just left'));
+        expect(call(-0.6, 1.6)).toBe(miss('just low, right'));
+        // A corner of the disc's square: off by more than half the radius both ways, both said.
+        expect(call(0.3, 0.3)).toBe(miss('just high, just right'));
+        // Off the disc mostly one way: only that way is said.
+        expect(call(0.45, 0.1)).toBe(miss('just high'));
+        // The XR test's lay on the white (window.__firing.aimAt's offsets, right along the face's own right): up and to the right.
+        const corner = { ...f, x: f.x + Math.cos(f.yaw) * 0.55, y: f.y + 0.55, z: f.z - Math.sin(f.yaw) * 0.55 };
+        const aim = aimAt(tank, corner, muzzlePoint);
+        const origin = hullToWorld(tank, muzzlePoint(aim.yaw, aim.elevation, [0, 0, 0]), [0, 0, 0]);
+        const dir = hullDirToWorld(tank, barrelDirection(aim.yaw, aim.elevation, [0, 0, 0]), [0, 0, 0]);
+        expect(describeShot(flyShell(origin, dir, faces, createShotResult()), origin, dir, faces, TARGET_NAMES)).toBe(miss('just high, just right'));
       });
     }
     setLineRanges(LINE_RANGES);

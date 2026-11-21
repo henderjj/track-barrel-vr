@@ -256,7 +256,14 @@ export function hullDirToWorld(tank: Readonly<Pick<TankDrive, 'heading' | 'pitch
  * right of the target nearest its line (`faces[i]`, named by `names[i]`),
  * taking each target's copy in the tile the gun fired from (the targets
  * stand within the range, 600 m, of the start).
- * `origin` and `dir` are the shot's; `point` where it landed.
+ * `origin` and `dir` are the shot's; `point` where it landed; `speed` the
+ * round's.
+ *
+ * A biathlon board's disc (a round face) stands up off the ground, and a
+ * shell through the white flies on to land 100 to 200 m behind it, so a
+ * miss there is called where the shell passed the board, as a commander
+ * calls it from the tracer: high or low, left or right, no numbers
+ * (boardMiss; John's pick of 21 November 2026, docs/biathlon-race.md).
  */
 export function describeShot(
   result: ShotResult,
@@ -264,11 +271,101 @@ export function describeShot(
   dir: Readonly<Vec3>,
   faces: readonly HitFace[],
   names: readonly string[],
+  speed = MUZZLE_SPEED,
 ): string {
   if (result.kind === 'target') return `Hit: ${names[result.target]}`;
-  if (result.kind === 'none' || faces.length === 0) return 'Miss: lost in the distance';
+  if (faces.length === 0) return 'Miss: lost in the distance';
   const miss = missFrom(result, origin, dir, faces);
+  if (faces[miss.nearest].round) {
+    const call = boardMiss(result, origin, dir, faces[miss.nearest], speed);
+    if (call) return `Miss ${names[miss.nearest]}: ${call}`;
+  }
+  if (result.kind === 'none') return 'Miss: lost in the distance';
   return `Miss ${names[miss.nearest]}${miss.parts ? `: ${miss.parts}` : ''}`;
+}
+
+/** Where a shell passed a biathlon board, from the gun's side (boardMiss). */
+export interface BoardPass {
+  /** Up from the disc's middle where the shell crossed the board's plane, m (where it would have, had it not struck the ground first). */
+  up: number;
+  /** Right of the disc's middle, as the gunner looks, m. */
+  right: number;
+  /** It struck the ground before the board. */
+  short: boolean;
+}
+
+const passAt: Vec3 = [0, 0, 0];
+
+/**
+ * Where a shell from `origin` along `dir` at `speed` passes board face `f`
+ * (the board's copy nearest the gun), into `out`; null if it never reaches
+ * the board's plane (fired away from it, or along it).
+ */
+export function boardPass(
+  result: Readonly<ShotResult>,
+  origin: Readonly<Vec3>,
+  dir: Readonly<Vec3>,
+  f: Readonly<HitFace>,
+  speed = MUZZLE_SPEED,
+  out: BoardPass = { up: 0, right: 0, short: false },
+): BoardPass | null {
+  const nx = Math.sin(f.yaw);
+  const nz = Math.cos(f.yaw);
+  // The gun relative to the face, the gun put back into the middle tile as missFrom does (a lane is longer
+  // than half a tile, so the face's nearest copy can be one behind the gun); across the ground the shell flies at a steady speed.
+  const ox = wrapTile(origin[0]) - f.x;
+  const oz = wrapTile(origin[2]) - f.z;
+  const from = ox * nx + oz * nz;
+  const closing = speed * (dir[0] * nx + dir[2] * nz);
+  if (from === 0 || closing === 0 || from * closing > 0) return null;
+  const t = -from / closing;
+  shellAt(origin, dir, t, passAt, speed);
+  const px = ox + passAt[0] - origin[0];
+  const pz = oz + passAt[2] - origin[2];
+  // Right as the gunner looks along the shot (+X is right looking along -Z).
+  const flat = Math.hypot(dir[0], dir[2]) || 1;
+  out.right = (px * -dir[2] + pz * dir[0]) / flat;
+  out.up = passAt[1] - f.y;
+  out.short = result.kind === 'ground' && result.time < t;
+  return out;
+}
+
+const pass: BoardPass = { up: 0, right: 0, short: false };
+
+/**
+ * A miss on a biathlon board called as the commander sees it from the
+ * tracer: "high", "low" or "short" (struck the ground before the board),
+ * then "left" or "right"; "just" when it went through the white board on
+ * that side, plain when it missed the board altogether that way. A way off
+ * by less than half the disc's radius isn't said, unless nothing else is.
+ * No numbers: how much to come down is the gunner's to judge. '' when the
+ * shell never reached the board's plane.
+ */
+export function boardMiss(
+  result: Readonly<ShotResult>,
+  origin: Readonly<Vec3>,
+  dir: Readonly<Vec3>,
+  f: Readonly<HitFace>,
+  speed = MUZZLE_SPEED,
+): string {
+  const p = boardPass(result, origin, dir, f, speed, pass);
+  if (p == null) return '';
+  return boardMissWords(p, f.halfWidth);
+}
+
+/** boardMiss's words for a pass `p` by a disc of `radius` on a COURSE_BOARD. */
+export function boardMissWords(p: Readonly<BoardPass>, radius: number): string {
+  const said = radius / 2;
+  const upWord = (just: boolean) => `${just ? 'just ' : ''}${p.up > 0 ? 'high' : 'low'}`;
+  const sideWord = (just: boolean) => `${just ? 'just ' : ''}${p.right > 0 ? 'right' : 'left'}`;
+  const upJust = Math.abs(p.up) <= COURSE_BOARD.height / 2;
+  const sideJust = Math.abs(p.right) <= COURSE_BOARD.width / 2;
+  const parts: string[] = [];
+  if (p.short) parts.push('short');
+  else if (Math.abs(p.up) >= said) parts.push(upWord(upJust));
+  if (Math.abs(p.right) >= said) parts.push(sideWord(sideJust));
+  if (parts.length === 0) parts.push(Math.abs(p.up) >= Math.abs(p.right) ? upWord(true) : sideWord(true));
+  return parts.join(', ');
 }
 
 /** Where a shot landed against the target nearest its line: that target's index, and "20 m short, 3 m right" ('' when on it). */
@@ -391,7 +488,7 @@ export function describeRound(
   faces: readonly HitFace[],
   names: readonly string[],
 ): string {
-  if (ammo === 'ap') return describeShot(result, origin, dir, faces, names);
+  if (ammo === 'ap') return describeShot(result, origin, dir, faces, names, AMMO.ap.speed);
   const name = AMMO[ammo].short;
   if (ammo === 'he') {
     if (decision.target >= 0 && Number.isFinite(decision.blast)) {
@@ -399,7 +496,7 @@ export function describeRound(
     }
     // On an armoured target (F3.3): it bursts on the armour to no effect.
     if (result.kind === 'target' && decision.target < 0) return `${name} on ${names[result.target]}: no effect on its armour`;
-    return `${name} ${describeShot(result, origin, dir, faces, names).replace(/^H/, 'h').replace(/^M/, 'm')}`;
+    return `${name} ${describeShot(result, origin, dir, faces, names, AMMO.he.speed).replace(/^H/, 'h').replace(/^M/, 'm')}`;
   }
   if (result.kind === 'target') return `${name} on ${names[result.target]}`;
   if (result.kind === 'none' || faces.length === 0) return `${name} lost in the distance`;
