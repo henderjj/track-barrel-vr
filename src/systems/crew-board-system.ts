@@ -30,6 +30,8 @@ import { tankState } from './drive-system.js';
 import { enemyShared } from './enemy-system.js';
 import { loadedRound, loadingShown } from './loading-system.js';
 import { shownRun } from './range-run-system.js';
+import { shownNav } from './nav-course-system.js';
+import { navDone, navResult, navTasks } from '../sim/nav-course.js';
 
 interface CrewBoardDebug {
   /** What the boards say now. */
@@ -93,8 +95,8 @@ export class CrewBoardSystem extends createSystem({}) {
   private draws = 0;
   private fontsReady = false;
   /** The last numbers looked at: a change in any means the board is built again. */
-  private seen = new Float64Array(15).fill(Number.NaN);
-  private now = new Float64Array(15);
+  private seen = new Float64Array(16).fill(Number.NaN);
+  private now = new Float64Array(16);
   private rack: Record<AmmoKind, number> = { ap: 0, he: 0, smoke: 0 };
   private guns: EnemyCount = { out: 0, total: 0, in: false };
   private tanks: EnemyCount = { out: 0, total: 0, in: false };
@@ -189,11 +191,14 @@ export class CrewBoardSystem extends createSystem({}) {
     if (hill.phase !== 'off') return hill.time;
     const r = shownRun();
     if (r.phase !== 'idle') return Math.max(0, r.clock);
+    // The map-reading course (F2.12): its time, held at the last checkpoint's.
+    const nav = shownNav();
+    if (nav.cps.length > 0) return navDone(nav) ? nav.splits[nav.splits.length - 1] : nav.time;
     return this.time;
   }
 
   private timed(): boolean {
-    return shownScenario().phase !== 'off' || shownEscort().phase !== 'off' || shownHill().phase !== 'off' || shownRun().phase !== 'idle' || shownAmbush().phase !== 'off';
+    return shownScenario().phase !== 'off' || shownEscort().phase !== 'off' || shownHill().phase !== 'off' || shownRun().phase !== 'idle' || shownAmbush().phase !== 'off' || shownNav().cps.length > 0;
   }
 
   /** The numbers the board depends on, into `now`; whether any differs from last time. */
@@ -228,8 +233,10 @@ export class CrewBoardSystem extends createSystem({}) {
     n[13] = shownAmbush().v * 4 + PHASES.indexOf(shownAmbush().phase);
     // Hold the hill (F5.9).
     n[14] = shownHill().v;
+    // The map-reading course (F2.12).
+    n[15] = shownNav().v;
     let differs = false;
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 16; i++) {
       if (n[i] !== this.seen[i]) {
         differs = true;
         this.seen[i] = n[i];
@@ -266,6 +273,7 @@ export class CrewBoardSystem extends createSystem({}) {
     const escort = shownEscort();
     const mission = missionBoard();
     const hill = shownHill();
+    const nav = shownNav();
     if (escort.phase !== 'off') {
       const board = escortBoard(escort);
       drill = board.objective;
@@ -279,6 +287,10 @@ export class CrewBoardSystem extends createSystem({}) {
       drillTasks = hillTasks(hill);
     } else if (hill.phase !== 'off') {
       drill = hillDebrief(hill)[0];
+    } else if (nav.cps.length > 0) {
+      // The map-reading course (F2.12): the next checkpoints' references, or the result.
+      drill = navDone(nav) ? 'Map reading: done' : 'Map reading';
+      drillTasks = navDone(nav) ? [navResult(nav).replace('Map reading: ', '')] : navTasks(nav);
     } else if (run.phase !== 'idle') {
       const [heading, time, count] = clockLines(run);
       drill = heading;

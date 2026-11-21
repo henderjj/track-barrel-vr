@@ -26,6 +26,7 @@ import { turretToHour } from './turret-dial-system.js';
 import { steerACourse } from './compass-system.js';
 import { readTheMap } from './map-case-system.js';
 import { spotOnTheMap } from './map-marks-system.js';
+import { startMapCourse, stopMapCourse } from './nav-course-system.js';
 import { watchTheLamp } from './firing-lamp-system.js';
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
@@ -428,6 +429,16 @@ export class GameMenuSystem extends createSystem({}) {
       this.setOpen(false);
       stopRide();
       spotOnTheMap();
+    });
+    ui.on('menu-nav-start', () => {
+      // The map-reading course (F2.12): five checkpoints only the map shows; alone, the driver's seat.
+      this.setOpen(false);
+      stopRide();
+      startMapCourse();
+    });
+    ui.on('menu-nav-stop', () => {
+      this.setOpen(false);
+      stopMapCourse();
     });
     ui.on('menu-turret-dial', () => {
       // The driver's turret dial (F2.3): alone, into the driver's seat, and the turret turns to 3 o'clock.

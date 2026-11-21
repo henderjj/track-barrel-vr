@@ -868,6 +868,7 @@ async function ammoChecks(host, guest, label) {
   await guest.page.evaluate(() => window.__turret.forward());
   await enemyChecks(host, guest, label);
   await mapMarksChecks(host, guest, label);
+  await navChecks(host, guest, label);
   await enemyTankChecks(host, guest, label);
   await damageChecks(host, guest, label);
   await combatChecks(host, guest, label);
@@ -1170,6 +1171,48 @@ async function mapMarksChecks(host, guest, label) {
     return h.marks.length === 0 && g.marks.length === 0 ? { h, g } : null;
   }, 8000).catch(() => null);
   check(`Stopping the guns rubs their marks out on both maps (${label})`, clean !== null);
+}
+
+/**
+ * The map-reading course (F2.12): the guest's Start asks the host, which
+ * picks the course; both pages show the same checkpoints on the board and
+ * the map; the host's tank at CP1 reaches it on both; the guest's Stop
+ * clears both.
+ */
+async function navChecks(host, guest, label) {
+  const nav = (p) => p.page.evaluate(() => window.__nav.state());
+  const board = (p) => p.page.evaluate(() => window.__crewBoard.text());
+  await guest.page.evaluate(() => window.__nav.start(77));
+  const started = await waitFor('the course on both pages', async () => {
+    const [h, g] = await Promise.all([host, guest].map(nav));
+    return h.on && g.on && h.seed === 77 && g.refs.join() === h.refs.join() && g.v === h.v ? { h, g } : null;
+  }, 8000).catch(() => null);
+  const gb = await waitFor("the guest's board on CP1", async () => {
+    const b = await board(guest);
+    return started && b.tasks[0]?.text === `Next: CP1 at ${started.h.refs[0]}` ? b : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Start starts the host's course: both pages have the same five checkpoints, the guest's sign and board CP1 (${label})`,
+    started !== null && started.h.cps.length === 5 && started.g.lastSign.startsWith('Map reading') && gb !== null,
+    JSON.stringify(started ?? (await Promise.all([host, guest].map(nav)))));
+  await host.page.evaluate(() => {
+    const [x, z] = window.__nav.at(0);
+    window.__drive.place(x, z, 0);
+  });
+  const reached = await waitFor('CP1 reached on both pages', async () => {
+    const [h, g] = await Promise.all([host, guest].map(nav));
+    const map = await guest.page.evaluate(() => window.__mapCase.state().checkpoints);
+    return h.next === 1 && g.next === 1 && g.splits.length === 1 && map[0]?.done ? { h, g, map } : null;
+  }, 10000).catch(() => null);
+  check(`The host's tank at CP1 reaches it on both pages, and the guest's map ticks it (${label})`,
+    reached !== null && reached.g.splits[0] === reached.h.splits[0],
+    JSON.stringify(reached ?? (await Promise.all([host, guest].map(nav)))));
+  await guest.page.evaluate(() => window.__nav.stop());
+  const stopped = await waitFor('the course stopped on both', async () => {
+    const [h, g] = await Promise.all([host, guest].map(nav));
+    return h.cps.length === 0 && g.cps.length === 0 ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Stop clears the course on both pages (${label})`, stopped !== null);
+  await host.page.evaluate(() => window.__drive.place(0, 0, 0));
 }
 
 /**
