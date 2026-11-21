@@ -340,7 +340,7 @@ export const LANE_WALLS: readonly Obstacle[] = [
 ];
 
 /**
- * The ambush's wall (F5.10, docs/recon-ambush.md): 30 m of dry stone wall,
+ * The ambush's wall (F5.10, docs/ambush.md): 30 m of dry stone wall,
  * 1.5 m high, running east and west 9 m in front of the ambush spot
  * (src/sim/ambush.ts AMBUSH), 240 m south of the column's road. A tank
  * halted behind it shows the column only its turret over it. Added after

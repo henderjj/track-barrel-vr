@@ -7,7 +7,6 @@ import { aimBoard, BOARD_FIRST, lineClosed, lineFor } from '../sim/biathlon.js';
 import { boxAt, LINE_ACROSS } from '../sim/course.js';
 import { FIRST_COLUMN, FIRST_TANK, isColumn, isTank } from '../sim/enemy-guns.js';
 import { columnPose, onRoad } from '../sim/column.js';
-import { RECON_ENEMIES } from '../sim/recon.js';
 import { wrapTile } from '../sim/terrain.js';
 import { RANGE_TARGETS } from '../sim/range.js';
 import { hullToSeat, SEATS, seatToHull, type SeatId } from '../sim/cabin.js';
@@ -58,7 +57,7 @@ import { handUse } from './grip-system.js';
 import { loadedRound, loadingShown, scriptLoadingHand } from './loading-system.js';
 import { raceLineNow, shownRun } from './range-run-system.js';
 import { enemyAlong, enemyRevealed, enemyShared } from './enemy-system.js';
-import { shownAmbush, shownRecon } from './missions-system.js';
+import { shownAmbush } from './missions-system.js';
 import { findControl, type ScriptedHand, scriptedHands } from './mechanism-system.js';
 import { FLAG_LEFT_TRACKED, FLAG_RIGHT_TRACKED, netLink } from './net-system.js';
 import { ride } from './ride-system.js';
@@ -714,14 +713,11 @@ export class CrewBotSystem extends createSystem({}) {
   private enemyTarget(x: number, z: number): number {
     const enemy = enemyShared();
     if (!enemy.on) return -1;
-    // Recon unseen (F5.10): it lays on each enemy not yet reported, guns too, to report it, and holds its fire (missionHold).
-    const recon = shownRecon();
-    const reconOn = recon.phase === 'on';
     for (let i = 0; i < this.faces.length; i++) {
       const j = i - ENEMY_TARGET_FIRST;
       const tank = j >= FIRST_TANK;
       this.foeSkip[i] = j < 0 || j >= enemy.alive.length || !enemy.present[j] || !enemy.alive[j]
-        || (reconOn ? j >= RECON_ENEMIES || recon.reported[j] : !tank && !enemyRevealed(j))
+        || (!tank && !enemyRevealed(j))
         || (isColumn(j) && !onRoad(enemyAlong(j)));
       if (tank && !this.foeSkip[i]) {
         const live = liveFace(i);
@@ -737,12 +733,10 @@ export class CrewBotSystem extends createSystem({}) {
   }
 
   /**
-   * Whether a mission holds its fire (F5.10): on a recon always (a shot
-   * gives the tank away); in an ambush until it is sprung or the lead
-   * vehicle is within AMBUSH_OPEN m, so the whole column is in the trap.
+   * Whether the ambush holds its fire (F5.10): until it is sprung or the
+   * lead vehicle is within AMBUSH_OPEN m, so the whole column is in the trap.
    */
   private missionHold(): boolean {
-    if (shownRecon().phase === 'on') return true;
     const ambush = shownAmbush();
     if (ambush.phase !== 'on' || ambush.sprungAt >= 0 || enemyShared().sprung) return false;
     const d = enemyAlong(FIRST_COLUMN);

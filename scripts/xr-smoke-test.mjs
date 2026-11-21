@@ -4267,7 +4267,7 @@ async function partSix() {
   // 6zb. Escort a convoy (F5.8).
   await theConvoyEscort();
 
-  // 6zc. The missions: recon unseen and ambush a column (F5.10).
+  // 6zc. The mission: ambush a column (F5.10).
   await theMissions();
 
   // 6zd. Hold the hill (F5.9).
@@ -4443,13 +4443,8 @@ async function holdTheHill() {
 }
 
 /**
- * 6zc. The missions (F5.10, docs/recon-ambush.md). Missions → Recon unseen →
- *      Start puts the tank at the start with the guns and the tanks in (not
- *      the column) and the briefing on the sign; halted 100 m up the lane
- *      with the gun laid on gun A, behind the first wall, gun A is reported
- *      (the sign says so); parked in the open where gun B sees it whole, it
- *      is spotted: the recon is lost, the debrief names the gun and the
- *      enemy holds its fire. Ambush a column → Start puts the tank behind
+ * 6zc. The mission (F5.10, docs/ambush.md). Missions → Ambush a column
+ *      → Start puts the tank behind
  *      the ambush wall with the column in and the briefing; the column
  *      moved up the road is drawn there, the lead seeing only the turret
  *      over the wall (screenshot from the gunner's sight line); three
@@ -4463,48 +4458,12 @@ async function menuFreshOpen() {
 }
 
 async function theMissions() {
-  const recon = () => evalInApp('window.__recon.state()');
   const ambush = () => evalInApp('window.__ambush.state()');
   const enemy = () => evalInApp('window.__enemy.state()');
   const tank = () => evalInApp('window.__drive.state()');
   iwsdk(['xr', 'set-device-state'], {});
   evalInApp('(window.__damage.repair(), true)');
 
-  await menuFreshOpen();
-  await menuClick('menu-recon-start');
-  const started = await waitFor('the recon on, the guns and tanks in', () => {
-    const r = recon();
-    const e = enemy();
-    const t = tank();
-    return r.phase === 'on' && e.present.slice(0, 5).every(Boolean) && !e.present.slice(5).some(Boolean) && Math.hypot(t.x, t.z) < 1 && r;
-  }, 10000).catch(() => recon());
-  const briefing = await waitFor('the recon briefing', () => /^Recon: find the enemy/.test(evalInApp('window.__recon.sign')) && evalInApp('window.__recon.sign'), 5000)
-    .catch(() => evalInApp('window.__recon.sign'));
-  check('Missions → Recon unseen → Start: the tank at the start, the guns and tanks in (not the column), and the briefing on the sign',
-    started.phase === 'on' && /^Recon: find the enemy without being seen/.test(briefing),
-    `phase ${started.phase}, present ${enemy().present.join('/')}, sign "${briefing}"`);
-
-  // 100 m up the lane, behind the first wall's line, gun A shows only over cover: lay the gun on it (59° left).
-  evalInApp('(window.__drive.place(0, -100, 0), window.__turret.aim(59, 0), true)');
-  const reported = await waitFor('gun A reported', () => { const r = recon(); return r.reported[0] && r; }, 15000).catch(() => recon());
-  const note = await waitFor('the report on the sign', () => /^Reported: /.test(evalInApp('window.__recon.sign')) && evalInApp('window.__recon.sign'), 5000)
-    .catch(() => evalInApp('window.__recon.sign'));
-  check('Halted with the gun laid on gun A for 3 s, it is reported, the sign saying so, still unseen',
-    reported.reported[0] && reported.phase === 'on' && /^Reported: (Gun|Tank) [ABC], \d+ m/.test(note),
-    `reported ${reported.reported.join('/')}, phase ${reported.phase}, laid ${JSON.stringify(evalInApp('window.__recon.laid()'))}, sign "${note}"`);
-
-  // In the open where gun B sees the whole tank: spotted within seconds.
-  evalInApp('(window.__drive.place(0, -300, 0), true)');
-  const lost = await waitFor('the recon lost', () => { const r = recon(); return r.phase === 'lost' && r; }, 20000).catch(() => recon());
-  const debrief = await waitFor('the recon debrief', () => /^Spotted by/.test(evalInApp('window.__recon.sign')) && evalInApp('window.__recon.sign'), 5000)
-    .catch(() => evalInApp('window.__recon.sign'));
-  const shots = enemy().shots;
-  await sleep(4000);
-  check('Parked in the open, an enemy spots the tank: the recon is lost, the debrief names it, and the enemy holds its fire',
-    lost.phase === 'lost' && lost.spottedBy >= 0 && /^Spotted by (Gun|Tank) [ABC] at \d+:\d\d\. [1-5] of 5 reported/.test(debrief) && enemy().shots === shots,
-    `phase ${lost.phase}, sign "${debrief}", shots ${shots} → ${enemy().shots}`);
-
-  // The ambush.
   await menuFreshOpen();
   await menuClick('menu-ambush-start');
   const waiting = await waitFor('the ambush on, the column in, the tank behind the wall', () => {
