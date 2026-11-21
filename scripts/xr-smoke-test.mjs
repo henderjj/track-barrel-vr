@@ -2979,6 +2979,9 @@ async function partOne() {
 
   // 6s. Ammunition types (F3.1).
   await theAmmunition();
+
+  // 6zi. Touching the map: an order to the driver (F2.13).
+  await touchingTheMap();
 }
 
 /**
@@ -4959,6 +4962,52 @@ async function theMapCourse() {
   check('Stop clears the course off the board and the map', stopped.cps.length === 0 && !stopped.on && cleared.objective !== 'Map reading' && rubbed,
     `${JSON.stringify(stopped)}, board ${cleared.objective}, map clean ${rubbed}`);
   evalInApp('(window.__drive.place(0, 0, 0), true)');
+  iwsdk(['xr', 'set-device-state'], {});
+}
+
+/**
+ * 6zi. Touching the map (F2.13): holding the map case in the right hand,
+ * the left controller's ray on the map shows the pencil point, and its
+ * trigger touches the map there: alone, the order shows on a sign ("No
+ * driver aboard"), goes on the board and the spot is pencilled on the map.
+ */
+async function touchingTheMap() {
+  const nav = () => evalInApp('window.__navigator.state()');
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp('(window.__turret.set(null), window.__turret.forward(), window.__drive.set(null), window.__drive.place(0, 0, 0), true)');
+  await menuButtonPress();
+  await menuClick('menu-map');
+  await waitFor('the gunner\'s seat', () => evalInApp('window.__seats.mine') === 'gunner', 8000).catch(() => null);
+  const eye = evalInApp('window.__seats.eye("gunner")');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin(eye) });
+  // The right hand holds it up in front of the eyes (as 6zf takes it; here the hook's hold).
+  iwsdk(['xr', 'set-transform'], { device: 'controller-right', position: toOrigin([eye[0] + 0.15, eye[1] - 0.2, eye[2] - 0.35]) });
+  evalInApp("(window.__mapCase.holdFor('right'), true)");
+  const held = await waitFor('the case in the right hand', () => { const s = evalInApp('window.__mapCase.state()'); return s.holder === 'right' && s; }, 4000, 100).catch(() => null);
+  await sleep(Math.max(800, 3 * slowestFrameMs()));
+  // The left controller 25 cm in front of the map's face, a little left of its middle, its ray on the map's middle.
+  const face = evalInApp('window.__mapCase.face()');
+  const aimAt = face.centre;
+  const from = aimAt.map((v, i) => v + face.facing[i] * 0.25);
+  const ray = aimAt.map((v, i) => v - from[i]);
+  const expected = evalInApp(`window.__mapCase.rayAt(${JSON.stringify(from)}, ${JSON.stringify(ray)})`);
+  iwsdk(['xr', 'set-transform'], { device: 'controller-left', position: toOrigin(from) });
+  iwsdk(['xr', 'look-at'], { device: 'controller-left', target: toOrigin(aimAt) });
+  const pencil = await waitFor('the pencil point on the map', () => evalInApp("window.__debug.world.scene.getObjectByName('Map Pencil Point')?.visible === true"), 4000, 100).catch(() => false);
+  check('Holding the map case, the other hand\'s ray on the map shows the pencil point',
+    held !== null && expected !== null && pencil, `held ${held?.holder}, ray at ${JSON.stringify(expected)}, pencil ${pencil}`);
+  const before = nav().lastSign;
+  const pull = (value) => iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-left', buttons: [{ index: 0, value }] });
+  pull(1);
+  const ordered = await waitFor('the order', () => { const s = nav(); return s.goal && s.lastSign !== before && s; }, Math.max(4000, 6 * slowestFrameMs()), 100).catch(() => nav());
+  pull(0);
+  const board = await waitFor('the order on the board', () => { const b = evalInApp('window.__crewBoard.text()'); return b.calls.some((c) => c.text.startsWith('You: Driver, go to')) && b; }, 8000, 250).catch(() => evalInApp('window.__crewBoard.text()'));
+  const goal = ordered.goal ?? [NaN, NaN];
+  check('Its trigger touches the map there: alone, the order on a sign and the board, the spot pencilled on the map',
+    expected !== null && Math.hypot(goal[0] - expected[0], goal[1] - expected[1]) < 60 && ordered.lastSign.startsWith('No driver aboard: Driver, go to')
+      && board.calls.some((c) => c.text.startsWith('You: Driver, go to')),
+    `goal ${JSON.stringify(ordered.goal)}, expected ${JSON.stringify(expected)}, "${ordered.lastSign}"`);
+  evalInApp('(window.__mapCase.holdFor(null), true)');
   iwsdk(['xr', 'set-device-state'], {});
 }
 

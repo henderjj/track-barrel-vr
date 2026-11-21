@@ -151,6 +151,21 @@ export function crewCallStatus(): string {
 
 let active: CrewBotSystem | null = null;
 
+/** The practice crewmate driving (F2.13): drive along `path` to the spot touched on the map, named `label`. False unless this page is the crewmate in the driver's seat. */
+export function botGoTo(path: readonly (readonly [number, number])[], label: string): boolean {
+  return active?.goTo(path, label) ?? false;
+}
+
+/** Whether this page is the practice crewmate in the driver's seat (F2.13: it drives to a spot touched on the map). */
+export function botDriving(): boolean {
+  return settings.bot && seating.mine === 'driver';
+}
+
+/** Whether this page is the practice crewmate, in the gunner's seat with the crew joined (F2.13: it gives the driver headings). */
+export function botCommanding(): boolean {
+  return settings.bot && netLink.connected && seating.mine === 'gunner';
+}
+
 /**
  * The practice crewmate (F1.13, docs/crewmate.md): with "This page plays as:
  * Practice crewmate" in Settings (or ?bot=1), this page joins the crew as
@@ -317,7 +332,7 @@ export class CrewBotSystem extends createSystem({}) {
       /** What each hand holds (handUse) and what it is doing. */
       holding: () => ({ left: handUse.left, right: handUse.right, modes: [self.hands.left.mode, self.hands.right.mode] }),
       get status() { return self.status; },
-      get driving() { return { mode: self.driver.mode, motion: self.driver.motion, steady: self.driver.steady, leg: self.driver.leg, arrivals: self.driver.arrivals, wish: { ...self.wish } }; },
+      get driving() { return { mode: self.driver.mode, motion: self.driver.motion, steady: self.driver.steady, leg: self.driver.leg, arrivals: self.driver.arrivals, there: self.driver.there, goto: self.driver.gotoLabel, wish: { ...self.wish } }; },
       get gunning() {
         return { phase: self.phase, target: self.target, aim: { ...self.aim }, loads: self.loads, shots: self.shots, hits: self.hits, hit: [...self.hit], fireAtWill: self.fireAtWill };
       },
@@ -420,6 +435,14 @@ export class CrewBotSystem extends createSystem({}) {
     }
     const from = SEATS[seating.crew].label;
     this.showSign(`${from}: ${CALL_WORDS[call]}`);
+  }
+
+  goTo(path: readonly (readonly [number, number])[], label: string): boolean {
+    if (!settings.bot || seating.mine !== 'driver' || path.length === 0) return false;
+    const t = shownDriverState() ?? tankState();
+    this.driver.goTo(path, label, t);
+    console.info(`[Bot] driving to ${label} by ${path.length} legs`);
+    return true;
   }
 
   /** The practice crewmate does what a call says, if it is for its seat. */
