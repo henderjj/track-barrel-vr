@@ -3932,6 +3932,9 @@ async function theCommander() {
   await sleep(500);
   const before = c().said;
   // While he speaks: the tank ducked, and his voice coming out (watched in the page: a call lasts a second or two).
+  // Read the level once first: the page makes its meter at the first read, which comes back silent, and on a slow
+  // runner a call may get only one look (2026-11-21, a frame every 630 ms: 1 look, RMS 0).
+  evalInApp('(window.__commander.outputLevel(), true)');
   evalInApp(`(() => {
     const p = (window.__commanderProbe = { duck: 0, level: 0, frames: 0 });
     const id = setInterval(() => {
