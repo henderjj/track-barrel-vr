@@ -45,6 +45,7 @@ import { TankAudioSystem } from './systems/tank-audio-system.js';
 import { StartScreenSystem } from './systems/start-screen-system.js';
 import { TurretDialSystem } from './systems/turret-dial-system.js';
 import { CompassSystem } from './systems/compass-system.js';
+import { MapCaseSystem } from './systems/map-case-system.js';
 import { TurretSystem } from './systems/turret-system.js';
 
 // On a two-GPU PC, start on the graphics card Link uses (src/gpu-preference.ts).
@@ -89,6 +90,8 @@ World.create(
   world.registerSystem(TurretDialSystem);
   // The compasses at both seats (F2.9): turn their cards to the tank and turret as drawn this frame; the driver's course crank is a kit control.
   world.registerSystem(CompassSystem);
+  // The commander's map case (F2.10): after the turret has turned this frame (it hangs on the turret's wall), before OwnHandsSystem draws the hand holding it.
+  world.registerSystem(MapCaseSystem);
   // The cabin's lighting (docs/interior.md): turns the turret's light with it, after TurretSystem sets its angle.
   world.registerSystem(CabinLightSystem);
   // Loading and firing (F1.10): after the turret (the gun's elevation, the power grip's trigger), before the throwables and the hands drawn on the lever.

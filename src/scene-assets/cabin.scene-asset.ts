@@ -35,6 +35,7 @@ import { binParts, boardParts, BREECH_BORE, BREECH_CHAMFER, breechFittings, rack
 import { driverClockParts, gunnerClockParts } from './range-run.scene-asset.js';
 import { turretDialParts } from './turret-dial.scene-asset.js';
 import { compassCaseParts } from './compass.scene-asset.js';
+import { mapClipParts } from './map-case.scene-asset.js';
 import { DRIVER_COMPASS, GUNNER_COMPASS } from '../sim/compass.js';
 import { firingLampParts, lampRepeaterParts } from './firing-lamp.scene-asset.js';
 import { litInside } from './cabin-light.js';
@@ -590,6 +591,8 @@ function turretParts(): Part[] {
   parts.push(...lampRepeaterParts());
   // The gunner's compass's case on the front wall over the crew board (F2.9).
   parts.push(...compassCaseParts(GUNNER_COMPASS));
+  // The clips the commander's map case hangs on, on the right wall beside the gunner (F2.10).
+  parts.push(...mapClipParts());
   // The radio in the turret's bustle and the dome lamp's housing (docs/interior.md).
   parts.push(...turretDetailParts());
   // The traverse gearbox and motor, the turret lock, the basket's skirt, the pistol port and the interphone box.

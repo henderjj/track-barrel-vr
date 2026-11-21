@@ -52,6 +52,8 @@ export const HoldKind = {
    * Never sent (LOCAL_HOLD_KINDS); resolved by which hand holds which control.
    */
   LocalControl: 11,
+  /** The commander's map case in the hand (MapCaseSystem, F2.10): drawn in the hand, so the hand isn't locked. */
+  MapCase: 15,
 } as const;
 
 /**

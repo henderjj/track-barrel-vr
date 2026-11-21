@@ -3748,7 +3748,7 @@ async function partThree() {
 }
 
 /**
- * Part 4: the turret, the periscopes and the biathlon's driving challenge.
+ * Part 4: the turret, the periscopes, the biathlon's driving challenge and the map case.
  */
 async function partFour() {
   // 6f. The turret (F1.8).
@@ -3759,6 +3759,9 @@ async function partFour() {
 
   // 6x. The biathlon's driving challenge (F5.3d).
   await theDrivingChallenge();
+
+  // 6zf. The map case (F2.10).
+  await theMapCase();
 }
 
 /**
@@ -4849,6 +4852,68 @@ async function theCompasses() {
     done.drill?.done === true && boardAfter.includes('On course'),
     `drill ${JSON.stringify(done.drill)}, reads ${done.driver.reads}`);
   evalInApp('(window.__drive.set(null), window.__drive.place(0, 0, 0), window.__drive.engine("stop"), window.__compass.setCourse(0), true)');
+}
+
+/**
+ * 6zf. The map case (F2.10, docs/map-case.md): Practice → Commander → Read
+ *      the map seats the player as gunner with a sign; the case hangs on its
+ *      clips on the turret's right wall (screenshot from the gunner's eyes);
+ *      the right hand squeezes at it and takes it; brought up in front of
+ *      the eyes it turns its face to them (screenshot); let go, it springs
+ *      back to its clips.
+ */
+async function theMapCase() {
+  const state = () => evalInApp('window.__mapCase.state()');
+  const squeeze = (value) => iwsdk(['xr', 'set-gamepad-state'], { device: 'controller-right', buttons: [{ index: SQUEEZE, value }] });
+  iwsdk(['xr', 'set-device-state'], {});
+  evalInApp('(window.__turret.set(null), window.__turret.forward(), window.__drive.set(null), window.__drive.place(0, 0, 0), true)');
+  await menuButtonPress();
+  await menuClick('menu-map');
+  const told = await waitFor('the map sign', () => { const s = state(); return s.sign.startsWith('Read the map') && s; }, 8000).catch(() => state());
+  const seat = evalInApp('window.__seats.mine');
+  check('Practice → Commander → Read the map seats the player as gunner, the case on its clips and a sign saying where it hangs',
+    seat === 'gunner' && told.clipped && told.holder === null && told.sign.includes('behind your right shoulder'),
+    `seat ${seat}, ${JSON.stringify(told)}`);
+  const eye = evalInApp('window.__seats.eye("gunner")');
+  iwsdk(['xr', 'set-transform'], { device: 'headset', position: toOrigin(eye) });
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin(evalInApp('window.__mapCase.at()')) });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-map-case-wall.png'], {});
+
+  // The right hand to 3 cm in front of its face, then a squeeze.
+  const near = evalInApp('window.__mapCase.at(0.03)');
+  iwsdk(['xr', 'set-transform'], { device: 'controller-right', position: toOrigin(near) });
+  await sleep(400);
+  const fist = evalInApp(`(() => {
+    const w = window.__debug.world;
+    const space = w.player.gripSpaces.right;
+    space.updateWorldMatrix(true, false);
+    const q = space.getWorldQuaternion(w.player.quaternion.clone());
+    return w.player.position.clone().set(0.016, -0.019, 0.011).applyQuaternion(q)
+      .add(space.getWorldPosition(w.player.position.clone())).toArray();
+  })()`);
+  const fistOffset = fist.map((v, i) => v - near[i]);
+  const handTo = (p, duration = 0.4) => iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: toOrigin([p[0] - fistOffset[0], p[1] - fistOffset[1], p[2] - fistOffset[2]]), duration });
+  handTo(near);
+  await sleep(600);
+  squeeze(1);
+  const taken = await waitFor('the case in the right hand', () => { const s = state(); return s.holder === 'right' && s; }, 3000, 100).catch(() => state());
+  check('Squeezing at the map case takes it into the right hand', taken.holder === 'right', JSON.stringify(taken));
+
+  // Up in front of the eyes, a little low and to the right, as a map is read.
+  handTo([eye[0] + 0.2, eye[1] - 0.2, eye[2] - 0.3], 0.6);
+  await sleep(1200);
+  const reading = await waitFor('the case face to the eyes', () => { const s = state(); return s.holder === 'right' && s.facesEyes > 0.97 && s; }, 4000, 100).catch(() => state());
+  check('Held up, the case turns its face to the eyes', reading.holder === 'right' && reading.facesEyes > 0.97,
+    `holder ${reading.holder}, face to the eyes ${reading.facesEyes.toFixed(3)}`);
+  iwsdk(['xr', 'look-at'], { device: 'headset', target: toOrigin([eye[0] + 0.05, eye[1] - 0.2, eye[2] - 0.3]) });
+  await sleep(300);
+  iwsdk(['browser', 'screenshot', '--output-file', 'artifacts/xr-map-case-held.png'], {});
+
+  squeeze(0);
+  const back = await waitFor('the case back on its clips', () => { const s = state(); return s.clipped && s; }, 4000, 100).catch(() => state());
+  check('Let go, the map case springs back to its clips', back.clipped && back.holder === null, JSON.stringify(back));
+  iwsdk(['xr', 'set-device-state'], {});
 }
 
 /** Every part ends with these: the perf log, PC VR without the frame-rate API, and the console. */
