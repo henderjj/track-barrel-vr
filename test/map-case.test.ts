@@ -70,11 +70,12 @@ describe('map case in the hand (F2.10)', () => {
   const fist = [0.55, 1.75, -0.45];
   const eyes = [0.4, 1.98, -0.2];
 
-  it('turns its face to the eyes, square, its edge in the fist', () => {
+  it('turns its face square to the eyes, its edge in the fist', () => {
     for (const side of ['right', 'left'] as const) {
       const p = heldPose(fist, [0, 0.7, -0.7], eyes, side, createHeldPose());
-      const toEyes = [eyes[0] - fist[0], eyes[1] - fist[1], eyes[2] - fist[2]];
-      expect(dot(p.out, toEyes) / len(toEyes)).toBeCloseTo(1, 6);
+      // Square on from its own middle (not the fist, 19 cm to one side), so the whole map reads.
+      const toEyes = [eyes[0] - p.centre[0], eyes[1] - p.centre[1], eyes[2] - p.centre[2]];
+      expect(dot(p.out, toEyes) / len(toEyes)).toBeGreaterThan(0.999);
       for (const a of [p.right, p.up, p.out]) expect(len(a)).toBeCloseTo(1, 6);
       expect(dot(p.right, p.up)).toBeCloseTo(0, 6);
       expect(dot(p.up, p.out)).toBeCloseTo(0, 6);
@@ -91,15 +92,18 @@ describe('map case in the hand (F2.10)', () => {
   it('turns with the wrist\'s roll, to set the map to the ground', () => {
     const a = heldPose(fist, [0, 1, 0], eyes, 'right', createHeldPose());
     const b = heldPose(fist, [1, 0, 0], eyes, 'right', createHeldPose());
-    // A quarter turn of the handle is near a quarter turn of the map about the view.
-    expect(Math.abs(dot(a.up, b.up))).toBeLessThan(0.35);
-    expect(dot(a.out, b.out)).toBeCloseTo(1, 6);
+    // A quarter turn of the handle turns the map 60° to 120° about the view; the case swings round the fist as it
+    // turns (held by its edge), its face turning to stay square to the eyes.
+    expect(Math.abs(dot(a.up, b.up))).toBeLessThan(0.5);
+    for (const p of [a, b]) {
+      const toEyes = [eyes[0] - p.centre[0], eyes[1] - p.centre[1], eyes[2] - p.centre[2]];
+      expect(dot(p.out, toEyes) / len(toEyes)).toBeGreaterThan(0.999);
+    }
   });
 
-  it('keeps upright when the handle points at the eyes', () => {
-    const toEyes = [eyes[0] - fist[0], eyes[1] - fist[1], eyes[2] - fist[2]];
-    const l = len(toEyes);
-    const p = heldPose(fist, toEyes.map((v) => v / l), eyes, 'right', createHeldPose());
+  it('keeps upright when the handle points along the view', () => {
+    const view = heldPose(fist, [0, 1, 0], eyes, 'right', createHeldPose()).out;
+    const p = heldPose(fist, view, eyes, 'right', createHeldPose());
     expect(p.up[1]).toBeGreaterThan(0.5);
     expect(dot(p.up, p.out)).toBeCloseTo(0, 6);
   });

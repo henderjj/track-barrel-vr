@@ -54,6 +54,8 @@ export const GRAB_REACH = 0.06;
 /** Taken from the wall, it comes to the hand over this long; let go, it springs back over this long, s. */
 export const TO_HAND = 0.15;
 export const SPRING_BACK = 0.35;
+/** Passes heldPose makes to square the face to the eyes from its own middle. */
+const HELD_PASSES = 4;
 /** A held case's edge stands this far out from the middle of the fist, m. */
 export const EDGE_IN_FIST = 0.01;
 
@@ -84,7 +86,7 @@ export function createHeldPose(): HeldPose {
 }
 
 /**
- * Where a case held in a fist sits: its face turned to the eyes, its edge
+ * Where a case held in a fist sits: its face square to the eyes, its edge
  * in the fist (the right hand holds its right edge, the left hand its left),
  * and up it along the handle's way through the fist as it lies across the
  * face, so rolling the wrist turns the map. `fist` is the middle of the
@@ -93,39 +95,46 @@ export function createHeldPose(): HeldPose {
  */
 export function heldPose(fist: readonly number[], axis: readonly number[], eyes: readonly number[], side: 'left' | 'right', out: HeldPose): HeldPose {
   const o = out.out;
-  o[0] = eyes[0] - fist[0];
-  o[1] = eyes[1] - fist[1];
-  o[2] = eyes[2] - fist[2];
-  const ol = Math.hypot(o[0], o[1], o[2]) || 1;
-  o[0] /= ol;
-  o[1] /= ol;
-  o[2] /= ol;
-  // Up: the handle's way, less its part along the view; if the handle points at the eyes, the world's up instead.
   const u = out.up;
-  let d = axis[0] * o[0] + axis[1] * o[1] + axis[2] * o[2];
-  u[0] = axis[0] - o[0] * d;
-  u[1] = axis[1] - o[1] * d;
-  u[2] = axis[2] - o[2] * d;
-  if (Math.hypot(u[0], u[1], u[2]) < 0.2) {
-    d = o[1];
-    u[0] = -o[0] * d;
-    u[1] = 1 - o[1] * d;
-    u[2] = -o[2] * d;
-  }
-  const ul = Math.hypot(u[0], u[1], u[2]) || 1;
-  u[0] /= ul;
-  u[1] /= ul;
-  u[2] /= ul;
-  // Right = up × out.
   const r = out.right;
-  r[0] = u[1] * o[2] - u[2] * o[1];
-  r[1] = u[2] * o[0] - u[0] * o[2];
-  r[2] = u[0] * o[1] - u[1] * o[0];
-  const shift = (side === 'right' ? -1 : 1) * (CASE_HALF + EDGE_IN_FIST);
   const c = out.centre;
-  c[0] = fist[0] + r[0] * shift;
-  c[1] = fist[1] + r[1] * shift;
-  c[2] = fist[2] + r[2] * shift;
+  const shift = (side === 'right' ? -1 : 1) * (CASE_HALF + EDGE_IN_FIST);
+  // The face looks from its own middle to the eyes, and the middle hangs off the fist along the face: start from the
+  // fist and settle it (each pass shrinks the error by about the case's half-width over the eyes' distance, squared).
+  c[0] = fist[0];
+  c[1] = fist[1];
+  c[2] = fist[2];
+  for (let pass = 0; pass < HELD_PASSES; pass++) {
+    o[0] = eyes[0] - c[0];
+    o[1] = eyes[1] - c[1];
+    o[2] = eyes[2] - c[2];
+    const ol = Math.hypot(o[0], o[1], o[2]) || 1;
+    o[0] /= ol;
+    o[1] /= ol;
+    o[2] /= ol;
+    // Up: the handle's way, less its part along the view; if the handle points at the eyes, the world's up instead.
+    let d = axis[0] * o[0] + axis[1] * o[1] + axis[2] * o[2];
+    u[0] = axis[0] - o[0] * d;
+    u[1] = axis[1] - o[1] * d;
+    u[2] = axis[2] - o[2] * d;
+    if (Math.hypot(u[0], u[1], u[2]) < 0.2) {
+      d = o[1];
+      u[0] = -o[0] * d;
+      u[1] = 1 - o[1] * d;
+      u[2] = -o[2] * d;
+    }
+    const ul = Math.hypot(u[0], u[1], u[2]) || 1;
+    u[0] /= ul;
+    u[1] /= ul;
+    u[2] /= ul;
+    // Right = up × out.
+    r[0] = u[1] * o[2] - u[2] * o[1];
+    r[1] = u[2] * o[0] - u[0] * o[2];
+    r[2] = u[0] * o[1] - u[1] * o[0];
+    c[0] = fist[0] + r[0] * shift;
+    c[1] = fist[1] + r[1] * shift;
+    c[2] = fist[2] + r[2] * shift;
+  }
   return out;
 }
 
