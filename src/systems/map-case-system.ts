@@ -3,6 +3,7 @@ import { FIST_AXIS, FIST_CENTRE } from '../scene-assets/hand.scene-asset.js';
 import { createMapCase, createMapSheet } from '../scene-assets/map-case.scene-asset.js';
 import { contours, FIELD_MAP, gridLines, gridRef, type MapFeature, mapFeatures, MAP_HEIGHT, MAP_WIDTH, sampleGround } from '../sim/field-map.js';
 import { canGrab, CASE_CLIPPED, clippedPose, createHeldPose, type HeldPose, heldPose, SPRING_BACK, TO_HAND } from '../sim/map-case.js';
+import type { MapMark } from '../sim/map-marks.js';
 import { drawSignBackground, FloatingSign } from './floating-sign.js';
 import { grip, handUse } from './grip-system.js';
 import { netLink } from './net-system.js';
@@ -26,6 +27,16 @@ type Holder = Side | 'crew-left' | 'crew-right' | 'flat' | null;
 let active: MapCaseSystem | null = null;
 
 /** Practice → Sights → Read the map (F2.10): into the gunner's seat, with a sign saying where the map case is. */
+/** The marks the map shows (F2.11, MapMarksSystem), and their version: the sheet is painted again when it changes. */
+let shownMarks: readonly MapMark[] = [];
+let marksVersion = 0;
+
+/** Show these marks on the map (MapMarksSystem, on every change of the book). */
+export function showMapMarks(marks: readonly MapMark[]): void {
+  shownMarks = marks.map((m) => ({ ...m }));
+  marksVersion++;
+}
+
 export function readTheMap(): void {
   active?.practice();
 }
@@ -56,7 +67,10 @@ interface MapCaseDebug {
  */
 export class MapCaseSystem extends createSystem({}) {
   private texture!: CanvasTexture;
+  /** The map as painted at load, and the sheet shown: the map with the marks over it (F2.11). */
+  private base!: HTMLCanvasElement;
   private canvas!: HTMLCanvasElement;
+  private paintedMarks = -1;
   private group = new Group();
   private caseMesh!: Mesh;
   private sheet!: Mesh;
@@ -93,7 +107,11 @@ export class MapCaseSystem extends createSystem({}) {
 
   init(): void {
     active = this;
-    this.canvas = paintFieldMap();
+    this.base = paintFieldMap();
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = MAP_PX;
+    this.canvas.height = MAP_PX;
+    this.canvas.getContext('2d')!.drawImage(this.base, 0, 0);
     this.texture = new CanvasTexture(this.canvas);
     this.texture.colorSpace = SRGBColorSpace;
     this.texture.anisotropy = 8;
@@ -169,6 +187,7 @@ export class MapCaseSystem extends createSystem({}) {
 
   update(delta: number): void {
     this.time += delta;
+    if (marksVersion !== this.paintedMarks) this.paintMarks();
     const turret = this.turret?.object3D;
     if (!turret) return;
     turret.updateMatrixWorld();
@@ -296,6 +315,15 @@ export class MapCaseSystem extends createSystem({}) {
     this.group.quaternion.copy(this.goalQuat);
   }
 
+  /** The enemies seen, pencilled over the map (F2.11): the map as painted, then each mark. */
+  private paintMarks(): void {
+    this.paintedMarks = marksVersion;
+    const ctx = this.canvas.getContext('2d')!;
+    ctx.drawImage(this.base, 0, 0);
+    for (const m of shownMarks) paintMark(ctx, m);
+    this.texture.needsUpdate = true;
+  }
+
   private say(title: string, line1: string, line2: string): void {
     const { ctx, width, height } = this.sign;
     drawSignBackground(ctx, width, height);
@@ -314,6 +342,76 @@ export class MapCaseSystem extends createSystem({}) {
   }
 }
 
+/** The map's frame on the sheet, px: margins for the grid's numbers, a title band on top. */
+const MAP_LEFT = 96;
+const MAP_TOP = 170;
+/** Sheet pixels per world metre. */
+const MAP_SCALE = (MAP_PX - 2 * MAP_LEFT) / MAP_WIDTH;
+/** The red pencil's colour. */
+const PENCIL = '#c0262d';
+
+/** A world x's place across the sheet, px. */
+function mapPx(x: number): number {
+  return MAP_LEFT + (x - FIELD_MAP.west) * MAP_SCALE;
+}
+
+/** A world z's place down the sheet, px. */
+function mapPy(z: number): number {
+  return MAP_TOP + (z - FIELD_MAP.north) * MAP_SCALE;
+}
+
+/**
+ * One enemy seen, in red pencil (F2.11): the map's symbol for it (an
+ * anti-tank gun's arrow on its bar, a tank's track oval, a lorry's box on
+ * wheels), dashed if only its flash was seen, its number beside it, and a
+ * cross through it if knocked out.
+ */
+function paintMark(ctx: CanvasRenderingContext2D, m: Readonly<MapMark>): void {
+  const x = mapPx(m.x);
+  const y = mapPy(m.z);
+  ctx.save();
+  ctx.strokeStyle = PENCIL;
+  ctx.fillStyle = PENCIL;
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.setLineDash(m.how === 'flash' ? [10, 8] : []);
+  ctx.beginPath();
+  if (m.kind === 'gun') {
+    ctx.moveTo(x - 20, y + 14);
+    ctx.lineTo(x + 20, y + 14);
+    ctx.moveTo(x, y + 14);
+    ctx.lineTo(x, y - 22);
+    ctx.moveTo(x - 10, y - 10);
+    ctx.lineTo(x, y - 22);
+    ctx.lineTo(x + 10, y - 10);
+  } else if (m.kind === 'tank') {
+    ctx.roundRect(x - 32, y - 17, 64, 34, 17);
+  } else {
+    ctx.rect(x - 28, y - 18, 56, 28);
+    ctx.moveTo(x - 10, y + 17);
+    ctx.arc(x - 16, y + 17, 6, 0, 2 * Math.PI);
+    ctx.moveTo(x + 22, y + 17);
+    ctx.arc(x + 16, y + 17, 6, 0, 2 * Math.PI);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  if (m.out) {
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(x - 34, y - 34);
+    ctx.lineTo(x + 34, y + 34);
+    ctx.moveTo(x + 34, y - 34);
+    ctx.lineTo(x - 34, y + 34);
+    ctx.stroke();
+  }
+  ctx.font = 'bold italic 44px serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(m.how === 'flash' ? `${m.n}?` : `${m.n}`, x + 34, y - 14);
+  ctx.restore();
+}
+
 function smooth(t: number): number {
   return t * t * (3 - 2 * t);
 }
@@ -330,15 +428,14 @@ export function paintFieldMap(): HTMLCanvasElement {
   canvas.width = MAP_PX;
   canvas.height = MAP_PX;
   const ctx = canvas.getContext('2d')!;
-  // The map's frame on the sheet: margins for the grid's numbers, a title band on top.
-  const left = 96;
-  const top = 170;
-  const scale = (MAP_PX - 2 * left) / MAP_WIDTH;
+  const left = MAP_LEFT;
+  const top = MAP_TOP;
+  const scale = MAP_SCALE;
   const mapH = MAP_HEIGHT * scale;
-  const px = (x: number) => left + (x - FIELD_MAP.west) * scale;
-  const py = (z: number) => top + (z - FIELD_MAP.north) * scale;
+  const px = mapPx;
+  const py = mapPy;
   const ink = '#1d1a14';
-  const red = '#c0262d';
+  const red = PENCIL;
 
   ctx.fillStyle = '#e9dfc4';
   ctx.fillRect(0, 0, MAP_PX, MAP_PX);

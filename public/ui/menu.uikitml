@@ -683,6 +683,7 @@
             <div class="label">Commander</div>
             <div class="choices">
               <Button id="menu-map" class="choice" size="sm" variant="secondary">Read the map</Button>
+              <Button id="menu-map-spot" class="choice" size="sm" variant="secondary">Spot on the map</Button>
             </div>
           </div>
           <div class="setting">
