@@ -2,6 +2,8 @@ import { Euler, Matrix4, Vector3 } from '@iwsdk/core';
 import { describe, expect, it } from 'vitest';
 import {
   aimAt,
+  boardMissWords,
+  boardPass,
   createShotResult,
   describeShot,
   dropAt,
@@ -121,5 +123,28 @@ describe('ballistics (F1.10)', () => {
     expect(shoot(0, (-0.3 * Math.PI) / 180)).toMatch(/^Miss the 500 m tank: \d+ m short/);
     expect(shoot((-0.4 * Math.PI) / 180, 0)).toMatch(/^Miss the 500 m tank: .*\d+ m right$/);
     expect(shoot((0.4 * Math.PI) / 180, 0)).toMatch(/left$/);
+  });
+
+  it('calls a biathlon board miss in words by where it passed the board (test/course.test.ts fires them)', () => {
+    const r = 0.4;
+    const words = (up: number, right: number, short = false) => boardMissWords({ up, right, short }, r);
+    expect(words(0.5, 0)).toBe('just high');
+    expect(words(1.2, 0)).toBe('high');
+    expect(words(-0.5, 0)).toBe('just low');
+    expect(words(-1.2, 0)).toBe('low');
+    expect(words(-1.2, 0, true)).toBe('short');
+    expect(words(-1.2, 0.5, true)).toBe('short, just right');
+    expect(words(0.1, -1.2)).toBe('left');
+    // Off by under half the radius one way: not said; both under, the larger is.
+    expect(words(0.45, 0.19)).toBe('just high');
+    expect(words(0.19, -0.15)).toBe('just high');
+    expect(words(0.1, 0.15)).toBe('just right');
+    // A shell fired away from the board never passes it.
+    const f: HitFace = { x: 0, y: 1.5, z: -100, halfWidth: r, halfHeight: r, yaw: 0, round: true };
+    const shot = createShotResult();
+    expect(boardPass(shot, [0, 2, 0], [0, 0, 1], f)).toBeNull();
+    const pass = boardPass(shot, [0, 2, 0], [0, 0, -1], f);
+    expect(pass?.right).toBeCloseTo(0, 9);
+    expect(pass?.up).toBeCloseTo(0.5 - dropAt(100), 6);
   });
 });

@@ -4620,8 +4620,9 @@ async function theBiathlonCourse() {
   evalInApp("(window.__firing.aimAt(3, 'ap', 0.55, 0.55), true)");
   await sleep(300);
   const white = await fireOnce('the shot at the white to land');
-  check('A shell through the board\'s white, outside its black disc, misses it',
-    white?.kind !== 'target' && /^Miss the line 1 left board/.test(white?.line ?? ''), `shot: ${white?.line}`);
+  // Called where it passed the board, in words (docs/biathlon-race.md, "Calling a miss"): not "150 m over", where it landed far behind.
+  check('A shell through the board\'s white, outside its black disc, misses it, called where it passed the board with no numbers',
+    white?.kind !== 'target' && white?.line === 'Miss the line 1 left board: just high, just right', `shot: ${white?.line}`);
   // The gun's scatter (on for this check): two rounds on one lay land apart, both close to it.
   evalInApp('(window.__firing.scatter(true), window.__firing.aimAt(3), true)');
   await sleep(300);

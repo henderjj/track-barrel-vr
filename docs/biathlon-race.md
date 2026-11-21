@@ -19,7 +19,7 @@ The rules and their numbers live in [`src/sim/biathlon.ts`](../src/sim/biathlon.
 
 John's note after trying the race (2026-11-13): at 150 and 220 m the shooting was easy. Three changes make it a test of the gunner's skill.
 
-- **Only the black disc counts.** A board's hit box was the 1.5 m square round its 0.8 m disc; it is now the disc itself (`COURSE_BOARD.hitRadius` 0.4 m, a round face in `src/sim/ballistics.ts`). A shell through the white misses, and the board says by how much.
+- **Only the black disc counts.** A board's hit box was the 1.5 m square round its 0.8 m disc; it is now the disc itself (`COURSE_BOARD.hitRadius` 0.4 m, a round face in `src/sim/ballistics.ts`). A shell through the white misses, and the loading board calls where it passed the board ([Calling a miss](#calling-a-miss)).
 - **Longer ranges, picked afresh each race.** The boards moved off the infield to two firing lanes, so the gunner traverses to about 1 o'clock ([Lanes at 1 o'clock](#lanes-at-1-oclock); until 17 November 2026 they ran south, behind the tank at 6 o'clock). When a race starts the host picks each line's range in whole tens of metres: line 1 between 350 and 450 m, line 2 between 450 and 550 m (`pickLineRanges` in `src/sim/course.ts`). Nobody is told the range: the gunner judges it, most easily from how wide the 2.2 m board looks against the reticle's lead chevrons, 4 mils apart (table below), then lays that range mark on the disc. Outside a race, Practice → Biathlon → Line 1 and Line 2 find the boards where the last race left them (400 and 500 m before any race).
 - **The gun scatters.** No two rounds leave a real gun along quite the same line. Each shot now leaves the bore turned off it at random, 0.1 mil each way (one standard deviation): 4 cm at 400 m, 6 cm at 550 m. It was 0.3 mil until John's note of 17 November 2026 asked for less randomness ([Less scatter](#less-scatter)). The firing page draws it and sends the line the shell flew, so both pages see the same shell. It applies to every shot, on the range and against the enemies too, where the targets are big enough that it hardly shows.
 
@@ -34,6 +34,25 @@ John's note after trying the race (2026-11-13): at 150 and 220 m the shooting wa
 | 550 m | 4.0 mils | 1.5 mils | 37 cm | 5.5 cm | 100% |
 
 So a range judged within about 30 m and a steady lay hits; 50 m out at line 2 is close to the disc's edge, and 100 m out misses. With the old 0.3 mil scatter a perfect lay at 550 m still missed one round in twenty. The tracer shows where a miss went, for the next board.
+
+### Calling a miss
+
+John's note (2026-11-21): the loading board said how far a miss went short or over, "157 m over", measured where the shell struck the ground against the board's own distance. That misled. Only the black disc stops a shell, so one through the white or over the board flies on and lands 100 to 200 m behind it: a shell laid for 350 m at a 400 m board still read about "110 m over", and nearly every near miss read "over", whichever way the range was misjudged. The burst far behind the board points the same wrong way.
+
+A miss on a board is now called where the shell passed the board, as a commander calls one from the tracer, in words with no numbers (John's pick of four options; `boardPass` and `boardMiss` in `src/sim/ballistics.ts`): "Miss the line 1 left board: just high". The words:
+
+| Call | Where the shell passed the board's plane | Laid about, at 400 m |
+| --- | --- | --- |
+| just high / just low | through the white over or under the disc: within 1.1 m of the disc's middle (the board's half height) | 50 to 150 m long / short |
+| high | over the board altogether | more than 150 m long |
+| low | under the board, between its foot (0.4 m up) and the ground | 150 to 200 m short |
+| short | struck the ground before the board | more than 200 m short |
+| just left / just right | through the white beside the disc: within 1.1 m of its middle | |
+| left / right | beside the board altogether | |
+
+Up or down and left or right are said together ("just high, left"); a way off by less than half the disc's radius (20 cm) isn't said unless nothing else is. So the gunner learns which way to correct, not how much: whether "just high" was 60 m long or 140 m is theirs to judge from the board's width. The range's targets and the enemies stand on the ground, so their misses keep saying metres short or over, measured on the ground; smoke too, since it lays its screen where it lands.
+
+The call is on the gunner's loading board ("Miss the line 1 left board: just high. Load!") and the Combat tab, on both pages, from the same shot (no new event or packet). The commander's voice is to say it too, once John has listened to the new lines; that is a separate change.
 
 **The lanes.** Each lane runs 580 m from its box to the right front, line 1's at 23° right of the hull's heading and line 2's at 20° (both about 1 o'clock), line 2's starting 7 m to the left of line 1's, so they fan apart and a shell over one line's boards never reaches the other's. The ground along each is flattened like the course's field (16 m either side of the line, rolling again over the next 35 m), and nothing stands within 14 m of the line, so no crest or rock hides a board at any range. The lanes keep clear of the range's targets, the enemy guns and the enemy tanks' routes, and of the penalty loop's gate posts and signs they pass over (tested); see the [world map](world-map.md). The boards are drawn on their own now, six small meshes beside their covers, moved when a race picks new ranges, rather than merged into the ground's chunks; a lane is longer than half a tile, so they are drawn from the copy of their lane's middle nearest the tank.
 
@@ -117,5 +136,6 @@ On a Quest 3 after the deploy, with the cache cleared (Ctrl+Shift+R), seated. Be
 5. Swap: you gunner, the crewmate driving. Start a race: it drives off at Go, halts in each box and waits for your three rounds, then takes the loops you owe. Say how the rack with only three shells (the fourth slot empty) feels, and whether "No rounds left" on the loading board is clear.
 6. Alone: **Ready line 2** seats you as gunner in box 2, laid and loaded; fire, and look through the sight: the board turns white at the range this race picked (450 to 550 m).
 6a. Harder shooting: start a race and shoot line 1 yourself without Ready line. Traverse right to about 1 o'clock, judge the range from the board's width against the 4-mil chevrons, and fire. Say whether the boards read clearly at that range in the sight, whether judging the range feels fair, how often you hit, and whether a miss's tracer tells you which way to correct.
+6b. Calling a miss: Practice → Biathlon → **Line 1**, then lay deliberately on the white above the disc and fire, then well over the board, then under it. The loading board should say "just high", "high" and "just low" (or "short" if the shell strikes the ground first), with no metres. Say whether the words tell you which way to correct while still leaving you to judge how far.
 7. Game menu → Comfort and stats → Save the CSV: the race's row has its laps, misses, penalty loops and medal.
 8. With the performance HUD on during a race, say whether the frame time stays as before.
