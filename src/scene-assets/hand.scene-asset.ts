@@ -111,6 +111,17 @@ export const FIST_AXIS: readonly [number, number, number] = [0.19326625764369965
 export const FIST_CENTRE: readonly [number, number, number] = [0.016, -0.019, 0.011];
 
 /**
+ * The way a right hand points, from the wrist towards the knuckles (the
+ * wrist's -Z), in its grip space: along the forearm, square to FIST_AXIS.
+ * A hand on the parking brake is turned round the handle until this lies
+ * along the lever's travel (hand-lock.ts). A left hand's is this mirrored in X.
+ */
+export const HAND_POINTING: readonly [number, number, number] = (() => {
+  const d = new Vector3(0, 0, -1).transformDirection(WRIST_IN_GRIP);
+  return [d.x, d.y, d.z] as const;
+})();
+
+/**
  * The tip of a straight index finger in a right hand's grip space, for
  * pressing buttons (the mechanism kit): the knuckle plus the finger's
  * length along the wrist's -Z. A left hand's is this mirrored in X.

@@ -80,7 +80,8 @@ export const HAND_THROTTLE: LeverSpec = {
  * forwards: the trigger squeezes the release latch on the handle's front,
  * which lifts the ratchet's pawl by a rod down the lever, and a hand on the
  * handle is drawn with its index finger resting on the latch (John's
- * headset note, 20 November 2026).
+ * headset note, 20 November 2026), pointing the way the lever moves (his
+ * note of 21 November).
  */
 export const PARKING_BRAKE: LeverSpec = {
   length: 0.42,
@@ -92,8 +93,8 @@ export const PARKING_BRAKE: LeverSpec = {
   detents: Array.from({ length: 10 }, (_, i) => (28 - 4 * i) * DEG),
   deadband: 0,
   ratchet: -1,
-  // Held 6 cm under the handle's top: the index finger, 3 cm above the fist's middle, on the latch.
-  latch: { fist: 0.36 },
+  // Held 7 cm under the handle's top: the index finger, 3 cm above the fist's middle, round the latch's foot.
+  latch: { fist: 0.35 },
 };
 /** The brake holds from here back, radians; where it is drawn on for the crewmate. */
 export const PARKING_BRAKE_ON = 20 * DEG;
