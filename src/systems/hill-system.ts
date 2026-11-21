@@ -57,6 +57,11 @@ export function startHill(): void {
   active?.start();
 }
 
+/** The crew marched to the hill's start (F2.12b, Missions → Hold the hill → March): the run begins where the tank stands. Host only. */
+export function beginHillInPlace(): void {
+  if (netLink.isHost) active?.start(true);
+}
+
 /** Missions → Hold the hill → Stop: the enemy goes. */
 export function stopHill(): void {
   if (!netLink.isHost) {
@@ -169,16 +174,22 @@ export class HillSystem extends createSystem({}) {
     };
   }
 
-  /** Host: start the run afresh: the advance to contact stopped, the tank on the reverse slope, the battery begun with nothing in yet. */
-  start(): void {
+  /**
+   * Host: start the run afresh: the advance to contact stopped, the tank on
+   * the reverse slope, the battery begun with nothing in yet. `inPlace`: the
+   * crew marched there (F2.12b): the tank stays as it came, running.
+   */
+  start(inPlace = false): void {
     if (!netLink.isHost) return;
     // The advance to contact gives way, its debrief too (the board shows one fight's).
     if (shownScenario().phase !== 'off') stopScenario();
     // So does the convoy escort (F5.8): both are fights with the one battery.
     if (shownEscort().phase !== 'off') stopEscort();
-    repairTank();
-    resetTank('warm');
-    placeTank(HILL.startX, HILL.startZ, 0);
+    if (!inPlace) {
+      repairTank();
+      resetTank('warm');
+      placeTank(HILL.startX, HILL.startZ, 0);
+    }
     setAmmoRack('ap');
     beginAttack(HILL.seed);
     this.run.start();

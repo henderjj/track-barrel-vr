@@ -27,6 +27,7 @@ import { steerACourse } from './compass-system.js';
 import { readTheMap } from './map-case-system.js';
 import { spotOnTheMap } from './map-marks-system.js';
 import { startMapCourse, stopMapCourse } from './nav-course-system.js';
+import { marchStatus, startMarch, stopMarch } from './report-points-system.js';
 import { watchTheLamp } from './firing-lamp-system.js';
 import { startGunning, turretForward, turretStatus } from './turret-system.js';
 import { ride, rideStatus, setRideOption, startRide, stopRide } from './ride-system.js';
@@ -583,7 +584,14 @@ export class GameMenuSystem extends createSystem({}) {
       stopRide();
       startHill();
     });
+    // F2.12b: March starts the crew at SP, to cross the SL and pass the report points to the hill.
+    ui.on('menu-hill-march', () => {
+      this.setOpen(false);
+      stopRide();
+      startMarch('hill');
+    });
     ui.on('menu-hill-stop', () => {
+      if (marchStatus('hill') !== '') stopMarch();
       stopHill();
       this.render();
     });
@@ -610,7 +618,13 @@ export class GameMenuSystem extends createSystem({}) {
       stopRide();
       startMissionRun('ambush');
     });
+    ui.on('menu-ambush-march', () => {
+      this.setOpen(false);
+      stopRide();
+      startMarch('ambush');
+    });
     ui.on('menu-ambush-stop', () => {
+      if (marchStatus('ambush') !== '') stopMarch();
       stopMissionRun('ambush');
       this.render();
     });
@@ -736,11 +750,11 @@ export class GameMenuSystem extends createSystem({}) {
       this.ui?.setText('menu-tanks-status', enemyStatus('tanks'));
       this.ui?.setText('menu-damage-status', damageStatus());
       this.ui?.setText('menu-battle-status', scenarioStatus());
-      this.ui?.setText('menu-hill-status', hillStatus());
+      this.ui?.setText('menu-hill-status', marchStatus('hill') || hillStatus());
       this.ui?.setText('menu-tune-status', tuningStatus());
       this.ui?.setText('menu-escort-status', escortStatus());
       this.renderTuning();
-      this.ui?.setText('menu-ambush-status', ambushStatus());
+      this.ui?.setText('menu-ambush-status', marchStatus('ambush') || ambushStatus());
       this.ui?.setText('menu-run-status', runStatus());
       this.ui?.setText('menu-course-status', courseStatus());
       this.ui?.setText('menu-race-status', raceStatus());
@@ -834,13 +848,13 @@ export class GameMenuSystem extends createSystem({}) {
     ui.setText('menu-damage-status', damageStatus());
     ui.setText('menu-battle-status', scenarioStatus());
     ui.setText('menu-battle-start', shownScenario().phase === 'on' ? 'Restart' : 'Start');
-    ui.setText('menu-hill-status', hillStatus());
+    ui.setText('menu-hill-status', marchStatus('hill') || hillStatus());
     ui.setText('menu-hill-start', shownHill().phase === 'on' ? 'Restart' : 'Start');
     ui.setText('menu-tune-status', tuningStatus());
     ui.setText('menu-escort-status', escortStatus());
     ui.setText('menu-escort-start', shownEscort().phase === 'on' ? 'Restart' : 'Start');
     this.renderTuning();
-    ui.setText('menu-ambush-status', ambushStatus());
+    ui.setText('menu-ambush-status', marchStatus('ambush') || ambushStatus());
     ui.setText('menu-ambush-start', shownAmbush().phase === 'on' ? 'Restart' : 'Start');
     ui.setText('menu-run-status', runStatus());
     const run = shownRun();

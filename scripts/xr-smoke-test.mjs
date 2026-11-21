@@ -3751,6 +3751,9 @@ async function partThree() {
 
   // 6zh. The map-reading course (F2.12).
   await theMapCourse();
+
+  // 6zj. Mission report points: the approach march (F2.12b).
+  await theApproachMarch();
 }
 
 /**
@@ -4962,6 +4965,71 @@ async function theMapCourse() {
   check('Stop clears the course off the board and the map', stopped.cps.length === 0 && !stopped.on && cleared.objective !== 'Map reading' && rubbed,
     `${JSON.stringify(stopped)}, board ${cleared.objective}, map clean ${rubbed}`);
   evalInApp('(window.__drive.place(0, 0, 0), true)');
+  iwsdk(['xr', 'set-device-state'], {});
+}
+
+/**
+ * 6zj. Mission report points (F2.12b, docs/report-points.md): Missions →
+ * Hold the hill → March puts the tank at SP with the briefing, the route
+ * in blue on the map and the board's next reports; the start line counts
+ * crossed going north, each RP in turn as the tank gets there, and the
+ * last, the position, begins the hill. Stop rubs the route off the map.
+ */
+async function theApproachMarch() {
+  const state = () => evalInApp('window.__report.state()');
+  const board = () => evalInApp('window.__crewBoard.text()');
+  const route = () => evalInApp('window.__mapCase.state().route');
+  const place = (x, z) => evalInApp(`(window.__drive.place(${x}, ${z}, 0), true)`);
+  iwsdk(['xr', 'set-device-state'], {});
+  await menuButtonPress();
+  await menuClick('menu-hill-march');
+  const started = await waitFor('the march begun', () => { const s = state(); return s.mission === 'hill' && s.march && s.lastSign.startsWith('Approach march') && s; }, 8000).catch(() => state());
+  const at = evalInApp('(() => { const t = window.__drive.state(); return [t.x, t.z]; })()');
+  const first = await waitFor('the board on the march', () => { const b = board(); return b.objective === 'Approach march: Hold the hill' && b; }, 8000, 250).catch(() => board());
+  const drawn = await waitFor('the route on the map', () => { const r = route(); return r && r.points.length === 3 && r; }, 8000, 200).catch(() => route());
+  check('Missions → Hold the hill → March: the tank at SP, the briefing, the board\'s next reports, the SL and three RPs on the map',
+    started.march && Math.hypot(at[0], at[1]) < 5 && evalInApp('window.__hill.state().phase') === 'off'
+      && first.tasks[0]?.text === 'Next: cross the SL' && /^Then: RP1 at \d{6}$/.test(first.tasks[1]?.text ?? '')
+      && drawn?.sl.crossed === false && drawn.points.every((p, k) => p.label === `RP${k + 1}` && !p.done),
+    `tank ${at.map((v) => v.toFixed(0)).join(', ')}, ${JSON.stringify(started)}, board ${JSON.stringify(first.tasks)}, map ${JSON.stringify(drawn)}`);
+  // Over the start line, north: the tank just short of it, then just past.
+  const [, slZ] = evalInApp('window.__report.sl()');
+  place(0, slZ + 8);
+  await sleep(Math.max(400, 2 * slowestFrameMs()));
+  place(0, slZ - 8);
+  const crossed = await waitFor('the SL crossed', () => { const s = state(); return s.slAt >= 0 && s; }, 8000, 200).catch(() => state());
+  // RP2 before RP1 doesn't count; then RP1 and RP2 in turn.
+  const rp = (k) => evalInApp(`window.__report.at(${k})`);
+  place(...rp(1));
+  await sleep(Math.max(400, 2 * slowestFrameMs()));
+  const skipped = state().next;
+  for (const k of [0, 1]) {
+    place(...rp(k));
+    await waitFor(`RP${k + 1} passed`, () => state().next === k + 1, 8000, 200).catch(() => null);
+  }
+  const passed = state();
+  const calls = await waitFor('the reports on the board', () => { const b = board(); return b.calls.some((c) => c.text.startsWith('Passing RP2')) && b; }, 8000, 250).catch(() => board());
+  const ticked = await waitFor('RP1 and RP2 ticked', () => { const r = route(); return r?.sl.crossed && r.points[1].done && r; }, 8000, 200).catch(() => route());
+  check('The SL crossed going north and the RPs passed in order: called on the board, ticked on the map',
+    crossed.slAt >= 0 && skipped === 0 && passed.next === 2 && passed.march
+      && calls.calls.some((c) => c.text.startsWith('Crossed the start line')) && calls.calls.some((c) => c.text.startsWith('Passing RP1'))
+      && /^Next: RP3 \(position\) at \d{6}$/.test(calls.tasks[0]?.text ?? '') && ticked?.points[0].done && !ticked.points[2].done,
+    `slAt ${crossed.slAt}, skipped ${skipped}, ${JSON.stringify(passed)}, board ${JSON.stringify(calls.tasks)}, map ${JSON.stringify(ticked)}`);
+  place(...rp(2));
+  const inPlace = await waitFor('the hill begun in position', () => evalInApp('window.__hill.state().phase') === 'on' && state(), 8000, 200).catch(() => state());
+  const tank = evalInApp('(() => { const t = window.__drive.state(); return [t.x, t.z]; })()');
+  const pos = rp(2);
+  check('RP3, the position: the march over, the hill begun where the tank stands, the call on the board',
+    inPlace.next === 3 && !inPlace.march && Math.hypot(tank[0] - pos[0], tank[1] - pos[1]) < 5
+      && board().calls.some((c) => c.text.startsWith('RP3: in position')),
+    `${JSON.stringify(inPlace)}, tank ${tank.map((v) => v.toFixed(0)).join(', ')}, hill ${evalInApp('window.__hill.state().phase')}`);
+  await menuButtonPress();
+  await menuClick('menu-hill-stop');
+  const rubbed = await waitFor('the route rubbed off', () => route() === null && state().mission === '', 8000, 200).catch(() => false);
+  check('Missions → Hold the hill → Stop ends the hill and rubs the route off the map', rubbed && evalInApp('window.__hill.state().phase') === 'off',
+    `route ${JSON.stringify(route())}, ${JSON.stringify(state())}`);
+  if (evalInApp('window.__gameMenu.open')) await menuButtonPress();
+  evalInApp('(window.__damage.repair(), window.__drive.place(0, 0, 0), true)');
   iwsdk(['xr', 'set-device-state'], {});
 }
 

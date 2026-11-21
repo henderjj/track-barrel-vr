@@ -903,6 +903,7 @@
             <div class="label">Ambush a column</div>
             <div class="choices">
               <Button id="menu-ambush-start" class="choice" size="sm" variant="secondary">Start</Button>
+              <Button id="menu-ambush-march" class="choice" size="sm" variant="secondary">March</Button>
               <Button id="menu-ambush-stop" class="choice" size="sm" variant="secondary">Stop</Button>
             </div>
           </div>
@@ -911,6 +912,7 @@
             <div class="label">Hold the hill</div>
             <div class="choices">
               <Button id="menu-hill-start" class="choice" size="sm" variant="secondary">Start</Button>
+              <Button id="menu-hill-march" class="choice" size="sm" variant="secondary">March</Button>
               <Button id="menu-hill-stop" class="choice" size="sm" variant="secondary">Stop</Button>
               <Button id="menu-hill-hulldown" class="choice" size="sm" variant="secondary">Hull down</Button>
             </div>

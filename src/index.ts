@@ -49,6 +49,7 @@ import { MapCaseSystem } from './systems/map-case-system.js';
 import { MapMarksSystem } from './systems/map-marks-system.js';
 import { NavCourseSystem } from './systems/nav-course-system.js';
 import { NavigatorSystem } from './systems/navigator-system.js';
+import { ReportPointsSystem } from './systems/report-points-system.js';
 import { TurretSystem } from './systems/turret-system.js';
 
 // On a two-GPU PC, start on the graphics card Link uses (src/gpu-preference.ts).
@@ -127,6 +128,8 @@ World.create(
   world.registerSystem(NavCourseSystem);
   // The commander navigating (F2.13): hears touches on the map (MapCaseSystem, earlier in the frame) and gives the map course's headings from NavCourseSystem's run.
   world.registerSystem(NavigatorSystem);
+  // Mission report points (F2.12b): follows the missions above, draws its route on the map case and feeds the board below.
+  world.registerSystem(ReportPointsSystem);
   // The crew board (F6.5): after the systems whose notes it logs and whose state it shows (damage, the fight, the run, the course); it redraws only on a change.
   world.registerSystem(CrewBoardSystem);
   // After the kit has moved its levers: it reads them into the drive (DriveSystem drives by them next frame) and draws the gauges.

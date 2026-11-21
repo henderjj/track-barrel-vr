@@ -40,6 +40,23 @@ export interface MapCheckpoint {
   z: number;
   n: number;
   done: boolean;
+  /** Its name on the map; CPn if none. */
+  label?: string;
+}
+
+/** A mission's route (F2.12b, ReportPointsSystem): its start line, crossed or not, and its report points, ticked when passed. */
+export interface MapRoute {
+  sl: { a: readonly number[]; b: readonly number[]; crossed: boolean };
+  points: MapCheckpoint[];
+}
+
+let shownRoute: MapRoute | null = null;
+
+/** Show a mission's route on the map, or rub it out (null). */
+export function showMapRoute(route: MapRoute | null): void {
+  if (route === null && shownRoute === null) return;
+  shownRoute = route ? { sl: { ...route.sl }, points: route.points.map((p) => ({ ...p })) } : null;
+  marksVersion++;
 }
 
 let shownCheckpoints: readonly MapCheckpoint[] = [];
@@ -75,7 +92,7 @@ export function readTheMap(): void {
 
 interface MapCaseDebug {
   /** Who holds it, whether it is on its clips, its middle and the way its face looks (turret space), how square its face is to this player's eyes (1 square on), and the sign. */
-  state(): { holder: Holder; clipped: boolean; centre: number[]; facing: number[]; facesEyes: number; sign: string; lastSign: string; checkpoints: MapCheckpoint[] };
+  state(): { holder: Holder; clipped: boolean; centre: number[]; facing: number[]; facesEyes: number; sign: string; lastSign: string; checkpoints: MapCheckpoint[]; route: MapRoute | null };
   /** The middle of the case on its clips, `out` m in front of its face, scene space (with the turret as drawn): where a hand goes to take it. */
   at(out?: number): number[];
   /** Hold it up in front of the eyes on a PC page (G), or put it back. */
@@ -225,6 +242,8 @@ export class MapCaseSystem extends createSystem({}) {
           sign: self.sign.visible ? self.signText : '',
           lastSign: self.signText,
           checkpoints: self.paintedMarks === marksVersion ? shownCheckpoints.map((c) => ({ ...c })) : [],
+          // The mission's route as painted (F2.12b): null until the paper shows it.
+          route: self.paintedMarks === marksVersion && shownRoute ? { sl: { ...shownRoute.sl }, points: shownRoute.points.map((c) => ({ ...c })) } : null,
         };
       },
       touch: (x, z) => touchHandler?.(x, z),
@@ -462,6 +481,7 @@ export class MapCaseSystem extends createSystem({}) {
     this.paintedMarks = marksVersion;
     const ctx = this.canvas.getContext('2d')!;
     ctx.drawImage(this.base, 0, 0);
+    if (shownRoute) paintRoute(ctx, shownRoute);
     for (const c of shownCheckpoints) paintCheckpoint(ctx, c);
     if (shownGoal) paintGoal(ctx, shownGoal);
     for (const m of shownMarks) paintMark(ctx, m);
@@ -575,9 +595,37 @@ function paintCheckpoint(ctx: CanvasRenderingContext2D, c: Readonly<MapCheckpoin
   ctx.textBaseline = 'bottom';
   ctx.strokeStyle = '#f2ead4';
   ctx.lineWidth = 10;
-  ctx.strokeText(`CP${c.n}`, x - 24, y - 20);
-  ctx.fillText(`CP${c.n}`, x - 24, y - 20);
+  const label = c.label ?? `CP${c.n}`;
+  ctx.strokeText(label, x - 24, y - 20);
+  ctx.fillText(label, x - 24, y - 20);
   ctx.restore();
+}
+
+/** A mission's route (F2.12b): the start line as a blue bar with SL beside it (ticked once crossed), and each report point as a checkpoint ring. */
+function paintRoute(ctx: CanvasRenderingContext2D, r: Readonly<MapRoute>): void {
+  const ax = mapPx(r.sl.a[0]);
+  const ay = mapPy(r.sl.a[1]);
+  const bx = mapPx(r.sl.b[0]);
+  const by = mapPy(r.sl.b[1]);
+  ctx.save();
+  ctx.strokeStyle = BLUE_PENCIL;
+  ctx.fillStyle = BLUE_PENCIL;
+  ctx.lineWidth = 7;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(bx, by);
+  ctx.stroke();
+  ctx.font = 'bold italic 48px serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = '#f2ead4';
+  ctx.lineWidth = 10;
+  const label = r.sl.crossed ? 'SL ✓' : 'SL';
+  ctx.strokeText(label, Math.max(ax, bx) + 14, (ay + by) / 2);
+  ctx.fillText(label, Math.max(ax, bx) + 14, (ay + by) / 2);
+  ctx.restore();
+  for (const p of r.points) paintCheckpoint(ctx, p);
 }
 
 /** The commander's goal for the driver (F2.13): a blue pencilled cross in a ring, and "Go". */
