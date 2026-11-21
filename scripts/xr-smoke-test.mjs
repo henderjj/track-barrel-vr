@@ -4792,7 +4792,7 @@ async function theCompasses() {
   await menuClick('menu-course');
   const ordered = await waitFor('the course order', () => { const s = state(); return s.drill && s.sign && s; }, 8000).catch(() => state());
   const seat = evalInApp('window.__seats.mine');
-  const board = evalInApp('window.__crewBoard.text()');
+  const board = JSON.stringify(evalInApp('window.__crewBoard.text().calls'));
   check('Practice → Drive the tank → Steer a course seats the player as driver, with the order on the board and a sign',
     seat === 'driver' && ordered.drill !== null && board.includes(`steer ${String(ordered.drill?.course ?? -1).padStart(3, '0')}`) && ordered.sign.startsWith('Steer'),
     `seat ${seat}, drill ${JSON.stringify(ordered.drill)}, sign "${ordered.sign}"`);
@@ -4838,9 +4838,9 @@ async function theCompasses() {
 
   // On course for 3 s, moving: the drill is done.
   const course = ordered.drill?.course ?? 90;
-  evalInApp(`(window.__drive.place(0, 0, ${-course} * Math.PI / 180), window.__drive.engine('start'), window.__drive.set({ gear: 1, accel: 0.6 }), true)`);
+  evalInApp(`(window.__drive.place(0, 0, ${-course} * Math.PI / 180), window.__drive.engine('start'), window.__drive.set({ left: 0.6, right: 0.6 }), true)`);
   const done = await waitFor('the drill done', () => { const s = state(); return s.drill?.done && s; }, 30000).catch(() => state());
-  const boardAfter = evalInApp('window.__crewBoard.text()');
+  const boardAfter = JSON.stringify(evalInApp('window.__crewBoard.text().calls'));
   check(`Driving on ${String(course).padStart(3, '0')} for 3 s finishes the drill, "On course" on the board`,
     done.drill?.done === true && boardAfter.includes('On course'),
     `drill ${JSON.stringify(done.drill)}, reads ${done.driver.reads}`);
