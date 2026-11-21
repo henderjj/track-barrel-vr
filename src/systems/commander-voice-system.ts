@@ -270,7 +270,8 @@ export class CommanderVoiceSystem extends createSystem({}) {
   private outputLevel(): number {
     if (!this.ctx || !this.out) return 0;
     if (!this.meter) {
-      this.meter = new AnalyserNode(this.ctx, { fftSize: 4096 });
+      // The longest window an analyser keeps (0.7 s at 48 kHz), so one look on a slow test page still spans a word.
+      this.meter = new AnalyserNode(this.ctx, { fftSize: 32768 });
       this.meterData = new Float32Array(this.meter.fftSize);
       this.out.connect(this.meter);
     }

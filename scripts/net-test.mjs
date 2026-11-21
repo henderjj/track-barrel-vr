@@ -532,9 +532,9 @@ async function driveChecks(host, guest, label) {
     const start = performance.now();
     const frame = () => {
       out.push(window.__drive.state().odometer);
-      // 2 s, and on a slow runner (four or five frames a second) on until there are enough frames to judge, up to 6 s.
+      // 2 s, and on a slow runner on until there are enough frames to judge, up to ten times that (6 s gave 10 frames at 600 ms a frame, PR #136).
       const took = performance.now() - start;
-      if (took < 2000 || (out.length < 16 && took < 6000)) requestAnimationFrame(frame);
+      if (took < 2000 || (out.length < 16 && took < 20000)) requestAnimationFrame(frame);
       else resolve(out);
     };
     requestAnimationFrame(frame);
@@ -550,9 +550,28 @@ async function driveChecks(host, guest, label) {
   const stopped = await waitFor('both to see the tank stop', async () => {
     const [h, g] = await Promise.all([tank(host), tank(guest)]);
     return h.speed === 0 && Math.abs(g.speed) < 0.01 && Math.hypot(h.x - g.x, h.z - g.z) < 0.02 ? { h, g } : null;
-  }, 15000).catch(() => null);
+    // The tank's clock moves on at most 0.25 s a frame: at a frame a second it takes 16 s to run down from 4 m/s.
+  }, 40000).catch(() => null);
+  // On a miss, say whether the guest's packets stopped coming or its page stopped drawing (seen once on a slow runner, PR #136).
+  const stopMiss = async () => {
+    const link = (p) => p.page.evaluate(() => new Promise((resolve) => {
+      const d = window.__drive;
+      const at = { sent: d.sent, received: d.received, late: d.lateFrames };
+      let frames = 0;
+      const start = performance.now();
+      const frame = () => {
+        frames++;
+        if (performance.now() - start < 1000) requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+      setTimeout(() => resolve({ ...at, receivedAfter1s: d.received, framesIn1s: frames }), 1000);
+    }));
+    const [h, g, hl, gl] = await Promise.all([tank(host), tank(guest), link(host), link(guest)]);
+    const brief = (t) => ({ z: t.z, speed: t.speed, accel: t.accel, rpm: t.rpm, gear: t.gear });
+    return JSON.stringify({ host: brief(h), guest: brief(g), hostLink: hl, guestLink: gl });
+  };
   check(`Let go, both see the tank stop at the same spot (${label})`, stopped !== null,
-    stopped ? `at z ${stopped.h.z.toFixed(2)}` : JSON.stringify(await Promise.all([tank(host), tank(guest)])));
+    stopped ? `at z ${stopped.h.z.toFixed(2)}` : await stopMiss());
   await guest.page.evaluate(() => window.__gameMenu.click('menu-drive-reset'));
   const home = await waitFor('the tank back at its start', async () => {
     const [h, g] = await Promise.all([tank(host), tank(guest)]);
@@ -639,9 +658,9 @@ async function turretChecks(host, guest, label) {
     const start = performance.now();
     const frame = () => {
       out.push(window.__turret.state().yaw);
-      // 2 s, and on a slow runner (four or five frames a second) on until there are enough frames to judge, up to 6 s.
+      // 2 s, and on a slow runner on until there are enough frames to judge, up to ten times that (6 s gave 10 frames at 600 ms a frame, PR #136).
       const took = performance.now() - start;
-      if (took < 2000 || (out.length < 16 && took < 6000)) requestAnimationFrame(frame);
+      if (took < 2000 || (out.length < 16 && took < 20000)) requestAnimationFrame(frame);
       else resolve(out);
     };
     requestAnimationFrame(frame);
