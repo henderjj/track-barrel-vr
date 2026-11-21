@@ -53,6 +53,11 @@ export function missionBoard(): { drill: string; tasks: { text: string; done: bo
   return null;
 }
 
+/** The crew marched to the mission's position (F2.12b, Missions → March): it begins where the tank stands. Host only. */
+export function startMissionInPlace(mission: Mission): void {
+  if (netLink.isHost) active?.startRun(mission, true);
+}
+
 /** Missions → Start (or Restart) a mission. The host does it; a guest asks. */
 export function startMissionRun(mission: Mission): void {
   if (!netLink.isHost) {
@@ -144,14 +149,17 @@ export class MissionsSystem extends createSystem({}) {
   }
 
   /** Host: start a mission afresh: the other fights stopped, the tank mended, warm and where it starts, the enemy brought in. */
-  startRun(mission: Mission): void {
+  startRun(mission: Mission, inPlace = false): void {
     if (!netLink.isHost) return;
     if (shownScenario().phase === 'on') stopScenario();
     if (shownEscort().phase === 'on') stopEscort();
     if (shownHill().phase !== 'off') stopHill();
-    repairTank();
-    resetTank('warm');
-    if (mission === 'ambush') placeTank(AMBUSH.x, AMBUSH.z, AMBUSH.heading);
+    // Marched there (F2.12b): the tank stays as it came, running.
+    if (!inPlace) {
+      repairTank();
+      resetTank('warm');
+      if (mission === 'ambush') placeTank(AMBUSH.x, AMBUSH.z, AMBUSH.heading);
+    }
     setAmmoRack('mixed');
     startMission(GROUPS[mission], AMBUSH.seed);
     this.ambush.start();

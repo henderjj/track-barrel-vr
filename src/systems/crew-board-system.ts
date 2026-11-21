@@ -32,6 +32,8 @@ import { loadedRound, loadingShown } from './loading-system.js';
 import { shownRun } from './range-run-system.js';
 import { shownNav } from './nav-course-system.js';
 import { navDone, navResult, navTasks } from '../sim/nav-course.js';
+import { shownReport } from './report-points-system.js';
+import { reportNextLine, reportTasks, ROUTES } from '../sim/report-points.js';
 
 interface CrewBoardDebug {
   /** What the boards say now. */
@@ -95,8 +97,8 @@ export class CrewBoardSystem extends createSystem({}) {
   private draws = 0;
   private fontsReady = false;
   /** The last numbers looked at: a change in any means the board is built again. */
-  private seen = new Float64Array(16).fill(Number.NaN);
-  private now = new Float64Array(16);
+  private seen = new Float64Array(17).fill(Number.NaN);
+  private now = new Float64Array(17);
   private rack: Record<AmmoKind, number> = { ap: 0, he: 0, smoke: 0 };
   private guns: EnemyCount = { out: 0, total: 0, in: false };
   private tanks: EnemyCount = { out: 0, total: 0, in: false };
@@ -183,6 +185,9 @@ export class CrewBoardSystem extends createSystem({}) {
   private clock(): number {
     const s = shownScenario();
     if (s.phase !== 'off') return s.time;
+    // An approach march (F2.12b): its time since leaving SP.
+    const march = shownReport();
+    if (march.march) return march.time;
     const escort = shownEscort();
     if (escort.phase !== 'off') return escort.time;
     // The ambush (F5.10), running or just over.
@@ -198,7 +203,7 @@ export class CrewBoardSystem extends createSystem({}) {
   }
 
   private timed(): boolean {
-    return shownScenario().phase !== 'off' || shownEscort().phase !== 'off' || shownHill().phase !== 'off' || shownRun().phase !== 'idle' || shownAmbush().phase !== 'off' || shownNav().cps.length > 0;
+    return shownScenario().phase !== 'off' || shownEscort().phase !== 'off' || shownHill().phase !== 'off' || shownRun().phase !== 'idle' || shownAmbush().phase !== 'off' || shownNav().cps.length > 0 || shownReport().march;
   }
 
   /** The numbers the board depends on, into `now`; whether any differs from last time. */
@@ -235,8 +240,10 @@ export class CrewBoardSystem extends createSystem({}) {
     n[14] = shownHill().v;
     // The map-reading course (F2.12).
     n[15] = shownNav().v;
+    // Mission report points (F2.12b).
+    n[16] = shownReport().v;
     let differs = false;
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 17; i++) {
       if (n[i] !== this.seen[i]) {
         differs = true;
         this.seen[i] = n[i];
@@ -274,10 +281,18 @@ export class CrewBoardSystem extends createSystem({}) {
     const mission = missionBoard();
     const hill = shownHill();
     const nav = shownNav();
-    if (escort.phase !== 'off') {
+    const report = shownReport();
+    if (report.march && report.mission !== '') {
+      // An approach march (F2.12b): what to report next, and the tally.
+      drill = `Approach march: ${ROUTES[report.mission].name}`;
+      drillTasks = reportTasks(report);
+    } else if (escort.phase !== 'off') {
       const board = escortBoard(escort);
       drill = board.objective;
       drillTasks = board.tasks.map((t) => t.text);
+      // The convoy's next report point (F2.12b) in place of the hint, while one is left.
+      const next = escort.phase === 'on' && report.mission === 'escort' ? reportNextLine(report) : '';
+      if (next !== '') drillTasks[drillTasks.length - 1] = next;
     } else if (mission) {
       drill = mission.drill;
       drillTasks = mission.tasks.map((t) => t.text);

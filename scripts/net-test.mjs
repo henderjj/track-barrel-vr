@@ -869,6 +869,7 @@ async function ammoChecks(host, guest, label) {
   await enemyChecks(host, guest, label);
   await mapMarksChecks(host, guest, label);
   await navChecks(host, guest, label);
+  await reportChecks(host, guest, label);
   await enemyTankChecks(host, guest, label);
   await damageChecks(host, guest, label);
   await combatChecks(host, guest, label);
@@ -1233,6 +1234,63 @@ async function navChecks(host, guest, label) {
   await guest.page.evaluate(() => window.__mapCase.holdFor(null));
   const putBack = await waitFor("the case back on its clips on the host's page", async () => (await host.page.evaluate(() => window.__mapCase.state())).holder === null, 8000).catch(() => false);
   check(`Let go on the guest's page, the case goes back to its clips on the host's (${label})`, putBack === true);
+}
+
+/**
+ * Mission report points (F2.12b): the guest's March starts the host's
+ * approach march to the ambush; the host's tank over the SL and on each RP
+ * reports them on both pages, the guest's map ticking them; the position
+ * begins the ambush on both; the guest's Stop ends it and the route goes.
+ */
+async function reportChecks(host, guest, label) {
+  const report = (p) => p.page.evaluate(() => window.__report.state());
+  const place = (x, z) => host.page.evaluate(([x, z]) => window.__drive.place(x, z, 0), [x, z]);
+  await guest.page.evaluate(() => window.__report.march('ambush'));
+  const started = await waitFor('the march on both pages', async () => {
+    const [h, g] = await Promise.all([host, guest].map(report));
+    const b = await guest.page.evaluate(() => window.__crewBoard.text());
+    return h.mission === 'ambush' && h.march && g.mission === 'ambush' && g.march && g.lastSign.startsWith('Approach march') && b.objective === 'Approach march: Ambush a column' ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`The guest's March starts the host's approach march: the briefing and the board on the guest's page (${label})`, started !== null,
+    JSON.stringify(started ?? (await Promise.all([host, guest].map(report)))));
+  const [, slZ] = await host.page.evaluate(() => window.__report.sl());
+  await place(0, slZ + 8);
+  await waitFor('the tank short of the SL', async () => (await host.page.evaluate(() => window.__drive.state().z)) > slZ, 4000).catch(() => null);
+  await new Promise((r) => setTimeout(r, 500));
+  await place(0, slZ - 8);
+  await waitFor('the SL crossed', async () => (await report(host)).slAt >= 0, 8000).catch(() => null);
+  for (const k of [0, 1]) {
+    const [x, z] = await host.page.evaluate((k) => window.__report.at(k), k);
+    await place(x, z);
+    await waitFor(`RP${k + 1} passed`, async () => (await report(host)).next === k + 1, 8000).catch(() => null);
+  }
+  const passed = await waitFor('RP2 passed on the guest\'s page', async () => {
+    const g = await report(guest);
+    const map = await guest.page.evaluate(() => window.__mapCase.state().route);
+    const b = await guest.page.evaluate(() => window.__crewBoard.text());
+    return g.next === 2 && g.slAt >= 0 && map?.sl.crossed && map.points[1].done && b.calls.some((c) => c.text.startsWith('Passing RP2')) ? g : null;
+  }, 10000).catch(() => null);
+  check(`The host's tank over the SL and on RP1 and RP2 reports them on the guest's board and ticks its map (${label})`, passed !== null,
+    JSON.stringify(await Promise.all([host, guest].map(report))));
+  const [px, pz] = await host.page.evaluate(() => window.__report.at(2));
+  await place(px, pz);
+  const inPlace = await waitFor('the ambush begun on both pages', async () => {
+    const [h, g] = await Promise.all([host, guest].map((p) => p.page.evaluate(() => window.__ambush.state().phase)));
+    const r = await report(guest);
+    return h === 'on' && g === 'on' && r.next === 3 && !r.march ? r : null;
+  }, 10000).catch(() => null);
+  check(`In position at RP3 the ambush begins on both pages where the tank stands (${label})`, inPlace !== null,
+    JSON.stringify(await Promise.all([host, guest].map(report))));
+  await guest.page.evaluate(() => window.__ambush.stop());
+  const stopped = await waitFor('the route gone on both', async () => {
+    const [h, g] = await Promise.all([host, guest].map(report));
+    return h.mission === '' && g.mission === '' ? { h, g } : null;
+  }, 8000).catch(() => null);
+  check(`The guest's Stop ends the ambush and the route goes from both pages (${label})`, stopped !== null);
+  await host.page.evaluate(() => {
+    window.__damage?.repair?.();
+    window.__drive.place(0, 0, 0);
+  });
 }
 
 /**
@@ -2066,7 +2124,7 @@ async function main() {
     if (NET_PART !== 2) {
       const room = 'TEST';
       // ONLY_SEATS=lag runs the quick seat checks at about 150 ms RTT.
-      const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' || process.env.ONLY_TURRET === 'lag' || process.env.ONLY_FIRING === 'lag' || process.env.ONLY_RUN === 'lag' || process.env.ONLY_COURSE === 'lag' || process.env.ONLY_RACE === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
+      const quickLag = process.env.ONLY_SEATS === 'lag' || process.env.ONLY_DRIVE === 'lag' || process.env.ONLY_TURRET === 'lag' || process.env.ONLY_FIRING === 'lag' || process.env.ONLY_RUN === 'lag' || process.env.ONLY_COURSE === 'lag' || process.env.ONLY_RACE === 'lag' || process.env.ONLY_REPORT === 'lag' ? '&netlag=60&netjitter=20&netloss=0.01' : '';
       const a = await openPlayer(browser, `room=${room}&name=Ann${quickLag}`);
       await waitFor('Ann waiting in the lobby', async () => (await state(a.page)) === 'waiting');
       const b = await openPlayer(browser, `room=${room}&name=Bo${quickLag}`);
@@ -2106,6 +2164,11 @@ async function main() {
         // Quick loop for F1.10: the turret, then loading and firing (ONLY_FIRING=lag at about 150 ms RTT).
         await turretChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
         await firingChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
+        return;
+      }
+      if (process.env.ONLY_REPORT) {
+        // Quick loop for F2.12b: the approach march's report points shared (ONLY_REPORT=lag at about 150 ms RTT).
+        await reportChecks(a, b, quickLag ? '150 ms RTT' : 'local network');
         return;
       }
       if (process.env.ONLY_COURSE) {
