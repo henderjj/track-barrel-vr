@@ -52,7 +52,7 @@
     Recon unseen and Ambush a column (F5.10), one row each, their status
     lines below them.
     Sights: go to the gunsight, lay the
-    gun on a target's range mark, the sight's render choices; go to the
+    gun on a target's range mark, the crank drill (laying blind), the sight's render choices; go to the
     driver's or the gunner's periscope, turn both ahead, their power. Test rigs: ride the tank (spike
     S2), the lever test and the mechanism kit.
 -->
@@ -927,6 +927,12 @@
               <Button id="menu-sight-lay-0" class="choice" size="sm" variant="secondary">100 m</Button>
               <Button id="menu-sight-lay-1" class="choice" size="sm" variant="secondary">250 m</Button>
               <Button id="menu-sight-lay-2" class="choice" size="sm" variant="secondary">500 m</Button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="label">Laying blind</div>
+            <div class="choices">
+              <Button id="menu-sight-drill" class="choice" size="sm" variant="secondary">Crank drill</Button>
             </div>
           </div>
           <div id="menu-sight-status" class="hint">Lean in to the eyepiece to look</div>

@@ -14,6 +14,7 @@ import { GpuTimer } from '../perf/gpu-timer.js';
 import { createSightEyepiece, createSightHead, createSightLensGeometry } from '../scene-assets/sight.scene-asset.js';
 import { AMMO } from '../sim/ammo.js';
 import { turnAboutHead } from '../sim/cabin.js';
+import { CrankDrill, DRILL_STARTS, type DrillResult, drillSummary } from '../sim/crank-drill.js';
 import {
   type AimPoint,
   createLay,
@@ -40,13 +41,15 @@ import {
   TRUE_HALF_FIELD,
 } from '../sim/sight.js';
 import { groundHeight, wrapTile } from '../sim/terrain.js';
+import { MIL } from '../sim/turret.js';
 import { markPlace } from '../sim/hull-direction.js';
 import { tankState } from './drive-system.js';
+import { buzz } from './haptics.js';
 import { acquireMarkTexture, hullToHour, markLens, releaseMarkTexture } from './hull-direction-system.js';
 import { netLink } from './net-system.js';
 import { createLensMaterial, createScopeTarget, LensPlacer, renderScope, watchLensView } from './scope-lens.js';
 import { seating } from './seating.js';
-import { aimTurret, gunEntity, ownsTurret, turretForward, turretState } from './turret-system.js';
+import { aimTurret, gunEntity, ownsTurret, sayAboutTheGun, turretForward, turretState } from './turret-system.js';
 
 /** The reticle's texture, texels square: finer than the view so its marks stay crisp at 256² and 512². */
 const RETICLE_SIZE = 1024;
@@ -115,6 +118,8 @@ export const SIGHT_BUTTONS: readonly PracticeButton[] = [
   { id: 'menu-sight-go', label: () => 'Go to it', press: () => active?.goTo(), closes: true },
   { id: 'menu-sight-lay-ahead', label: () => 'Ahead', press: () => active?.lay('ahead'), closes: true },
   ...RANGE_TARGETS.map((t, i): PracticeButton => ({ id: `menu-sight-lay-${i}`, label: () => `${t.range} m`, press: () => active?.lay(i), closes: true })),
+  // The crank drill (docs/turret.md "Laying blind"): the gun off a board, the eye at the sight, timed back on by the cranks.
+  { id: 'menu-sight-drill', label: () => (active?.drill.running ? 'Stop drill' : 'Crank drill'), press: () => active?.toggleDrill(), closes: true },
   {
     id: 'menu-sight-draw',
     label: () => ({ auto: 'Draw: near', always: 'Draw: always', off: 'Draw: off' })[sightStats.mode],
@@ -150,6 +155,11 @@ interface SightDebug {
   view(): { at: number[]; looking: number[] };
   /** Spread of the rendered picture's brightness in a few texels (0 for a blank picture). */
   pictureSpread(): number;
+  /** The crank drill: start it (or stop it if running), and how it stands (the board's error now, mils, and the last result). */
+  drill: {
+    toggle(): void;
+    state(): { running: boolean; time: number; target: number; error: SightError; result: DrillResult | null };
+  };
 }
 
 /**
@@ -195,6 +205,12 @@ export class SightSystem extends createSystem({}) {
   private pixels = new Uint8Array(4 * 9);
   /** "Go to it" is waiting for the seat system to sit the player in the gunner's seat (the placement count it waits to pass), or -1. */
   private approachAfter = -1;
+  /** The crank drill (docs/turret.md "Laying blind"), the board it is laid on (its index in RANGE_TARGETS), and how many have been started. */
+  readonly drill = new CrankDrill();
+  private drillTarget = 0;
+  private drillRuns = 0;
+  private drillAim: AimPoint = { x: 0, above: 0, z: 0 };
+  private drillError = createSightError();
 
   init(): void {
     active = this;
@@ -281,10 +297,15 @@ export class SightSystem extends createSystem({}) {
         };
       },
       pictureSpread: () => this.pictureSpread(),
+      drill: {
+        toggle: () => this.toggleDrill(),
+        state: () => ({ running: this.drill.running, time: this.drill.time, target: this.drillTarget, error: { ...this.drillError }, result: this.drill.result }),
+      },
     };
   }
 
-  update(): void {
+  update(delta: number): void {
+    this.stepDrill(delta);
     if (this.approachAfter >= 0 && seating.mine === 'gunner' && seating.placements > this.approachAfter) {
       this.approachAfter = -1;
       this.approach();
@@ -299,6 +320,8 @@ export class SightSystem extends createSystem({}) {
     this.placer.update(this.player.head, eyes);
 
     const was = sightStats.open;
+    // The eye at the eyepiece, for the gun's cranks, whatever the draw mode.
+    seating.atSight = this.placer.eyesAt(eyes, seating.atSight) && this.placer.eyeDistance(eyes) <= sightStats.periscopeEye;
     const open =
       sightStats.mode === 'always' ||
       (sightStats.mode === 'auto' && this.placer.eyesAt(eyes, was) && this.placer.eyeDistance(eyes) <= sightStats.periscopeEye);
@@ -390,6 +413,63 @@ export class SightSystem extends createSystem({}) {
         : `Laid on the ${RANGE_TARGETS[this.aim].range} m target, ${range} m off: read the ${range} m mark`;
     }
     console.info(`[Sight] ${this.status}`);
+  }
+
+  /**
+   * Practice's crank drill (docs/turret.md "Laying blind"): lay the gun on
+   * the next of the range's boards, then off it by the next of DRILL_STARTS,
+   * put the gunner's eye at the sight and start the clock; the gunner lays
+   * it back on with the cranks. Pressed while it runs, it stops. Only the
+   * page that lays the gun runs it.
+   */
+  toggleDrill(): void {
+    if (this.drill.running) {
+      this.drill.stop();
+      this.status = 'Crank drill stopped';
+      console.info('[Sight] crank drill stopped');
+      return;
+    }
+    if (!ownsTurret()) {
+      this.status = "The gunner's page runs the crank drill";
+      return;
+    }
+    const run = this.drillRuns++;
+    this.drillTarget = run % RANGE_TARGETS.length;
+    const [across, up] = DRILL_STARTS[run % DRILL_STARTS.length];
+    this.drillAim = aimPoint(this.drillTarget);
+    const lay = layOn(tankState(), this.drillAim, this.laid);
+    // The board right of the mark: the turret turned left (its yaw is positive left). Above it: the gun lowered.
+    aimTurret(lay.yaw + across * MIL, lay.elevation - up * MIL);
+    const t = turretState();
+    sightError(tankState(), t.yaw, t.elevation, this.drillAim, this.drillError);
+    this.drill.start(this.drillError.across, this.drillError.up);
+    this.goTo();
+    this.status = `Crank drill: lay on the ${RANGE_TARGETS[this.drillTarget].range} m board with the cranks`;
+    console.info(`[Sight] crank drill on the ${RANGE_TARGETS[this.drillTarget].range} m board, ${this.drillError.across.toFixed(1)} mils across, ${this.drillError.up.toFixed(1)} up`);
+  }
+
+  /** Step a running crank drill `dt` on: where the board is from its mark, and the result once it is laid. */
+  private stepDrill(dt: number): void {
+    if (!this.drill.running) return;
+    if (!ownsTurret()) {
+      this.drill.stop();
+      return;
+    }
+    const t = turretState();
+    sightError(tankState(), t.yaw, t.elevation, this.drillAim, this.drillError);
+    const result = this.drill.step(dt, this.drillError.across, this.drillError.up);
+    if (result === null) return;
+    this.status = drillSummary(result);
+    console.info(`[Sight] crank drill: ${this.status}`);
+    sayAboutTheGun(result.laid ? `Laid in ${result.seconds.toFixed(1)} s` : 'Not laid', [
+      `Overshoots: ${result.overshootsUp} up/down, ${result.overshootsAcross} across`,
+      'Practice, Sights: Crank drill for another',
+    ]);
+    if (result.laid) {
+      // On: a firm pulse in both hands, felt with the eye still at the sight.
+      buzz(this.input.xr.gamepads.left?.gamepad, 'left', 0.6, 120);
+      buzz(this.input.xr.gamepads.right?.gamepad, 'right', 0.6, 120);
+    }
   }
 
   /** Target `i` as the ground draws it and the sight camera sees it, against the mark for its range. */

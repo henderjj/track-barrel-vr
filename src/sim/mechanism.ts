@@ -147,6 +147,25 @@ const BESIDE_TIME = 1.5;
 const BESIDE = 10 * DEG;
 /** A hand moving further than this share of a wheel's radius in one frame jumped (the frame stalled). */
 const JUMP = 0.5;
+/**
+ * A direct wheel's middle (where the hand's circles are centred: the axle
+ * when it takes hold) moves to the middle of the hand's own circles this
+ * fast, s, so a hand circling off the axle without looking turns it evenly
+ * (John, 2026-11-20: laying the gun blind through the sight).
+ */
+const FIT_TIME = 0.15;
+/** The circles are fitted to where the hand has been over about this long, s. */
+const FIT_MEMORY = 1;
+/** The middle stays within this share of the wheel's radius of the axle. */
+const MAX_DRIFT = 0.6;
+/**
+ * The middle follows the hand's circles only while it is going round: at
+ * full speed once it has gone this far round lately (over CIRCLING_TIME),
+ * not at all while it nudges back and forth, so small turns on the knob
+ * stay exact round the axle.
+ */
+const CIRCLING = 180 * DEG;
+const CIRCLING_TIME = 1;
 
 /**
  * A hand's angle round a mechanism's axis, unwrapped (so a crank can go
@@ -173,6 +192,11 @@ class HandAngle {
   private beside = 0;
   /** Which way the hand was last surely going round (+1 anticlockwise, -1, 0 not yet). */
   private way = 0;
+  /**
+   * Fading sums of where the hand has been, for fitting a circle to it
+   * (`stepDirect`): x², xy, y², x, y, 1, x·r², y·r², r², each times dt.
+   */
+  private readonly sums = new Float64Array(9);
 
   /** The hand takes hold at `angle` (not NaN); returns it. */
   start(angle: number, tracked: boolean): number {
@@ -297,27 +321,112 @@ class HandAngle {
   }
 
   /**
+   * A direct wheel: the hand takes hold at (x, y) in wheel space, reading
+   * as `angle` (not NaN), on a wheel of `radius` that reads no nearer its
+   * middle than `near`; returns its steadied angle. The middle starts on the
+   * axle.
+   */
+  startDirect(x: number, y: number, angle: number, tracked: boolean, near: number): number {
+    this.lastX = x;
+    this.lastY = y;
+    this.midX = 0;
+    this.midY = 0;
+    this.roundLately = 0;
+    this.sums.fill(0);
+    return this.start(angle, tracked);
+  }
+
+  /**
    * Round a wheel's axle, directly (a `direct` wheel): the hand is at (x, y)
    * in wheel space now, `dt` after the last; its steadied, unwrapped angle.
-   * The angle moves on by how far the hand went round the axle as seen from
-   * where it was, never nearer the axle than `near`: so out on the knob's
-   * circle the wheel goes exactly where the hand is, a degree of hand for a
-   * degree of wheel, and only a hand cutting in close to the axle turns it
-   * less there instead of making it jump. This is how all wheels turned from
-   * 28 October to 7 November 2026 (PR #32); John found the turret's wheels
-   * harder to lay precisely once they followed the hand's circling
-   * (`stepAround`), so they went back to it (playtest, 15 November 2026).
+   *
+   * The angle moves on by how far the hand went round the middle of its own
+   * circles as seen from where it was, never nearer that middle than
+   * `near`: so a degree of hand round its circle is a degree of wheel, and
+   * a hand cutting in close to the middle turns it less there instead of
+   * making it jump. The middle starts on the axle, so small careful turns
+   * on the knob read exactly as they did when it was always the axle (PR
+   * #32, and again from 15 November 2026, PR #111).
+   *
+   * The middle then moves to where the hand's circles are really centred:
+   * the middle of the circle that best fits where the hand has been over
+   * the last FIT_MEMORY (Kasa's least-squares fit, with the oldest places
+   * fading out), staying within MAX_DRIFT of the axle. A hand
+   * going round blind, its eye at the sight, soon circles off the axle;
+   * measured round the axle, a circle 3 cm off on an 8 cm crank turned it
+   * twice as fast on one side as the other (John, 20 November 2026), but
+   * round its own middle it turns evenly once that is found, within a turn.
+   * The middle only moves while the hand is going round (CIRCLING), so a
+   * hand held still or nudging back and forth leaves it where it is.
    */
-  stepDirect(x: number, y: number, near: number, dt: number): number {
+  stepDirect(x: number, y: number, near: number, radius: number, dt: number): number {
+    const hx = x - this.midX;
+    const hy = y - this.midY;
     const c = Math.cos(this.unwrapped);
     const s = Math.sin(this.unwrapped);
-    // The hand's offset along the way round (anticlockwise) and out from the axle, at the angle it was at.
-    const along = -x * c - y * s;
-    const out = y * c - x * s;
-    this.unwrapped += Math.atan2(along, out > near ? out : near);
+    // The hand's offset along the way round (anticlockwise) and out from the middle, at the angle it was at.
+    const along = -hx * c - hy * s;
+    const out = hy * c - hx * s;
+    const turn = Math.atan2(along, out > near ? out : near);
+    this.unwrapped += turn;
+    if (dt > 0) {
+      // Where the hand has been, the oldest fading.
+      const m = this.sums;
+      const fade = Math.exp(-dt / FIT_MEMORY);
+      for (let i = 0; i < 9; i++) m[i] *= fade;
+      const r2 = x * x + y * y;
+      m[0] += dt * x * x;
+      m[1] += dt * x * y;
+      m[2] += dt * y * y;
+      m[3] += dt * x;
+      m[4] += dt * y;
+      m[5] += dt;
+      m[6] += dt * x * r2;
+      m[7] += dt * y * r2;
+      m[8] += dt * r2;
+      // Move the middle towards the fitted circle's, as far as the hand is going round.
+      this.roundLately = this.roundLately * Math.exp(-dt / CIRCLING_TIME) + turn;
+      const circling = Math.min(1, Math.abs(this.roundLately) / CIRCLING);
+      if (circling > 0) this.fitMiddle(circling * (1 - Math.exp(-dt / FIT_TIME)), MAX_DRIFT * radius);
+    }
     this.lastX = x;
     this.lastY = y;
     return this.filter.filter(this.unwrapped, dt);
+  }
+
+  /**
+   * Move the middle share `k` of the way to the middle of the circle that
+   * best fits where the hand has been (x² + y² + Dx + Ey + F = 0 by least
+   * squares: Kasa 1976), kept within `most` of the axle. Nothing moves
+   * while the places so far are too nearly in a line to fit a circle to.
+   */
+  private fitMiddle(k: number, most: number): void {
+    const [xx, xy, yy, sx, sy, n, xr, yr, rr] = this.sums;
+    // The normal equations [xx xy sx; xy yy sy; sx sy n] [D E F] = -[xr yr rr], by Cramer's rule.
+    const c0 = yy * n - sy * sy;
+    const c1 = xy * n - sy * sx;
+    const c2 = xy * sy - yy * sx;
+    const det = xx * c0 - xy * c1 + sx * c2;
+    // Their scale: spread (m²) squared, times time (s) cubed.
+    if (!(Math.abs(det) > 1e-12 * n * n * n)) return;
+    const d = (-xr * c0 + xy * (yr * n - sy * rr) - sx * (yr * sy - yy * rr)) / det;
+    const e = (-xx * (yr * n - sy * rr) + xr * c1 - sx * (xy * rr - yr * sx)) / det;
+    let tx = -d / 2;
+    let ty = -e / 2;
+    const far = Math.hypot(tx, ty);
+    if (far > most) {
+      tx *= most / far;
+      ty *= most / far;
+    }
+    this.midX += k * (tx - this.midX);
+    this.midY += k * (ty - this.midY);
+  }
+
+  /** The middle of the hand's circles, wheel space, into `out` (a direct wheel's; tests). */
+  middle(out: [number, number]): [number, number] {
+    out[0] = this.midX;
+    out[1] = this.midY;
+    return out;
   }
 }
 
@@ -415,6 +524,9 @@ export abstract class Mechanism {
 
   /** A point to take hold at, for tests and the practice crewmate: `which` picks a handle (0 left, 1 right) where there are two. */
   abstract handle(which: HandIndex, out: Vec3): Vec3;
+
+  /** How far `hand`'s fist is from where it would hold this, m, for those that say (a wheel). */
+  offHandle?(hand: HandInput): number;
 }
 
 // ---------------------------------------------------------------- Lever
@@ -694,19 +806,19 @@ export interface WheelSpec {
   /** A crank with a trigger bar along its knob, pulled by the holding hand's index finger: `firing`, with Press and Release events. */
   trigger?: boolean;
   /**
-   * Turns with the hand's angle round the axle (`HandAngle.stepDirect`): a
-   * degree of hand round the knob's circle is a degree of wheel, for precise
-   * laying. Otherwise it follows the hand's circling (`HandAngle.stepAround`),
-   * which forgives circles off the axle but reads small careful moves less
-   * exactly. The turret's traverse crank and elevation handwheel are direct.
+   * Turns with the hand's angle round the middle of its circles, which
+   * starts on the axle (`HandAngle.stepDirect`): a degree of hand round the
+   * knob's circle is a degree of wheel, for precise laying, and circles
+   * that drift off the axle still turn it evenly. Otherwise it follows the
+   * hand's circling (`HandAngle.stepAround`), which forgives circles off
+   * the axle but reads small careful moves less exactly. The turret's
+   * traverse crank and elevation handwheel are direct.
    */
   direct?: boolean;
 }
 
 /** Nearer a direct wheel's axle than this share of its radius, a hand turns it less the nearer it is (`HandAngle.stepDirect`). */
 const NEAR_AXLE = 0.5;
-
-
 
 /** The angle round a wheel's axle of a point at (x, y) in wheel space: 0 at the top, positive anticlockwise seen from the front, or NaN near the axle. */
 export function wheelAngleOf(x: number, y: number): number {
@@ -728,8 +840,9 @@ export function wheelAngleOf(x: number, y: number): number {
  * doesn't matter, a hand going round a little off the axle (as hands
  * turning a crank do) still turns it smoothly, and one drifting over the
  * middle doesn't make it jump. A `direct` wheel (the turret's) instead
- * follows the hand's angle round the axle (`HandAngle.stepDirect`), so its
- * knob stays under the hand for precise laying. Two hands on a rim turn it
+ * follows the hand's angle round the middle of its circles, found from the
+ * axle out (`HandAngle.stepDirect`), so small turns are exact and blind
+ * circles off the axle turn it evenly. Two hands on a rim turn it
  * by the mean of where each would take it. It stops
  * at its limits like a lever; a wheel let go stays where it is. A crank
  * with a `trigger` reads its holding hand's trigger as `firing`, like a
@@ -784,7 +897,10 @@ export class Wheel extends Mechanism {
     // A fist too near the axle to read its angle (on a small crank) is taken to be on the knob, and turns it from there.
     let a = wheelAngleOf(hand.fist[0], hand.fist[1]);
     if (Number.isNaN(a)) a = this.angle;
-    this.offset[side] = this.angle - this.hands[side].startAround(hand.fist[0], hand.fist[1], a, hand.tracked, this.spec.radius);
+    const start = this.spec.direct
+      ? this.hands[side].startDirect(hand.fist[0], hand.fist[1], a, hand.tracked, NEAR_AXLE * this.spec.radius)
+      : this.hands[side].startAround(hand.fist[0], hand.fist[1], a, hand.tracked, this.spec.radius);
+    this.offset[side] = this.angle - start;
     this.spot[side] = this.spec.grip === 'crank' ? 0 : wrap(a - this.angle);
     return true;
   }
@@ -800,7 +916,7 @@ export class Wheel extends Mechanism {
       if (!hand) continue;
       const [x, y] = hand.fist;
       const r = this.spec.radius;
-      sum += (this.spec.direct ? this.hands[i].stepDirect(x, y, NEAR_AXLE * r, dt) : this.hands[i].stepAround(x, y, r, dt)) + this.offset[i];
+      sum += (this.spec.direct ? this.hands[i].stepDirect(x, y, NEAR_AXLE * r, r, dt) : this.hands[i].stepAround(x, y, r, dt)) + this.offset[i];
       count++;
     }
     let overshoot = 0;
@@ -828,6 +944,26 @@ export class Wheel extends Mechanism {
       }
     }
     return events;
+  }
+
+  /**
+   * How far `hand`'s fist is from where it holds this wheel, m: from a
+   * crank's knob (anywhere along it), or from the rim. Felt as a buzz when
+   * a hand laying the gun blind wanders off its handle (MechanismSystem).
+   */
+  offHandle(hand: HandInput): number {
+    const [x, y, z] = hand.fist;
+    const r = this.spec.radius;
+    if (this.spec.grip === 'crank') {
+      const kz = z < 0 ? 0 : z > this.spec.knobLength ? this.spec.knobLength : z;
+      return Math.hypot(x + r * Math.sin(this.angle), y - r * Math.cos(this.angle), z - kz);
+    }
+    return Math.hypot(Math.hypot(x, y) - r, z);
+  }
+
+  /** The middle of `side`'s circles while it holds a direct wheel, wheel space, into `out` (tests). */
+  middle(side: HandIndex, out: [number, number]): [number, number] {
+    return this.hands[side].middle(out);
   }
 
   handle(which: HandIndex, out: Vec3): Vec3 {

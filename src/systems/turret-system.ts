@@ -8,6 +8,7 @@ import { createTwistGrip, createWheel } from '../scene-assets/mechanism.scene-as
 import { hullToSeat, SEATS, TURRET, turnAboutHead } from '../sim/cabin.js';
 import { MechEvent, TwistGrip, Wheel } from '../sim/mechanism.js';
 import {
+  BLIND_REACH,
   angleDelta,
   copyTurretState,
   createGunnerInput,
@@ -331,6 +332,8 @@ export class TurretSystem extends createSystem({}) {
         moved: key !== 'crank' ? (events) => {
           if (events & MechEvent.Press && this.isOwner()) this.triggerPulls++;
         } : undefined,
+        // The cranks are laid blind, the eye at the sight: the left hand's is the elevation handle, the right's the traverse crank.
+        blind: key === 'twist' ? undefined : { side: key === 'elevation' ? 'left' : 'right', reach: BLIND_REACH, now: () => seating.atSight },
       }));
     }
   }
