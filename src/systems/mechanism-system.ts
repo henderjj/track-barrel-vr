@@ -72,6 +72,8 @@ interface Entry {
   driftClock: [number, number];
   /** Each hand is near the handle, having felt its tap (a blind control). */
   touching: [boolean, boolean];
+  /** How far each hand was from the handle when last felt, m (Infinity when it wasn't), for the test hook. */
+  off: [number, number];
   /** How long each holding hand's grip has read as let go, s (a blind control). */
   loose: [number, number];
   /** How many limits, detents, presses, drift buzzes and touch taps it has felt, for the test hook. */
@@ -114,6 +116,7 @@ export function addControl(control: Control): () => void {
     strainClock: [0, 0],
     driftClock: [0, 0],
     touching: [false, false],
+    off: [Infinity, Infinity],
     loose: [0, 0],
     counts: { limits: 0, detents: 0, presses: 0, drifts: 0, taps: 0 },
   };
@@ -219,6 +222,8 @@ interface MechanismsDebug {
   toScene(name: string, point: number[]): number[] | null;
   /** What each hand holds (`handUse`). */
   holding(): Record<Side, string | null>;
+  /** Where the controls last read `side`'s fist, scene space (the point grabs, drift and taps go by). */
+  fist(side: Side): number[];
   /** The index fingertip of `side` where the grip is now, scene space, while it points (it presses buttons), else null. */
   tip(side: Side): number[] | null;
 }
@@ -274,7 +279,7 @@ export class MechanismSystem extends createSystem({}) {
       names: () => entries.map((e) => e.control.name),
       state: (name) => {
         const entry = findEntry(name);
-        return entry ? { ...describe(entry.control), ...entry.counts } : null;
+        return entry ? { ...describe(entry.control), ...entry.counts, touching: [...entry.touching], off: [...entry.off] } : null;
       },
       handle: (name, which = 1) => {
         const control = find(name);
@@ -292,6 +297,7 @@ export class MechanismSystem extends createSystem({}) {
         return Math.hypot(fist[0] - at[0], fist[1] - at[1], fist[2] - at[2]);
       },
       holding: () => ({ ...handUse }),
+      fist: (side) => this.fist[side].toArray(),
       tip: (side) => {
         if (!this.present[side] || !this.pointing[side]) return null;
         // From the grip space as it is now, not as the last frame read it, so a test's offset to the grip holds.
@@ -453,9 +459,11 @@ export class MechanismSystem extends createSystem({}) {
       const hand = this.given[i];
       if (!hand) {
         entry.touching[i] = false;
+        entry.off[i] = Infinity;
         continue;
       }
       const off = mech.offHandle(hand);
+      entry.off[i] = off;
       if (mech.held[i]) {
         entry.touching[i] = true;
         if (off <= DRIFT_FROM) {

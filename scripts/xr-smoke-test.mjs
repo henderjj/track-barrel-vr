@@ -2325,13 +2325,32 @@ async function layingTheGun() {
   squeeze(1);
   check('The elevation handle stays held through a grip eased off to a third', eased3.heldBy === 'right', `held by ${eased3.heldBy}`);
   await letGoOf('elevation');
-  // An open hand coming back onto the handle feels a tap, before it squeezes.
+  // An open hand coming back onto the handle feels a tap, before it squeezes:
+  // 15 cm off it until a frame has seen it away (frames can be a second or
+  // more apart on CI), then onto the handle where it is drawn. The fist is
+  // steered by where the controls read it, since in the turning turret a
+  // controller lands a few cm from where it was sent.
+  const fistNow = () => evalInApp('window.__mechanisms.fist("right")');
+  const fistTo = async (p) => {
+    let aim = p;
+    for (let k = 0; k < 4; k++) {
+      iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(aim), duration: 0.2 });
+      await sleep(Math.max(800, 2 * slowestFrameMs()));
+      const f = fistNow();
+      const miss = [p[0] - f[0], p[1] - f[1], p[2] - f[2]];
+      if (Math.hypot(...miss) < 0.01) return;
+      aim = [aim[0] + miss[0], aim[1] + miss[1], aim[2] + miss[2]];
+    }
+  };
   const tapsBefore = state('elevation').taps;
-  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('elevation', [0, rr + 0.15, out])), duration: 0.3 });
-  await sleep(600);
-  iwsdk(['xr', 'animate-to'], { device: 'controller-right', position: gripFor(scene('elevation', [0, rr, out])), duration: 0.3 });
-  const tapped = await waitFor('the touch tap', () => { const s = state('elevation'); return s.taps > tapsBefore && s; }, 3000).catch(() => state('elevation'));
-  check('An open hand coming onto the elevation handle feels a tap', tapped.taps > tapsBefore && tapped.heldBy === null, `${tapped.taps - tapsBefore} taps`);
+  const elevationKnob = handle('elevation');
+  const aboveKnob = [elevationKnob[0], elevationKnob[1] + 0.15, elevationKnob[2]];
+  await fistTo(aboveKnob);
+  const away = await waitFor('the hand seen away from the handle', () => { const s = state('elevation'); return !s.touching[1] && s; }, 5000).catch(() => state('elevation'));
+  await fistTo(elevationKnob);
+  const tapped = await waitFor('the touch tap', () => { const s = state('elevation'); return s.taps > tapsBefore && s; }, 5000).catch(() => state('elevation'));
+  check('An open hand coming onto the elevation handle feels a tap', tapped.taps > tapsBefore && tapped.heldBy === null,
+    `${tapped.taps - tapsBefore} taps, away ${away.touching[1] ? 'not seen' : 'seen'} (${Number(away.off?.[1]).toFixed(3)} m off), then ${Number(tapped.off?.[1]).toFixed(3)} m off`);
 
   // With the eye at the sight, the right hand's squeeze 15 cm above the traverse crank's knob takes it; away from the sight it doesn't.
   const crankKnob = handle('crank');
