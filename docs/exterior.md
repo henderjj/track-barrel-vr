@@ -49,6 +49,22 @@ All in hull space (floor at y = 0, front towards −Z), in `src/sim/exterior.ts`
 - `test/z-fighting.test.ts`: the hull with its new outside and the turret with its shell, at the world's 8 mm and the cabin's 3 mm.
 - `test/interior.test.ts`, `test/convoy-seat.test.ts`: the head boxes, the lid aside and the periscope as before, measured from the new meshes.
 
+## Periscope heads and deck tools
+
+John's note (22 November 2026): through the gunsight with the gun down he saw "two boxes on top of the tank, one in the centre and one on the left with a lid", and behind the turret "a horizontal plank and some pipes", nothing he'd expect on a tank's outside. Nothing from inside pokes through: they were the parts above, drawn as plain blocks, and the sight's 3× makes a plain block read as a crate. Labelled views of the outside and the sight's pictures are in the project files' `exterior-views/`. John chose to keep them and make them read as what they are:
+
+- **Periscope heads** (`src/scene-assets/periscope-head.ts`): the driver's, the gunner's and the assistant driver's heads are one shape, an M6 periscope in its mount: a low round rotor on the roof (radius 6.8 cm, 1.8 cm proud), the head's body (10 × 10 cm, as before, so the periscope's camera and window don't move), dark glass on its front, and a hood over the glass, a brow reaching 2.4 cm ahead with a cheek down each side, all in the hull's paint. The driver's no longer has a dark steel lid (the "box with a lid"), and the assistant driver's is the driver's twin instead of a plain block. The hood is far outside the periscope's 8° × 20° half field, so its picture is unchanged.
+- **Pioneer tools** on the sponsons behind the turret: a long-handled shovel with a D grip and a spade blade and an axe with its head across the handle on the left, a crowbar with its claw bent up and a sledgehammer with a round head on the right. Each is held down by two leather straps over its handle, instead of the four boards that lay across the sponsons.
+- **Engine doors**: each has a steel lifting handle folded flat at its front and back, a half loop on two lugs, instead of a flat bar.
+- **Fuel fillers**: one each side, behind the tools (the forward pair lay under the axe and sledge handles).
+
+### Headset check (periscope heads and deck tools)
+
+1. Enter VR as gunner. Game menu (Y) → **Sights → Gunsight → Go to it**, then crank the gun all the way down and look ahead: the two heads in front of the drivers' hatches should read as periscopes in their mounts, not crates.
+2. Traverse slowly to the rear with the gun down: the tools should read as a shovel, axe, crowbar and sledgehammer strapped down, and the doors' handles as handles.
+3. From the gunner's periscope, look at the front deck: the two heads match, with glass forwards.
+4. As driver, open the periscope and turn it: the picture is as before, with no hood edge in it.
+
 ## Headset check
 
 1. Enter VR alone. Game menu (Y) → **Practice → Drive the tank → Head out**. Look forward and down: the long glacis, the hoods, the bow gun, the headlights and the sponsons over the tracks. Look right and back: the turret's rounded side and the deck.

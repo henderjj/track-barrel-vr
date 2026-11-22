@@ -34,7 +34,8 @@ import {
   turretShellInset,
   turretShellRings,
 } from '../sim/exterior.js';
-import { HEAD_SIZE } from '../sim/periscope.js';
+import { DRIVER_PERISCOPE } from '../sim/periscope.js';
+import { periscopeHeadParts } from './periscope-head.js';
 
 /**
  * The tank's outside, as an M4A4 Sherman's (docs/exterior.md): the cast
@@ -57,6 +58,7 @@ const RUBBER = 0x1e1e1e;
 const TRACK_STEEL = 0x34322e;
 const WHEEL = 0x5f5b3e;
 const WOOD = 0x7a5a35;
+const LEATHER = 0x4f3a26;
 const GLASS = 0xd8d2b0;
 const RED_LENS = 0x8a2018;
 
@@ -478,12 +480,13 @@ function hoodParts(): Part[] {
     // The hinge's knuckles along the visor's top.
     parts.push(wheel(0.018, slit.width + 0.1, [hx, visorTop + 0.005, face - 0.012], PAINT_DARK, 8));
   }
-  // The assistant driver's round hatch, shut, and his periscope's head ahead of it (beside the driver's).
+  // The assistant driver's round hatch, shut, and his periscope's head ahead of it, the driver's twin (it doesn't turn).
   const h = DRIVER_HATCH_ROUND;
   const lid = new CylinderGeometry(h.radius + 0.01, h.radius + 0.01, 0.035, 28, 1);
   parts.push({ geometry: lid, color: PAINT_DARK, position: [-h.x, DECK_TOP + 0.0075, h.z] });
   parts.push(box([0.06, 0.03, 0.04], [-h.x + h.radius - 0.02, DECK_TOP + 0.03, h.z], STEEL_LIGHT));
-  parts.push(box([HEAD_SIZE.width, HEAD_SIZE.height + 0.01, HEAD_SIZE.depth], [-h.x, DECK_TOP + HEAD_SIZE.height / 2 - 0.005, -1.86], PAINT_DARK));
+  const p = DRIVER_PERISCOPE;
+  parts.push(...periscopeHeadParts(p.head.bottom, p.head.top, p.cameraY, [-p.axis[0], 0, p.axis[1]]));
   return parts;
 }
 
@@ -506,37 +509,104 @@ function headlightParts(): Part[] {
 
 /**
  * The engine deck behind the turret: the engine's access doors with their
- * hinges and handles, the radiator's grille at the back, the fuel fillers
- * on the sponsons and the crew's tools strapped along them, all clear of
- * the turret's sweep.
+ * folding lifting handles, the radiator's grille at the back, the fuel
+ * fillers on the sponsons and the crew's pioneer tools held down along
+ * them by leather straps, all clear of the turret's sweep.
  */
 function deckParts(): Part[] {
   const parts: Part[] = [];
   const y = DECK_TOP;
-  // Two doors side by side over the engine.
+  // Two doors side by side over the engine, each with a lifting handle folded flat at its front and back.
+  const doorTop = y + 0.012;
   for (const side of [-1, 1]) {
     const x = side * 0.46;
     parts.push(box([0.84, 0.016, 0.95], [x, y + 0.004, 2.65], PAINT_DARK));
-    parts.push(box([0.2, 0.025, 0.05], [x, y + 0.016, 2.12], STEEL));
-    parts.push(beam([x - 0.08, y + 0.03, 3.0], [x + 0.08, y + 0.03, 3.0], 0.01, STEEL, 5));
+    for (const [z, way] of [[2.2, 1], [3.04, -1]] as const) parts.push(...liftingHandle(x, doorTop, z, way));
   }
   // The grille: bars across the deck's back.
   for (let i = 0; i < 6; i++) parts.push(box([1.8, 0.02, 0.025], [0, y + 0.008, 3.2 + i * 0.05], PAINT_DARK));
-  // Fuel fillers on each sponson.
-  for (const side of [-1, 1]) {
-    for (const z of [2.2, 3.05]) parts.push({ geometry: new CylinderGeometry(0.06, 0.065, 0.035, 12, 1), color: STEEL_LIGHT, position: [side * 1.38, y + 0.01, z] });
+  // A fuel filler on each sponson, behind the tools.
+  for (const side of [-1, 1]) parts.push({ geometry: new CylinderGeometry(0.06, 0.065, 0.035, 12, 1), color: STEEL_LIGHT, position: [side * 1.38, y + 0.01, 3.05] });
+  parts.push(...toolParts(y));
+  return parts;
+}
+
+/** A folding lifting handle lying flat on a door: a steel loop on two lugs at z, its loop reaching `way` (±1) along z. */
+function liftingHandle(x: number, top: number, z: number, way: 1 | -1): Part[] {
+  const r = 0.05;
+  const tube = 0.009;
+  // Half a ring, lying flat (in x, z), bowing towards `way`.
+  const loop = new TorusGeometry(r, tube, 5, 10, Math.PI);
+  loop.rotateX(way > 0 ? Math.PI / 2 : -Math.PI / 2);
+  const parts: Part[] = [{ geometry: loop, color: STEEL, position: [x, top + tube, z] }];
+  for (const s of [-1, 1]) parts.push(box([0.024, 0.024, 0.03], [x + s * r, top + 0.008, z], STEEL));
+  return parts;
+}
+
+/** A leather strap over a tool's handle at (x, z): over its top and down either side to the deck, `span` across. */
+function strap(x: number, deck: number, over: number, z: number, span: number): Part[] {
+  const t = 0.006;
+  const w = 0.03;
+  return [
+    box([span + 2 * t, t, w], [x, over + t / 2, z], LEATHER),
+    box([t, over - deck + 0.006, w], [x - span / 2 - t / 2, (over + deck - 0.006) / 2, z], LEATHER),
+    box([t, over - deck + 0.006, w], [x + span / 2 + t / 2, (over + deck - 0.006) / 2, z], LEATHER),
+  ];
+}
+
+/** A flat plate from an outline in (x, z), from `y` up `thickness`. */
+function plate(outline: readonly (readonly [number, number])[], y: number, thickness: number, color: number): Part {
+  const shape = new Shape(outline.map(([x, z]) => new Vector2(x, -z)));
+  const g = new ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
+  // The shape's (x, y) is (x, -z) and its depth is +Z: a quarter back about X stands the depth up.
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, y, 0);
+  return { geometry: g, color };
+}
+
+/**
+ * The crew's pioneer tools on the sponsons' tops, lying along the tank, each
+ * strapped down twice: a long-handled shovel (D grip, spade blade) and an
+ * axe on the left, a crowbar (its claw bent up) and a sledgehammer on the right.
+ */
+function toolParts(y: number): Part[] {
+  const parts: Part[] = [];
+  const outer = SPONSON.halfWidth - 0.12;
+  const inner = outer - 0.12;
+  // The shovel: handle, D grip ahead, the blade behind on its socket.
+  const sx = -outer;
+  const sr = 0.016;
+  const sy = y + sr + 0.004;
+  parts.push(beam([sx, sy, 1.5], [sx, sy, 2.35], sr, WOOD, 6));
+  const grip = new TorusGeometry(0.04, 0.009, 4, 10);
+  grip.rotateX(Math.PI / 2);
+  parts.push({ geometry: grip, color: WOOD, position: [sx, sy, 1.47] });
+  parts.push(beam([sx, sy, 2.35], [sx, sy, 2.44], 0.022, STEEL, 6));
+  const blade: [number, number][] = [[-0.09, 2.43], [0.09, 2.43], [0.09, 2.6], [0.04, 2.67], [0, 2.69], [-0.04, 2.67], [-0.09, 2.6]];
+  parts.push(plate(blade.map(([x, z]) => [sx + x, z] as [number, number]), y + 0.003, 0.01, STEEL));
+  // The axe: handle, the head across it at the back, its bit inboard.
+  const ax = -inner;
+  const ay = y + sr + 0.004;
+  parts.push(beam([ax, ay, 1.95], [ax, ay, 2.74], sr, WOOD, 6));
+  const head: [number, number][] = [[-0.035, 2.7], [-0.035, 2.75], [0.07, 2.755], [0.13, 2.78], [0.13, 2.67], [0.07, 2.695]];
+  parts.push(plate(head.map(([x, z]) => [ax + x, z] as [number, number]), y + 0.004, 0.028, STEEL));
+  // The crowbar: a steel bar, flattened to a chisel ahead, its claw bent up and inboard at the back.
+  const cx = outer;
+  const cr = 0.013;
+  const cy = y + cr + 0.004;
+  parts.push(beam([cx, cy, 1.4], [cx, cy, 2.72], cr, STEEL, 6));
+  parts.push(box([0.03, 0.01, 0.06], [cx, y + 0.009, 1.38], STEEL));
+  parts.push(beam([cx, cy, 2.72], [cx - 0.03, cy + 0.045, 2.8], cr, STEEL, 6));
+  // The sledgehammer: handle, its head across it at the back.
+  const hx = inner;
+  parts.push(beam([hx, sy, 1.9], [hx, sy, 2.72], sr, WOOD, 6));
+  const sledge = new CylinderGeometry(0.035, 0.035, 0.15, 8, 1);
+  sledge.rotateZ(Math.PI / 2);
+  parts.push({ geometry: sledge, color: STEEL, position: [hx, y + 0.036, 2.76] });
+  // Straps over each handle, near its ends.
+  for (const [x, top, z0, z1] of [[sx, sy + sr, 1.62, 2.24], [ax, ay + sr, 2.05, 2.55], [cx, cy + cr, 1.55, 2.5], [hx, sy + sr, 2.0, 2.55]] as const) {
+    for (const z of [z0, z1]) parts.push(...strap(x, y, top, z, 2 * (x === cx ? cr : sr) + 0.004));
   }
-  // Tools on the sponsons' tops: a shovel and an axe on the left, a crowbar and a sledge on the right.
-  const tx = SPONSON.halfWidth - 0.12;
-  parts.push(beam([-tx, y + 0.025, 1.45], [-tx, y + 0.025, 2.4], 0.018, WOOD, 6));
-  parts.push(box([0.2, 0.012, 0.26], [-tx, y + 0.012, 2.55], STEEL));
-  parts.push(beam([-tx + 0.12, y + 0.022, 1.95], [-tx + 0.12, y + 0.022, 2.65], 0.016, WOOD, 6));
-  parts.push(box([0.04, 0.035, 0.16], [-tx + 0.12, y + 0.022, 2.73], STEEL));
-  parts.push(beam([tx, y + 0.02, 1.4], [tx, y + 0.02, 2.75], 0.014, STEEL, 6));
-  parts.push(beam([tx - 0.12, y + 0.022, 1.9], [tx - 0.12, y + 0.022, 2.65], 0.016, WOOD, 6));
-  parts.push(box([0.07, 0.07, 0.15], [tx - 0.12, y + 0.035, 2.72], STEEL));
-  // Straps over them.
-  for (const z of [1.6, 2.3]) for (const s of [-1, 1]) parts.push(box([0.26, 0.012, 0.035], [s * (tx - 0.06), y + 0.046, z], PAINT_DARK));
   return parts;
 }
 
