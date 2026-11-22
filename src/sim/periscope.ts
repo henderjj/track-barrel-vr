@@ -94,6 +94,10 @@ export const CRANK_RATIO = (2 * Math.PI) / TURN_PER_CRANK_TURN;
  * The crank on the eyepiece's right side: a small handwheel facing the
  * seat with a knob standing out of it, turning for ever, a tick every 15°
  * the periscope turns. Anticlockwise, as the player sees it, looks left.
+ * Turned `direct`ly like the gun's cranks, by the hand's angle round the
+ * middle of its own circles (docs/turret.md "Laying blind"; John,
+ * 2026-11-22: the gun's cranks felt good for quick and fine moves, so the
+ * periscopes' do the same).
  */
 export const PERISCOPE_CRANK: WheelSpec = {
   radius: 0.04,
@@ -103,6 +107,7 @@ export const PERISCOPE_CRANK: WheelSpec = {
   max: Infinity,
   tickEvery: 15 * DEG * CRANK_RATIO,
   perTurn: TURN_PER_CRANK_TURN / DEG,
+  direct: true,
 };
 
 /** The crank's hub from the window's middle (frame space), m: right of the eyepiece, level with it, its face 2 cm ahead of the window. */

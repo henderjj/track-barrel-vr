@@ -2191,6 +2191,26 @@ async function thePeriscopes() {
       Math.abs(turned.angleDeg - want) < 4 && Math.abs(swung - want) < 5 && lensMoved < 0.002,
       `${turned.angleDeg.toFixed(1)}° (${turned.status}), crank ${(turned.crankDeg - start).toFixed(0)}°, view swung ${swung.toFixed(1)}°, head facing ${fmt(after.head.facing)}, window moved ${(lensMoved * 1000).toFixed(1)} mm`);
     iwsdk(['browser', 'screenshot', '--output-file', `artifacts/xr-periscope-${id}-left.png`], {});
+    if (id === 'driver') {
+      // Turned blind like the gun's cranks (John, 2026-11-22): with the eye at the window, the right hand's squeeze
+      // 15 cm above the knob takes the crank; with the eye away from it, the same squeeze doesn't.
+      await waitFor('the crank let go', () => !scope('state()').held, 3000, 100).catch(() => false);
+      handTo(knob(turned.crankDeg).map((v, i) => v + (i === 1 ? 0.15 : 0)));
+      await sleep(600);
+      squeeze(1);
+      const blind = await waitFor('the crank taken blind', () => { const s = scope('state()'); return s.held && s; }, 3000, 100).catch(() => scope('state()'));
+      squeeze(0);
+      await waitFor('the crank let go', () => !scope('state()').held, 3000, 100).catch(() => false);
+      iwsdk(['xr', 'set-transform'], { device: 'headset', position: toRig(lens0.at.map((v, i) => v + lens0.facing[i] * 0.35)) });
+      await waitFor(`the ${label} periscope shut`, () => !scope('state()').open, 5000).catch(() => false);
+      squeeze(1);
+      await sleep(Math.max(800, 2 * slowestFrameMs()));
+      const away = scope('state()');
+      squeeze(0);
+      check(`With the eye at the ${label} periscope, a right-hand squeeze 15 cm from its crank takes it (and not with the eye away)`,
+        blind.held === true && !away.open && !away.held,
+        `at the window: held ${blind.held}; away: open ${away.open}, held ${away.held}`);
+    }
     iwsdk(['xr', 'set-device-state'], {});
     await sleep(300);
   }

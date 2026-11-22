@@ -317,10 +317,10 @@ describe('the wheel and the crank', () => {
     expect(crank.angle / DEG).toBeCloseTo(60, 0);
   });
 
-  it("turns the turret's wheels directly, a degree of hand for a degree of wheel, and leaves the periscope cranks following the hand's circling (John, 2026-11-15)", () => {
+  it("turns the turret's wheels and the periscope cranks directly (John, 2026-11-15; periscopes 2026-11-22)", () => {
     expect(TRAVERSE_CRANK.direct).toBe(true);
     expect(ELEVATION_WHEEL.direct).toBe(true);
-    expect(PERISCOPE_CRANK.direct).toBeFalsy();
+    expect(PERISCOPE_CRANK.direct).toBe(true);
   });
 
   /** A slow quarter turn, then nudges of a few degrees each way, of a hand on a circle of `rad` round (ox, oy): each move's crank turn, and the hand's angle round the axle and round its own circle. */
