@@ -9,7 +9,6 @@ import { mergeParts, type Part } from "./lowpoly.js";
 import {
   EYEPIECE_BOX,
   EYEPIECE_TILT,
-  HEAD_SIZE,
   type PeriscopeSpec,
   RELAY,
   SHAFT_RADIUS,
@@ -17,6 +16,7 @@ import {
   WINDOW_PROUD,
 } from "../sim/periscope.js";
 import { litInside } from "./cabin-light.js";
+import { periscopeHeadParts } from "./periscope-head.js";
 import { interiorFinish } from "./finish.js";
 
 /**
@@ -36,9 +36,6 @@ import { interiorFinish } from "./finish.js";
 const STEEL = 0x4a5148;
 const STEEL_DARK = 0x2f3430;
 const RUBBER = 0x1c1c1c;
-/** The tank's paint outside (cabin.scene-asset.ts), for the head on the roof. */
-const PAINT = 0x8f8a5c;
-const GLASS = 0x1a2630;
 
 const material = litInside(
   new MeshStandardMaterial({
@@ -212,7 +209,6 @@ export function createPeriscopeTurning(s: PeriscopeSpec): Mesh {
   const shaftBottom = s.roof - s.lens[1] - 0.03;
   const headBottom = s.head.bottom - s.lens[1];
   const headTop = s.head.top - s.lens[1];
-  const headMid = (headBottom + headTop) / 2;
   const shaftTop = headBottom + 0.02;
   const parts: Part[] = [
     {
@@ -226,30 +222,8 @@ export function createPeriscopeTurning(s: PeriscopeSpec): Mesh {
       color: STEEL,
       position: [0, (shaftTop + shaftBottom) / 2, 0],
     },
-    // The head, its foot inside the roof plate, a lid over it and its window on the front.
-    {
-      geometry: new BoxGeometry(
-        HEAD_SIZE.width,
-        headTop - headBottom,
-        HEAD_SIZE.depth,
-      ),
-      color: PAINT,
-      position: [0, headMid, 0],
-    },
-    {
-      geometry: new BoxGeometry(
-        HEAD_SIZE.width + 0.01,
-        0.015,
-        HEAD_SIZE.depth + 0.01,
-      ),
-      color: STEEL_DARK,
-      position: [0, headTop + 0.0025, 0],
-    },
-    {
-      geometry: new BoxGeometry(0.07, 0.035, 0.006),
-      color: GLASS,
-      position: [0, headMid + 0.005, -HEAD_SIZE.depth / 2 - 0.002],
-    },
+    // The head, its foot inside the roof plate, its window on the front under a hood.
+    ...periscopeHeadParts(headBottom, headTop, s.cameraY - s.lens[1]),
   ];
   const mesh = new Mesh(mergeParts(parts, interiorFinish), material);
   mesh.name = `Periscope Turning ${s.id}`;
