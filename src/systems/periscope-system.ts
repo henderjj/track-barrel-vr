@@ -46,7 +46,7 @@ import {
   PICTURE_WIDTH,
   PITCH,
 } from '../sim/periscope.js';
-import { angleDelta } from '../sim/turret.js';
+import { angleDelta, BLIND_REACH } from '../sim/turret.js';
 import { markPlace } from '../sim/hull-direction.js';
 import { acquireMarkTexture, markLens, releaseMarkTexture } from './hull-direction-system.js';
 import { HoldKind } from './hand-lock.js';
@@ -308,6 +308,8 @@ export class PeriscopeSystem extends createSystem({}) {
           frame: scope.crankMount,
           kind: scope.wire.kind,
           active: () => scope.usable(),
+          // Turned blind with the eye at the window, like the gun's cranks at the sight: the right hand's, on the eyepiece's right.
+          blind: { side: 'right', reach: BLIND_REACH, now: () => scope.stats.open },
         }),
       );
       netLink.handlers.set(scope.wire.packet, (view) => this.onPacket(scope, view));
