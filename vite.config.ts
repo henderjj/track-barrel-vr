@@ -22,9 +22,9 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: process.env.NODE_ENV !== 'production',
     target: 'esnext',
-    rollupOptions: { input: './index.html' },
+    rolldownOptions: { input: './index.html' },
   },
-  esbuild: { target: 'esnext' },
+  oxc: { target: 'esnext' },
   // @drawcall/uikitml otherwise pulls a second three/@pmndrs/uikit graph
   // whenever its three doesn't match the app's super-three (as three@0.185
   // against super-three@0.181 once did). Duplicate Component classes break
@@ -46,7 +46,7 @@ export default defineConfig({
       '@pmndrs/uikit-lucide',
       '@drawcall/uikitml',
     ],
-    esbuildOptions: { target: 'esnext' },
+    rolldownOptions: { transform: { target: 'esnext' } },
   },
   publicDir: 'public',
   base: './',
